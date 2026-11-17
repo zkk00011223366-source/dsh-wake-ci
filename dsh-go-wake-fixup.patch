@@ -1,7 +1,7 @@
 From 74bde8c4a28d064f0accac45a0eb37057b74225a Mon Sep 17 00:00:00 2001
 From: dsh-wake <wake@local>
 Date: Tue, 17 Nov 2026 22:05:26 +0800
-Subject: [PATCH] fix(voice): the wake module's first compile errors
+Subject: [PATCH 1/3] fix(voice): the wake module's first compile errors
 
 ---
  .../ccch1mneyyy/dsh_app/wake/WakeCapture.kt   |    2 +-
@@ -2132,10 +2132,11 @@ index 0000000..617c898
 -- 
 2.43.0
 
+
 From 1b29d57a13b83ead7f79022b37e7f1887b083217 Mon Sep 17 00:00:00 2001
 From: dsh-wake <wake@local>
 Date: Tue, 17 Nov 2026 23:23:44 +0800
-Subject: [PATCH] feat(phone): a switch that stops the per-command Android
+Subject: [PATCH 2/3] feat(phone): a switch that stops the per-command Android
  Shell confirmation
 
 ---
@@ -2297,6 +2298,50 @@ index 1214058..3ea9dc8 100644
              ListPageRow(
                title: l10n.androidShellStatus,
                subtitle: _loading
+-- 
+2.43.0
+
+
+From 4f2c78949d2f4355027c3f9d6c84f6b09fd9d4b1 Mon Sep 17 00:00:00 2001
+From: dsh-wake <wake@local>
+Date: Tue, 17 Nov 2026 23:24:34 +0800
+Subject: [PATCH 3/3] =?UTF-8?q?build:=20install=20alongside=20the=20offici?=
+ =?UTF-8?q?al=20app=20as=20DSH=20=E7=A7=81=E4=BA=BA=E7=89=88?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+---
+ app/android/app/build.gradle.kts             | 2 +-
+ app/android/app/src/main/AndroidManifest.xml | 2 +-
+ 2 files changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/app/android/app/build.gradle.kts b/app/android/app/build.gradle.kts
+index f2d6b7e..45c2966 100644
+--- a/app/android/app/build.gradle.kts
++++ b/app/android/app/build.gradle.kts
+@@ -49,7 +49,7 @@ android {
+     }
+ 
+     defaultConfig {
+-        applicationId = "io.github.ccch1mneyyy.dsh_app"
++        applicationId = "io.github.ccch1mneyyy.dsh_app.private"
+         // java.nio.file (symlinks while unpacking the rootfs) needs API 26.
+         minSdk = 26
+         // Target 28 like Termux, so the API 29+ exec restriction on app-private
+diff --git a/app/android/app/src/main/AndroidManifest.xml b/app/android/app/src/main/AndroidManifest.xml
+index dcfb9c7..20c6331 100644
+--- a/app/android/app/src/main/AndroidManifest.xml
++++ b/app/android/app/src/main/AndroidManifest.xml
+@@ -54,7 +54,7 @@
+          TODO(targetSdk >= 31): also configure dataExtractionRules. -->
+     <application
+         android:allowBackup="false"
+-        android:label="DSH Go"
++        android:label="DSH 私人版"
+         android:name="${applicationName}"
+         android:icon="@mipmap/ic_launcher"
+         android:roundIcon="@mipmap/ic_launcher_round"
 -- 
 2.43.0
 
