@@ -205,9 +205,7 @@ jobs:
               content=$(base64 -w0 /tmp/tail.txt)
               sha=$(curl -sS -H "Authorization: Bearer $TOKEN" \
                      "https://api.github.com/repos/${GITHUB_REPOSITORY}/contents/build-log.txt" \
-                     | python3 -c 'import sys,json
-try: print(json.load(sys.stdin).get("sha",""))
-except Exception: print("")' 2>/dev/null)
+                     | tr ',' '\n' | grep -m1 '"sha"' | cut -d'"' -f4 || true)
               body="{\"message\":\"ci: build log\",\"content\":\"$content\",\"branch\":\"main\""
               [ -n "$sha" ] && body="$body,\"sha\":\"$sha\""
               body="$body}"
