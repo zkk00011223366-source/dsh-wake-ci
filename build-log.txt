@@ -1,7 +1,7 @@
 == resources ==
-/dev/root        72G   72G   46M 100% /
+/dev/root        72G   72G   27M 100% /
                total        used        free      shared  buff/cache   available
-Mem:            7931         966         422          50        6906        6965
+Mem:            7931        1573         202          50        6519        6358
 == tail ==
 
 ==> 依赖: flutter pub get
@@ -331,3 +331,7 @@ piai-overflow-output-limit.diff: patched node_modules/@earendil-works/pi-ai/dist
 schedule-authorization-availability.diff: patched node_modules/@deepseek-ai/dsh-schedule/lib/index.js (91b8796478bc -> 303e9cfbc7f0)
 schedule-authorization-availability.diff: patched node_modules/@deepseek-ai/dsh-tool-schedule/lib/index.js (42988ed17a70 -> 171aca269595)
 [1;34m[runtime 13:26:40][0m npm ci pnpm@11.28.5 (pinned lock)
+
+added 1 package in 2s
+pnpm lock: version=11.28.5 integrity=sha512-SEVj0wtMKtJ8t... installed=11.28.5 extra=[] -> ok
+[1;34m[runtime 13:26:43][0m assembling rootfs (xz)
