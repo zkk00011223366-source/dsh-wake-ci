@@ -1,7 +1,7 @@
 == resources ==
 /dev/root        72G   55G   18G  76% /
                total        used        free      shared  buff/cache   available
-Mem:            7931        4970         199          31        3106        2961
+Mem:            7931        5219         150          31        2906        2712
 == tail ==
 
 ==> 依赖: flutter pub get
@@ -384,3 +384,4 @@ Note: Some input files use or override a deprecated API.
 Note: Recompile with -Xlint:deprecation for details.
 Note: Some input files use unchecked or unsafe operations.
 Note: Recompile with -Xlint:unchecked for details.
+e: file:///home/runner/work/dsh-wake-ci/dsh-wake-ci/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/wake/WakeWordService.kt:52:22 No value passed for parameter 'context'.
