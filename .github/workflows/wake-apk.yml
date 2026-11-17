@@ -30,7 +30,7 @@ on:
         default: arm64
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: wake-apk-${{ github.ref }}
