@@ -82,6 +82,11 @@ jobs:
           if [ -f .patchsrc/dsh-go-wake-fixup.patch ]; then
             git am --3way .patchsrc/dsh-go-wake-fixup.patch
           fi
+          # The wake gate: a floor learned from silence kept it open, so the recognizer
+          # decoded a room into 呵呵 and the wake word never matched.
+          if [ -f .patchsrc/dsh-go-wake-gate.patch ]; then
+            git am --3way .patchsrc/dsh-go-wake-gate.patch
+          fi
           git log --oneline -4
 
       # Keyed on the installer itself: when it changes, its downloads are rebuilt.
