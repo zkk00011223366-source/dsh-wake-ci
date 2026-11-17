@@ -181,16 +181,24 @@ jobs:
           set -o pipefail
           bash tooling/build-wake-apk.sh -f "$FLAVOR" 2>&1 | tee /tmp/wake-build.log
 
-      - name: Upload the build log when it fails
+      # The run log is not always downloadable from this repository, so the tail is
+      # committed instead: build-log.txt is then readable over the contents API.
+      - name: Commit the build log when it fails
         if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: build-log
-          path: |
-            /tmp/wake-build.log
-            runtime/.work
-          if-no-files-found: ignore
-          retention-days: 7
+        env:
+          TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -eu
+          df -h / | tail -1
+          free -m | head -2
+          { echo "== resources =="; df -h / | tail -1; free -m | head -2;
+            echo "== tail =="; tail -c 40000 /tmp/wake-build.log 2>/dev/null || echo "no log file"; } > /tmp/tail.txt
+          content=$(base64 -w0 /tmp/tail.txt)
+          curl -sS -X PUT \
+            -H "Authorization: Bearer $TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/contents/build-log.txt" \
+            -d "{\"message\":\"ci: build log\",\"content\":\"$content\",\"branch\":\"main\"}" | head -c 300
 
       - name: Save the runtime downloads
         if: steps.runtime.outputs.cache-hit != 'true'
