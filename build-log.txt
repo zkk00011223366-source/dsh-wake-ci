@@ -1,7 +1,7 @@
 == resources ==
 /dev/root        72G   71G  1.1G  99% /
                total        used        free      shared  buff/cache   available
-Mem:            7931         966        1262          50        6066        6965
+Mem:            7931         953        1266          50        6075        6978
 == tail ==
 
 ==> 依赖: flutter pub get
@@ -71,3 +71,5 @@ To use the command line arguments, delete the l10n.yaml file in the Flutter proj
 [1;34m[runtime 13:24:33][0m download https://cdimage.ubuntu.com/ubuntu-base/releases/24.04/release/ubuntu-base-24.04.5-base-arm64.tar.gz
 [1;34m[runtime 13:24:34][0m download https://nodejs.org/dist/v24.22.1/node-v24.22.1-linux-arm64.tar.xz
 [1;34m[runtime 13:24:35][0m download http://ports.ubuntu.com/ubuntu-ports/pool/main/c/ca-certificates/ca-certificates_20260816ubuntu0.24.04.1_all.deb
+curl: (22) The requested URL returned error: 404
+[1;34m[runtime 13:24:35][0m download https://launchpad.net/ubuntu/+archive/primary/+files/ca-certificates_20260816ubuntu0.24.04.1_all.deb
