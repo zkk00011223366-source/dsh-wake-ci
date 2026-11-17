@@ -1,7 +1,7 @@
 == resources ==
 /dev/root        72G   48G   24G  67% /
                total        used        free      shared  buff/cache   available
-Mem:            7931        1621         319          50        6355        6310
+Mem:            7931         924         891          50        6479        7006
 == tail ==
 
 ==> 依赖: flutter pub get
@@ -290,3 +290,12 @@ schedule-authorization-availability.diff: patched node_modules/@deepseek-ai/dsh-
 added 1 package in 467ms
 pnpm lock: version=11.28.5 integrity=sha512-SEVj0wtMKtJ8t... installed=11.28.5 extra=[] -> ok
 [1;34m[runtime 15:32:18][0m assembling rootfs (xz)
+rootfs /home/runner/work/dsh-wake-ci/dsh-wake-ci/runtime/out/arm64-v8a/assets/runtime/rootfs-arm64-v8a.tar.xz: 26774 files, 5346 dirs, 1681 symlinks, 760.7 MiB unpacked, 152.2 MiB archive
+wrote /home/runner/work/dsh-wake-ci/dsh-wake-ci/runtime/out/arm64-v8a/assets/runtime/manifest.json
+rootfs ELF objects: 835, wrong-arch: 0, warnings: 0
+[1;34m[runtime 15:34:57][0m arm64-v8a done: 153M archive total, version r15-dsh0.2.2-rc.1-node24.22.1-ubuntu24.04.5-961d78c7f610
+wrote /home/runner/work/dsh-wake-ci/dsh-wake-ci/runtime/out/manifest.json
+
+==> 打包: tooling/build-apk.sh -f arm64 --keep-daemon
+dsh-go 1.1.0 (11172334, 2026-11-17 23:34 UTC+8) · release · arm64
+runtime verified: arm64 (arm64-v8a), schema 1, 5 files
