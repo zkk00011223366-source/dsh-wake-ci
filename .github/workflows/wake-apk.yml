@@ -176,15 +176,28 @@ jobs:
           restore-keys: runtime-downloads-v1-
 
       # pub get -> l10n (gen-l10n, the new strings) -> runtime/out/$abi -> the APK.
+      - name: What the runner has to work with
+        run: |
+          df -h / /tmp
+          free -m
+          nproc
+
+      # continue-on-error so the step below always gets to report what happened,
+      # even when the build dies instead of exiting with a status.
       - name: Build the runtime and the APK
+        id: build
+        continue-on-error: true
+        env:
+          XZ_THREADS: "2"
         run: |
           set -o pipefail
           bash tooling/build-wake-apk.sh -f "$FLAVOR" 2>&1 | tee /tmp/wake-build.log
+          echo "build-exit=$?" >> /tmp/wake-build.log
 
       # The run log is not always downloadable from this repository, so the tail is
       # committed instead: build-log.txt is then readable over the contents API.
-      - name: Commit the build log when it fails
-        if: failure()
+      - name: Commit the build log
+        if: always()
         env:
           TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -192,7 +205,7 @@ jobs:
           df -h / | tail -1
           free -m | head -2
           { echo "== resources =="; df -h / | tail -1; free -m | head -2;
-            echo "== tail =="; tail -c 40000 /tmp/wake-build.log 2>/dev/null || echo "no log file"; } > /tmp/tail.txt
+            echo "== tail =="; tail -c 60000 /tmp/wake-build.log 2>/dev/null || echo "no log file"; } > /tmp/tail.txt
           content=$(base64 -w0 /tmp/tail.txt)
           curl -sS -X PUT \
             -H "Authorization: Bearer $TOKEN" \
