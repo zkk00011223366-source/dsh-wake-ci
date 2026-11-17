@@ -88,6 +88,17 @@ jobs:
           set -eu
           sed -i 's/ "emulator" \$SYSTEM_IMAGE//' tooling/setup-toolchain.sh
           sed -i 's#https://storage.flutter-io.cn/flutter_infra_release/releases#https://storage.googleapis.com/flutter_infra_release/releases#' tooling/setup-toolchain.sh
+          # runtime/build-runtime.sh defaults to the Tsinghua mirror and npmmirror; a
+          # runner in the US downloads the same pinned bytes from the official hosts.
+          sed -i \
+            -e 's#https://mirrors.tuna.tsinghua.edu.cn/ubuntu-cdimage/#https://cdimage.ubuntu.com/#' \
+            -e 's#https://mirrors.tuna.tsinghua.edu.cn/ubuntu-ports#http://ports.ubuntu.com/ubuntu-ports#' \
+            -e 's#https://mirrors.tuna.tsinghua.edu.cn/ubuntu#http://archive.ubuntu.com/ubuntu#' \
+            -e 's#https://npmmirror.com/mirrors/node#https://nodejs.org/dist#' \
+            -e 's#https://registry.npmmirror.com/-/binary/python-build-standalone#https://github.com/astral-sh/python-build-standalone/releases/download#' \
+            -e 's#https://registry.npmmirror.com#https://registry.npmjs.org#' \
+            runtime/build-runtime.sh
+          grep -nE 'UBUNTU_MIRROR=|NODE_MIRROR=|NPM_REGISTRY=' runtime/build-runtime.sh
           grep -n 'sdkmanager --sdk_root' -A2 tooling/setup-toolchain.sh | head -5
           grep -n 'storage.googleapis.com' tooling/setup-toolchain.sh
 
@@ -123,7 +134,11 @@ jobs:
         run: |
           set -eu
           source tooling/env.sh
+          # tooling/env.sh points these at the China mirrors, which a US runner
+          # reaches slowly; the official hosts are the ones it is close to.
           {
+            echo "PUB_HOSTED_URL=https://pub.dev"
+            echo "FLUTTER_STORAGE_BASE_URL=https://storage.googleapis.com"
             echo "JAVA_HOME=$JAVA_HOME"
             echo "ANDROID_HOME=$ANDROID_HOME"
             echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT"
@@ -162,7 +177,20 @@ jobs:
 
       # pub get -> l10n (gen-l10n, the new strings) -> runtime/out/$abi -> the APK.
       - name: Build the runtime and the APK
-        run: bash tooling/build-wake-apk.sh -f "$FLAVOR"
+        run: |
+          set -o pipefail
+          bash tooling/build-wake-apk.sh -f "$FLAVOR" 2>&1 | tee /tmp/wake-build.log
+
+      - name: Upload the build log when it fails
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-log
+          path: |
+            /tmp/wake-build.log
+            runtime/.work
+          if-no-files-found: ignore
+          retention-days: 7
 
       - name: Save the runtime downloads
         if: steps.runtime.outputs.cache-hit != 'true'
