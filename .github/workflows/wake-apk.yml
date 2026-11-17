@@ -40,7 +40,7 @@ jobs:
   apk:
     name: Build the APK
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 180
     env:
       FLAVOR: ${{ github.event.inputs.flavor || 'arm64' }}
     steps:
