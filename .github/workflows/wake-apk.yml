@@ -147,6 +147,12 @@ jobs:
         run: |
           set -eu
           source tooling/env.sh
+          # runtime/tawcroot/build.py looks at ANDROID_NDK_HOME first, then falls back
+          # to <ANDROID_HOME>/ndk; pin it so the cleanup above cannot redirect it to
+          # the runner image's own SDK.
+          pinned=$(python3 -c 'import json; print(json.load(open("runtime/tawcroot/source.json"))["ndkVersion"])')
+          echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/$pinned" >> "$GITHUB_ENV"
+          echo "NDK pinned at $ANDROID_HOME/ndk/$pinned" >> "$GITHUB_STEP_SUMMARY"
           # tooling/env.sh points these at the China mirrors, which a US runner
           # reaches slowly; the official hosts are the ones it is close to.
           {
