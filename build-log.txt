@@ -1,7 +1,7 @@
 == resources ==
 /dev/root        72G   52G   21G  72% /
                total        used        free      shared  buff/cache   available
-Mem:            7931        5315         225          19        2723        2616
+Mem:            7931        5402         294          26        2574        2528
 == tail ==
 
 ==> 依赖: flutter pub get
@@ -402,3 +402,8 @@ Installing Android SDK Platform 34 in /home/runner/dev/android-sdk/platforms/and
 "Install Android SDK Platform 34 (revision 3)" complete.
 "Install Android SDK Platform 34 (revision 3)" finished.
 Flutter assets will be downloaded from https://storage.googleapis.com. Make sure you trust this source!
+lib/app.dart:80:14: Error: The getter 'wakeWordProvider' isn't defined for the type '_DshAppState'.
+ - '_DshAppState' is from 'package:dsh_app/app.dart' ('lib/app.dart').
+Try correcting the name to the name of an existing getter, or defining a getter or field named 'wakeWordProvider'.
+    ref.read(wakeWordProvider);
+             ^^^^^^^^^^^^^^^^
