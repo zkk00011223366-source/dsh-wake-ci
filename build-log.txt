@@ -1,7 +1,7 @@
 == resources ==
 /dev/root        72G   49G   23G  69% /
                total        used        free      shared  buff/cache   available
-Mem:            7931        3002         281          49        5011        4929
+Mem:            7931        2979         399          49        4915        4952
 == tail ==
 
 ==> 依赖: flutter pub get
@@ -352,4 +352,29 @@ Downloading packages...
 Got dependencies!
 45 packages have newer versions incompatible with dependency constraints.
 Try `flutter pub outdated` for more information.
+Running Gradle task 'assembleArm64Release'...                   
+
+FAILURE: Build failed with an exception.
+
+* What went wrong:
+Could not resolve all artifacts for configuration 'classpath'.
+> Could not resolve org.jetbrains.kotlin:kotlin-stdlib:2.2.21.
+  Required by:
+      settings file 'settings.gradle.kts'
+   > Repository maven is disabled due to earlier error below:
+      > Could not resolve org.glassfish.jaxb:jaxb-runtime:2.3.2.
+         > Could not get resource 'https://maven.aliyun.com/repository/google/org/glassfish/jaxb/jaxb-runtime/2.3.2/jaxb-runtime-2.3.2.pom'.
+            > Could not GET 'https://maven.aliyun.com/repository/google/org/glassfish/jaxb/jaxb-runtime/2.3.2/jaxb-runtime-2.3.2.pom'. Received status code 502 from server: Bad Gateway
+> There are 60 more failures with identical causes.
+
+* Try:
+> Run with --stacktrace option to get the stack trace.
+> Run with --info or --debug option to get more log output.
+> Run with --scan to get full insights from a Build Scan (powered by Develocity).
+> Get more help at https://help.gradle.org.
+
+BUILD FAILED in 1m 56s
+Running Gradle task 'assembleArm64Release'...                     116.8s
+[!] Gradle threw an error while downloading artifacts from the network.
+Retrying Gradle Build: #1, wait time: 100ms
 Running Gradle task 'assembleArm64Release'...                   
