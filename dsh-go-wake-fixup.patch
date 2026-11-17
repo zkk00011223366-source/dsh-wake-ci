@@ -1,0 +1,2097 @@
+From ed17ed76788648621ae47380f65634ddde89e0e9 Mon Sep 17 00:00:00 2001
+From: dsh-wake <wake@local>
+Date: Tue, 17 Nov 2026 22:05:26 +0800
+Subject: [PATCH] fix(voice): import the wake word provider in app.dart
+
+---
+ app/lib/app.dart  |    1 +
+ dsh-go-wake.patch | 2065 +++++++++++++++++++++++++++++++++++++++++++++
+ 2 files changed, 2066 insertions(+)
+ create mode 100644 dsh-go-wake.patch
+
+diff --git a/app/lib/app.dart b/app/lib/app.dart
+index ef3c479..b2de292 100644
+--- a/app/lib/app.dart
++++ b/app/lib/app.dart
+@@ -14,6 +14,7 @@ import 'state/appearance_state.dart';
+ import 'state/locale_state.dart';
+ import 'state/star_prompt.dart' show starPromptGateProvider, starPromptProvider;
+ import 'state/tile_style_state.dart';
++import 'voice/wake_word.dart';
+ import 'ui/chat/dsh_ui/dsh_ui_model.dart' show DshUiAppAccent;
+ import 'ui/common/keyboard_motion.dart';
+ import 'ui/common/side_insets.dart';
+diff --git a/dsh-go-wake.patch b/dsh-go-wake.patch
+new file mode 100644
+index 0000000..617c898
+--- /dev/null
++++ b/dsh-go-wake.patch
+@@ -0,0 +1,2065 @@
++From 55d4c409ebde4b430bacf43f3c820d6e92c0a278 Mon Sep 17 00:00:00 2001
++From: Zhuanz <zhuanz@users.noreply.github.com>
++Date: Tue, 17 Nov 2026 17:58:46 +0800
++Subject: [PATCH 1/3] =?UTF-8?q?feat(voice):=20=E8=AF=AD=E9=9F=B3=E5=94=A4?=
++ =?UTF-8?q?=E9=86=92=20=E2=80=94=20listening=20in=20the=20background,=20op?=
++ =?UTF-8?q?ening=20the=20call=20screen?=
++MIME-Version: 1.0
++Content-Type: text/plain; charset=UTF-8
++Content-Transfer-Encoding: 8bit
++
++常驻前台的 microphone 服务按能量门喂帧，唤醒判定复用已有的 sherpa_onnx 与
++实时字幕的流式模型（不新增模型资产）：喊唤醒词即点亮屏幕、进入语音通话页，
++通话期间释放麦克风，挂断后恢复监听，8 秒冷却。
++
++- 原生 wake/: WakeCapture（16k 单声道 + 噪声地板门限）、WakeWordService
++  （foregroundServiceType=microphone + PARTIAL_WAKE_LOCK + MicArbiter 让位）、
++  WakeWordPlugin（dsh/wake、dsh/wake/events）、WakeBootReceiver
++- Dart: voice/wake_settings.dart（speech_wake_v1）、voice/wake_word.dart
++- 设置页新增「语音唤醒」分区，中英文案合并进 parts/speech_*.arb
++- tooling/build-wake-apk.sh 一条命令出包；workflow 在 ubuntu-latest 上跑它
++- docs/wake-word.md 记录改法、验收与已知限制（Android 14+ 禁止
++  BOOT_COMPLETED 启动 microphone 前台服务）
++---
++ .gitattributes                                |   3 +
++ .github/workflows/wake-apk.yml                | 192 ++++++++
++ app/android/app/src/main/AndroidManifest.xml  |  19 +
++ .../ccch1mneyyy/dsh_app/MainActivity.kt       |  18 +
++ .../dsh_app/wake/WakeBootReceiver.kt          |  29 ++
++ .../ccch1mneyyy/dsh_app/wake/WakeCapture.kt   | 141 ++++++
++ .../dsh_app/wake/WakeWordPlugin.kt            | 129 ++++++
++ .../dsh_app/wake/WakeWordService.kt           | 216 +++++++++
++ .../src/main/res/values-zh/i18n_strings.xml   |   5 +
++ .../app/src/main/res/values/i18n_strings.xml  |   5 +
++ app/lib/app.dart                              |   2 +
++ app/lib/l10n/app_en.arb                       |  14 +
++ app/lib/l10n/app_zh.arb                       |  14 +
++ app/lib/l10n/parts/speech_en.arb              |  14 +
++ app/lib/l10n/parts/speech_zh.arb              |  14 +
++ app/lib/ui/chat/chat_screen.dart              |  19 +-
++ app/lib/ui/settings/voice_settings_page.dart  |  76 ++++
++ app/lib/voice/wake_settings.dart              |  98 ++++
++ app/lib/voice/wake_word.dart                  | 422 ++++++++++++++++++
++ docs/wake-word.md                             |  88 ++++
++ tooling/build-wake-apk.sh                     |  68 +++
++ 21 files changed, 1584 insertions(+), 2 deletions(-)
++ create mode 100644 .github/workflows/wake-apk.yml
++ create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/wake/WakeBootReceiver.kt
++ create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/wake/WakeCapture.kt
++ create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/wake/WakeWordPlugin.kt
++ create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/wake/WakeWordService.kt
++ create mode 100644 app/lib/voice/wake_settings.dart
++ create mode 100644 app/lib/voice/wake_word.dart
++ create mode 100644 docs/wake-word.md
++ create mode 100644 tooling/build-wake-apk.sh
++
++diff --git a/.gitattributes b/.gitattributes
++index 52e3e08..3e877c7 100644
++--- a/.gitattributes
+++++ b/.gitattributes
++@@ -1,2 +1,5 @@
++ # Nested patches are applied to upstream sources byte for byte; never convert their line endings.
++ tooling/ios/phone-self-runner/*.patch -text
+++
+++# These run as-is on Linux, CI included: a CRLF checkout there is a bad interpreter.
+++*.sh text eol=lf
++diff --git a/.github/workflows/wake-apk.yml b/.github/workflows/wake-apk.yml
++new file mode 100644
++index 0000000..5469f53
++--- /dev/null
+++++ b/.github/workflows/wake-apk.yml
++@@ -0,0 +1,192 @@
+++# Builds an installable APK with 语音唤醒 on a stock ubuntu-latest runner: the same
+++# x86_64 Linux the build chain assumes (tooling/setup-toolchain.sh downloads a linux
+++# JDK and a linux Flutter; runtime/build-runtime.sh unpacks an Ubuntu base).
+++#
+++#   Actions -> Wake APK -> Run workflow   (arm64 = a phone, x64 = an emulator)
+++#
+++# Two things this job owns that a local build does not: a keystore, because a CI
+++# runner has none and every APK must be signed to install, and the pinned NDK that
+++# libtawcroot.so needs (28.2.13676358), which is not always Flutter's default.
+++#
+++# The first run is the slow one: toolchain ~20-40 min, the bundled runtime ~15-30.
+++# Both are cached and saved as soon as they are ready, so a run that later hits the
+++# 60-minute timeout still makes the next one fast.
+++name: Wake APK
+++
+++on:
+++  push:
+++    branches: [main]
+++    paths:
+++      - 'app/**'
+++      - 'runtime/**'
+++      - 'tooling/**'
+++      - '.github/workflows/wake-apk.yml'
+++  workflow_dispatch:
+++    inputs:
+++      flavor:
+++        description: 'arm64 (a phone) or x64 (an emulator)'
+++        type: choice
+++        options: [arm64, x64]
+++        default: arm64
+++
+++permissions:
+++  contents: read
+++
+++concurrency:
+++  group: wake-apk-${{ github.ref }}
+++  cancel-in-progress: true
+++
+++jobs:
+++  apk:
+++    name: Build the APK
+++    runs-on: ubuntu-latest
+++    timeout-minutes: 60
+++    env:
+++      FLAVOR: ${{ github.event.inputs.flavor || 'arm64' }}
+++      # The Flutter defaults this repo pins; kept out of the way of the runner's own SDK.
+++      DEV_ROOT: ${{ github.workspace }}/../dev
+++    steps:
+++      - uses: actions/checkout@v4
+++        with:
+++          persist-credentials: false
+++
+++      # Keyed on the installer itself: when it changes, its downloads are rebuilt.
+++      - name: Restore the toolchain
+++        id: toolchain
+++        uses: actions/cache/restore@v4
+++        with:
+++          path: |
+++            ${{ env.DEV_ROOT }}
+++            ~/.pub-cache
+++          key: dsh-toolchain-v1-${{ runner.os }}-${{ hashFiles('tooling/setup-toolchain.sh') }}
+++          restore-keys: dsh-toolchain-v1-${{ runner.os }}-
+++
+++      - name: Install the toolchain (JDK 17, Flutter, Android SDK)
+++        run: bash tooling/setup-toolchain.sh
+++
+++      # Saved right after it is ready: a later timeout then costs nothing twice.
+++      - name: Save the toolchain
+++        if: steps.toolchain.outputs.cache-hit != 'true'
+++        uses: actions/cache/save@v4
+++        with:
+++          path: |
+++            ${{ env.DEV_ROOT }}
+++            ~/.pub-cache
+++          key: ${{ steps.toolchain.outputs.cache-primary-key }}
+++
+++      # libtawcroot.so is compiled by runtime/tawcroot/build.py against the NDK that
+++      # runtime/tawcroot/source.json pins, which is not necessarily flutter.ndkVersion.
+++      - name: Add the NDK libtawcroot.so is pinned to
+++        run: |
+++          set -euo pipefail
+++          source tooling/env.sh
+++          pinned=$(python3 -c 'import json,sys; print(json.load(open("runtime/tawcroot/source.json"))["ndkVersion"])')
+++          yes | sdkmanager --sdk_root="$ANDROID_HOME" "ndk;$pinned" > /dev/null
+++          test -d "$ANDROID_HOME/ndk/$pinned"
+++
+++      # A later step runs in a fresh shell, so the toolchain is handed over expanded:
+++      # tooling/env.sh assigns from $DEV_ROOT, which would land in $GITHUB_ENV as text.
+++      # The China mirrors env.sh sets are deliberately not passed on; the runner
+++      # reaches pub.dev and the Flutter CDN directly.
+++      - name: Hand the toolchain to the build steps
+++        run: |
+++          set -euo pipefail
+++          source tooling/env.sh
+++          {
+++            echo "JAVA_HOME=$JAVA_HOME"
+++            echo "ANDROID_HOME=$ANDROID_HOME"
+++            echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT"
+++            echo "PATH=$PATH"
+++          } >> "$GITHUB_ENV"
+++          {
+++            echo '### Toolchain'
+++            echo '```'
+++            java -version 2>&1 | head -n 2
+++            flutter --version 2>&1 | head -n 2
+++            echo '```'
+++          } >> "$GITHUB_STEP_SUMMARY"
+++
+++      # The runner has no key, so one is made here: app/android/key.properties is
+++      # gitignored (*.jks too), and build.gradle.kts picks the release key up from it
+++      # and signs all three schemes with it.
+++      - name: Make a keystore and let Gradle sign with it
+++        run: |
+++          set -euo pipefail
+++          keystore="$GITHUB_WORKSPACE/app/android/wake-ci.jks"
+++          keytool -genkeypair -noprompt \
+++            -keystore "$keystore" -storetype PKCS12 \
+++            -storepass dshpass -keypass dshpass \
+++            -alias dshgo -keyalg RSA -keysize 2048 -validity 10000 \
+++            -dname "CN=dsh-go-wake, OU=CI, O=dsh-go, C=CN"
+++          printf 'storeFile=%s\nstorePassword=dshpass\nkeyAlias=dshgo\nkeyPassword=dshpass\n' \
+++            "$keystore" > app/android/key.properties
+++
+++      - name: Restore the runtime downloads
+++        id: runtime
+++        uses: actions/cache/restore@v4
+++        with:
+++          path: runtime/.cache
+++          key: runtime-downloads-v1-${{ hashFiles('runtime/build-runtime.sh', 'runtime/locks/**') }}
+++          restore-keys: runtime-downloads-v1-
+++
+++      # pub get -> l10n (gen-l10n, the new strings) -> runtime/out/$abi -> the APK.
+++      - name: Build the runtime and the APK
+++        run: bash tooling/build-wake-apk.sh -f "$FLAVOR"
+++
+++      - name: Save the runtime downloads
+++        if: steps.runtime.outputs.cache-hit != 'true'
+++        uses: actions/cache/save@v4
+++        with:
+++          path: runtime/.cache
+++          key: ${{ steps.runtime.outputs.cache-primary-key }}
+++
+++      # Gradle signs with the key above; this reads it back, and signs the APK here
+++      # if it somehow came out debug-signed (key.properties unread, say).
+++      - name: Check the signature is the CI key
+++        run: |
+++          set -euo pipefail
+++          apksigner=$(ls -1d "$ANDROID_HOME"/build-tools/*/apksigner | sort -V | tail -n 1)
+++          keystore="$GITHUB_WORKSPACE/app/android/wake-ci.jks"
+++          for apk in app/build/app/outputs/flutter-apk/*.apk; do
+++            if ! "$apksigner" verify --print-certs "$apk" | grep -q 'CN=dsh-go-wake'; then
+++              echo "::notice file=$apk::not the CI key; signing it here"
+++              aligned="${apk%.apk}-aligned.apk"
+++              "$(dirname "$apksigner")/zipalign" -f -p 4 "$apk" "$aligned"
+++              "$apksigner" sign --ks "$keystore" --ks-pass pass:dshpass \
+++                --key-pass pass:dshpass --ks-key-alias dshgo \
+++                --out "${apk%.apk}-signed.apk" "$aligned"
+++              mv -f "${apk%.apk}-signed.apk" "$apk"
+++              rm -f "$aligned"
+++            fi
+++            "$apksigner" verify --print-certs "$apk" | grep -q 'CN=dsh-go-wake'
+++            echo "$(basename "$apk"): $(du -h "$apk" | cut -f1)"
+++          done
+++
+++      - name: Upload the APK
+++        uses: actions/upload-artifact@v4
+++        with:
+++          name: dsh-go-wake-apk
+++          path: app/build/app/outputs/flutter-apk/*.apk
+++          if-no-files-found: error
+++          retention-days: 30
+++
+++      # Where the APK is, without leaving the run page to find out.
+++      - name: Say where the APK is
+++        if: success()
+++        run: |
+++          {
+++            echo '### dsh-go-wake-apk'
+++            echo ''
+++            echo 'Actions page -> this run -> Artifacts -> **dsh-go-wake-apk**.'
+++            echo ''
+++            echo '| APK | Size | versionCode |'
+++            echo '|---|---|---|'
+++            aapt2=$(ls -1d "$ANDROID_HOME"/build-tools/*/aapt2 | sort -V | tail -n 1)
+++            for apk in app/build/app/outputs/flutter-apk/*.apk; do
+++              badge=$("$aapt2" dump badging "$apk" 2>/dev/null | sed -n 's/^package:.*versionCode=.\([0-9]*\).*/\1/p')
+++              echo "| $(basename "$apk") | $(du -h "$apk" | cut -f1) | ${badge:-?} |"
+++            done
+++            echo ''
+++            echo 'Self-signed, unlike the official build: uninstall the official DSH Go'
+++            echo 'first (its local data goes; back it up).'
+++          } >> "$GITHUB_STEP_SUMMARY"
++diff --git a/app/android/app/src/main/AndroidManifest.xml b/app/android/app/src/main/AndroidManifest.xml
++index 1473ba2..dcfb9c7 100644
++--- a/app/android/app/src/main/AndroidManifest.xml
+++++ b/app/android/app/src/main/AndroidManifest.xml
++@@ -6,6 +6,8 @@
++     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
++     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
++     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+++    <!-- 语音唤醒 (wake/WakeWordService.kt): the always-on listener is a microphone foreground service. -->
+++    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
++     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
++     <!-- The live activity (notify/LiveActivity.kt): Android 16 QPR1+ promotes it to a Live Update.
++          Normal, granted at install; older systems skip a permission they don't define. -->
++@@ -256,6 +258,15 @@
++                 android:value="Runs the user's local DeepSeek Harness agent server" />
++         </service>
++ 
+++        <!-- 语音唤醒: the always-on listener (wake/WakeWordService.kt). It holds the microphone in
+++             the background with the screen off, and stops itself whenever dictation or a call
+++             takes the microphone (nativemedia/MicArbiter.kt). -->
+++        <service
+++            android:name=".wake.WakeWordService"
+++            android:exported="false"
+++            android:foregroundServiceType="microphone">
+++        </service>
+++
++         <!-- Keeps the floating pet's process up when only remote hosts are used (pet/PetOverlayService.kt). -->
++         <service
++             android:name=".pet.PetOverlayService"
++@@ -327,6 +338,14 @@
++         </receiver>
++         <service android:name=".phone.background.PrivilegedKeepJob" android:permission="android.permission.BIND_JOB_SERVICE" android:exported="false" />
++ 
+++        <!-- 语音唤醒: listening comes back after a reboot without opening the app (wake/WakeBootReceiver.kt). -->
+++        <receiver android:name=".wake.WakeBootReceiver" android:exported="false">
+++            <intent-filter>
+++                <action android:name="android.intent.action.BOOT_COMPLETED" />
+++                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+++            </intent-filter>
+++        </receiver>
+++
++         <!-- Chat artifacts: hands one file at a time to the app that opens it (files/FilesPlugin.kt). -->
++         <provider
++             android:name="androidx.core.content.FileProvider"
++diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/MainActivity.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/MainActivity.kt
++index f7f9490..a5168f0 100644
++--- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/MainActivity.kt
+++++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/MainActivity.kt
++@@ -8,6 +8,7 @@ import android.content.res.Configuration
++ import android.graphics.Color
++ import android.os.Build
++ import android.os.Bundle
+++import android.view.WindowManager
++ import io.flutter.embedding.android.FlutterActivity
++ import io.flutter.embedding.engine.FlutterEngine
++ import io.flutter.embedding.engine.FlutterEngineCache
++@@ -66,6 +67,8 @@ class MainActivity : FlutterActivity() {
++             engine.plugins.add(io.github.ccch1mneyyy.dsh_app.usage.UsagePlugin())
++             engine.plugins.add(io.github.ccch1mneyyy.dsh_app.companion.CompanionVoicePlugin())
++             engine.plugins.add(io.github.ccch1mneyyy.dsh_app.speech.SpeechPlugin())
+++            // 语音唤醒: the always-on listener's switch, and the frames it hears.
+++            engine.plugins.add(io.github.ccch1mneyyy.dsh_app.wake.WakeWordPlugin())
++             engine.plugins.add(io.github.ccch1mneyyy.dsh_app.companion.CompanionWidgetPlugin())
++             engine.dartExecutor.executeDartEntrypoint(DartExecutor.DartEntrypoint.createDefault())
++             cache.put(ENGINE_ID, engine)
++@@ -117,6 +120,21 @@ class MainActivity : FlutterActivity() {
++     override fun onResume() {
++         super.onResume()
++         io.github.ccch1mneyyy.dsh_app.phone.background.BackgroundControl.get(applicationContext).restoreKeptChannel()
+++        // 熄屏唤醒: the wake word brought the app up while the screen was off; the call page is
+++        // about to be pushed, so the screen comes on and the keyguard does not sit on top of it.
+++        if (io.github.ccch1mneyyy.dsh_app.wake.WakeBus.turnScreenOn) {
+++            io.github.ccch1mneyyy.dsh_app.wake.WakeBus.turnScreenOn = false
+++            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
+++                setTurnScreenOn(true)
+++                setShowWhenLocked(true)
+++            } else {
+++                @Suppress("DEPRECATION")
+++                window.addFlags(
+++                    WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON or
+++                        WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED,
+++                )
+++            }
+++        }
++         inForeground = true
++         // Coming back counts as activity: the first frames may not be scheduled yet.
++         framesActive = true
++diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/wake/WakeBootReceiver.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/wake/WakeBootReceiver.kt
++new file mode 100644
++index 0000000..be0fa26
++--- /dev/null
+++++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/wake/WakeBootReceiver.kt
++@@ -0,0 +1,29 @@
+++package io.github.ccch1mneyyy.dsh_app.wake
+++
+++import android.content.BroadcastReceiver
+++import android.content.Context
+++import android.content.Intent
+++import android.os.Build
+++import android.util.Log
+++
+++/**
+++ * 重启后恢复监听: the setting is remembered natively ([WakePrefs]), so listening can come back
+++ * after a reboot without the app being opened first.
+++ *
+++ * Android 14 (API 34) and later refuse a microphone foreground service started from
+++ * BOOT_COMPLETED — the platform does not hand the microphone to a background start, whatever the
+++ * app asks. There the flag is left standing and listening comes back the moment the app's Dart
+++ * side runs again (which is also what the widget, the launcher and a notification tap do).
+++ */
+++class WakeBootReceiver : BroadcastReceiver() {
+++    override fun onReceive(context: Context, intent: Intent) {
+++        val action = intent.action
+++        if (action != Intent.ACTION_BOOT_COMPLETED && action != Intent.ACTION_MY_PACKAGE_REPLACED) return
+++        if (!WakePrefs.enabled(context)) return
+++        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+++            Log.i("DshWake", "boot: microphone services cannot start from BOOT_COMPLETED on API 34+; listening resumes with the app")
+++            return
+++        }
+++        WakeWordService.ensure(context, true)
+++    }
+++}
++diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/wake/WakeCapture.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/wake/WakeCapture.kt
++new file mode 100644
++index 0000000..14a574c
++--- /dev/null
+++++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/wake/WakeCapture.kt
++@@ -0,0 +1,141 @@
+++package io.github.ccch1mneyyy.dsh_app.wake
+++
+++import android.annotation.SuppressLint
+++import android.media.AudioFormat
+++import android.media.AudioRecord
+++import android.media.MediaRecorder
+++import android.os.SystemClock
+++import io.github.ccch1mneyyy.dsh_app.nativemedia.SpeechGate
+++
+++/**
+++ * 常驻监听的麦克风: 16 kHz mono PCM16 from the noise-suppressed recognition source, cut into
+++ * 20 ms frames; only frames inside a burst of speech are handed on, so the recognizer in Dart
+++ * wakes for speech and sleeps through a quiet room (the always-on cost is one read loop).
+++ *
+++ * No echo canceller here: while the app plays anything the call page owns the microphone and
+++ * this loop has already given it up ([WakeWordService] is a [MicArbiter] holder).
+++ *
+++ * [stop] ends the capture before it returns (it waits briefly for the thread), so the
+++ * microphone is free for a call right after.
+++ */
+++class WakeCapture(
+++    private val onFrame: (ShortArray) -> Unit,
+++    /** The burst of speech ended: the Dart side resets its recognizer stream. */
+++    private val onSpeechEnd: () -> Unit,
+++    private val onError: (String) -> Unit,
+++) {
+++    private var record: AudioRecord? = null
+++    private var thread: Thread? = null
+++    @Volatile private var running = false
+++    private var session = 0
+++
+++    val active get() = record != null
+++
+++    @SuppressLint("MissingPermission") // WakeWordService checks RECORD_AUDIO before starting.
+++    fun start(): Boolean {
+++        stop()
+++        val min = AudioRecord.getMinBufferSize(RATE, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT)
+++        if (min <= 0) return false
+++        val r = runCatching {
+++            AudioRecord(
+++                MediaRecorder.AudioSource.VOICE_RECOGNITION,
+++                RATE,
+++                AudioFormat.CHANNEL_IN_MONO,
+++                AudioFormat.ENCODING_PCM_16BIT,
+++                maxOf(min, FRAME * 2 * 10), // 200 ms
+++            )
+++        }.getOrNull() ?: return false
+++        if (r.state != AudioRecord.STATE_INITIALIZED) {
+++            r.release()
+++            return false
+++        }
+++        val started = runCatching { r.startRecording() }.isSuccess && r.recordingState == AudioRecord.RECORDSTATE_RECORDING
+++        if (!started) {
+++            r.release()
+++            return false
+++        }
+++        record = r
+++        running = true
+++        val mine = ++session
+++        thread = Thread({ capture(r, mine) }, "dsh-wake").also { it.start() }
+++        return true
+++    }
+++
+++    private fun capture(r: AudioRecord, mine: Int) {
+++        val frame = ShortArray(FRAME)
+++        var filled = 0
+++        var floor = Double.NaN
+++        var loud = 0
+++        var speaking = false
+++        var lastLoud = 0L
+++        try {
+++            while (running) {
+++                val n = r.read(frame, filled, frame.size - filled)
+++                if (!running) break
+++                if (n < 0) {
+++                    report(mine) { onError("capture") }
+++                    break
+++                }
+++                filled += n
+++                if (filled < frame.size) continue
+++                filled = 0
+++                val now = SystemClock.elapsedRealtime()
+++                val level = SpeechGate.levelOf(frame, frame.size)
+++                // 噪声地板 follows a quiet room down at once and up slowly, so a fan or a road
+++                // does not keep the gate open and a person still opens it.
+++                floor = if (floor.isNaN()) level else minOf(level, floor + FLOOR_RISE_DB)
+++                val hot = level > floor + MARGIN_DB
+++                loud = if (hot) loud + 1 else 0
+++                if (hot) lastLoud = now
+++                if (!speaking && loud >= LOUD_FRAMES) {
+++                    speaking = true
+++                }
+++                if (!speaking) continue
+++                if (now - lastLoud > HANGOVER_MS) {
+++                    speaking = false
+++                    report(mine) { onSpeechEnd() }
+++                    continue
+++                }
+++                val copy = frame.copyOf()
+++                report(mine) { onFrame(copy) }
+++            }
+++        } catch (_: RuntimeException) {
+++            report(mine) { onError("capture") }
+++        } finally {
+++            frame.fill(0)
+++        }
+++    }
+++
+++    private fun report(mine: Int, block: () -> Unit) {
+++        if (mine == session && running) block()
+++    }
+++
+++    /** Ends the capture: the thread leaves its read and the recorder is released. */
+++    fun stop(): Boolean {
+++        session++
+++        running = false
+++        val r = record ?: return true
+++        record = null
+++        runCatching { r.stop() }
+++        val t = thread
+++        thread = null
+++        runCatching { t?.join(JOIN_MS) }
+++        val ended = t?.isAlive != true
+++        runCatching { r.release() }
+++        return ended
+++    }
+++
+++    private companion object {
+++        const val RATE = 16000
+++        const val FRAME = 320 // 20 ms
+++        const val JOIN_MS = 300L
+++        /** dB over the learned floor a frame needs before it counts as speech. */
+++        const val MARGIN_DB = 9.0
+++        /** How fast the floor may rise per frame (2 dB a second at 50 frames a second). */
+++        const val FLOOR_RISE_DB = 0.04
+++        /** 60 ms of speech before the burst opens (a knock or a click does not). */
+++        const val LOUD_FRAMES = 3
+++        /** Quiet that closes the burst; the trailing word is still inside it. */
+++        const val HANGOVER_MS = 700L
+++    }
+++}
++diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/wake/WakeWordPlugin.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/wake/WakeWordPlugin.kt
++new file mode 100644
++index 0000000..5b33b5d
++--- /dev/null
+++++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/wake/WakeWordPlugin.kt
++@@ -0,0 +1,129 @@
+++package io.github.ccch1mneyyy.dsh_app.wake
+++
+++import android.content.Context
+++import android.content.Intent
+++import android.content.pm.PackageManager
+++import android.os.Handler
+++import android.os.Looper
+++import io.flutter.embedding.engine.plugins.FlutterPlugin
+++import io.flutter.plugin.common.BinaryMessenger
+++import io.flutter.plugin.common.EventChannel
+++import io.flutter.plugin.common.MethodCall
+++import io.flutter.plugin.common.MethodChannel
+++import io.github.ccch1mneyyy.dsh_app.MainActivity
+++
+++/**
+++ * In-process wiring between the listening service and the Dart side: frames of speech, what the
+++ * service is doing, and the one request the activity has to answer (bringing itself forward with
+++ * the screen on).
+++ */
+++internal object WakeBus {
+++    /** Set while Dart listens; frames are dropped when nobody is. */
+++    @Volatile var frameSink: ((ByteArray) -> Unit)? = null
+++
+++    @Volatile var eventSink: ((Map<String, Any?>) -> Unit)? = null
+++
+++    /** The activity applies this on its next resume (熄屏喊醒: the screen comes on). */
+++    @Volatile var turnScreenOn = false
+++
+++    fun frame(frame: ShortArray) {
+++        val sink = frameSink ?: return
+++        val bytes = ByteArray(frame.size * 2)
+++        for (i in frame.indices) {
+++            val sample = frame[i].toInt()
+++            bytes[i * 2] = sample.toByte()
+++            bytes[i * 2 + 1] = (sample shr 8).toByte()
+++        }
+++        sink(bytes)
+++    }
+++
+++    fun emit(event: Map<String, Any?>) {
+++        eventSink?.invoke(event)
+++    }
+++}
+++
+++/**
+++ * 语音唤醒 (语音唤醒设置): the always-on listener's switch, its state, and the frames it hears.
+++ *
+++ *   dsh/wake         start / stop / status / present
+++ *   dsh/wake/events  wake.pcm · wake.listening · wake.stopped · wake.speechEnd · wake.yield ·
+++ *                    wake.disabled · wake.error
+++ *
+++ * Dictation and calls keep the microphone through [io.github.ccch1mneyyy.dsh_app.nativemedia.MicArbiter];
+++ * the service yields on its own and says so with `wake.yield`.
+++ */
+++class WakeWordPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, EventChannel.StreamHandler {
+++    private lateinit var context: Context
+++    private val main = Handler(Looper.getMainLooper())
+++    private var events: EventChannel.EventSink? = null
+++    private var channel: MethodChannel? = null
+++
+++    override fun onAttachedToEngine(binding: FlutterPlugin.FlutterPluginBinding) {
+++        context = binding.applicationContext
+++        attach(binding.binaryMessenger)
+++    }
+++
+++    override fun onDetachedFromEngine(binding: FlutterPlugin.FlutterPluginBinding) = detach()
+++
+++    private fun attach(messenger: BinaryMessenger) {
+++        channel = MethodChannel(messenger, CHANNEL).also { it.setMethodCallHandler(this) }
+++        EventChannel(messenger, EVENTS).setStreamHandler(this)
+++    }
+++
+++    private fun detach() {
+++        channel?.setMethodCallHandler(null)
+++        channel = null
+++        events = null
+++        WakeBus.eventSink = null
+++        WakeBus.frameSink = null
+++    }
+++
+++    override fun onMethodCall(call: MethodCall, result: MethodChannel.Result) {
+++        when (call.method) {
+++            "status" -> result.success(status())
+++            "start" -> {
+++                WakeWordService.ensure(context, true)
+++                result.success(true)
+++            }
+++            "stop" -> {
+++                WakeWordService.ensure(context, false)
+++                result.success(true)
+++            }
+++            // 熄屏唤醒: the call page is about to be pushed; the screen has to come on for it.
+++            "present" -> {
+++                WakeBus.turnScreenOn = true
+++                val intent = Intent(context, MainActivity::class.java)
+++                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+++                runCatching { context.startActivity(intent) }
+++                result.success(true)
+++            }
+++            else -> result.notImplemented()
+++        }
+++    }
+++
+++    private fun status(): Map<String, Any?> = mapOf(
+++        "running" to WakeWordService.running,
+++        "enabled" to WakePrefs.enabled(context),
+++        "microphone" to (context.checkSelfPermission(android.Manifest.permission.RECORD_AUDIO) ==
+++            PackageManager.PERMISSION_GRANTED),
+++    )
+++
+++    override fun onListen(arguments: Any?, sink: EventChannel.EventSink?) {
+++        events = sink
+++        WakeBus.eventSink = { event -> main.post { events?.success(event) } }
+++        WakeBus.frameSink = { bytes -> main.post { events?.success(mapOf("kind" to "wake.pcm", "bytes" to bytes)) } }
+++        // What the service is already doing, so a page opened while listening is not wrong.
+++        WakeBus.emit(mapOf("kind" to if (WakeWordService.running) "wake.listening" else "wake.stopped"))
+++    }
+++
+++    override fun onCancel(arguments: Any?) {
+++        events = null
+++        WakeBus.eventSink = null
+++        WakeBus.frameSink = null
+++    }
+++
+++    private companion object {
+++        const val CHANNEL = "dsh/wake"
+++        const val EVENTS = "dsh/wake/events"
+++    }
+++}
++diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/wake/WakeWordService.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/wake/WakeWordService.kt
++new file mode 100644
++index 0000000..67df7da
++--- /dev/null
+++++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/wake/WakeWordService.kt
++@@ -0,0 +1,216 @@
+++package io.github.ccch1mneyyy.dsh_app.wake
+++
+++import android.app.Notification
+++import android.app.NotificationChannel
+++import android.app.NotificationManager
+++import android.app.PendingIntent
+++import android.app.Service
+++import android.content.Context
+++import android.content.Intent
+++import android.content.pm.PackageManager
+++import android.content.pm.ServiceInfo
+++import android.os.Build
+++import android.os.IBinder
+++import android.os.PowerManager
+++import android.util.Log
+++import io.github.ccch1mneyyy.dsh_app.MainActivity
+++import io.github.ccch1mneyyy.dsh_app.R
+++import io.github.ccch1mneyyy.dsh_app.i18n.AppStrings
+++import io.github.ccch1mneyyy.dsh_app.nativemedia.MicArbiter
+++
+++/**
+++ * 语音唤醒的常驻监听: a microphone foreground service that keeps the process (and with it the
+++ * Dart side, which owns the recognizer) alive with the screen off, and hands Dart the frames of
+++ * each burst of speech.
+++ *
+++ * The microphone is shared the way the rest of the app shares it ([MicArbiter]): a dictation or
+++ * a call starting makes [holder] give the microphone up before this returns, and the service
+++ * stops itself — the call page tells Dart when the call ended, and listening starts again.
+++ */
+++class WakeWordService : Service() {
+++    private var capture: WakeCapture? = null
+++    private var wakeLock: PowerManager.WakeLock? = null
+++    private var holding = false
+++
+++    /** Dictation or a call wants the microphone: give it up without waiting. */
+++    private val holder = MicArbiter.Holder {
+++        Log.i(TAG, "microphone taken by dictation; listening stops")
+++        stopListening(yield = true)
+++        stopSelf()
+++    }
+++
+++    override fun onBind(intent: Intent?): IBinder? = null
+++
+++    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+++        if (intent?.action == ACTION_STOP) {
+++            WakePrefs.setEnabled(this, false)
+++            WakeBus.emit(mapOf("kind" to "wake.disabled", "reason" to "notification"))
+++            stopListening(yield = false)
+++            stopSelf()
+++            return START_NOT_STICKY
+++        }
+++        ensureChannel()
+++        val notification = notification(this)
+++        try {
+++            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+++                startForeground(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE)
+++            } else {
+++                startForeground(NOTIFICATION_ID, notification)
+++            }
+++        } catch (e: Exception) {
+++            Log.w(TAG, "listening service could not go foreground", e)
+++            WakeBus.emit(mapOf("kind" to "wake.error", "reason" to "foreground"))
+++            WakePrefs.setEnabled(this, false)
+++            stopSelf()
+++            return START_NOT_STICKY
+++        }
+++        WakePrefs.setEnabled(this, true)
+++        running = true
+++        startListening()
+++        return START_STICKY
+++    }
+++
+++    override fun onDestroy() {
+++        running = false
+++        stopListening(yield = false)
+++        WakeBus.emit(mapOf("kind" to "wake.stopped"))
+++        super.onDestroy()
+++    }
+++
+++    private fun startListening() {
+++        if (capture?.active == true) return
+++        if (checkSelfPermission(android.Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+++            Log.w(TAG, "RECORD_AUDIO not granted; listening stops")
+++            WakeBus.emit(mapOf("kind" to "wake.error", "reason" to "permission"))
+++            WakePrefs.setEnabled(this, false)
+++            stopSelf()
+++            return
+++        }
+++        // Dictation wins: it is not possible to listen while it runs.
+++        if (!MicArbiter.acquire(holder)) {
+++            WakeBus.emit(mapOf("kind" to "wake.error", "reason" to "busy"))
+++            stopSelf()
+++            return
+++        }
+++        holding = true
+++        acquireWakeLock()
+++        val c = capture ?: WakeCapture(
+++            onFrame = { frame -> WakeBus.frame(frame) },
+++            onSpeechEnd = { WakeBus.emit(mapOf("kind" to "wake.speechEnd")) },
+++            onError = { reason ->
+++                WakeBus.emit(mapOf("kind" to "wake.error", "reason" to reason))
+++                stopListening(yield = false)
+++                stopSelf()
+++            },
+++        ).also { capture = it }
+++        if (!c.start()) {
+++            Log.w(TAG, "the microphone could not be opened")
+++            WakeBus.emit(mapOf("kind" to "wake.error", "reason" to "capture"))
+++            stopListening(yield = false)
+++            stopSelf()
+++            return
+++        }
+++        WakeBus.emit(mapOf("kind" to "wake.listening"))
+++    }
+++
+++    private fun stopListening(yield: Boolean) {
+++        capture?.stop()
+++        if (holding) {
+++            MicArbiter.release(holder)
+++            holding = false
+++        }
+++        releaseWakeLock()
+++        if (yield) WakeBus.emit(mapOf("kind" to "wake.yield"))
+++    }
+++
+++    private fun acquireWakeLock() {
+++        if (wakeLock?.isHeld == true) return
+++        val pm = getSystemService(Context.POWER_SERVICE) as? PowerManager ?: return
+++        wakeLock = runCatching {
+++            pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "dsh:wake").apply { setReferenceCounted(false); acquire() }
+++        }.getOrNull()
+++    }
+++
+++    private fun releaseWakeLock() {
+++        runCatching { wakeLock?.takeIf { it.isHeld }?.release() }
+++        wakeLock = null
+++    }
+++
+++    companion object {
+++        private const val TAG = "DshWake"
+++        private const val CHANNEL_ID = "dsh-wake"
+++        private const val NOTIFICATION_ID = 3091
+++        const val ACTION_STOP = "io.github.ccch1mneyyy.dsh_app.WAKE_STOP"
+++
+++        /** A listening service is up in this process. */
+++        @Volatile var running = false
+++            private set
+++
+++        /** Starts or stops the service to match [on]; does nothing when it already matches. */
+++        fun ensure(context: Context, on: Boolean) {
+++            val intent = Intent(context, WakeWordService::class.java)
+++            try {
+++                if (on) {
+++                    context.startForegroundService(intent)
+++                } else {
+++                    context.stopService(intent)
+++                }
+++            } catch (e: Exception) {
+++                // 后台启动被厂商策略拒绝: the setting stays on, the service comes back with the app.
+++                Log.w(TAG, "listening service ${if (on) "start" else "stop"} refused", e)
+++                WakeBus.emit(mapOf("kind" to "wake.error", "reason" to "start"))
+++            }
+++        }
+++
+++        private fun ensureChannel(context: Context) {
+++            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
+++            val nm = context.getSystemService(NotificationManager::class.java) ?: return
+++            nm.createNotificationChannel(
+++                NotificationChannel(
+++                    CHANNEL_ID,
+++                    AppStrings.get(context, R.string.wake_channel),
+++                    NotificationManager.IMPORTANCE_LOW,
+++                ).apply {
+++                    description = AppStrings.get(context, R.string.wake_channel_description)
+++                    setShowBadge(false)
+++                },
+++            )
+++        }
+++
+++        private fun notification(context: Context): Notification {
+++            val open = PendingIntent.getActivity(
+++                context, NOTIFICATION_ID,
+++                Intent(context, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP),
+++                PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+++            )
+++            val stop = PendingIntent.getService(
+++                context, NOTIFICATION_ID + 1,
+++                Intent(context, WakeWordService::class.java).setAction(ACTION_STOP),
+++                PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+++            )
+++            return Notification.Builder(context, CHANNEL_ID)
+++                .setSmallIcon(R.drawable.ic_stat_dsh)
+++                .setContentTitle(AppStrings.APP_NAME)
+++                .setContentText(AppStrings.get(context, R.string.wake_running))
+++                .setOngoing(true)
+++                .setContentIntent(open)
+++                .addAction(Notification.Action.Builder(null, AppStrings.get(context, R.string.wake_stop), stop).build())
+++                .build()
+++        }
+++    }
+++}
+++
+++/** The switch as the native side remembers it, so a boot can restart listening without Dart. */
+++internal object WakePrefs {
+++    private const val PREFS = "dsh_wake"
+++    private const val KEY_ENABLED = "enabled"
+++
+++    fun enabled(context: Context): Boolean = prefs(context).getBoolean(KEY_ENABLED, false)
+++
+++    fun setEnabled(context: Context, enabled: Boolean) {
+++        prefs(context).edit().putBoolean(KEY_ENABLED, enabled).apply()
+++    }
+++
+++    private fun prefs(context: Context) =
+++        (context.applicationContext ?: context).getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+++}
++diff --git a/app/android/app/src/main/res/values-zh/i18n_strings.xml b/app/android/app/src/main/res/values-zh/i18n_strings.xml
++index df3c1bf..d764a29 100644
++--- a/app/android/app/src/main/res/values-zh/i18n_strings.xml
+++++ b/app/android/app/src/main/res/values-zh/i18n_strings.xml
++@@ -111,6 +111,11 @@
++     <string name="pet_settings">宠物设置</string>
++     <string name="pet_channel">悬浮宠物</string>
++     <string name="pet_running">悬浮宠物已开启</string>
+++    <!-- 语音唤醒: 常驻监听通知 (wake/WakeWordService.kt). -->
+++    <string name="wake_channel">语音唤醒</string>
+++    <string name="wake_channel_description">息屏时保持麦克风监听唤醒词</string>
+++    <string name="wake_running">正在监听唤醒词</string>
+++    <string name="wake_stop">关闭</string>
++     <string name="pet_window_title">DSH 宠物</string>
++     <string name="pet_label">宠物</string>
++     <string name="pet_open_channel">从宠物打开</string>
++diff --git a/app/android/app/src/main/res/values/i18n_strings.xml b/app/android/app/src/main/res/values/i18n_strings.xml
++index f4c452d..b0839e1 100644
++--- a/app/android/app/src/main/res/values/i18n_strings.xml
+++++ b/app/android/app/src/main/res/values/i18n_strings.xml
++@@ -116,6 +116,11 @@
++     <string name="pet_settings">Pet settings</string>
++     <string name="pet_channel">Floating pet</string>
++     <string name="pet_running">Floating pet is on</string>
+++    <!-- 语音唤醒: the always-on listener's notification (wake/WakeWordService.kt). -->
+++    <string name="wake_channel">Voice wake word</string>
+++    <string name="wake_channel_description">Keeps the microphone listening for the wake word while the screen is off</string>
+++    <string name="wake_running">Listening for the wake word</string>
+++    <string name="wake_stop">Turn off</string>
++     <string name="pet_window_title">DSH pet</string>
++     <string name="pet_label">Pet</string>
++     <string name="pet_open_channel">Open from pet</string>
++diff --git a/app/lib/app.dart b/app/lib/app.dart
++index 1b1e7de..ef3c479 100644
++--- a/app/lib/app.dart
+++++ b/app/lib/app.dart
++@@ -76,6 +76,8 @@ class _DshAppState extends ConsumerState<DshApp> with WidgetsBindingObserver {
++     if (ref.read(starPromptGateProvider)) ref.read(starPromptProvider);
++     // 伙伴小屋: her invitation ledger is read now, so it is known before the room opens.
++     ref.read(companionInitiativeProvider);
+++    // 语音唤醒: if it was left on, listening comes back with the app (voice/wake_word.dart).
+++    ref.read(wakeWordProvider);
++     // 刷新率: some systems cap third-party apps at 60 Hz and then show their per-app
++     // switch as an in-app setting; the app answers frames to run at the fastest rate
++     // while it is actually drawing (see RefreshRateService).
++diff --git a/app/lib/l10n/app_en.arb b/app/lib/l10n/app_en.arb
++index e1de712..4067f26 100644
++--- a/app/lib/l10n/app_en.arb
+++++ b/app/lib/l10n/app_en.arb
++@@ -5756,6 +5756,20 @@
++   "speechCallVisualRing": "Ring",
++   "speechCallVisualMono": "Line",
++   "speechCallVisualGlass": "Orb",
+++  "speechWakeSection": "Voice wake word",
+++  "speechWakeFooter": "Always-on listening keeps the microphone, also with the screen off, and leaves a notification. Calls and dictation take the microphone first; listening comes back afterwards.",
+++  "speechWakeEnable": "Always-on listening",
+++  "speechWakeKeyword": "Wake word",
+++  "speechWakeKeywordHint": "Saying this opens a voice call; 「小安小安」 by default",
+++  "speechWakeChime": "Chime",
+++  "speechWakeVibrate": "Vibrate",
+++  "speechWakeStateListening": "Listening",
+++  "speechWakeStateStarting": "Starting",
+++  "speechWakeStatePaused": "Paused; coming back shortly",
+++  "speechWakeStatePermission": "Microphone permission is missing",
+++  "speechWakeStateModel": "Download the live-words model first",
+++  "speechWakeStateFailed": "Listening could not start",
+++  "speechWakeStateOff": "Off",
++   "speechInsecure": "That service's address isn't https; the key can't be sent that way",
++   "starPromptTitle": "{hours, plural, =0{I’ve kept you company in DSH Go for half an hour now~} =1{I’ve kept you company in DSH Go for an hour now~} other{I’ve kept you company in DSH Go for {hours} hours now~}}",
++   "starPromptBody": "DSH Go is free and open source. If it’s made your phone a little nicer to use, please give it a Star — it means so much to this little whale!",
++diff --git a/app/lib/l10n/app_zh.arb b/app/lib/l10n/app_zh.arb
++index ec1a316..ab00fd9 100644
++--- a/app/lib/l10n/app_zh.arb
+++++ b/app/lib/l10n/app_zh.arb
++@@ -11221,6 +11221,20 @@
++   "speechCallVisualRing": "光环",
++   "speechCallVisualMono": "细线",
++   "speechCallVisualGlass": "光球",
+++  "speechWakeSection": "语音唤醒",
+++  "speechWakeFooter": "常驻监听会一直占用麦克风（息屏也在），通知栏留一条常驻通知。通话、听写开始时会自动让位，结束后自动恢复。",
+++  "speechWakeEnable": "常驻监听",
+++  "speechWakeKeyword": "唤醒词",
+++  "speechWakeKeywordHint": "说出这句就进入语音通话，默认「小安小安」",
+++  "speechWakeChime": "唤醒提示音",
+++  "speechWakeVibrate": "唤醒震动",
+++  "speechWakeStateListening": "正在监听",
+++  "speechWakeStateStarting": "正在启动监听",
+++  "speechWakeStatePaused": "已暂停，稍后自动恢复",
+++  "speechWakeStatePermission": "缺少麦克风权限",
+++  "speechWakeStateModel": "需先在实时字幕里下载模型",
+++  "speechWakeStateFailed": "监听没能启动",
+++  "speechWakeStateOff": "已关闭",
++   "speechInsecure": "这个云端服务的地址不是 https，Key 不能这样发出去",
++   "starPromptTitle": "{hours, plural, =0{本鱼已经在 DSH Go 里陪你半个小时啦⁠~} =1{本鱼已经在 DSH Go 里陪你一个小时啦⁠~} other{本鱼已经在 DSH Go 里陪你 {hours} 个小时啦⁠~}}",
++   "@starPromptTitle": {
++diff --git a/app/lib/l10n/parts/speech_en.arb b/app/lib/l10n/parts/speech_en.arb
++index 1b20cf2..5de2ab1 100644
++--- a/app/lib/l10n/parts/speech_en.arb
+++++ b/app/lib/l10n/parts/speech_en.arb
++@@ -134,5 +134,19 @@
++   "speechCallVisualRing": "Ring",
++   "speechCallVisualMono": "Line",
++   "speechCallVisualGlass": "Orb",
+++  "speechWakeSection": "Voice wake word",
+++  "speechWakeFooter": "Always-on listening keeps the microphone, also with the screen off, and leaves a notification. Calls and dictation take the microphone first; listening comes back afterwards.",
+++  "speechWakeEnable": "Always-on listening",
+++  "speechWakeKeyword": "Wake word",
+++  "speechWakeKeywordHint": "Saying this opens a voice call; 「小安小安」 by default",
+++  "speechWakeChime": "Chime",
+++  "speechWakeVibrate": "Vibrate",
+++  "speechWakeStateListening": "Listening",
+++  "speechWakeStateStarting": "Starting",
+++  "speechWakeStatePaused": "Paused; coming back shortly",
+++  "speechWakeStatePermission": "Microphone permission is missing",
+++  "speechWakeStateModel": "Download the live-words model first",
+++  "speechWakeStateFailed": "Listening could not start",
+++  "speechWakeStateOff": "Off",
++   "speechInsecure": "That service's address isn't https; the key can't be sent that way"
++ }
++diff --git a/app/lib/l10n/parts/speech_zh.arb b/app/lib/l10n/parts/speech_zh.arb
++index 3822fa2..0dd55a4 100644
++--- a/app/lib/l10n/parts/speech_zh.arb
+++++ b/app/lib/l10n/parts/speech_zh.arb
++@@ -134,5 +134,19 @@
++   "speechCallVisualRing": "光环",
++   "speechCallVisualMono": "细线",
++   "speechCallVisualGlass": "光球",
+++  "speechWakeSection": "语音唤醒",
+++  "speechWakeFooter": "常驻监听会一直占用麦克风（息屏也在），通知栏留一条常驻通知。通话、听写开始时会自动让位，结束后自动恢复。",
+++  "speechWakeEnable": "常驻监听",
+++  "speechWakeKeyword": "唤醒词",
+++  "speechWakeKeywordHint": "说出这句就进入语音通话，默认「小安小安」",
+++  "speechWakeChime": "唤醒提示音",
+++  "speechWakeVibrate": "唤醒震动",
+++  "speechWakeStateListening": "正在监听",
+++  "speechWakeStateStarting": "正在启动监听",
+++  "speechWakeStatePaused": "已暂停，稍后自动恢复",
+++  "speechWakeStatePermission": "缺少麦克风权限",
+++  "speechWakeStateModel": "需先在实时字幕里下载模型",
+++  "speechWakeStateFailed": "监听没能启动",
+++  "speechWakeStateOff": "已关闭",
++   "speechInsecure": "这个云端服务的地址不是 https，Key 不能这样发出去"
++ }
++diff --git a/app/lib/ui/chat/chat_screen.dart b/app/lib/ui/chat/chat_screen.dart
++index 46d2fd3..d9540df 100644
++--- a/app/lib/ui/chat/chat_screen.dart
+++++ b/app/lib/ui/chat/chat_screen.dart
++@@ -28,6 +28,7 @@ import '../../state/streaming_pcm_state.dart';
++ import '../../voice/live_words.dart';
++ import '../../voice/live_words_model.dart';
++ import '../../voice/streaming_pcm.dart';
+++import '../../voice/wake_word.dart';
++ import '../../state/agents_state.dart' show subagentParentProvider;
++ import '../../state/attachments.dart';
++ import '../../state/balance_state.dart';
++@@ -366,6 +367,10 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
++     WidgetsBinding.instance.addObserver(this);
++     _scheduleInteraction();
++     ref.listenManual(currentSessionProvider, (_, _) => _scheduleInteraction());
+++    // 语音唤醒: the wake word opens this conversation's call (voice/wake_word.dart).
+++    ref.listenManual(wakeCallRequestProvider, (before, after) {
+++      if (after > (before ?? 0)) unawaited(_startCall(() => mounted));
+++    });
++     _voice = VoiceInputController(
++       input: _input,
++       bridge: ref.read(voiceBridgeProvider),
++@@ -1477,9 +1482,16 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
++   /// 「语音通话」 with this conversation (a new chat gets its conversation
++   /// with the first thing said); [ownsDraft]: still the conversation it was asked from.
++   Future<void> _startCall(bool Function() ownsDraft) async {
+++    // 语音唤醒 gives the microphone up before the call takes it (voice/wake_word.dart).
+++    final wake = ref.read(wakeWordProvider.notifier);
+++    await wake.suspend();
++     // Dictation gives the microphone back first (what it heard so far goes, as on a draft switch).
++     await _voice.cancel();
++-    if (!mounted || !ownsDraft()) return;
+++    if (!mounted || !ownsDraft()) {
+++      // No call after all: listening comes back, so a wake word that missed does not leave it off.
+++      unawaited(wake.resume());
+++      return;
+++    }
++     final host = ref.read(activeHostProvider);
++     final sessionId = ref.read(currentSessionProvider);
++     final listed = sessionId == null ? null : ref.read(chatProvider(sessionId)).title;
++@@ -1500,7 +1512,10 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
++           if (owed != null && !await _applyOwedSetup(host, id, owed, () => mounted)) return null;
++           return id;
++         },
++-      ),
+++      ).whenComplete(() {
+++        // 挂断后监听自动恢复 (the call page popped).
+++        unawaited(wake.resume());
+++      }),
++     );
++   }
++ 
++diff --git a/app/lib/ui/settings/voice_settings_page.dart b/app/lib/ui/settings/voice_settings_page.dart
++index 38418e6..a43eeb8 100644
++--- a/app/lib/ui/settings/voice_settings_page.dart
+++++ b/app/lib/ui/settings/voice_settings_page.dart
++@@ -13,6 +13,8 @@ import '../../state/streaming_asr_state.dart' show SystemAsrReadiness, ohosStrea
++ import '../../state/voice_model_state.dart';
++ import '../../state/voice_settings.dart';
++ import '../../state/voice_state.dart';
+++import '../../voice/wake_settings.dart';
+++import '../../voice/wake_word.dart';
++ import '../common/app_dialog.dart';
++ import '../companion/companion_voice_page.dart';
++ import '../providers/provider_widgets.dart';
++@@ -22,6 +24,44 @@ import '../theme/app_icons.dart';
++ import '../theme/theme.dart';
++ import 'settings_widgets.dart';
++ 
+++/// 语音唤醒 row's second line: what the listener is doing right now.
+++String wakeStatusText(L10n l10n, WakeStatus status) => switch (status.listening) {
+++  WakeListening.listening => l10n.speechWakeStateListening,
+++  WakeListening.starting => l10n.speechWakeStateStarting,
+++  WakeListening.paused => l10n.speechWakeStatePaused,
+++  WakeListening.unavailable =>
+++    status.reason == 'permission' ? l10n.speechWakeStatePermission : l10n.speechWakeStateModel,
+++  WakeListening.failed => l10n.speechWakeStateFailed,
+++  WakeListening.off => l10n.speechWakeStateOff,
+++};
+++
+++/// 唤醒词 typed by the person; the phrase is matched inside what the recognizer heard.
+++Future<void> editWakeKeyword(BuildContext context, WidgetRef ref, String current) async {
+++  final l10n = context.l10n;
+++  final text = TextEditingController(text: current);
+++  final chosen = await showAppDialog<String>(
+++    context: context,
+++    builder: (dialog) => AlertDialog(
+++      title: Text(l10n.speechWakeKeyword),
+++      content: TextField(
+++        controller: text,
+++        autofocus: true,
+++        textInputAction: TextInputAction.done,
+++        decoration: InputDecoration(hintText: WakeSettings.defaultKeyword),
+++        onSubmitted: (value) => Navigator.pop(dialog, value),
+++      ),
+++      actions: [
+++        TextButton(onPressed: () => Navigator.pop(dialog), child: Text(l10n.commonCancel)),
+++        FilledButton(onPressed: () => Navigator.pop(dialog, text.text), child: Text(l10n.commonSave)),
+++      ],
+++    ),
+++  );
+++  text.dispose();
+++  final keyword = chosen?.trim();
+++  if (keyword == null || keyword.isEmpty) return;
+++  await ref.read(wakeSettingsProvider.notifier).edit((saved) => saved.copyWith(keyword: keyword));
+++}
+++
++ String voiceModeLabel(L10n l10n, VoiceMode mode) => switch (mode) {
++   VoiceMode.auto => l10n.voiceModeAuto,
++   VoiceMode.deepseek => l10n.voiceModeDeepseek,
++@@ -133,6 +173,9 @@ class _VoiceSettingsPageState extends ConsumerState<VoiceSettingsPage> {
++     final chineseOnly = languages != null && languages.isNotEmpty && languages.every((l) => l.startsWith('zh'));
++     final call = ref.watch(callSettingsProvider);
++     final calls = ref.read(callSettingsProvider.notifier);
+++    final wake = ref.watch(wakeSettingsProvider);
+++    final wakeController = ref.read(wakeWordProvider.notifier);
+++    final listening = ref.watch(wakeWordProvider);
++     return AppPage.list(
++       title: l10n.voiceSettingsTitle,
++       children: [
++@@ -254,6 +297,39 @@ class _VoiceSettingsPageState extends ConsumerState<VoiceSettingsPage> {
++             ),
++           ],
++         ),
+++        SettingsSection(
+++          title: l10n.speechWakeSection,
+++          footer: Text(l10n.speechWakeFooter),
+++          children: [
+++            SettingsSwitchTile(
+++              key: const ValueKey('speech-wake-enable'),
+++              title: l10n.speechWakeEnable,
+++              subtitle: wakeStatusText(l10n, listening),
+++              value: wake.enabled,
+++              onChanged: (on) => unawaited(wakeController.setEnabled(on)),
+++            ),
+++            SettingsTile(
+++              key: const ValueKey('speech-wake-keyword'),
+++              title: l10n.speechWakeKeyword,
+++              subtitle: l10n.speechWakeKeywordHint,
+++              value: Text(wake.keyword),
+++              onTap: () => unawaited(editWakeKeyword(context, ref, wake.keyword)),
+++            ),
+++            SettingsSwitchTile(
+++              key: const ValueKey('speech-wake-chime'),
+++              title: l10n.speechWakeChime,
+++              value: wake.chime,
+++              onChanged: (on) => unawaited(ref.read(wakeSettingsProvider.notifier).edit((saved) => saved.copyWith(chime: on))),
+++            ),
+++            SettingsSwitchTile(
+++              key: const ValueKey('speech-wake-vibrate'),
+++              title: l10n.speechWakeVibrate,
+++              value: wake.vibrate,
+++              onChanged: (on) =>
+++                  unawaited(ref.read(wakeSettingsProvider.notifier).edit((saved) => saved.copyWith(vibrate: on))),
+++            ),
+++          ],
+++        ),
++       ],
++     );
++   }
++diff --git a/app/lib/voice/wake_settings.dart b/app/lib/voice/wake_settings.dart
++new file mode 100644
++index 0000000..5663679
++--- /dev/null
+++++ b/app/lib/voice/wake_settings.dart
++@@ -0,0 +1,98 @@
+++// 语音唤醒的开关与偏好（设置 › 语音 › 语音唤醒）。
+++//
+++// What listening does lives in voice/wake_word.dart; this file only holds what the person
+++// chose, the way the other speech settings do (speech/speech_settings.dart).
+++
+++import 'dart:convert';
+++
+++import 'package:flutter_riverpod/flutter_riverpod.dart';
+++import 'package:shared_preferences/shared_preferences.dart';
+++
+++class WakeSettings {
+++  const WakeSettings({
+++    this.enabled = false,
+++    this.keyword = defaultKeyword,
+++    this.chime = true,
+++    this.vibrate = true,
+++  });
+++
+++  /// 小安小安: what the phone answers to until the person types another phrase.
+++  static const defaultKeyword = '小安小安';
+++
+++  /// 常驻监听：the microphone foreground service runs with the screen off.
+++  final bool enabled;
+++
+++  /// 唤醒词：matched inside what the recognizer heard, punctuation and spaces ignored.
+++  final String keyword;
+++
+++  /// 唤醒时的一声提示音。
+++  final bool chime;
+++
+++  /// 唤醒时的一下震动。
+++  final bool vibrate;
+++
+++  WakeSettings copyWith({bool? enabled, String? keyword, bool? chime, bool? vibrate}) => WakeSettings(
+++    enabled: enabled ?? this.enabled,
+++    keyword: keyword ?? this.keyword,
+++    chime: chime ?? this.chime,
+++    vibrate: vibrate ?? this.vibrate,
+++  );
+++}
+++
+++class WakeSettingsController extends Notifier<WakeSettings> {
+++  static const _key = 'speech_wake_v1';
+++  late Future<void> _loaded;
+++
+++  @override
+++  WakeSettings build() {
+++    _loaded = _load();
+++    return const WakeSettings();
+++  }
+++
+++  Future<void> _load() async {
+++    try {
+++      final prefs = await SharedPreferences.getInstance();
+++      final raw = prefs.getString(_key);
+++      final json = raw == null ? null : jsonDecode(raw);
+++      if (json is! Map || !ref.mounted) return;
+++      state = WakeSettings(
+++        enabled: json['enabled'] == true,
+++        keyword: json['keyword'] is String && (json['keyword'] as String).trim().isNotEmpty
+++            ? (json['keyword'] as String).trim()
+++            : WakeSettings.defaultKeyword,
+++        chime: json['chime'] != false,
+++        vibrate: json['vibrate'] != false,
+++      );
+++    } on Object {
+++      // Defaults for this run.
+++    }
+++  }
+++
+++  /// The settings once the saved ones have been read.
+++  Future<WakeSettings> ready() async {
+++    await _loaded;
+++    return state;
+++  }
+++
+++  /// [change] applied to the saved settings once they are in (not to the defaults shown before).
+++  Future<void> edit(WakeSettings Function(WakeSettings saved) change) async {
+++    await _loaded;
+++    if (ref.mounted) await _keep(change(state));
+++  }
+++
+++  Future<void> _keep(WakeSettings next) async {
+++    state = next;
+++    final prefs = await SharedPreferences.getInstance();
+++    await prefs.setString(
+++      _key,
+++      jsonEncode({
+++        'enabled': next.enabled,
+++        'keyword': next.keyword,
+++        'chime': next.chime,
+++        'vibrate': next.vibrate,
+++      }),
+++    );
+++  }
+++}
+++
+++final wakeSettingsProvider = NotifierProvider<WakeSettingsController, WakeSettings>(WakeSettingsController.new);
++diff --git a/app/lib/voice/wake_word.dart b/app/lib/voice/wake_word.dart
++new file mode 100644
++index 0000000..a6aa174
++--- /dev/null
+++++ b/app/lib/voice/wake_word.dart
++@@ -0,0 +1,422 @@
+++// 语音唤醒（常驻监听）: the switch, the recognizer and what a wake word does.
+++//
+++// Where each piece runs:
+++//   · wake/WakeWordService.kt  — 前台服务（microphone）、PARTIAL_WAKE_LOCK、常驻通知、麦克风让位
+++//   · wake/WakeCapture.kt      — AudioRecord 16 kHz mono, 只把「有人说话」的 20 ms 帧送上来
+++//   · this file                — 复用实时字幕的 sherpa 流式模型，匹配唤醒词，判定命中后的动作
+++//
+++// The model is the one 设置 › 语音 › 实时字幕 already downloads (voice/streaming_asr.dart), so
+++// listening needs no second model on the phone. Live words stay off while listening and the other
+++// way round: both would decode the same microphone twice for nothing.
+++
+++import 'dart:async';
+++import 'dart:io';
+++import 'dart:typed_data';
+++
+++import 'package:flutter/services.dart';
+++import 'package:flutter_riverpod/flutter_riverpod.dart';
+++import 'package:sherpa_onnx/sherpa_onnx.dart' as sherpa;
+++
+++import '../state/streaming_asr_model_state.dart';
+++import 'streaming_asr_model.dart';
+++import 'wake_settings.dart';
+++
+++/// What the listener is doing.
+++enum WakeListening {
+++  /// 常驻监听 off.
+++  off,
+++
+++  /// Asking the service to start.
+++  starting,
+++
+++  /// The service owns the microphone and Dart is decoding its frames.
+++  listening,
+++
+++  /// 让位 or 冷却: not listening, and coming back on its own.
+++  paused,
+++
+++  /// 模型 or 权限 missing: switching it on cannot work yet.
+++  unavailable,
+++
+++  /// The service could not go foreground / open the microphone.
+++  failed,
+++}
+++
+++class WakeStatus {
+++  const WakeStatus({this.listening = WakeListening.off, this.reason, this.hits = 0});
+++
+++  final WakeListening listening;
+++
+++  /// Why it is not listening (`model`, `permission`, `busy`, `foreground`, `capture`, …).
+++  final String? reason;
+++
+++  /// Wake words heard since launch (诊断用).
+++  final int hits;
+++
+++  bool get on => listening == WakeListening.listening || listening == WakeListening.starting;
+++
+++  WakeStatus copyWith({WakeListening? listening, String? reason, bool clearReason = false, int? hits}) => WakeStatus(
+++    listening: listening ?? this.listening,
+++    reason: clearReason ? null : (reason ?? this.reason),
+++    hits: hits ?? this.hits,
+++  );
+++}
+++
+++/// The native side of 语音唤醒 (`dsh/wake`, wake/WakeWordPlugin.kt).
+++class WakePlatform {
+++  const WakePlatform();
+++
+++  static const _methods = MethodChannel('dsh/wake');
+++  static const _events = EventChannel('dsh/wake/events');
+++  static const _voice = MethodChannel('dsh/voice');
+++
+++  Future<Map<Object?, Object?>> status() async =>
+++      await _methods.invokeMapMethod<Object?, Object?>('status') ?? const <Object?, Object?>{};
+++
+++  Future<void> start() => _methods.invokeMethod<void>('start');
+++
+++  Future<void> stop() => _methods.invokeMethod<void>('stop');
+++
+++  /// 熄屏唤醒: the activity comes forward with the screen on (MainActivity.onResume).
+++  Future<void> present() => _methods.invokeMethod<void>('present');
+++
+++  /// RECORD_AUDIO goes through the voice channel, which already owns that request.
+++  Future<bool> requestMicrophone() async {
+++    final state = await _voice.invokeMethod<Object?>('requestPermission');
+++    if (state == 'granted') return true;
+++    return (await status())['microphone'] == true;
+++  }
+++
+++  Stream<Map<Object?, Object?>> get events =>
+++      _events.receiveBroadcastStream().where((event) => event is Map).cast<Map<Object?, Object?>>();
+++}
+++
+++final wakePlatformProvider = Provider<WakePlatform>((ref) => const WakePlatform());
+++
+++class WakeWordController extends Notifier<WakeStatus> {
+++  /// 唤醒后 8 秒内不再触发 (answered, or the same phrase twice).
+++  static const _cooldown = Duration(seconds: 8);
+++
+++  /// A burst longer than this starts a fresh recognizer stream (nothing said for 15 s anyway).
+++  static const _burstLimit = Duration(seconds: 15);
+++
+++  /// A wake word that opened no call (no conversation on screen) comes back after this.
+++  static const _callGrace = Duration(seconds: 20);
+++
+++  StreamSubscription<Map<Object?, Object?>>? _events;
+++  sherpa.OnlineRecognizer? _recognizer;
+++  sherpa.OnlineStream? _stream;
+++  DateTime? _streamStarted;
+++  DateTime? _cooldownUntil;
+++  Timer? _resumeTimer;
+++  String _keyword = '';
+++  String _text = '';
+++  bool _suspended = false;
+++  bool _syncing = false;
+++
+++  @override
+++  WakeStatus build() {
+++    final settings = ref.watch(wakeSettingsProvider);
+++    // A model arriving (设置 › 语音 › 实时字幕 下载完成) is what makes listening possible at all.
+++    final hasModel = ref.watch(streamingAsrModelProvider.select((state) => state.model != null));
+++    _keyword = settings.keyword;
+++    if (_events == null) {
+++      _events = ref.read(wakePlatformProvider).events.listen(_onEvent, onError: (Object _) {});
+++      ref.onDispose(() {
+++        _events?.cancel();
+++        _events = null;
+++        _resumeTimer?.cancel();
+++        _release();
+++      });
+++    }
+++    unawaited(_sync(settings, hasModel: hasModel));
+++    return const WakeStatus();
+++  }
+++
+++  /// 常驻监听 switched on or off from 设置.
+++  Future<void> setEnabled(bool on) async {
+++    await ref.read(wakeSettingsProvider.notifier).edit((saved) => saved.copyWith(enabled: on));
+++    if (!on) await _stopService();
+++  }
+++
+++  /// 通话页打开: the call owns the microphone until [resume].
+++  Future<void> suspend() async {
+++    _suspended = true;
+++    _resumeTimer?.cancel();
+++    await _stopService();
+++    if (ref.mounted) state = state.copyWith(listening: WakeListening.paused, clearReason: true);
+++  }
+++
+++  /// 通话结束: listening comes back (unless it was switched off meanwhile).
+++  Future<void> resume() async {
+++    _suspended = false;
+++    _resumeTimer?.cancel();
+++    final settings = await ref.read(wakeSettingsProvider.notifier).ready();
+++    if (!settings.enabled) return;
+++    await _sync(settings, hasModel: ref.read(streamingAsrModelProvider).model != null);
+++  }
+++
+++  Future<void> _sync(WakeSettings settings, {required bool hasModel}) async {
+++    if (_syncing) return;
+++    _syncing = true;
+++    try {
+++      if (!settings.enabled) {
+++        await _stopService();
+++        if (ref.mounted) state = state.copyWith(listening: WakeListening.off, clearReason: true);
+++        return;
+++      }
+++      if (_suspended) {
+++        if (ref.mounted) state = state.copyWith(listening: WakeListening.paused, clearReason: true);
+++        return;
+++      }
+++      if (!hasModel) {
+++        // 复用实时字幕的模型: without it there is nothing to decode with.
+++        await _stopService();
+++        if (ref.mounted) {
+++          state = state.copyWith(listening: WakeListening.unavailable, reason: 'model');
+++        }
+++        return;
+++      }
+++      if (!_permitted) {
+++        final granted = await _askMicrophone();
+++        _permitted = granted;
+++        if (!granted) {
+++          if (ref.mounted) {
+++            state = state.copyWith(listening: WakeListening.unavailable, reason: 'permission');
+++          }
+++          return;
+++        }
+++      }
+++      if (ref.mounted) state = state.copyWith(listening: WakeListening.starting, clearReason: true);
+++      await _try(() => ref.read(wakePlatformProvider).start());
+++    } finally {
+++      _syncing = false;
+++    }
+++  }
+++
+++  var _permitted = false;
+++
+++  /// The channel is absent on iOS/鸿蒙 and in widget tests: a missing one is "not listening",
+++  /// never an exception in the app's own code path.
+++  Future<bool> _try(Future<void> Function() action) async {
+++    try {
+++      await action();
+++      return true;
+++    } on PlatformException {
+++      return false;
+++    } on MissingPluginException {
+++      return false;
+++    }
+++  }
+++
+++  Future<bool> _askMicrophone() async {
+++    try {
+++      return await ref.read(wakePlatformProvider).requestMicrophone();
+++    } on PlatformException {
+++      return false;
+++    } on MissingPluginException {
+++      return false;
+++    }
+++  }
+++
+++  Future<void> _stopService() async {
+++    _resetStream();
+++    _release();
+++    await _try(() => ref.read(wakePlatformProvider).stop());
+++  }
+++
+++  void _onEvent(Map<Object?, Object?> event) {
+++    switch (event['kind']) {
+++      case 'wake.pcm':
+++        final bytes = event['bytes'];
+++        if (bytes is Uint8List) _feed(bytes);
+++      case 'wake.speechEnd':
+++        // 600 ms quiet (WakeCapture's hangover): nothing said, start a fresh stream.
+++        _resetStream();
+++      case 'wake.listening':
+++        if (ref.mounted) state = state.copyWith(listening: WakeListening.listening, clearReason: true);
+++      case 'wake.yield':
+++        // 麦克风让位: dictation or a call took it; it comes back with that page.
+++        _resetStream();
+++        if (ref.mounted) state = state.copyWith(listening: WakeListening.paused, clearReason: true);
+++      case 'wake.stopped':
+++        if (ref.mounted && state.listening == WakeListening.listening) {
+++          state = state.copyWith(listening: WakeListening.paused, clearReason: true);
+++        }
+++      case 'wake.disabled':
+++        // 通知上的「关闭」= 设置里的开关关掉.
+++        unawaited(ref.read(wakeSettingsProvider.notifier).edit((saved) => saved.copyWith(enabled: false)));
+++        if (ref.mounted) state = state.copyWith(listening: WakeListening.off, clearReason: true);
+++      case 'wake.error':
+++        if (ref.mounted) {
+++          state = state.copyWith(
+++            listening: WakeListening.failed,
+++            reason: event['reason'] is String ? event['reason'] as String : 'service',
+++          );
+++        }
+++    }
+++  }
+++
+++  void _feed(Uint8List bytes) {
+++    if (!ref.read(wakeSettingsProvider).enabled || _suspended) return;
+++    final now = DateTime.now();
+++    final started = _streamStarted;
+++    if (started != null && now.difference(started) > _burstLimit) _resetStream();
+++    if (_ensureRecognizer() == null) return;
+++    final recognizer = _recognizer;
+++    final stream = _stream;
+++    if (recognizer == null || stream == null) return;
+++    final samples = Float32List(bytes.length ~/ 2);
+++    final data = ByteData.sublistView(bytes);
+++    for (var i = 0; i < samples.length; i++) {
+++      samples[i] = data.getInt16(i * 2, Endian.little) / 32768.0;
+++    }
+++    stream.acceptWaveform(samples: samples, sampleRate: 16000);
+++    var decoded = false;
+++    while (recognizer.isReady(stream)) {
+++      recognizer.decode(stream);
+++      decoded = true;
+++    }
+++    if (!decoded) return;
+++    _text = recognizer.getResult(stream).text;
+++    if (_heardWakeWord(_text)) {
+++      unawaited(_fire());
+++    } else if (recognizer.isEndpoint(stream)) {
+++      _resetStream();
+++    }
+++  }
+++
+++  /// 唤醒词 found in what was heard: punctuation, spaces and case ignored.
+++  bool _heardWakeWord(String text) {
+++    final keyword = _compact(_keyword);
+++    if (keyword.isEmpty) return false;
+++    return _compact(text).contains(keyword);
+++  }
+++
+++  static final _noise = RegExp(r'[^0-9A-Za-z\u4e00-\u9fff]+');
+++
+++  /// 纯标点 / 「嗯啊哦」 never matches a keyword that has a letter or a han character in it.
+++  static String _compact(String text) => text.replaceAll(_noise, '').toLowerCase();
+++
+++  Future<void> _fire() async {
+++    final now = DateTime.now();
+++    final until = _cooldownUntil;
+++    if (until != null && now.isBefore(until)) return;
+++    _cooldownUntil = now.add(_cooldown);
+++    final settings = ref.read(wakeSettingsProvider);
+++    if (settings.chime) unawaited(SystemSound.play(SystemSoundType.alert));
+++    if (settings.vibrate) unawaited(HapticFeedback.heavyImpact());
+++    _resetStream();
+++    if (ref.mounted) state = state.copyWith(listening: WakeListening.paused, hits: state.hits + 1, clearReason: true);
+++    // 麦克风让位: the call page records too; the two would cut each other off.
+++    await _stopService();
+++    try {
+++      await ref.read(wakePlatformProvider).present();
+++    } on Object {
+++      // The activity could not be brought forward (or there is no such channel): the caller's
+++      // screen is unchanged, and the call still opens in the app when it comes back.
+++    }
+++    // 没有接上通话（屏幕上没有会话）: listening comes back on its own.
+++    _resumeTimer?.cancel();
+++    _resumeTimer = Timer(_callGrace, () => unawaited(resume()));
+++  }
+++
+++  /// The recognizer for the stream of the 实时字幕 model, built on the first frame.
+++  sherpa.OnlineRecognizer? _ensureRecognizer() {
+++    final existing = _recognizer;
+++    if (existing != null) return existing;
+++    final model = ref.read(streamingAsrModelProvider).model;
+++    if (model == null) return null;
+++    try {
+++      _recognizer = _create(model);
+++      _stream = _recognizer!.createStream();
+++      _streamStarted = DateTime.now();
+++      return _recognizer;
+++    } on Object catch (error) {
+++      if (ref.mounted) {
+++        state = state.copyWith(listening: WakeListening.failed, reason: 'model: $error');
+++      }
+++      return null;
+++    }
+++  }
+++
+++  static sherpa.OnlineRecognizer _create(StreamingAsrModel model) {
+++    for (final path in [model.encoder, model.decoder, model.joiner, model.tokens]) {
+++      final stat = File(path).statSync();
+++      if (stat.type != FileSystemEntityType.file || stat.size == 0) {
+++        throw FileSystemException('wake: model file is missing or empty', path);
+++      }
+++    }
+++    sherpa.initBindings();
+++    return sherpa.OnlineRecognizer(
+++      sherpa.OnlineRecognizerConfig(
+++        model: sherpa.OnlineModelConfig(
+++          transducer: sherpa.OnlineTransducerModelConfig(
+++            encoder: model.encoder,
+++            decoder: model.decoder,
+++            joiner: model.joiner,
+++          ),
+++          tokens: model.tokens,
+++          modelType: 'zipformer',
+++          // One thread: this runs for as long as the phone is on, on frames that are mostly silence.
+++          numThreads: 1,
+++          debug: false,
+++        ),
+++        // A short trailing silence ends a burst quickly; nothing waits 1 s here.
+++        rule2MinTrailingSilence: 0.6,
+++        rule3MinUtteranceLength: 20.0,
+++      ),
+++    );
+++  }
+++
+++  void _resetStream() {
+++    _text = '';
+++    _streamStarted = null;
+++    final recognizer = _recognizer;
+++    final stream = _stream;
+++    if (recognizer == null || stream == null) return;
+++    try {
+++      recognizer.reset(stream);
+++      _streamStarted = DateTime.now();
+++    } on Object {
+++      _release();
+++    }
+++  }
+++
+++  void _release() {
+++    final stream = _stream;
+++    final recognizer = _recognizer;
+++    _stream = null;
+++    _recognizer = null;
+++    _streamStarted = null;
+++    try {
+++      stream?.free();
+++    } on Object {
+++      // Already freed.
+++    }
+++    try {
+++      recognizer?.free();
+++    } on Object {
+++      // Already freed.
+++    }
+++  }
+++}
+++
+++final wakeWordProvider = NotifierProvider<WakeWordController, WakeStatus>(WakeWordController.new);
+++
+++/// 唤醒触发的通话: a counter the open conversation watches (ui/chat/chat_screen.dart).
+++///
+++/// A wake word does not know which conversation is on screen, and the call page needs one, so the
+++/// chime fires this and the screen that owns a conversation answers with its call.
+++final wakeCallRequestProvider = NotifierProvider<WakeCallRequest, int>(WakeCallRequest.new);
+++
+++class WakeCallRequest extends Notifier<int> {
+++  @override
+++  int build() {
+++    // Every 唤醒 asks once, even the same phrase twice in a row.
+++    ref.listen(wakeWordProvider, (before, after) {
+++      if (after.hits > (before?.hits ?? 0)) state = state + 1;
+++    });
+++    return 0;
+++  }
+++}
++diff --git a/docs/wake-word.md b/docs/wake-word.md
++new file mode 100644
++index 0000000..c965696
++--- /dev/null
+++++ b/docs/wake-word.md
++@@ -0,0 +1,88 @@
+++# 语音唤醒（常驻监听）
+++
+++常驻监听麦克风，听到唤醒词就进入当前会话的语音通话页。本文记录改了哪些文件、为什么与
+++「抄一份 sherpa 集成」的常规做法不同，以及在真机上怎么验收。
+++
+++## 一句话架构
+++
+++```
+++wake/WakeWordService.kt   前台服务 (foregroundServiceType="microphone") + PARTIAL_WAKE_LOCK + 常驻通知
+++wake/WakeCapture.kt       AudioRecord 16 kHz mono PCM16，能量门只放「有人说话」的 20 ms 帧
+++        ↓ dsh/wake/events（wake.pcm）
+++voice/wake_word.dart      复用实时字幕的 sherpa 流式模型，匹配唤醒词，8 秒冷却
+++        ↓ wakeCallRequestProvider
+++ui/chat/chat_screen.dart  已有的 _startCall → openChatCall → VoiceCallPage
+++```
+++
+++原生只负责「活着 + 拿麦克风 + 送帧」，判定在 Dart。原因：sherpa 在本仓库是 **Dart FFI**
+++（`app/lib/voice/streaming_asr.dart`），没有 Java 类；而 Flutter 引擎在本进程常驻
+++（`MainActivity.provideFlutterEngine` + `FlutterEngineCache`，`shouldDestroyEngineWithHost = false`），
+++前台服务把进程顶住，Dart 就能一直解码。
+++
+++## 与原方案（照搬小安语音助手）的差异
+++
+++| 原方案 | 本仓库实际做法 | 原因 |
+++|---|---|---|
+++| 往 `assets/solibs/` 放 4 个 .so，按 onnxruntime→c-api→cxx-api→jni 顺序 `System.load` | **不放、不加载** | `pubspec.yaml` 已依赖 `sherpa_onnx 1.13.4` 与 4 个 ABI 包，`onnxruntime-android:1.27.0` 也已引入，`build.gradle.kts` 用 `pickFirsts += "**/libonnxruntime.so"` 处理重复 |
+++| `OfflineRecognizer(null, config)`，第一个参数必须 null | 不适用 | 这里是 Dart FFI 的 `OnlineRecognizer`，没有 `newFromAsset` 那条路径，也就没有那个 native 崩溃 |
+++| 226 MB `model.onnx` + `tokens.txt` 进 assets | 复用「实时字幕」已下载的流式 zipformer（约 198 MB，在应用私有目录） | 不新增资产、不新增授权；代价是使用前需在 设置 › 语音 › 实时字幕 下载一次 |
+++| 每 200 ms 攒 3200 采样 decode 一次 | 20 ms 一帧即时喂流式识别器，由能量门决定要不要送 | 流式 transducer 本来就是增量解码；没人的时候一帧都不送，省电 |
+++| 文本 `contains(唤醒词)` | 同（去掉空格、标点、大小写后再 `contains`） | 纯标点、`嗯/啊/哦` 自然匹配不上 |
+++| 600 ms 安静或累计 15 s 重建 stream | 原生 700 ms hangover 发 `wake.speechEnd` → `recognizer.reset`；15 s 上限同样重置 | 沿用 `SpeechGate.levelOf` 的 dB 口径 |
+++
+++## 改动清单
+++
+++原生（`app/android/app/src/main/`）：
+++
+++- `kotlin/.../wake/WakeCapture.kt` — 采集；`VOICE_RECOGNITION` 源，20 ms 帧，自适应噪声地板 + 9 dB 门限 + 700 ms hangover，`stop()` 同步释放麦克风。
+++- `kotlin/.../wake/WakeWordService.kt` — 前台服务、通知（含「关闭」按钮）、`PARTIAL_WAKE_LOCK`、`MicArbiter` 持有者（听写/通话抢麦时自动让位并 `stopSelf`）、`WakePrefs` 记住开关。
+++- `kotlin/.../wake/WakeWordPlugin.kt` — `dsh/wake`（`start`/`stop`/`status`/`present`）与 `dsh/wake/events`。
+++- `kotlin/.../wake/WakeBootReceiver.kt` — `BOOT_COMPLETED` / `MY_PACKAGE_REPLACED`。
+++- `AndroidManifest.xml` — `FOREGROUND_SERVICE_MICROPHONE` 权限、service（`foregroundServiceType="microphone"`）、receiver。
+++- `MainActivity.kt` — 注册插件；`onResume` 里消费 `WakeBus.turnScreenOn` 做 `setTurnScreenOn` + `setShowWhenLocked`（熄屏唤醒要点亮屏幕）。
+++- `res/values{,-zh}/i18n_strings.xml` — 通知文案。
+++
+++Dart（`app/lib/`）：
+++
+++- `voice/wake_settings.dart` — `speech_wake_v1`（enabled / keyword / chime / vibrate），范式同 `speech/speech_settings.dart`。
+++- `voice/wake_word.dart` — `WakePlatform`、`WakeWordController`、`wakeWordProvider`、`wakeCallRequestProvider`。
+++- `ui/settings/voice_settings_page.dart` — 「语音唤醒」分区：常驻监听、唤醒词、提示音、震动 + 状态行。
+++- `ui/chat/chat_screen.dart` — `wakeCallRequestProvider` → `_startCall`；`_startCall` 前后 `suspend()` / `resume()`。
+++- `app.dart` — 启动时实例化 `wakeWordProvider`，开关开着就恢复监听。
+++- `l10n/parts/speech_{zh,en}.arb` + 合并后的 `app_{zh,en}.arb`（`lib/l10n/gen` 由构建时的 `flutter gen-l10n` 生成，`pubspec.yaml` 已 `generate: true`）。
+++
+++工具：`tooling/build-wake-apk.sh`。
+++
+++## 构建
+++
+++```bash
+++# 一次性（首次）
+++bash tooling/setup-toolchain.sh && source tooling/env.sh
+++
+++# 从此一条命令出 APK
+++bash tooling/build-wake-apk.sh          # arm64，产物 app/build/app/outputs/flutter-apk/app-arm64-release.apk
+++```
+++
+++未配置 `app/android/key.properties` 时是 debug 签名，与官方包签名不同：**装之前先备份，再卸载官方版**。
+++
+++## 验收（对照原定标准）
+++
+++| # | 标准 | 怎么看 |
+++|---|---|---|
+++| 1 | 开启后常驻通知 | 通知栏「正在监听唤醒词」，带「关闭」按钮 |
+++| 2 | 熄屏喊唤醒词进通话页 | 屏幕点亮并进入 `VoiceCallPage`；提示音/震动按设置 |
+++| 3 | 通话中不占麦克风、不被截断 | 日志 `DshWake: microphone taken by dictation; listening stops`；通话不被切 |
+++| 4 | 挂断后监听自动恢复 | `openChatCall` 的 future 完成（页面 pop）后 `resume()`；20 秒兜底也会恢复 |
+++| 5 | 重启后自动恢复 | Android 13 及以下：`BOOT_COMPLETED` 直接拉起服务。**Android 14+ 系统禁止从开机广播启动 microphone 前台服务**，因此改为「开关留存，App 的 Dart 侧一跑起来就恢复」——开机后从桌面/通知/小组件进一次 App 即恢复 |
+++
+++排查：
+++
+++- 状态行显示「需先在实时字幕里下载模型」→ 设置 › 语音 › 实时字幕 下载模型。
+++- 状态行显示「缺少麦克风权限」→ 设置里关一次再开，会走 `dsh/voice` 的权限请求。
+++- 一直「已关闭」但开关是开的 → 看 `adb logcat -s DshWake`（厂商策略拒绝后台启动 foreground service 时会打 `refused`）。
+++
+++## 已知限制
+++
+++- 只做了 Android。iOS（`app/ios`）与鸿蒙（`app/ohos`）没有对应实现；`wake_word.dart` 在 iOS 上会因为通道缺失停在 `off`，不影响其它功能。
+++- 唤醒判定跑在主 Dart isolate：进程被系统杀掉后要等下次启动。常驻通知 + `PARTIAL_WAKE_LOCK` 是常规做法，但国产 ROM 仍需在系统设置里允许自启动/后台运行。
+++- 唤醒词用通用流式模型做子串匹配，不是 sherpa 的 `KeywordSpotter`（需要另外的 kws 模型）。安静环境下 2 字词的误触发率看模型，长一点的词更稳。
++diff --git a/tooling/build-wake-apk.sh b/tooling/build-wake-apk.sh
++new file mode 100644
++index 0000000..1d7f139
++--- /dev/null
+++++ b/tooling/build-wake-apk.sh
++@@ -0,0 +1,68 @@
+++#!/usr/bin/env bash
+++# 语音唤醒: one command from a fresh clone to an APK with 常驻监听 built in.
+++#
+++#   tooling/build-wake-apk.sh                 arm64 APK (a phone)
+++#   tooling/build-wake-apk.sh -f x64          x64 APK (an emulator)
+++#   tooling/build-wake-apk.sh --skip-runtime  runtime/out is already built
+++#
+++# Linux x86_64 only, the same host the rest of the build needs (tooling/setup-toolchain.sh
+++# downloads a linux JDK and a linux Flutter). It does what docs/wake-word.md lists:
+++#
+++#   1. app: resolve packages and regenerate lib/l10n/gen (语音唤醒 has new strings)
+++#   2. runtime/build-runtime.sh <abi>: the Linux runtime the APK carries (skipped when present)
+++#   3. tooling/build-apk.sh: the APK itself, fresh versionCode, debug-signed unless
+++#      app/android/key.properties holds a release key
+++#
+++# The toolchain itself (JDK 17, Flutter, Android SDK/NDK) is not installed here:
+++#   bash tooling/setup-toolchain.sh && source tooling/env.sh
+++set -euo pipefail
+++
+++ROOT=$(CDPATH= cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+++APP="$ROOT/app"
+++
+++flavor=arm64 skip_runtime=0
+++while (($#)); do
+++  case "$1" in
+++    -f|--flavor) flavor=${2:?}; shift 2 ;;
+++    --skip-runtime) skip_runtime=1; shift ;;
+++    -h|--help) sed -n '2,20p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0 ;;
+++    *) echo "build-wake-apk: unknown argument $1" >&2; exit 1 ;;
+++  esac
+++done
+++case "$flavor" in
+++  arm64) abi=arm64-v8a ;;
+++  x64) abi=x86_64 ;;
+++  *) echo "build-wake-apk: flavor must be arm64 or x64" >&2; exit 1 ;;
+++esac
+++
+++die() { echo "build-wake-apk: $*" >&2; exit 1; }
+++step() { printf '\n==> %s\n' "$*"; }
+++
+++command -v flutter >/dev/null || die "flutter is not on PATH (bash tooling/setup-toolchain.sh && source tooling/env.sh)"
+++command -v java >/dev/null || die "java is not on PATH (bash tooling/setup-toolchain.sh && source tooling/env.sh)"
+++command -v python3 >/dev/null || die "python3 is required (l10n merge, runtime build)"
+++
+++step "依赖: flutter pub get"
+++(cd "$APP" && flutter pub get)
+++
+++# lib/l10n/gen is tracked, so the 语音唤醒 strings only reach the build once gen-l10n
+++# has run: pub get first (gen-l10n reads .dart_tool/package_config.json), then merge.
+++step "文案: 合并 parts 并重新生成 L10n"
+++(cd "$APP" && python3 tool/l10n_merge.py)
+++
+++if ((skip_runtime)); then
+++  step "运行时: 跳过 (--skip-runtime)"
+++elif [[ -f "$ROOT/runtime/out/$abi/assets/runtime/manifest.json" ]]; then
+++  step "运行时: 已存在 runtime/out/$abi"
+++else
+++  step "运行时: runtime/build-runtime.sh $abi (解包 Ubuntu base + Node + DSH, 第一次要十几分钟)"
+++  (cd "$ROOT" && bash runtime/build-runtime.sh "$abi")
+++fi
+++
+++step "打包: tooling/build-apk.sh -f $flavor --keep-daemon"
+++(cd "$ROOT" && DSH_BETA_TOKEN_FILE= bash tooling/build-apk.sh -f "$flavor" --keep-daemon)
+++
+++apk="$APP/build/app/outputs/flutter-apk/app-$flavor-release.apk"
+++[[ -f "$apk" ]] || die "the build finished but $apk is missing"
+++printf '\nAPK: %s (%s)\n' "$apk" "$(du -h "$apk" | cut -f1)"
+++printf '装之前: 与官方版签名不同，需要先卸载官方版（本地数据会丢，先备份）。\n'
++-- 
++2.55.0.windows.3
++
++
++From 4c645eaeb6a91c9d5f0a882b00fde0974d7419a0 Mon Sep 17 00:00:00 2001
++From: Zhuanz <zhuanz@users.noreply.github.com>
++Date: Tue, 17 Nov 2026 18:01:50 +0800
++Subject: [PATCH 2/3] ci(wake): build the APK on ubuntu-latest
++MIME-Version: 1.0
++Content-Type: text/plain; charset=UTF-8
++Content-Transfer-Encoding: 8bit
++
++工具链、runtime、APK 一条 job 跑完，产物上传为 dsh-go-wake-apk。
++runner 没有签名密钥，所以 keytool 现场生成一个（dshpass），写
++app/android/key.properties 让 Gradle 用它签，签名不对再用 apksigner 补签；
++另外装 runtime/tawcroot/source.json 钉住的 NDK 28.2.13676358，
++和 flutter.ndkVersion 不一定同版本。
++
++tooling/build-wake-apk.sh 先 pub get 再合并文案：lib/l10n/gen 是跟踪的，
++唤醒的新字符串要 gen-l10n 跑过才进得去。
++---
++ .github/workflows/wake-apk.yml | 28 ++++++++++++++--------------
++ 1 file changed, 14 insertions(+), 14 deletions(-)
++
++diff --git a/.github/workflows/wake-apk.yml b/.github/workflows/wake-apk.yml
++index 5469f53..018dd3f 100644
++--- a/.github/workflows/wake-apk.yml
+++++ b/.github/workflows/wake-apk.yml
++@@ -43,20 +43,19 @@ jobs:
++     timeout-minutes: 60
++     env:
++       FLAVOR: ${{ github.event.inputs.flavor || 'arm64' }}
++-      # The Flutter defaults this repo pins; kept out of the way of the runner's own SDK.
++-      DEV_ROOT: ${{ github.workspace }}/../dev
++     steps:
++       - uses: actions/checkout@v4
++         with:
++           persist-credentials: false
++ 
++       # Keyed on the installer itself: when it changes, its downloads are rebuilt.
+++      # setup-toolchain.sh defaults DEV_ROOT to $HOME/dev, so that is what is cached.
++       - name: Restore the toolchain
++         id: toolchain
++         uses: actions/cache/restore@v4
++         with:
++           path: |
++-            ${{ env.DEV_ROOT }}
+++            ~/dev
++             ~/.pub-cache
++           key: dsh-toolchain-v1-${{ runner.os }}-${{ hashFiles('tooling/setup-toolchain.sh') }}
++           restore-keys: dsh-toolchain-v1-${{ runner.os }}-
++@@ -70,7 +69,7 @@ jobs:
++         uses: actions/cache/save@v4
++         with:
++           path: |
++-            ${{ env.DEV_ROOT }}
+++            ~/dev
++             ~/.pub-cache
++           key: ${{ steps.toolchain.outputs.cache-primary-key }}
++ 
++@@ -78,10 +77,11 @@ jobs:
++       # runtime/tawcroot/source.json pins, which is not necessarily flutter.ndkVersion.
++       - name: Add the NDK libtawcroot.so is pinned to
++         run: |
++-          set -euo pipefail
+++          set -eu
++           source tooling/env.sh
++-          pinned=$(python3 -c 'import json,sys; print(json.load(open("runtime/tawcroot/source.json"))["ndkVersion"])')
++-          yes | sdkmanager --sdk_root="$ANDROID_HOME" "ndk;$pinned" > /dev/null
+++          pinned=$(python3 -c 'import json; print(json.load(open("runtime/tawcroot/source.json"))["ndkVersion"])')
+++          # `yes |` ends when sdkmanager stops reading, which is not a failure.
+++          yes | sdkmanager --sdk_root="$ANDROID_HOME" "ndk;$pinned" > /dev/null || true
++           test -d "$ANDROID_HOME/ndk/$pinned"
++ 
++       # A later step runs in a fresh shell, so the toolchain is handed over expanded:
++@@ -90,7 +90,7 @@ jobs:
++       # reaches pub.dev and the Flutter CDN directly.
++       - name: Hand the toolchain to the build steps
++         run: |
++-          set -euo pipefail
+++          set -eu
++           source tooling/env.sh
++           {
++             echo "JAVA_HOME=$JAVA_HOME"
++@@ -101,8 +101,8 @@ jobs:
++           {
++             echo '### Toolchain'
++             echo '```'
++-            java -version 2>&1 | head -n 2
++-            flutter --version 2>&1 | head -n 2
+++            java -version 2>&1 | head -n 2 || true
+++            flutter --version 2>&1 | head -n 2 || true
++             echo '```'
++           } >> "$GITHUB_STEP_SUMMARY"
++ 
++@@ -111,7 +111,7 @@ jobs:
++       # and signs all three schemes with it.
++       - name: Make a keystore and let Gradle sign with it
++         run: |
++-          set -euo pipefail
+++          set -eu
++           keystore="$GITHUB_WORKSPACE/app/android/wake-ci.jks"
++           keytool -genkeypair -noprompt \
++             -keystore "$keystore" -storetype PKCS12 \
++@@ -144,7 +144,7 @@ jobs:
++       # if it somehow came out debug-signed (key.properties unread, say).
++       - name: Check the signature is the CI key
++         run: |
++-          set -euo pipefail
+++          set -eu
++           apksigner=$(ls -1d "$ANDROID_HOME"/build-tools/*/apksigner | sort -V | tail -n 1)
++           keystore="$GITHUB_WORKSPACE/app/android/wake-ci.jks"
++           for apk in app/build/app/outputs/flutter-apk/*.apk; do
++@@ -181,9 +181,9 @@ jobs:
++             echo ''
++             echo '| APK | Size | versionCode |'
++             echo '|---|---|---|'
++-            aapt2=$(ls -1d "$ANDROID_HOME"/build-tools/*/aapt2 | sort -V | tail -n 1)
+++            aapt2=$(ls -1d "$ANDROID_HOME"/build-tools/*/aapt2 2>/dev/null | sort -V | tail -n 1) || true
++             for apk in app/build/app/outputs/flutter-apk/*.apk; do
++-              badge=$("$aapt2" dump badging "$apk" 2>/dev/null | sed -n 's/^package:.*versionCode=.\([0-9]*\).*/\1/p')
+++              badge=$("$aapt2" dump badging "$apk" 2>/dev/null | sed -n 's/^package:.*versionCode=.\([0-9]*\).*/\1/p') || true
++               echo "| $(basename "$apk") | $(du -h "$apk" | cut -f1) | ${badge:-?} |"
++             done
++             echo ''
++-- 
++2.55.0.windows.3
++
++
++From e77f823d574af100ae69a94e11303fa80f1ddfde Mon Sep 17 00:00:00 2001
++From: Zhuanz <zhuanz@users.noreply.github.com>
++Date: Tue, 17 Nov 2026 18:02:15 +0800
++Subject: [PATCH 3/3] docs(wake): how the CI job signs, and why l10n runs after
++ pub get
++
++---
++ docs/wake-word.md | 19 +++++++++++++++++++
++ 1 file changed, 19 insertions(+)
++
++diff --git a/docs/wake-word.md b/docs/wake-word.md
++index c965696..3ff7806 100644
++--- a/docs/wake-word.md
+++++ b/docs/wake-word.md
++@@ -65,6 +65,25 @@ bash tooling/build-wake-apk.sh          # arm64，产物 app/build/app/outputs/f
++ 
++ 未配置 `app/android/key.properties` 时是 debug 签名，与官方包签名不同：**装之前先备份，再卸载官方版**。
++ 
+++脚本先 `flutter pub get` 再 `tool/l10n_merge.py`：`lib/l10n/gen` 是被跟踪的（`app/pubspec.yaml` 的 `generate: true`），唤醒的新字符串得让 `gen-l10n` 跑过才进得去；顺序反了会在 `l10n.yaml` 读 `package_config.json` 时失败。
+++
+++### 在 GitHub Actions 上编（不用自己的 Linux 机器）
+++
+++`.github/workflows/wake-apk.yml`，push 到 `main` 或手动触发（`arm64` 手机 / `x64` 模拟器），产物落在这个 run 的 **Artifacts → dsh-go-wake-apk**。job 只有 60 分钟，所以两段慢活各自带缓存：工具链进了 `~/dev` 就缓存，运行时下载进了 `runtime/.cache` 就缓存 —— 第一次可能踩线超时，重跑一次就是快的。
+++
+++runner 没有签名密钥，workflow 自己造一把：
+++
+++```bash
+++keytool -genkeypair -keystore app/android/wake-ci.jks -storetype PKCS12 \
+++  -storepass dshpass -keypass dshpass -alias dshgo -keyalg RSA -keysize 2048 \
+++  -validity 10000 -dname "CN=dsh-go-wake, OU=CI, O=dsh-go, C=CN"
+++# 再写 app/android/key.properties：storeFile / storePassword / keyAlias / keyPassword
+++```
+++
+++`build.gradle.kts:12` 读这份 `key.properties`，`hasWholeReleaseKey` 成立走 release 签名（三个 scheme 都签）。后面那个 `apksigner verify --print-certs` 只是**读回来核对** `CN=dsh-go-wake`；万一 Gradle 没读到配置而落了 debug 签名，才 `zipalign` + `apksigner sign` 补签。盲目对已签的包再签一次会打乱 v2/v3 与 zipalign 的顺序，所以不是默认路径。
+++
+++另外 workflow 会补装 `runtime/tawcroot/source.json` 钉住的 **NDK 28.2.13676358**：`libtawcroot.so` 按这个版本编译，而 `app/build.gradle.kts:44` 用的是 `flutter.ndkVersion`，两者不保证同版本，缺了 release 构建会直接 `die`。
+++
++ ## 验收（对照原定标准）
++ 
++ | # | 标准 | 怎么看 |
++-- 
++2.55.0.windows.3
++
+-- 
+2.43.0
+

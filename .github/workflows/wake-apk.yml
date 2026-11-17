@@ -78,6 +78,10 @@ jobs:
           git config user.email "ci@local"
           git config user.name "wake-ci"
           git am --3way .patchsrc/dsh-go-wake.patch
+          # Follow-ups found once the tree actually compiled.
+          if [ -f .patchsrc/dsh-go-wake-fixup.patch ]; then
+            git am --3way .patchsrc/dsh-go-wake-fixup.patch
+          fi
           git log --oneline -4
 
       # Keyed on the installer itself: when it changes, its downloads are rebuilt.
