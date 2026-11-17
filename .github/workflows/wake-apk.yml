@@ -87,6 +87,10 @@ jobs:
           if [ -f .patchsrc/dsh-go-wake-gate.patch ]; then
             git am --3way .patchsrc/dsh-go-wake-gate.patch
           fi
+          # The audio the recognizer is handed, and a sample of it to listen to.
+          if [ -f .patchsrc/dsh-go-wake-audio.patch ]; then
+            git am --3way .patchsrc/dsh-go-wake-audio.patch
+          fi
           git log --oneline -4
 
       # Keyed on the installer itself: when it changes, its downloads are rebuilt.

@@ -1,0 +1,131 @@
+From a1523d0c62ff6294cd5efac605525d693a6667b4 Mon Sep 17 00:00:00 2001
+From: dsh-wake <wake@local>
+Date: Wed, 18 Nov 2026 02:36:38 +0800
+Subject: [PATCH] fix(voice): hand the recognizer the whole microphone, and
+ keep a sample of it
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Even at -25 dB the model answered with one syllable repeated (咦咦咦 / 呵呵呵),
+so the wake word was never going to be heard. Two things are wrong with the
+audio the path produces, and both are removed here:
+
+- the microphone was opened as VOICE_RECOGNITION, whose noise suppression and
+  AGC are tuned for dictation, not for a quiet phone on a table. MIC gives the
+  recognizer the sound as it is.
+- the gate dropped every frame it judged not-speech, so the model was fed a
+  stream with the quiet parts cut out. It now gets every frame; the gate only
+  still decides where an utterance ends.
+
+The first 20 s of what the path hears is also written to wake-sample.wav, so
+the audio can be listened to and decoded outside the app instead of guessed at.
+---
+ .../ccch1mneyyy/dsh_app/wake/WakeCapture.kt   | 19 +++++---
+ app/lib/voice/wake_word.dart                  | 43 +++++++++++++++++++
+ 2 files changed, 56 insertions(+), 6 deletions(-)
+
+diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/wake/WakeCapture.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/wake/WakeCapture.kt
+index 2e5ad22..da07edb 100644
+--- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/wake/WakeCapture.kt
++++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/wake/WakeCapture.kt
+@@ -39,7 +39,11 @@ class WakeCapture(
+         if (min <= 0) return false
+         val r = runCatching {
+             AudioRecord(
+-                MediaRecorder.AudioSource.VOICE_RECOGNITION,
++                // MIC, not VOICE_RECOGNITION: the recognition source runs the platform's noise
++                // suppression and AGC, and on this device what reached the recognizer decoded as
++                // one syllable repeated (咦咦咦 / 呵呵呵) even at -25 dB. The wake path wants the
++                // microphone as it is; the model does its own thing with it.
++                MediaRecorder.AudioSource.MIC,
+                 RATE,
+                 AudioFormat.CHANNEL_IN_MONO,
+                 AudioFormat.ENCODING_PCM_16BIT,
+@@ -94,14 +98,17 @@ class WakeCapture(
+                 if (!speaking && loud >= LOUD_FRAMES) {
+                     speaking = true
+                 }
+-                if (!speaking) continue
+-                if (now - lastLoud > HANGOVER_MS) {
++                // Every frame goes on to the recognizer, not only the ones over the gate: a
++                // stream with the quiet parts cut out is not the audio the model was trained on,
++                // and it answers chopped input with one syllable repeated (咦咦咦 / 呵呵呵).
++                val copy = frame.copyOf()
++                report(mine) { onFrame(copy, level, floor) }
++                // A pause still ends the utterance, so what was said so far is not glued to the
++                // next thing said.
++                if (speaking && now - lastLoud > HANGOVER_MS) {
+                     speaking = false
+                     report(mine) { onSpeechEnd() }
+-                    continue
+                 }
+-                val copy = frame.copyOf()
+-                report(mine) { onFrame(copy, level, floor) }
+             }
+         } catch (_: RuntimeException) {
+             report(mine) { onError("capture") }
+diff --git a/app/lib/voice/wake_word.dart b/app/lib/voice/wake_word.dart
+index cf6e008..f6f8a54 100644
+--- a/app/lib/voice/wake_word.dart
++++ b/app/lib/voice/wake_word.dart
+@@ -241,6 +241,48 @@ class WakeWordController extends Notifier<WakeStatus> {
+ 
+   int _pcmCount = 0;
+ 
++  /// The first 20 s of what the wake path hears, so the audio itself can be listened to and
++  /// decoded outside the app. Written once per listening session.
++  final BytesBuilder _sample = BytesBuilder(copy: false);
++  bool _sampleWritten = false;
++  static const _sampleFrames = 20 * 50; // 20 s at 50 frames of 20 ms
++
++  void _keepSample(Uint8List bytes) {
++    if (_sampleWritten || _sample.length >= _sampleFrames * 640) return;
++    _sample.add(bytes);
++    if (_sample.length < _sampleFrames * 640) return;
++    _sampleWritten = true;
++    unawaited(_writeSample(_sample.takeBytes()));
++  }
++
++  static Future<void> _writeSample(Uint8List pcm) async {
++    final header = ByteData(44)
++      ..setUint32(0, 0x52494646, Endian.big) // RIFF
++      ..setUint32(4, 36 + pcm.length, Endian.little)
++      ..setUint32(8, 0x57415645, Endian.big) // WAVE
++      ..setUint32(12, 0x666d7420, Endian.big) // fmt
++      ..setUint32(16, 16, Endian.little)
++      ..setUint16(20, 1, Endian.little) // PCM
++      ..setUint16(22, 1, Endian.little) // mono
++      ..setUint32(24, 16000, Endian.little)
++      ..setUint32(28, 32000, Endian.little)
++      ..setUint16(32, 2, Endian.little)
++      ..setUint16(34, 16, Endian.little)
++      ..setUint32(36, 0x64617461, Endian.big) // data
++      ..setUint32(40, pcm.length, Endian.little);
++    try {
++      final f = File('/sdcard/Download/DSH-Go/wake-sample.wav');
++      await f.parent.create(recursive: true);
++      final sink = f.openWrite();
++      sink.add(header.buffer.asUint8List());
++      sink.add(pcm);
++      await sink.close();
++      _dbg('sample written ${pcm.length} bytes');
++    } on Object catch (error) {
++      _dbg('sample failed: $error');
++    }
++  }
++
+   void _onEvent(Map<Object?, Object?> event) {
+     final kind = event['kind'];
+     if (kind != 'wake.pcm') _dbg('event $kind');
+@@ -249,6 +291,7 @@ class WakeWordController extends Notifier<WakeStatus> {
+         final bytes = event['bytes'];
+         if (bytes is Uint8List) {
+           _pcmCount++;
++          _keepSample(bytes);
+           if (_pcmCount % 50 == 1) {
+             final level = event['level'];
+             final floor = event['floor'];
+-- 
+2.43.0
+
