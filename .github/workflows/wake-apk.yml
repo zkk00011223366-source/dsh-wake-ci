@@ -1,0 +1,211 @@
+# Builds an installable APK with 语音唤醒 on a stock ubuntu-latest runner: the same
+# x86_64 Linux the build chain assumes (tooling/setup-toolchain.sh downloads a linux
+# JDK and a linux Flutter; runtime/build-runtime.sh unpacks an Ubuntu base).
+#
+#   Actions -> Wake APK -> Run workflow   (arm64 = a phone, x64 = an emulator)
+#
+# Two things this job owns that a local build does not: a keystore, because a CI
+# runner has none and every APK must be signed to install, and the pinned NDK that
+# libtawcroot.so needs (28.2.13676358), which is not always Flutter's default.
+#
+# The first run is the slow one: toolchain ~20-40 min, the bundled runtime ~15-30.
+# Both are cached and saved as soon as they are ready, so a run that later hits the
+# 60-minute timeout still makes the next one fast.
+name: Wake APK
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'app/**'
+      - 'runtime/**'
+      - 'tooling/**'
+      - '.github/workflows/wake-apk.yml'
+  workflow_dispatch:
+    inputs:
+      flavor:
+        description: 'arm64 (a phone) or x64 (an emulator)'
+        type: choice
+        options: [arm64, x64]
+        default: arm64
+
+permissions:
+  contents: read
+
+concurrency:
+  group: wake-apk-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  apk:
+    name: Build the APK
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      FLAVOR: ${{ github.event.inputs.flavor || 'arm64' }}
+    steps:
+      # This repository holds only the patch and this workflow; the sources come
+      # straight from the upstream repository, then the patch is applied on top.
+      - name: Check out the upstream sources
+        uses: actions/checkout@v4
+        with:
+          repository: ccch1mneyyy/dsh-go
+          ref: 6db08d2e2faafec2db8597587d424c2165196dad
+          persist-credentials: false
+
+      - name: Check out the patch
+        uses: actions/checkout@v4
+        with:
+          path: .patchsrc
+          persist-credentials: false
+
+      - name: Apply the wake-word patch
+        run: |
+          set -eu
+          git config user.email "ci@local"
+          git config user.name "wake-ci"
+          git am --3way .patchsrc/dsh-go-wake.patch
+          git log --oneline -4
+
+      # Keyed on the installer itself: when it changes, its downloads are rebuilt.
+      # setup-toolchain.sh defaults DEV_ROOT to $HOME/dev, so that is what is cached.
+      - name: Restore the toolchain
+        id: toolchain
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            ~/dev
+            ~/.pub-cache
+          key: dsh-toolchain-v1-${{ runner.os }}-${{ hashFiles('tooling/setup-toolchain.sh') }}
+          restore-keys: dsh-toolchain-v1-${{ runner.os }}-
+
+      - name: Install the toolchain (JDK 17, Flutter, Android SDK)
+        run: bash tooling/setup-toolchain.sh
+
+      # Saved right after it is ready: a later timeout then costs nothing twice.
+      - name: Save the toolchain
+        if: steps.toolchain.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            ~/dev
+            ~/.pub-cache
+          key: ${{ steps.toolchain.outputs.cache-primary-key }}
+
+      # libtawcroot.so is compiled by runtime/tawcroot/build.py against the NDK that
+      # runtime/tawcroot/source.json pins, which is not necessarily flutter.ndkVersion.
+      - name: Add the NDK libtawcroot.so is pinned to
+        run: |
+          set -eu
+          source tooling/env.sh
+          pinned=$(python3 -c 'import json; print(json.load(open("runtime/tawcroot/source.json"))["ndkVersion"])')
+          # `yes |` ends when sdkmanager stops reading, which is not a failure.
+          yes | sdkmanager --sdk_root="$ANDROID_HOME" "ndk;$pinned" > /dev/null || true
+          test -d "$ANDROID_HOME/ndk/$pinned"
+
+      # A later step runs in a fresh shell, so the toolchain is handed over expanded:
+      # tooling/env.sh assigns from $DEV_ROOT, which would land in $GITHUB_ENV as text.
+      # The China mirrors env.sh sets are deliberately not passed on; the runner
+      # reaches pub.dev and the Flutter CDN directly.
+      - name: Hand the toolchain to the build steps
+        run: |
+          set -eu
+          source tooling/env.sh
+          {
+            echo "JAVA_HOME=$JAVA_HOME"
+            echo "ANDROID_HOME=$ANDROID_HOME"
+            echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT"
+            echo "PATH=$PATH"
+          } >> "$GITHUB_ENV"
+          {
+            echo '### Toolchain'
+            echo '```'
+            java -version 2>&1 | head -n 2 || true
+            flutter --version 2>&1 | head -n 2 || true
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # The runner has no key, so one is made here: app/android/key.properties is
+      # gitignored (*.jks too), and build.gradle.kts picks the release key up from it
+      # and signs all three schemes with it.
+      - name: Make a keystore and let Gradle sign with it
+        run: |
+          set -eu
+          keystore="$GITHUB_WORKSPACE/app/android/wake-ci.jks"
+          keytool -genkeypair -noprompt \
+            -keystore "$keystore" -storetype PKCS12 \
+            -storepass dshpass -keypass dshpass \
+            -alias dshgo -keyalg RSA -keysize 2048 -validity 10000 \
+            -dname "CN=dsh-go-wake, OU=CI, O=dsh-go, C=CN"
+          printf 'storeFile=%s\nstorePassword=dshpass\nkeyAlias=dshgo\nkeyPassword=dshpass\n' \
+            "$keystore" > app/android/key.properties
+
+      - name: Restore the runtime downloads
+        id: runtime
+        uses: actions/cache/restore@v4
+        with:
+          path: runtime/.cache
+          key: runtime-downloads-v1-${{ hashFiles('runtime/build-runtime.sh', 'runtime/locks/**') }}
+          restore-keys: runtime-downloads-v1-
+
+      # pub get -> l10n (gen-l10n, the new strings) -> runtime/out/$abi -> the APK.
+      - name: Build the runtime and the APK
+        run: bash tooling/build-wake-apk.sh -f "$FLAVOR"
+
+      - name: Save the runtime downloads
+        if: steps.runtime.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: runtime/.cache
+          key: ${{ steps.runtime.outputs.cache-primary-key }}
+
+      # Gradle signs with the key above; this reads it back, and signs the APK here
+      # if it somehow came out debug-signed (key.properties unread, say).
+      - name: Check the signature is the CI key
+        run: |
+          set -eu
+          apksigner=$(ls -1d "$ANDROID_HOME"/build-tools/*/apksigner | sort -V | tail -n 1)
+          keystore="$GITHUB_WORKSPACE/app/android/wake-ci.jks"
+          for apk in app/build/app/outputs/flutter-apk/*.apk; do
+            if ! "$apksigner" verify --print-certs "$apk" | grep -q 'CN=dsh-go-wake'; then
+              echo "::notice file=$apk::not the CI key; signing it here"
+              aligned="${apk%.apk}-aligned.apk"
+              "$(dirname "$apksigner")/zipalign" -f -p 4 "$apk" "$aligned"
+              "$apksigner" sign --ks "$keystore" --ks-pass pass:dshpass \
+                --key-pass pass:dshpass --ks-key-alias dshgo \
+                --out "${apk%.apk}-signed.apk" "$aligned"
+              mv -f "${apk%.apk}-signed.apk" "$apk"
+              rm -f "$aligned"
+            fi
+            "$apksigner" verify --print-certs "$apk" | grep -q 'CN=dsh-go-wake'
+            echo "$(basename "$apk"): $(du -h "$apk" | cut -f1)"
+          done
+
+      - name: Upload the APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: dsh-go-wake-apk
+          path: app/build/app/outputs/flutter-apk/*.apk
+          if-no-files-found: error
+          retention-days: 30
+
+      # Where the APK is, without leaving the run page to find out.
+      - name: Say where the APK is
+        if: success()
+        run: |
+          {
+            echo '### dsh-go-wake-apk'
+            echo ''
+            echo 'Actions page -> this run -> Artifacts -> **dsh-go-wake-apk**.'
+            echo ''
+            echo '| APK | Size | versionCode |'
+            echo '|---|---|---|'
+            aapt2=$(ls -1d "$ANDROID_HOME"/build-tools/*/aapt2 2>/dev/null | sort -V | tail -n 1) || true
+            for apk in app/build/app/outputs/flutter-apk/*.apk; do
+              badge=$("$aapt2" dump badging "$apk" 2>/dev/null | sed -n 's/^package:.*versionCode=.\([0-9]*\).*/\1/p') || true
+              echo "| $(basename "$apk") | $(du -h "$apk" | cut -f1) | ${badge:-?} |"
+            done
+            echo ''
+            echo 'Self-signed, unlike the official build: uninstall the official DSH Go'
+            echo 'first (its local data goes; back it up).'
+          } >> "$GITHUB_STEP_SUMMARY"
