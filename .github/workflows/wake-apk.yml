@@ -189,10 +189,40 @@ jobs:
         continue-on-error: true
         env:
           XZ_THREADS: "2"
+          TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          set -o pipefail
-          bash tooling/build-wake-apk.sh -f "$FLAVOR" 2>&1 | tee /tmp/wake-build.log
-          echo "build-exit=$?" >> /tmp/wake-build.log
+          set -uo pipefail
+          : > /tmp/wake-build.log
+          # A runner that dies mid-step never runs the cleanup below, so the log is
+          # pushed to the repository while the build runs; whatever was written last
+          # survives.
+          (
+            while true; do
+              sleep 20
+              [ -s /tmp/wake-build.log ] || continue
+              { echo "== resources =="; df -h / | tail -1; free -m | head -2;
+                echo "== tail =="; tail -c 50000 /tmp/wake-build.log; } > /tmp/tail.txt
+              content=$(base64 -w0 /tmp/tail.txt)
+              sha=$(curl -sS -H "Authorization: Bearer $TOKEN" \
+                     "https://api.github.com/repos/${GITHUB_REPOSITORY}/contents/build-log.txt" \
+                     | python3 -c 'import sys,json
+try: print(json.load(sys.stdin).get("sha",""))
+except Exception: print("")' 2>/dev/null)
+              body="{\"message\":\"ci: build log\",\"content\":\"$content\",\"branch\":\"main\""
+              [ -n "$sha" ] && body="$body,\"sha\":\"$sha\""
+              body="$body}"
+              curl -sS -X PUT -H "Authorization: Bearer $TOKEN" \
+                -H "Accept: application/vnd.github+json" \
+                "https://api.github.com/repos/${GITHUB_REPOSITORY}/contents/build-log.txt" \
+                -d "$body" > /dev/null || true
+            done
+          ) &
+          WATCH=$!
+          bash tooling/build-wake-apk.sh -f "$FLAVOR" 2>&1 | tee -a /tmp/wake-build.log
+          status=${PIPESTATUS[0]}
+          kill $WATCH 2>/dev/null || true
+          echo "build-exit=$status" >> /tmp/wake-build.log
+          exit $status
 
       # The run log is not always downloadable from this repository, so the tail is
       # committed instead: build-log.txt is then readable over the contents API.
