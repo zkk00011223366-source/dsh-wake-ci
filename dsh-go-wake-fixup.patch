@@ -1,14 +1,51 @@
-From ed17ed76788648621ae47380f65634ddde89e0e9 Mon Sep 17 00:00:00 2001
+From 74bde8c4a28d064f0accac45a0eb37057b74225a Mon Sep 17 00:00:00 2001
 From: dsh-wake <wake@local>
 Date: Tue, 17 Nov 2026 22:05:26 +0800
-Subject: [PATCH] fix(voice): import the wake word provider in app.dart
+Subject: [PATCH] fix(voice): the wake module's first compile errors
 
 ---
- app/lib/app.dart  |    1 +
- dsh-go-wake.patch | 2065 +++++++++++++++++++++++++++++++++++++++++++++
- 2 files changed, 2066 insertions(+)
+ .../ccch1mneyyy/dsh_app/wake/WakeCapture.kt   |    2 +-
+ .../dsh_app/wake/WakeWordService.kt           |    8 +-
+ app/lib/app.dart                              |    1 +
+ dsh-go-wake.patch                             | 2065 +++++++++++++++++
+ 4 files changed, 2071 insertions(+), 5 deletions(-)
  create mode 100644 dsh-go-wake.patch
 
+diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/wake/WakeCapture.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/wake/WakeCapture.kt
+index 14a574c..103c081 100644
+--- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/wake/WakeCapture.kt
++++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/wake/WakeCapture.kt
+@@ -83,7 +83,7 @@ class WakeCapture(
+                 val level = SpeechGate.levelOf(frame, frame.size)
+                 // 噪声地板 follows a quiet room down at once and up slowly, so a fan or a road
+                 // does not keep the gate open and a person still opens it.
+-                floor = if (floor.isNaN()) level else minOf(level, floor + FLOOR_RISE_DB)
++                floor = if (floor.isNaN()) level.toDouble() else minOf(level.toDouble(), floor + FLOOR_RISE_DB)
+                 val hot = level > floor + MARGIN_DB
+                 loud = if (hot) loud + 1 else 0
+                 if (hot) lastLoud = now
+diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/wake/WakeWordService.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/wake/WakeWordService.kt
+index 67df7da..9c0f5a8 100644
+--- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/wake/WakeWordService.kt
++++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/wake/WakeWordService.kt
+@@ -49,13 +49,13 @@ class WakeWordService : Service() {
+             stopSelf()
+             return START_NOT_STICKY
+         }
+-        ensureChannel()
+-        val notification = notification(this)
++        ensureChannel(this)
++        val note = notification(this)
+         try {
+             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+-                startForeground(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE)
++                startForeground(NOTIFICATION_ID, note, ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE)
+             } else {
+-                startForeground(NOTIFICATION_ID, notification)
++                startForeground(NOTIFICATION_ID, note)
+             }
+         } catch (e: Exception) {
+             Log.w(TAG, "listening service could not go foreground", e)
 diff --git a/app/lib/app.dart b/app/lib/app.dart
 index ef3c479..b2de292 100644
 --- a/app/lib/app.dart
