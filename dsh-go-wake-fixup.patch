@@ -2132,3 +2132,171 @@ index 0000000..617c898
 -- 
 2.43.0
 
+From 1b29d57a13b83ead7f79022b37e7f1887b083217 Mon Sep 17 00:00:00 2001
+From: dsh-wake <wake@local>
+Date: Tue, 17 Nov 2026 23:23:44 +0800
+Subject: [PATCH] feat(phone): a switch that stops the per-command Android
+ Shell confirmation
+
+---
+ .../dsh_app/phone/PhoneAndroidShell.kt        | 10 ++++++-
+ .../ccch1mneyyy/dsh_app/phone/PhoneControl.kt |  2 ++
+ app/lib/l10n/app_en.arb                       |  1 +
+ app/lib/l10n/app_zh.arb                       |  1 +
+ app/lib/l10n/parts/android_shell_en.arb       |  3 +-
+ app/lib/l10n/parts/android_shell_zh.arb       |  3 +-
+ app/lib/ui/phone/android_shell_page.dart      | 28 +++++++++++++++++++
+ 7 files changed, 45 insertions(+), 3 deletions(-)
+
+diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneAndroidShell.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneAndroidShell.kt
+index bb9c803..aa39cdc 100644
+--- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneAndroidShell.kt
++++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneAndroidShell.kt
+@@ -14,6 +14,14 @@ object PhoneAndroidShell {
+ 
+     /** 本轮允许 key for shell commands (they have no target app). */
+     const val GRANT = "android-shell"
++
++    /**
++     * 设置里的「不再逐条确认」: when the user turns it on, every command is allowed
++     * without the native card. PhoneControl refreshes it from the preferences before
++     * each command, so the switch takes effect on the next command, not the next launch.
++     */
++    @Volatile
++    var alwaysAllow: Boolean = false
+     data class Request(val command: String, val timeoutMs: Long)
+ 
+     fun parse(args: Args): Request? {
+@@ -59,7 +67,7 @@ object PhoneAndroidShell {
+         return executor.execute(owner.taskId, request.command, request.timeoutMs, ::live) { backend, uid ->
+             if (!live()) Decision.STOP
+             else if (!(backend == "adb" && uid == 2000 || backend == "shizuku" && uid in setOf(0, 2000))) Decision.DENY
+-            else if (tasks.hasGrant(null, GRANT)) Decision.ALLOW_ONCE
++            else if (alwaysAllow || tasks.hasGrant(null, GRANT)) Decision.ALLOW_ONCE
+             else {
+                 val prompt = ConfirmRequest(
+                     ui.get("phone_shell_confirm",
+diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneControl.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneControl.kt
+index 2fc7cd5..563f816 100644
+--- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneControl.kt
++++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneControl.kt
+@@ -1008,6 +1008,8 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
+     override fun system(): SystemApi = system
+ 
+     override fun androidShell(): PhoneShellExecutor = PhoneShellExecutor { ownerId, command, timeoutMs, live, confirm ->
++        PhoneAndroidShell.alwaysAllow = app.getSharedPreferences("FlutterSharedPreferences", Context.MODE_PRIVATE)
++            .getBoolean("flutter.androidShellNoConfirm", false)
+         shell.execute(ownerId, command, timeoutMs, live, confirm)
+     }
+ 
+diff --git a/app/lib/l10n/app_en.arb b/app/lib/l10n/app_en.arb
+index 4067f26..2786554 100644
+--- a/app/lib/l10n/app_en.arb
++++ b/app/lib/l10n/app_en.arb
+@@ -563,6 +563,7 @@
+   "androidShellErrorStopped": "This round has ended or is paused. Turn it on again and retry.",
+   "androidShellErrorStopFailed": "Stopping was not confirmed. Refresh the status and retry stopping.",
+   "androidShellErrorUnknown": "The outcome could not be confirmed. Verify it first; never automatically retry a dispatched command.",
++  "androidShellNoConfirm": "Don't confirm each command (at your own risk)",
+   "botsFolderGone": "This folder is gone",
+   "botsFolderReadFailed": "Couldn’t read this folder",
+   "botsFolderOpenFailed": "Couldn’t open this folder",
+diff --git a/app/lib/l10n/app_zh.arb b/app/lib/l10n/app_zh.arb
+index ab00fd9..9c8824a 100644
+--- a/app/lib/l10n/app_zh.arb
++++ b/app/lib/l10n/app_zh.arb
+@@ -1062,6 +1062,7 @@
+   "androidShellErrorStopped": "本轮已结束或暂停，请重新开启后再试。",
+   "androidShellErrorStopFailed": "未确认已停止，请刷新状态并重试停止。",
+   "androidShellErrorUnknown": "未能确认操作结果。先核实结果；已派发的命令不要自动重试。",
++  "androidShellNoConfirm": "不再逐条确认（风险自负）",
+   "botsFolderGone": "这个文件夹已经不在了",
+   "botsFolderReadFailed": "没能读取这个文件夹",
+   "botsFolderOpenFailed": "打不开这个文件夹",
+diff --git a/app/lib/l10n/parts/android_shell_en.arb b/app/lib/l10n/parts/android_shell_en.arb
+index 9592bae..68a9156 100644
+--- a/app/lib/l10n/parts/android_shell_en.arb
++++ b/app/lib/l10n/parts/android_shell_en.arb
+@@ -80,5 +80,6 @@
+   "androidShellErrorInvalidResponse": "No valid native status was received. Refresh or update the app.",
+   "androidShellErrorStopped": "This round has ended or is paused. Turn it on again and retry.",
+   "androidShellErrorStopFailed": "Stopping was not confirmed. Refresh the status and retry stopping.",
+-  "androidShellErrorUnknown": "The outcome could not be confirmed. Verify it first; never automatically retry a dispatched command."
++  "androidShellErrorUnknown": "The outcome could not be confirmed. Verify it first; never automatically retry a dispatched command.",
++  "androidShellNoConfirm": "Don't confirm each command (at your own risk)"
+ }
+diff --git a/app/lib/l10n/parts/android_shell_zh.arb b/app/lib/l10n/parts/android_shell_zh.arb
+index 104780b..a2b020d 100644
+--- a/app/lib/l10n/parts/android_shell_zh.arb
++++ b/app/lib/l10n/parts/android_shell_zh.arb
+@@ -80,5 +80,6 @@
+   "androidShellErrorInvalidResponse": "没有收到有效的原生状态，请刷新或更新 App。",
+   "androidShellErrorStopped": "本轮已结束或暂停，请重新开启后再试。",
+   "androidShellErrorStopFailed": "未确认已停止，请刷新状态并重试停止。",
+-  "androidShellErrorUnknown": "未能确认操作结果。先核实结果；已派发的命令不要自动重试。"
++  "androidShellErrorUnknown": "未能确认操作结果。先核实结果；已派发的命令不要自动重试。",
++  "androidShellNoConfirm": "不再逐条确认（风险自负）"
+ }
+diff --git a/app/lib/ui/phone/android_shell_page.dart b/app/lib/ui/phone/android_shell_page.dart
+index 1214058..3ea9dc8 100644
+--- a/app/lib/ui/phone/android_shell_page.dart
++++ b/app/lib/ui/phone/android_shell_page.dart
+@@ -2,6 +2,7 @@ import 'dart:async';
+ 
+ import 'package:flutter/material.dart';
+ import 'package:flutter/services.dart';
++import 'package:shared_preferences/shared_preferences.dart';
+ import 'package:flutter_riverpod/flutter_riverpod.dart';
+ 
+ import '../../l10n/l10n.dart';
+@@ -55,6 +56,8 @@ class _AndroidShellPageState extends ConsumerState<AndroidShellPage> {
+   late final AppLifecycleListener _lifecycle;
+   AndroidShellStatus _status = const AndroidShellStatus();
+   bool _loading = true;
++  // 设置 › Android Shell › 不再逐条确认: read by the native side before every command.
++  bool _noConfirm = false;
+   bool _busy = false;
+   bool _stopping = false;
+   String? _errorCode;
+@@ -71,6 +74,21 @@ class _AndroidShellPageState extends ConsumerState<AndroidShellPage> {
+       },
+     );
+     unawaited(_refresh());
++    unawaited(_loadNoConfirm());
++  }
++
++  static const _noConfirmKey = 'androidShellNoConfirm';
++
++  Future<void> _loadNoConfirm() async {
++    final prefs = await SharedPreferences.getInstance();
++    if (!mounted) return;
++    setState(() => _noConfirm = prefs.getBool(_noConfirmKey) ?? false);
++  }
++
++  Future<void> _setNoConfirm(bool value) async {
++    setState(() => _noConfirm = value);
++    final prefs = await SharedPreferences.getInstance();
++    await prefs.setBool(_noConfirmKey, value);
+   }
+ 
+   @override
+@@ -217,6 +235,16 @@ class _AndroidShellPageState extends ConsumerState<AndroidShellPage> {
+                 onChanged: canEnable || (canSetup && _status.enabled) ? (value) => unawaited(_toggle(value)) : null,
+               ),
+             ),
++            ListPageRow(
++              icon: AppIcons.terminal,
++              title: l10n.androidShellNoConfirm,
++              titleMaxLines: 3,
++              trailing: Switch(
++                key: const ValueKey('android-shell-no-confirm'),
++                value: _noConfirm,
++                onChanged: (value) => unawaited(_setNoConfirm(value)),
++              ),
++            ),
+             ListPageRow(
+               title: l10n.androidShellStatus,
+               subtitle: _loading
+-- 
+2.43.0
+
