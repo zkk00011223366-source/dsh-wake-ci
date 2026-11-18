@@ -1,24 +1,20 @@
-From 346110ef97d8ce304d9576bed53461b3226b1d7e Mon Sep 17 00:00:00 2001
+From 05a1286cccbb4621ef2f2311e39b40912c670b99 Mon Sep 17 00:00:00 2001
 From: dsh-wake <wake@local>
 Date: Wed, 18 Nov 2026 02:36:38 +0800
-Subject: [PATCH] =?UTF-8?q?fix(voice):=20answer=20to=20=E5=B0=8F=E5=AE=89?=
- =?UTF-8?q?=20as=20well=20as=20=E5=B0=8F=E5=AE=89=E5=B0=8F=E5=AE=89,=20and?=
- =?UTF-8?q?=20sample=20only=20when=20asked?=
-MIME-Version: 1.0
-Content-Type: text/plain; charset=UTF-8
-Content-Transfer-Encoding: 8bit
+Subject: [PATCH] feat(voice): show what the wake path hears, under the switch
 
-A wake phrase is a name said once; requiring the recognizer to hear the whole
-repeated phrase is why saying 小安 did nothing. The first half (小安 from
-小安小安) now wakes it too.
+The path had no readable output at all, so every round of 'it does not work'
+started from zero. The settings row now carries the recognizer's last text
+after the state line, so the answer is one look away instead of a log file.
 
-The audio sample is no longer collected unconditionally: a marker file in
-Downloads asks for it, the last 8 s ending at the end of an utterance is
-written, and the marker is consumed. Nothing appears unless it was asked for.
+The audio sample is asked for by a marker file and records the next 20 s from
+the moment the marker is seen, instead of the 8 s before an utterance ended:
+a stray knock used to consume the marker and hand back silence.
 ---
- .../ccch1mneyyy/dsh_app/wake/WakeCapture.kt   |  19 +++-
- app/lib/voice/wake_word.dart                  | 104 ++++++++++++++----
- 2 files changed, 97 insertions(+), 26 deletions(-)
+ .../ccch1mneyyy/dsh_app/wake/WakeCapture.kt   |  19 ++-
+ app/lib/ui/settings/voice_settings_page.dart  |  24 ++--
+ app/lib/voice/wake_word.dart                  | 110 ++++++++++++++----
+ 3 files changed, 115 insertions(+), 38 deletions(-)
 
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/wake/WakeCapture.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/wake/WakeCapture.kt
 index 2e5ad22..233efa1 100644
@@ -60,8 +56,43 @@ index 2e5ad22..233efa1 100644
              }
          } catch (_: RuntimeException) {
              report(mine) { onError("capture") }
+diff --git a/app/lib/ui/settings/voice_settings_page.dart b/app/lib/ui/settings/voice_settings_page.dart
+index a43eeb8..f6a8119 100644
+--- a/app/lib/ui/settings/voice_settings_page.dart
++++ b/app/lib/ui/settings/voice_settings_page.dart
+@@ -24,16 +24,20 @@ import '../theme/app_icons.dart';
+ import '../theme/theme.dart';
+ import 'settings_widgets.dart';
+ 
+-/// 语音唤醒 row's second line: what the listener is doing right now.
+-String wakeStatusText(L10n l10n, WakeStatus status) => switch (status.listening) {
+-  WakeListening.listening => l10n.speechWakeStateListening,
+-  WakeListening.starting => l10n.speechWakeStateStarting,
+-  WakeListening.paused => l10n.speechWakeStatePaused,
+-  WakeListening.unavailable =>
+-    status.reason == 'permission' ? l10n.speechWakeStatePermission : l10n.speechWakeStateModel,
+-  WakeListening.failed => l10n.speechWakeStateFailed,
+-  WakeListening.off => l10n.speechWakeStateOff,
+-};
++/// 语音唤醒 row's second line: what the listener is doing right now, and — while it is
++/// listening — what the recognizer last made of the audio (诊断用,读出来就知道它听到了什么).
++String wakeStatusText(L10n l10n, WakeStatus status) {
++  final state = switch (status.listening) {
++    WakeListening.listening => l10n.speechWakeStateListening,
++    WakeListening.starting => l10n.speechWakeStateStarting,
++    WakeListening.paused => l10n.speechWakeStatePaused,
++    WakeListening.unavailable =>
++      status.reason == 'permission' ? l10n.speechWakeStatePermission : l10n.speechWakeStateModel,
++    WakeListening.failed => l10n.speechWakeStateFailed,
++    WakeListening.off => l10n.speechWakeStateOff,
++  };
++  return status.heard.isEmpty ? state : '$state · ${status.heard}';
++}
+ 
+ /// 唤醒词 typed by the person; the phrase is matched inside what the recognizer heard.
+ Future<void> editWakeKeyword(BuildContext context, WidgetRef ref, String current) async {
 diff --git a/app/lib/voice/wake_word.dart b/app/lib/voice/wake_word.dart
-index cf6e008..fcd9c63 100644
+index cf6e008..fd6ede0 100644
 --- a/app/lib/voice/wake_word.dart
 +++ b/app/lib/voice/wake_word.dart
 @@ -21,19 +21,10 @@ import '../state/streaming_asr_model_state.dart';
@@ -88,36 +119,60 @@ index cf6e008..fcd9c63 100644
  
  /// What the listener is doing.
  enum WakeListening {
-@@ -241,6 +232,67 @@ class WakeWordController extends Notifier<WakeStatus> {
+@@ -57,7 +48,7 @@ enum WakeListening {
+ }
+ 
+ class WakeStatus {
+-  const WakeStatus({this.listening = WakeListening.off, this.reason, this.hits = 0});
++  const WakeStatus({this.listening = WakeListening.off, this.reason, this.hits = 0, this.heard = ''});
+ 
+   final WakeListening listening;
+ 
+@@ -67,12 +58,23 @@ class WakeStatus {
+   /// Wake words heard since launch (诊断用).
+   final int hits;
+ 
++  /// What the recognizer last made of the audio (诊断用): shown under the switch so a
++  /// person can read back what it hears without a log file.
++  final String heard;
++
+   bool get on => listening == WakeListening.listening || listening == WakeListening.starting;
+ 
+-  WakeStatus copyWith({WakeListening? listening, String? reason, bool clearReason = false, int? hits}) => WakeStatus(
++  WakeStatus copyWith({
++    WakeListening? listening,
++    String? reason,
++    bool clearReason = false,
++    int? hits,
++    String? heard,
++  }) => WakeStatus(
+     listening: listening ?? this.listening,
+     reason: clearReason ? null : (reason ?? this.reason),
+     hits: hits ?? this.hits,
++    heard: heard ?? this.heard,
+   );
+ }
+ 
+@@ -241,6 +243,57 @@ class WakeWordController extends Notifier<WakeStatus> {
  
    int _pcmCount = 0;
  
-+  /// The audio of the utterance that just ended, kept only so a person asking for a
-+  /// sample can hear exactly what the recognizer was handed.
-+  final List<Uint8List> _rolling = <Uint8List>[];
-+  int _rollingBytes = 0;
-+  static const _rollingLimit = 8 * 32000; // 8 s of 16 kHz mono PCM16
++  /// A sample of what the path hears, taken only when a marker file asks for it (the
++  /// terminal drops one). It records the NEXT 20 s from the moment the marker is seen,
++  /// whatever the gate thinks of it, so asking is not a race with a stray knock.
++  final BytesBuilder _dump = BytesBuilder(copy: false);
++  bool _dumping = false;
++  static const _dumpBytes = 20 * 32000; // 20 s of 16 kHz mono PCM16
 +
 +  void _keepSample(Uint8List bytes) {
-+    _rolling.add(bytes);
-+    _rollingBytes += bytes.length;
-+    while (_rollingBytes > _rollingLimit && _rolling.isNotEmpty) {
-+      _rollingBytes -= _rolling.removeAt(0).length;
++    if (!_dumping) {
++      if (!File('/sdcard/Download/DSH-Go/.wake-sample').existsSync()) return;
++      _dumping = true;
 +    }
-+  }
-+
-+  /// Writes what was just heard, when a marker file asks for it (the terminal drops one):
-+  /// a sample nobody asked for is a file in Downloads that keeps showing up.
-+  void _maybeWriteSample() {
-+    if (_rolling.isEmpty) return;
-+    if (!File('/sdcard/Download/DSH-Go/.wake-sample').existsSync()) return;
-+    final pcm = BytesBuilder(copy: false);
-+    for (final frame in _rolling) {
-+      pcm.add(frame);
-+    }
-+    _rolling.clear();
-+    _rollingBytes = 0;
-+    unawaited(_writeSample(pcm.takeBytes()));
++    _dump.add(bytes);
++    if (_dump.length < _dumpBytes) return;
++    _dumping = false;
++    unawaited(_writeSample(_dump.takeBytes()));
 +  }
 +
 +  static Future<void> _writeSample(Uint8List pcm) async {
@@ -156,7 +211,7 @@ index cf6e008..fcd9c63 100644
    void _onEvent(Map<Object?, Object?> event) {
      final kind = event['kind'];
      if (kind != 'wake.pcm') _dbg('event $kind');
-@@ -249,6 +301,7 @@ class WakeWordController extends Notifier<WakeStatus> {
+@@ -249,6 +302,7 @@ class WakeWordController extends Notifier<WakeStatus> {
          final bytes = event['bytes'];
          if (bytes is Uint8List) {
            _pcmCount++;
@@ -164,18 +219,26 @@ index cf6e008..fcd9c63 100644
            if (_pcmCount % 50 == 1) {
              final level = event['level'];
              final floor = event['floor'];
-@@ -262,7 +315,9 @@ class WakeWordController extends Notifier<WakeStatus> {
+@@ -262,7 +316,7 @@ class WakeWordController extends Notifier<WakeStatus> {
            _dbg('pcm bytes type=${bytes.runtimeType}');
          }
        case 'wake.speechEnd':
 -        // 600 ms quiet (WakeCapture's hangover): nothing said, start a fresh stream.
-+        // 700 ms quiet (WakeCapture's hangover): the utterance ended, so what it heard is
-+        // complete and can be written out if someone asked for a sample.
-+        _maybeWriteSample();
++        // 700 ms quiet (WakeCapture's hangover): nothing said, start a fresh stream.
          _resetStream();
        case 'wake.listening':
          if (ref.mounted) state = state.copyWith(listening: WakeListening.listening, clearReason: true);
-@@ -326,6 +381,10 @@ class WakeWordController extends Notifier<WakeStatus> {
+@@ -315,6 +369,9 @@ class WakeWordController extends Notifier<WakeStatus> {
+     final heard = recognizer.getResult(stream).text;
+     if (heard.isNotEmpty && heard != _text) _dbg('heard: $heard');
+     _text = heard;
++    if (heard.isNotEmpty && ref.mounted && heard != state.heard) {
++      state = state.copyWith(heard: heard);
++    }
+     if (_heardWakeWord(_text)) {
+       _dbg('MATCH: $_text');
+       unawaited(_fire());
+@@ -326,6 +383,10 @@ class WakeWordController extends Notifier<WakeStatus> {
    }
  
    /// 唤醒词 found in what was heard: punctuation, spaces and case ignored.
@@ -186,7 +249,7 @@ index cf6e008..fcd9c63 100644
    bool _heardWakeWord(String text) {
      final keyword = _compact(_keyword);
      if (keyword.isEmpty) return false;
-@@ -333,7 +392,11 @@ class WakeWordController extends Notifier<WakeStatus> {
+@@ -333,7 +394,11 @@ class WakeWordController extends Notifier<WakeStatus> {
      // A stream fed a room decodes it into one syllable repeated ("呵呵呵呵呵"). That is not
      // speech, and matching inside it is how a wake word fires on nothing.
      if (_isBabble(heard)) return false;
@@ -199,7 +262,7 @@ index cf6e008..fcd9c63 100644
    }
  
    /// One character repeated five times or more: a recognizer's answer to noise, not a word.
-@@ -414,13 +477,14 @@ class WakeWordController extends Notifier<WakeStatus> {
+@@ -414,13 +479,14 @@ class WakeWordController extends Notifier<WakeStatus> {
            ),
            tokens: model.tokens,
            modelType: 'zipformer',
