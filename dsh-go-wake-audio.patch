@@ -1,26 +1,22 @@
-From a670250b0fa6428708d6576779aa58ebbb90b66d Mon Sep 17 00:00:00 2001
+From af36a9791e53b2b1cc44fd95ddd0c1d536a8e423 Mon Sep 17 00:00:00 2001
 From: dsh-wake <wake@local>
 Date: Wed, 18 Nov 2026 02:36:38 +0800
-Subject: [PATCH] feat(voice): wake on a keyword spotter, the way a phone's own
- wake word works
+Subject: [PATCH] fix(voice): the spotter wants the microphone as it is
 MIME-Version: 1.0
 Content-Type: text/plain; charset=UTF-8
 Content-Transfer-Encoding: 8bit
 
-Brand wake words are not a general recognizer reading text: a few-megabyte model
-that knows only the phrase, with a threshold states. This app already links that
-component — sherpa_onnx's KeywordSpotter — and the earlier attempt skipped it on
-purpose because it needed a model of its own.
+The keyword spotter loads and its own test audio matches, so the model and the
+keyword line are right; what it hears does not. A spotter is trained on clean
+speech, and VOICE_COMMUNICATION with the echo canceller and suppressor (what
+语音通话 wants, and what 小安语音助手 uses) reshapes the signal enough that the
+same phrase stops matching.
 
-So the wake path now runs the keyword spotter first: 唤醒词 is written as the
-pinyin token line the model reads (小安小安 → x iǎo ān x iǎo ān), the model ships
-in assets (4.9 MB, Apache-2.0, apache-2.0 kws zipformer wenetspeech), and a hit
-is a confidence decision rather than a substring of whatever a recognizer guessed.
-
-The utterance arm (record, speech/transcribe, match text) stays as the fallback
-for a phrase pinyin cannot spell.
+Operit's wake listener opens AudioSource.MIC and nothing else; so does this now.
+Both arms hear every frame from here: the spotter answers a clean 唤醒词, the
+utterance arm catches what it misses.
 ---
- .../ccch1mneyyy/dsh_app/wake/WakeCapture.kt   |  53 ++-
+ .../ccch1mneyyy/dsh_app/wake/WakeCapture.kt   |  43 +-
  app/assets/kws/LICENSE.txt                    |  20 +
  app/assets/kws/NOTICE.txt                     |   4 +
  app/assets/kws/decoder.int8.onnx              | Bin 0 -> 181069 bytes
@@ -30,9 +26,9 @@ for a phrase pinyin cannot spell.
  app/lib/ui/chat/chat_screen.dart              |  25 +-
  app/lib/ui/settings/voice_settings_page.dart  |  24 +-
  app/lib/voice/wake_keywords.dart              |  50 +++
- app/lib/voice/wake_word.dart                  | 387 +++++++++++++++---
+ app/lib/voice/wake_word.dart                  | 386 +++++++++++++++---
  app/pubspec.yaml                              |   4 +
- 12 files changed, 721 insertions(+), 73 deletions(-)
+ 12 files changed, 710 insertions(+), 73 deletions(-)
  create mode 100644 app/assets/kws/LICENSE.txt
  create mode 100644 app/assets/kws/NOTICE.txt
  create mode 100644 app/assets/kws/decoder.int8.onnx
@@ -42,7 +38,7 @@ for a phrase pinyin cannot spell.
  create mode 100644 app/lib/voice/wake_keywords.dart
 
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/wake/WakeCapture.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/wake/WakeCapture.kt
-index 2e5ad22..9ddecc9 100644
+index 2e5ad22..6f623e8 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/wake/WakeCapture.kt
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/wake/WakeCapture.kt
 @@ -4,6 +4,8 @@ import android.annotation.SuppressLint
@@ -63,16 +59,16 @@ index 2e5ad22..9ddecc9 100644
      private var thread: Thread? = null
      @Volatile private var running = false
      private var session = 0
-@@ -39,19 +43,36 @@ class WakeCapture(
+@@ -39,11 +43,17 @@ class WakeCapture(
          if (min <= 0) return false
          val r = runCatching {
              AudioRecord(
 -                MediaRecorder.AudioSource.VOICE_RECOGNITION,
-+                // The source 语音通话 records with (speech/CallCapture.kt), and the one whose
-+                // audio the model decodes correctly on this device. VOICE_RECOGNITION was not:
-+                // what it produced decoded as one syllable repeated (咦咦咦 / 呵呵呵) even at
-+                // -25 dB, which is the whole reason the wake word never matched.
-+                MediaRecorder.AudioSource.VOICE_COMMUNICATION,
++                // MIC, unprocessed, which is what Operit's wake listener opens. A keyword
++                // spotter was trained on clean speech: the platform's echo canceller and noise
++                // suppressor (which 语音通话 wants) reshape the signal until the model's test
++                // audio still matches but a phone's own recording does not.
++                MediaRecorder.AudioSource.MIC,
                  RATE,
                  AudioFormat.CHANNEL_IN_MONO,
                  AudioFormat.ENCODING_PCM_16BIT,
@@ -83,26 +79,15 @@ index 2e5ad22..9ddecc9 100644
              )
          }.getOrNull() ?: return false
          if (r.state != AudioRecord.STATE_INITIALIZED) {
-             r.release()
-             return false
+@@ -52,6 +62,7 @@ class WakeCapture(
          }
-+        // What 小安语音助手 does with its session, and what 语音通话 does here: the platform's
-+        // echo canceller and noise suppressor, so the model is handed the voice and not the room.
-+        runCatching {
-+            if (AcousticEchoCanceler.isAvailable()) {
-+                aec = AcousticEchoCanceler.create(r.audioSessionId)?.also { it.enabled = true }
-+            }
-+            if (NoiseSuppressor.isAvailable()) {
-+                ns = NoiseSuppressor.create(r.audioSessionId)?.also { it.enabled = true }
-+            }
-+        }
          val started = runCatching { r.startRecording() }.isSuccess && r.recordingState == AudioRecord.RECORDSTATE_RECORDING
          if (!started) {
 +            releaseEffects()
              r.release()
              return false
          }
-@@ -94,14 +115,17 @@ class WakeCapture(
+@@ -94,14 +105,17 @@ class WakeCapture(
                  if (!speaking && loud >= LOUD_FRAMES) {
                      speaking = true
                  }
@@ -125,7 +110,7 @@ index 2e5ad22..9ddecc9 100644
              }
          } catch (_: RuntimeException) {
              report(mine) { onError("capture") }
-@@ -114,6 +138,13 @@ class WakeCapture(
+@@ -114,6 +128,13 @@ class WakeCapture(
          if (mine == session && running) block()
      }
  
@@ -139,7 +124,7 @@ index 2e5ad22..9ddecc9 100644
      /** Ends the capture: the thread leaves its read and the recorder is released. */
      fun stop(): Boolean {
          session++
-@@ -125,13 +156,15 @@ class WakeCapture(
+@@ -125,13 +146,15 @@ class WakeCapture(
          thread = null
          runCatching { t?.join(JOIN_MS) }
          val ended = t?.isAlive != true
@@ -156,7 +141,7 @@ index 2e5ad22..9ddecc9 100644
          const val JOIN_MS = 300L
          /** dB over the learned floor a frame needs before it counts as speech. */
          const val MARGIN_DB = 9.0
-@@ -139,8 +172,8 @@ class WakeCapture(
+@@ -139,8 +162,8 @@ class WakeCapture(
          const val FLOOR_RISE_DB = 0.04
          /** 60 ms of speech before the burst opens (a knock or a click does not). */
          const val LOUD_FRAMES = 3
@@ -73122,7 +73107,7 @@ index 0000000..8a88271
 +  return ('', syllable);
 +}
 diff --git a/app/lib/voice/wake_word.dart b/app/lib/voice/wake_word.dart
-index cf6e008..d878843 100644
+index cf6e008..698f9a1 100644
 --- a/app/lib/voice/wake_word.dart
 +++ b/app/lib/voice/wake_word.dart
 @@ -10,29 +10,36 @@
@@ -73322,7 +73307,7 @@ index cf6e008..d878843 100644
        case 'wake.listening':
          if (ref.mounted) state = state.copyWith(listening: WakeListening.listening, clearReason: true);
        case 'wake.yield':
-@@ -288,44 +377,193 @@ class WakeWordController extends Notifier<WakeStatus> {
+@@ -288,44 +377,192 @@ class WakeWordController extends Notifier<WakeStatus> {
      }
    }
  
@@ -73344,8 +73329,13 @@ index cf6e008..d878843 100644
 +    if (_keyword != _kwsKeyword) unawaited(_prepareSpotter());
 +    final spotter = _spotter;
 +    final stream = _kwsStream;
-+    if (spotter != null && stream != null) {
-+      _feedSpotter(spotter, stream, bytes);
++    // Both arms hear every frame: the spotter answers a clean 唤醒词, and the utterance arm
++    // catches what it misses (and is the only arm for a phrase pinyin cannot spell).
++    if (spotter != null && stream != null) _feedSpotter(spotter, stream, bytes);
++    if (_lastLevel > -40) {
++      _inSpeech = true;
++      _quietSamples = 0;
++      _utterance.add(bytes);
        return;
      }
 -    final recognizer = _recognizer;
@@ -73355,24 +73345,6 @@ index cf6e008..d878843 100644
 -    final data = ByteData.sublistView(bytes);
 -    for (var i = 0; i < samples.length; i++) {
 -      samples[i] = data.getInt16(i * 2, Endian.little) / 32768.0;
--    }
--    stream.acceptWaveform(samples: samples, sampleRate: 16000);
--    var decoded = false;
--    while (recognizer.isReady(stream)) {
--      recognizer.decode(stream);
--      decoded = true;
-+    if (_lastLevel > -40) {
-+      _inSpeech = true;
-+      _quietSamples = 0;
-+      _utterance.add(bytes);
-+      return;
-     }
--    if (!decoded) return;
--    final heard = recognizer.getResult(stream).text;
--    if (heard.isNotEmpty && heard != _text) _dbg('heard: $heard');
--    _text = heard;
--    if (_heardWakeWord(_text)) {
--      _dbg('MATCH: $_text');
 +    if (!_inSpeech) return;
 +    _utterance.add(bytes);
 +    _quietSamples += bytes.length;
@@ -73402,16 +73374,17 @@ index cf6e008..d878843 100644
 +      _dbg('MATCH(kws): $hit');
 +      if (ref.mounted) state = state.copyWith(heard: hit);
 +      spotter.reset(stream);
-       unawaited(_fire());
--    } else if (recognizer.isEndpoint(stream) || _isBabble(_compact(_text))) {
--      // 一个音节重复到底 is the model stuck on noise: it never endpoints on its own, so the
--      // stream has to be dropped here or every later word is decoded into the same loop.
--      _resetStream();
++      unawaited(_fire());
 +    } on Object catch (error) {
 +      _dbg('kws feed failed: $error');
 +      _spotter = null;
 +      _kwsStream = null;
-+    }
+     }
+-    stream.acceptWaveform(samples: samples, sampleRate: 16000);
+-    var decoded = false;
+-    while (recognizer.isReady(stream)) {
+-      recognizer.decode(stream);
+-      decoded = true;
 +  }
 +
 +  Future<void> _prepareSpotter() async {
@@ -73423,7 +73396,18 @@ index cf6e008..d878843 100644
 +      // Not a phrase pinyin can spell (letters, digits): the utterance arm answers instead.
 +      _dbg('kws: "$keyword" cannot be written as pinyin');
 +      return;
-+    }
+     }
+-    if (!decoded) return;
+-    final heard = recognizer.getResult(stream).text;
+-    if (heard.isNotEmpty && heard != _text) _dbg('heard: $heard');
+-    _text = heard;
+-    if (_heardWakeWord(_text)) {
+-      _dbg('MATCH: $_text');
+-      unawaited(_fire());
+-    } else if (recognizer.isEndpoint(stream) || _isBabble(_compact(_text))) {
+-      // 一个音节重复到底 is the model stuck on noise: it never endpoints on its own, so the
+-      // stream has to be dropped here or every later word is decoded into the same loop.
+-      _resetStream();
 +    // Once per keyword: a failure here is remembered, not retried on every frame.
 +    _kwsKeyword = keyword;
 +    _kwsPreparing = true;
@@ -73491,9 +73475,9 @@ index cf6e008..d878843 100644
 +    } on Object catch (error) {
 +      _dbg('kws assets failed: $error');
 +      return null;
-     }
-   }
- 
++    }
++  }
++
 +  Future<void> _recognize(Uint8List pcm) async {
 +    try {
 +      final client = ref.read(activeConnectionProvider).value?.client;
@@ -73512,9 +73496,9 @@ index cf6e008..d878843 100644
 +      }
 +    } on Object catch (error) {
 +      _dbg('recognize failed: $error');
-+    }
-+  }
-+
+     }
+   }
+ 
 +  static Uint8List _wav(Uint8List pcm) {
 +    final header = ByteData(44)
 +      ..setUint32(0, 0x52494646, Endian.big) // RIFF
@@ -73544,7 +73528,7 @@ index cf6e008..d878843 100644
    bool _heardWakeWord(String text) {
      final keyword = _compact(_keyword);
      if (keyword.isEmpty) return false;
-@@ -333,7 +571,25 @@ class WakeWordController extends Notifier<WakeStatus> {
+@@ -333,7 +570,25 @@ class WakeWordController extends Notifier<WakeStatus> {
      // A stream fed a room decodes it into one syllable repeated ("呵呵呵呵呵"). That is not
      // speech, and matching inside it is how a wake word fires on nothing.
      if (_isBabble(heard)) return false;
@@ -73571,7 +73555,7 @@ index cf6e008..d878843 100644
    }
  
    /// One character repeated five times or more: a recognizer's answer to noise, not a word.
-@@ -357,7 +613,11 @@ class WakeWordController extends Notifier<WakeStatus> {
+@@ -357,7 +612,11 @@ class WakeWordController extends Notifier<WakeStatus> {
    Future<void> _fire() async {
      final now = DateTime.now();
      final until = _cooldownUntil;
@@ -73584,7 +73568,7 @@ index cf6e008..d878843 100644
      _cooldownUntil = now.add(_cooldown);
      final settings = ref.read(wakeSettingsProvider);
      if (settings.chime) unawaited(SystemSound.play(SystemSoundType.alert));
-@@ -368,6 +628,7 @@ class WakeWordController extends Notifier<WakeStatus> {
+@@ -368,6 +627,7 @@ class WakeWordController extends Notifier<WakeStatus> {
      await _stopService();
      try {
        await ref.read(wakePlatformProvider).present();
@@ -73592,7 +73576,7 @@ index cf6e008..d878843 100644
      } on Object {
        // The activity could not be brought forward (or there is no such channel): the caller's
        // screen is unchanged, and the call still opens in the app when it comes back.
-@@ -414,19 +675,23 @@ class WakeWordController extends Notifier<WakeStatus> {
+@@ -414,19 +674,23 @@ class WakeWordController extends Notifier<WakeStatus> {
            ),
            tokens: model.tokens,
            modelType: 'zipformer',
@@ -73621,7 +73605,7 @@ index cf6e008..d878843 100644
      _streamStarted = null;
      final recognizer = _recognizer;
      final stream = _stream;
-@@ -466,12 +731,32 @@ final wakeWordProvider = NotifierProvider<WakeWordController, WakeStatus>(WakeWo
+@@ -466,12 +730,32 @@ final wakeWordProvider = NotifierProvider<WakeWordController, WakeStatus>(WakeWo
  /// chime fires this and the screen that owns a conversation answers with its call.
  final wakeCallRequestProvider = NotifierProvider<WakeCallRequest, int>(WakeCallRequest.new);
  
