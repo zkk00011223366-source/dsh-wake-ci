@@ -1,7 +1,7 @@
 == resources ==
 /dev/root        72G   54G   19G  75% /
                total        used        free      shared  buff/cache   available
-Mem:            7931        4126         956          30        3192        3805
+Mem:            7931        4314         685          31        3276        3617
 == tail ==
 
 ==> 依赖: flutter pub get
@@ -103,3 +103,7 @@ Flutter assets will be downloaded from https://storage.googleapis.com. Make sure
 [=========                              ] 25%                                   
 Font asset "DshIcons.ttf" was tree-shaken, reducing it from 53796 to 49988 bytes (7.1% reduction). Tree-shaking can be disabled by providing the --no-tree-shake-icons flag when building your app.
 Font asset "MaterialIcons-Regular.otf" was tree-shaken, reducing it from 1645184 to 3924 bytes (99.8% reduction). Tree-shaking can be disabled by providing the --no-tree-shake-icons flag when building your app.
+Note: Some input files use or override a deprecated API.
+Note: Recompile with -Xlint:deprecation for details.
+Note: Some input files use unchecked or unsafe operations.
+Note: Recompile with -Xlint:unchecked for details.
