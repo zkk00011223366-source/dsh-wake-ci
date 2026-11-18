@@ -1,35 +1,36 @@
-From e2e979c9cb245bcf1fc69f0bc4fcee6b220c035e Mon Sep 17 00:00:00 2001
+From 2ba7f8bf824cb8feb297ed5f7e4147cea082f1e4 Mon Sep 17 00:00:00 2001
 From: dsh-wake <wake@local>
 Date: Wed, 18 Nov 2026 02:36:38 +0800
-Subject: [PATCH] feat(voice): the call gets a window of its own
+Subject: [PATCH] feat(voice): a call survives leaving the app, and the phone
+ being operated
 MIME-Version: 1.0
 Content-Type: text/plain; charset=UTF-8
 Content-Transfer-Encoding: 8bit
 
-A picture-in-picture window is the whole activity shrunk: it cannot be moved,
-cannot be hidden to an edge, and is a rectangle of the app rather than a card of
-the call. This adds the real thing, on the overlay path 桌面宠物 already uses:
+A call ended the moment the app went behind (_call.backgrounded() in the lifecycle
+callback), so 助手 operating the phone during a call killed it — the two could
+never happen together. Three things had to change together:
 
-- CallOverlay draws a 84×150dp card (the light, a Chronometer, 挂断), adds it as
-  TYPE_APPLICATION_OVERLAY, drags with the finger and rests against the side it
-  was thrown towards (EdgeSnap, the same maths the pet docks with). The dock is
-  remembered, so the card comes back where it was left.
-- The app steps aside behind it (moveTaskToBack) and tapping the card brings the
-  conversation back; 挂断 on the card ends the call and takes the card down.
-- Without 「显示在其他应用上层」 the card cannot be added: the call asks for it and
-  falls back to picture-in-picture so the call is never lost.
+- leaving the app no longer ends the call; the floating card appears instead,
+  and tapping it comes back to the same page with the call still up.
+- Android refuses the microphone to a backgrounded app with no foreground
+  service of that type, so CallForegroundService (microphone, low-importance
+  notification 语音通话中) keeps the call's recording alive while the person is
+  elsewhere. It starts with the call page and stops with it.
+- the card is the only thing shown when leaving: the picture-in-picture fallback
+  would drag the whole activity into a system window every time.
 
-Also in this build: 唤醒词 now reaches a new conversation (the session callback
-returned before sending it), which is why a wake on a fresh chat opened in
-silence.
+The card itself is unchanged from the last build: 84×150dp, draggable, docks to
+the edge it is thrown towards, 挂断 ends the call and takes the card down.
 ---
- app/android/app/src/main/AndroidManifest.xml  |   1 +
+ app/android/app/src/main/AndroidManifest.xml  |  10 +
  .../ccch1mneyyy/dsh_app/MainActivity.kt       |  62 +++
- .../ccch1mneyyy/dsh_app/call/CallOverlay.kt   | 293 +++++++++++
- .../dsh_app/call/CallOverlayPlugin.kt         |  58 +++
+ .../dsh_app/call/CallForegroundService.kt     |  94 ++++
+ .../ccch1mneyyy/dsh_app/call/CallOverlay.kt   | 291 +++++++++++
+ .../dsh_app/call/CallOverlayPlugin.kt         |  66 +++
  .../ccch1mneyyy/dsh_app/wake/WakeCapture.kt   |  43 +-
- .../src/main/res/values-zh/i18n_strings.xml   |   1 +
- .../app/src/main/res/values/i18n_strings.xml  |   1 +
+ .../src/main/res/values-zh/i18n_strings.xml   |   4 +
+ .../app/src/main/res/values/i18n_strings.xml  |   4 +
  app/assets/kws/LICENSE.txt                    |  20 +
  app/assets/kws/NOTICE.txt                     |   4 +
  app/assets/kws/decoder.int8.onnx              | Bin 0 -> 181069 bytes
@@ -41,12 +42,13 @@ silence.
  app/lib/ui/chat/chat_screen.dart              |  35 +-
  app/lib/ui/chat/media/media_format.dart       |  16 +-
  app/lib/ui/settings/voice_settings_page.dart  |  24 +-
- app/lib/ui/speech/voice_call_page.dart        | 142 +++++-
+ app/lib/ui/speech/voice_call_page.dart        | 172 ++++++-
  app/lib/ui/theme/app_icons.dart               |   4 +
  app/lib/voice/wake_keywords.dart              |  50 ++
  app/lib/voice/wake_word.dart                  | 460 +++++++++++++++---
  app/pubspec.yaml                              |   4 +
- 23 files changed, 1346 insertions(+), 101 deletions(-)
+ 24 files changed, 1490 insertions(+), 102 deletions(-)
+ create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallForegroundService.kt
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallOverlay.kt
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallOverlayPlugin.kt
  create mode 100644 app/assets/kws/LICENSE.txt
@@ -58,7 +60,7 @@ silence.
  create mode 100644 app/lib/voice/wake_keywords.dart
 
 diff --git a/app/android/app/src/main/AndroidManifest.xml b/app/android/app/src/main/AndroidManifest.xml
-index 20c6331..3dc6118 100644
+index 20c6331..5ea5583 100644
 --- a/app/android/app/src/main/AndroidManifest.xml
 +++ b/app/android/app/src/main/AndroidManifest.xml
 @@ -66,6 +66,7 @@
@@ -69,6 +71,22 @@ index 20c6331..3dc6118 100644
              android:theme="@style/LaunchTheme"
              android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode"
              android:hardwareAccelerated="true"
+@@ -267,6 +268,15 @@
+             android:foregroundServiceType="microphone">
+         </service>
+ 
++        <!-- 语音通话 while the app is behind (call/CallForegroundService.kt): the microphone
++             foreground service that keeps a call's recording alive when the person uses another
++             app — 操作手机 during a call must not end it. -->
++        <service
++            android:name=".call.CallForegroundService"
++            android:exported="false"
++            android:foregroundServiceType="microphone">
++        </service>
++
+         <!-- Keeps the floating pet's process up when only remote hosts are used (pet/PetOverlayService.kt). -->
+         <service
+             android:name=".pet.PetOverlayService"
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/MainActivity.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/MainActivity.kt
 index a5168f0..6cd8545 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/MainActivity.kt
@@ -171,12 +189,112 @@ index a5168f0..6cd8545 100644
                  "bringToFront" -> {
                      startActivity(
                          Intent(this, MainActivity::class.java)
+diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallForegroundService.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallForegroundService.kt
+new file mode 100644
+index 0000000..90a77cf
+--- /dev/null
++++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallForegroundService.kt
+@@ -0,0 +1,94 @@
++package io.github.ccch1mneyyy.dsh_app.call
++
++import android.app.Notification
++import android.app.NotificationChannel
++import android.app.NotificationManager
++import android.app.PendingIntent
++import android.app.Service
++import android.content.Context
++import android.content.Intent
++import android.content.pm.ServiceInfo
++import android.os.Build
++import android.os.IBinder
++import io.github.ccch1mneyyy.dsh_app.MainActivity
++import io.github.ccch1mneyyy.dsh_app.R
++import io.github.ccch1mneyyy.dsh_app.i18n.AppStrings
++
++/**
++ * 语音通话 while the app is behind: a microphone foreground service with nothing to do but be
++ * in the foreground.
++ *
++ * Android refuses microphone access to a backgrounded app that has no foreground service of
++ * that type, so a call that kept running after the person opened another app would go deaf —
++ * which is why a call used to end on background. With this up, 操作手机 during a call does not
++ * take the microphone away.
++ */
++class CallForegroundService : Service() {
++    override fun onBind(intent: Intent?): IBinder? = null
++
++    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
++        ensureChannel(this)
++        try {
++            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
++                startForeground(ID, notification(this), ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE)
++            } else {
++                startForeground(ID, notification(this))
++            }
++        } catch (_: Exception) {
++            stopSelf()
++            return START_NOT_STICKY
++        }
++        return START_STICKY
++    }
++
++    private fun notification(context: Context): Notification {
++        val open = PendingIntent.getActivity(
++            context,
++            0,
++            Intent(context, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP),
++            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
++        )
++        // minSdk is 26, so the channel-taking builder is always there.
++        return Notification.Builder(context, CHANNEL)
++            .setSmallIcon(R.drawable.ic_stat_dsh)
++            .setContentTitle(AppStrings.get(context, R.string.call_running_title))
++            .setContentText(AppStrings.get(context, R.string.call_running_text))
++            .setOngoing(true)
++            .setContentIntent(open)
++            .build()
++    }
++
++    companion object {
++        private const val CHANNEL = "dsh_call"
++        private const val ID = 47
++
++        fun ensure(context: Context, on: Boolean) {
++            val intent = Intent(context, CallForegroundService::class.java)
++            try {
++                if (on) {
++                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
++                        context.startForegroundService(intent)
++                    } else {
++                        context.startService(intent)
++                    }
++                } else {
++                    context.stopService(intent)
++                }
++            } catch (_: Exception) {
++                // A vendor build refused it: the call still runs while the app is in front.
++            }
++        }
++
++        private fun ensureChannel(context: Context) {
++            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
++            val nm = context.getSystemService(NotificationManager::class.java) ?: return
++            nm.createNotificationChannel(
++                NotificationChannel(
++                    CHANNEL,
++                    AppStrings.get(context, R.string.call_running_channel),
++                    NotificationManager.IMPORTANCE_LOW,
++                ).apply { setShowBadge(false) },
++            )
++        }
++    }
++}
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallOverlay.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallOverlay.kt
 new file mode 100644
-index 0000000..3a0a44b
+index 0000000..f3aa820
 --- /dev/null
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallOverlay.kt
-@@ -0,0 +1,293 @@
+@@ -0,0 +1,291 @@
 +package io.github.ccch1mneyyy.dsh_app.call
 +
 +import android.annotation.SuppressLint
@@ -190,8 +308,6 @@ index 0000000..3a0a44b
 +import android.graphics.Shader
 +import android.graphics.drawable.GradientDrawable
 +import android.os.Build
-+import android.os.Handler
-+import android.os.Looper
 +import android.os.SystemClock
 +import android.view.Gravity
 +import android.view.MotionEvent
@@ -230,7 +346,6 @@ index 0000000..3a0a44b
 +    private var params: WindowManager.LayoutParams? = null
 +    private var dock = Dock.DEFAULT
 +    private var context: Context? = null
-+    private val main = Handler(Looper.getMainLooper())
 +
 +    val shown: Boolean get() = card != null
 +
@@ -293,9 +408,10 @@ index 0000000..3a0a44b
 +        }
 +    }
 +
++    @Suppress("DEPRECATION")
 +    private fun overlayType(): Int =
 +        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
-+        else @Suppress("DEPRECATION") WindowManager.LayoutParams.TYPE_PHONE
++        else WindowManager.LayoutParams.TYPE_PHONE
 +
 +    private fun safeArea(context: Context, manager: WindowManager): SafeArea {
 +        val m = context.resources.displayMetrics
@@ -472,10 +588,10 @@ index 0000000..3a0a44b
 +}
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallOverlayPlugin.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallOverlayPlugin.kt
 new file mode 100644
-index 0000000..b5e040d
+index 0000000..fe7f5f7
 --- /dev/null
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallOverlayPlugin.kt
-@@ -0,0 +1,58 @@
+@@ -0,0 +1,66 @@
 +package io.github.ccch1mneyyy.dsh_app.call
 +
 +import android.content.Context
@@ -524,6 +640,14 @@ index 0000000..b5e040d
 +            }
 +            "hide" -> {
 +                CallOverlay.hide()
++                result.success(null)
++            }
++            // The microphone foreground service that keeps a call recording while the app is
++            // behind (操作手机 during a call must not end it).
++            "keepAlive" -> {
++                if (app != null) {
++                    CallForegroundService.ensure(app, call.argument<Boolean>("active") == true)
++                }
 +                result.success(null)
 +            }
 +            else -> result.notImplemented()
@@ -650,26 +774,32 @@ index 2e5ad22..6f623e8 100644
          const val INITIAL_FLOOR_DB = -50.0
          /** At or under this a frame is digital silence, not a room, and never moves the floor. */
 diff --git a/app/android/app/src/main/res/values-zh/i18n_strings.xml b/app/android/app/src/main/res/values-zh/i18n_strings.xml
-index d764a29..38958b3 100644
+index d764a29..fcf7baf 100644
 --- a/app/android/app/src/main/res/values-zh/i18n_strings.xml
 +++ b/app/android/app/src/main/res/values-zh/i18n_strings.xml
-@@ -114,6 +114,7 @@
+@@ -114,6 +114,10 @@
      <!-- 语音唤醒: 常驻监听通知 (wake/WakeWordService.kt). -->
      <string name="wake_channel">语音唤醒</string>
      <string name="wake_channel_description">息屏时保持麦克风监听唤醒词</string>
 +    <string name="call_overlay_hang_up">挂断</string>
++    <string name="call_running_title">语音通话中</string>
++    <string name="call_running_text">在其他应用上操作时保持通话麦克风</string>
++    <string name="call_running_channel">通话麦克风</string>
      <string name="wake_running">正在监听唤醒词</string>
      <string name="wake_stop">关闭</string>
      <string name="pet_window_title">DSH 宠物</string>
 diff --git a/app/android/app/src/main/res/values/i18n_strings.xml b/app/android/app/src/main/res/values/i18n_strings.xml
-index b0839e1..30470c4 100644
+index b0839e1..3862b86 100644
 --- a/app/android/app/src/main/res/values/i18n_strings.xml
 +++ b/app/android/app/src/main/res/values/i18n_strings.xml
-@@ -119,6 +119,7 @@
+@@ -119,6 +119,10 @@
      <!-- 语音唤醒: the always-on listener's notification (wake/WakeWordService.kt). -->
      <string name="wake_channel">Voice wake word</string>
      <string name="wake_channel_description">Keeps the microphone listening for the wake word while the screen is off</string>
 +    <string name="call_overlay_hang_up">Hang up</string>
++    <string name="call_running_title">Call in progress</string>
++    <string name="call_running_text">Keeps the call's microphone while you use other apps</string>
++    <string name="call_running_channel">Call microphone</string>
      <string name="wake_running">Listening for the wake word</string>
      <string name="wake_stop">Turn off</string>
      <string name="pet_window_title">DSH pet</string>
@@ -73637,7 +73767,7 @@ index a43eeb8..f6a8119 100644
  /// 唤醒词 typed by the person; the phrase is matched inside what the recognizer heard.
  Future<void> editWakeKeyword(BuildContext context, WidgetRef ref, String current) async {
 diff --git a/app/lib/ui/speech/voice_call_page.dart b/app/lib/ui/speech/voice_call_page.dart
-index 2f99689..51e7aaa 100644
+index 2f99689..d264fae 100644
 --- a/app/lib/ui/speech/voice_call_page.dart
 +++ b/app/lib/ui/speech/voice_call_page.dart
 @@ -47,6 +47,7 @@ import '../../usage/usage_stats.dart';
@@ -73648,7 +73778,7 @@ index 2f99689..51e7aaa 100644
  import 'call/call_backdrop.dart';
  import 'call/call_parts.dart';
  import 'call/call_transcript.dart';
-@@ -118,10 +119,23 @@ class _VoiceCallPageState extends ConsumerState<VoiceCallPage> with WidgetsBindi
+@@ -118,10 +119,26 @@ class _VoiceCallPageState extends ConsumerState<VoiceCallPage> with WidgetsBindi
    /// and the page comes in without its staggered rise.
    bool _still = false;
  
@@ -73669,15 +73799,49 @@ index 2f99689..51e7aaa 100644
 +    unawaited(const MethodChannel('dsh/app').invokeMethod<void>('setCallActive', {'active': true}));
 +    const MethodChannel('dsh/app').setMethodCallHandler(_onAppCall);
 +    const MethodChannel('dsh/call-overlay').setMethodCallHandler(_onOverlayCall);
++    // 通话 keeps the microphone in the background: the assistant operating the phone during a
++    // call (导航, 外卖) must not take it away.
++    unawaited(const MethodChannel('dsh/call-overlay').invokeMethod<void>('keepAlive', {'active': true}));
      final callSettings = ref.read(callSettingsProvider.notifier);
      final voices = ref.read(speechVoiceSettingsProvider.notifier);
      // The chosen voice, as soon as the settings have been read (the first reply comes later).
-@@ -318,6 +332,14 @@ class _VoiceCallPageState extends ConsumerState<VoiceCallPage> with WidgetsBindi
+@@ -313,11 +330,44 @@ class _VoiceCallPageState extends ConsumerState<VoiceCallPage> with WidgetsBindi
+ 
+   @override
+   void didChangeAppLifecycleState(AppLifecycleState state) {
+-    if (state == AppLifecycleState.paused || state == AppLifecycleState.hidden) _call.backgrounded();
++    if (state != AppLifecycleState.paused && state != AppLifecycleState.hidden) return;
++    // 通话 does not end because the person looked at another app: the assistant operating the
++    // phone (导航, 外卖, 设置) is part of a call, not the end of one. What appears while the
++    // app is behind is the card, so the call is one tap away.
++    if (_call.phase != CallPhase.ended) unawaited(_floatInBackground());
++  }
++
++  /// 切到后台: the card, and only the card. Not the picture-in-picture fallback — that one
++  /// would pull the whole activity into a system window every time the app is left.
++  Future<void> _floatInBackground() async {
++    if (_overlay || _floating) return;
++    final startedAt = _since;
++    try {
++      final shown = await const MethodChannel('dsh/call-overlay').invokeMethod<bool>(
++            'show',
++            {
++              'startedAtElapsedMs':
++                  startedAt == null ? 0 : DateTime.now().difference(startedAt).inMilliseconds,
++            },
++          ) ??
++          false;
++      if (shown) _overlay = true;
++    } on Object {
++      // No overlay permission: the call goes on without a card, and the notification says so.
++    }
+   }
  
    @override
    void dispose() {
 +    _leaveFloating();
 +    if (_overlay) unawaited(const MethodChannel('dsh/call-overlay').invokeMethod<void>('hide'));
++    unawaited(const MethodChannel('dsh/call-overlay').invokeMethod<void>('keepAlive', {'active': false}));
 +    const MethodChannel('dsh/app').setMethodCallHandler(null);
 +    const MethodChannel('dsh/call-overlay').setMethodCallHandler(null);
 +    final wake = _wake;
@@ -73687,7 +73851,7 @@ index 2f99689..51e7aaa 100644
      WidgetsBinding.instance.removeObserver(this);
      unawaited(_live?.stop());
      _leave?.cancel();
-@@ -329,6 +351,66 @@ class _VoiceCallPageState extends ConsumerState<VoiceCallPage> with WidgetsBindi
+@@ -329,6 +379,66 @@ class _VoiceCallPageState extends ConsumerState<VoiceCallPage> with WidgetsBindi
      super.dispose();
    }
  
@@ -73754,7 +73918,7 @@ index 2f99689..51e7aaa 100644
    void _hangUp() {
      HapticFeedback.heavyImpact();
      _call.hangUp();
-@@ -461,6 +543,7 @@ class _VoiceCallPageState extends ConsumerState<VoiceCallPage> with WidgetsBindi
+@@ -461,6 +571,7 @@ class _VoiceCallPageState extends ConsumerState<VoiceCallPage> with WidgetsBindi
    Widget build(BuildContext context) {
      final l10n = context.l10n;
      final theme = Theme.of(context);
@@ -73762,7 +73926,7 @@ index 2f99689..51e7aaa 100644
      _still = AppMotion.reduced(context);
      final settings = ref.watch(callSettingsProvider);
      final performance = ref.watch(performanceDefaultsProvider);
-@@ -645,6 +728,17 @@ class _VoiceCallPageState extends ConsumerState<VoiceCallPage> with WidgetsBindi
+@@ -645,6 +756,17 @@ class _VoiceCallPageState extends ConsumerState<VoiceCallPage> with WidgetsBindi
                          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                          crossAxisAlignment: CrossAxisAlignment.end,
                          children: [
@@ -73780,7 +73944,7 @@ index 2f99689..51e7aaa 100644
                            _rise(
                              0.4,
                              CallKey(
-@@ -658,7 +752,7 @@ class _VoiceCallPageState extends ConsumerState<VoiceCallPage> with WidgetsBindi
+@@ -658,7 +780,7 @@ class _VoiceCallPageState extends ConsumerState<VoiceCallPage> with WidgetsBindi
                              distance: 28,
                            ),
                            _rise(
@@ -73789,7 +73953,7 @@ index 2f99689..51e7aaa 100644
                              HangUpKey(
                                key: const ValueKey('call-hang-up'),
                                icon: AppIcons.hangUp,
-@@ -860,3 +954,49 @@ class _RoundKeyState extends State<_RoundKey> {
+@@ -860,3 +982,49 @@ class _RoundKeyState extends State<_RoundKey> {
      );
    }
  }
