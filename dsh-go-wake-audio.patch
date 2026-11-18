@@ -1,20 +1,13 @@
-From c33598c8670b8b0667e59b866d521ab640ebb784 Mon Sep 17 00:00:00 2001
+From 4e7d58b70bd77ad5f041f30f56a7b677e4776c47 Mon Sep 17 00:00:00 2001
 From: dsh-wake <wake@local>
 Date: Wed, 18 Nov 2026 02:36:38 +0800
-Subject: [PATCH] =?UTF-8?q?fix(voice):=20=E5=94=A4=E9=86=92=E8=AF=8D=20rep?=
- =?UTF-8?q?eated=20wakes=20it=20again?=
-MIME-Version: 1.0
-Content-Type: text/plain; charset=UTF-8
-Content-Transfer-Encoding: 8bit
+Subject: [PATCH] fix(voice): give the microphone up before the call opens
 
-The 8 s cooldown made a second 小安小安 a no-op, which is not how a wake word
-behaves: a person says it, the call opens, they close it, they say it again. The
-guard is now 1.2 s, which is only enough that one phrase cannot fire twice (the
-spotter is reset on the hit).
-
-Everything else stands: the spotter alone answers 唤醒词 (no utterance arm
-running beside it, so no wake that waits for the sentence to end), MIC without
-the platform's echo suppressor, and 唤醒词 matched as typed.
+The call page came up hearing nothing and the assistant talked over itself:
+two AudioRecords on one microphone, because the wake service kept capturing
+after the fire. Listening stops first again, before the call page is pushed.
+A wake always opens the call now, and when it cannot the 6 s fallback starts
+listening again, so stopping here no longer leaves the phone deaf.
 ---
  .../ccch1mneyyy/dsh_app/wake/WakeCapture.kt   |  43 +-
  app/assets/kws/LICENSE.txt                    |  20 +
@@ -26,9 +19,9 @@ the platform's echo suppressor, and 唤醒词 matched as typed.
  app/lib/ui/chat/chat_screen.dart              |  25 +-
  app/lib/ui/settings/voice_settings_page.dart  |  24 +-
  app/lib/voice/wake_keywords.dart              |  50 +++
- app/lib/voice/wake_word.dart                  | 407 +++++++++++++++---
+ app/lib/voice/wake_word.dart                  | 406 +++++++++++++++---
  app/pubspec.yaml                              |   4 +
- 12 files changed, 727 insertions(+), 77 deletions(-)
+ 12 files changed, 727 insertions(+), 76 deletions(-)
  create mode 100644 app/assets/kws/LICENSE.txt
  create mode 100644 app/assets/kws/NOTICE.txt
  create mode 100644 app/assets/kws/decoder.int8.onnx
@@ -73107,7 +73100,7 @@ index 0000000..8a88271
 +  return ('', syllable);
 +}
 diff --git a/app/lib/voice/wake_word.dart b/app/lib/voice/wake_word.dart
-index cf6e008..e955c6e 100644
+index cf6e008..52a6bd0 100644
 --- a/app/lib/voice/wake_word.dart
 +++ b/app/lib/voice/wake_word.dart
 @@ -10,29 +10,36 @@
@@ -73419,9 +73412,9 @@ index cf6e008..e955c6e 100644
 +      _dbg('kws feed failed: $error');
 +      _spotter = null;
 +      _kwsStream = null;
-     }
-   }
- 
++    }
++  }
++
 +  Future<void> _prepareSpotter() async {
 +    if (_kwsPreparing) return;
 +    final keyword = _keyword;
@@ -73503,9 +73496,9 @@ index cf6e008..e955c6e 100644
 +    } on Object catch (error) {
 +      _dbg('kws assets failed: $error');
 +      return null;
-+    }
-+  }
-+
+     }
+   }
+ 
 +  Future<void> _recognize(Uint8List pcm) async {
 +    try {
 +      final client = ref.read(activeConnectionProvider).value?.client;
@@ -73583,7 +73576,7 @@ index cf6e008..e955c6e 100644
    }
  
    /// One character repeated five times or more: a recognizer's answer to noise, not a word.
-@@ -357,17 +624,23 @@ class WakeWordController extends Notifier<WakeStatus> {
+@@ -357,17 +624,24 @@ class WakeWordController extends Notifier<WakeStatus> {
    Future<void> _fire() async {
      final now = DateTime.now();
      final until = _cooldownUntil;
@@ -73600,17 +73593,17 @@ index cf6e008..e955c6e 100644
      _resetStream();
      if (ref.mounted) state = state.copyWith(listening: WakeListening.paused, hits: state.hits + 1, clearReason: true);
 -    // 麦克风让位: the call page records too; the two would cut each other off.
--    await _stopService();
-+    // The call page takes the microphone through MicArbiter when it opens, so listening is
-+    // not stopped here: stopping it was what left the phone deaf when no call opened (the
-+    // screen was on 设置, not on a conversation) until the 20 s fallback ran.
++    // 麦克风让位 before the call page opens: two AudioRecords on the same microphone make the
++    // call hear a room and the assistant answer over itself. A wake always opens the call now,
++    // and when it cannot, the fallback below starts listening again.
+     await _stopService();
      try {
        await ref.read(wakePlatformProvider).present();
 +      _dbg('fire: presented');
      } on Object {
        // The activity could not be brought forward (or there is no such channel): the caller's
        // screen is unchanged, and the call still opens in the app when it comes back.
-@@ -414,19 +687,23 @@ class WakeWordController extends Notifier<WakeStatus> {
+@@ -414,19 +688,23 @@ class WakeWordController extends Notifier<WakeStatus> {
            ),
            tokens: model.tokens,
            modelType: 'zipformer',
@@ -73639,7 +73632,7 @@ index cf6e008..e955c6e 100644
      _streamStarted = null;
      final recognizer = _recognizer;
      final stream = _stream;
-@@ -466,12 +743,32 @@ final wakeWordProvider = NotifierProvider<WakeWordController, WakeStatus>(WakeWo
+@@ -466,12 +744,32 @@ final wakeWordProvider = NotifierProvider<WakeWordController, WakeStatus>(WakeWo
  /// chime fires this and the screen that owns a conversation answers with its call.
  final wakeCallRequestProvider = NotifierProvider<WakeCallRequest, int>(WakeCallRequest.new);
  
