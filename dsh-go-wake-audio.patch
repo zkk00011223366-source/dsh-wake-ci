@@ -1,27 +1,27 @@
-From a49e8f46c48629f0d549da36a14239cd6c00afa6 Mon Sep 17 00:00:00 2001
+From bbee9ad71b3038a3776d6d6e4fbf3377d71155f8 Mon Sep 17 00:00:00 2001
 From: dsh-wake <wake@local>
 Date: Wed, 18 Nov 2026 02:36:38 +0800
-Subject: [PATCH] =?UTF-8?q?feat(voice):=20answer=20=E6=88=91=E5=9C=A8=20wh?=
- =?UTF-8?q?en=20woken?=
+Subject: [PATCH] feat(voice): the wake word is the first thing the assistant
+ hears
 MIME-Version: 1.0
 Content-Type: text/plain; charset=UTF-8
 Content-Transfer-Encoding: 8bit
 
-A wake that opens a call in silence is indistinguishable from one that did
-nothing, especially with the screen off. The phone now says 我在 through the
-chosen voice as the call page opens; with no voice configured it stays quiet,
-and the chime and the vibration already carried the answer.
+Said 小安, the call now opens with 唤醒词 already in the conversation, so the
+assistant answers the wake out loud instead of the page opening in silence and
+waiting to be spoken to. What it says back is the model's answer, not a canned
+line, and the chime and vibration still confirm the wake before it arrives.
 
-The rest is unchanged from the previous round: 小安's stream policy (reset only
-after 5 s of quiet or 15 s), a two-second record buffer read 1024 samples at a
-time, a wake request answered on the first frame when no chat screen was up,
-and 唤醒词 matched as typed.
+The rest is unchanged: 小安's stream policy (reset only after 5 s of quiet or
+15 s), a two-second record buffer read 1024 samples at a time, a wake request
+answered on the first frame when no chat screen was up, and 唤醒词 matched as
+typed.
 ---
- .../ccch1mneyyy/dsh_app/wake/WakeCapture.kt   |  53 ++++-
- app/lib/ui/chat/chat_screen.dart              |  14 +-
+ .../ccch1mneyyy/dsh_app/wake/WakeCapture.kt   |  53 +++++-
+ app/lib/ui/chat/chat_screen.dart              |  25 ++-
  app/lib/ui/settings/voice_settings_page.dart  |  24 ++-
- app/lib/voice/wake_word.dart                  | 181 +++++++++++++++---
- 4 files changed, 222 insertions(+), 50 deletions(-)
+ app/lib/voice/wake_word.dart                  | 171 +++++++++++++++---
+ 4 files changed, 221 insertions(+), 52 deletions(-)
 
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/wake/WakeCapture.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/wake/WakeCapture.kt
 index 2e5ad22..9ddecc9 100644
@@ -150,17 +150,17 @@ index 2e5ad22..9ddecc9 100644
          const val INITIAL_FLOOR_DB = -50.0
          /** At or under this a frame is digital silence, not a room, and never moves the floor. */
 diff --git a/app/lib/ui/chat/chat_screen.dart b/app/lib/ui/chat/chat_screen.dart
-index d9540df..520b105 100644
+index d9540df..88ad0d8 100644
 --- a/app/lib/ui/chat/chat_screen.dart
 +++ b/app/lib/ui/chat/chat_screen.dart
-@@ -369,8 +369,20 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
+@@ -369,8 +369,22 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
      ref.listenManual(currentSessionProvider, (_, _) => _scheduleInteraction());
      // 语音唤醒: the wake word opens this conversation's call (voice/wake_word.dart).
      ref.listenManual(wakeCallRequestProvider, (before, after) {
 -      if (after > (before ?? 0)) unawaited(_startCall(() => mounted));
 +      if (after > (before ?? 0)) {
 +        ref.read(wakeCallHandledProvider.notifier).mark(after);
-+        unawaited(_startCall(() => mounted));
++        unawaited(_startCall(() => mounted, wakePhrase: ref.read(wakeCallRequestProvider.notifier).phrase));
 +      }
      });
 +    // A wake word that matched while this screen was not up: answer it once the first frame
@@ -169,12 +169,37 @@ index d9540df..520b105 100644
 +    if (pendingWake > ref.read(wakeCallHandledProvider)) {
 +      ref.read(wakeCallHandledProvider.notifier).mark(pendingWake);
 +      WidgetsBinding.instance.addPostFrameCallback((_) {
-+        if (mounted) unawaited(_startCall(() => mounted));
++        if (mounted) {
++          unawaited(_startCall(() => mounted, wakePhrase: ref.read(wakeCallRequestProvider.notifier).phrase));
++        }
 +      });
 +    }
      _voice = VoiceInputController(
        input: _input,
        bridge: ref.read(voiceBridgeProvider),
+@@ -1481,7 +1495,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
+ 
+   /// 「语音通话」 with this conversation (a new chat gets its conversation
+   /// with the first thing said); [ownsDraft]: still the conversation it was asked from.
+-  Future<void> _startCall(bool Function() ownsDraft) async {
++  Future<void> _startCall(bool Function() ownsDraft, {String? wakePhrase}) async {
+     // 语音唤醒 gives the microphone up before the call takes it (voice/wake_word.dart).
+     final wake = ref.read(wakeWordProvider.notifier);
+     await wake.suspend();
+@@ -1507,6 +1521,13 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
+           if (!mounted || ref.read(activeHostProvider) != host) return null;
+           final id = pinned;
+           if (id == null) return pinned = await _ensureSession(isCurrent: () => mounted);
++          // 唤醒词 goes in as what the person said, so the assistant answers a wake
++          // instead of the call opening in silence.
++          final phrase = wakePhrase;
++          if (phrase != null && phrase.trim().isNotEmpty) {
++            wakePhrase = null;
++            await ref.read(chatProvider(id).notifier).send(phrase.trim());
++          }
+           // Picks it still owes (a failed apply on the new-chat screen) are settled before it is spoken to.
+           final owed = ref.read(owedSetupsProvider.notifier).of(host, id);
+           if (owed != null && !await _applyOwedSetup(host, id, owed, () => mounted)) return null;
 diff --git a/app/lib/ui/settings/voice_settings_page.dart b/app/lib/ui/settings/voice_settings_page.dart
 index a43eeb8..f6a8119 100644
 --- a/app/lib/ui/settings/voice_settings_page.dart
@@ -211,16 +236,10 @@ index a43eeb8..f6a8119 100644
  /// 唤醒词 typed by the person; the phrase is matched inside what the recognizer heard.
  Future<void> editWakeKeyword(BuildContext context, WidgetRef ref, String current) async {
 diff --git a/app/lib/voice/wake_word.dart b/app/lib/voice/wake_word.dart
-index cf6e008..dfe154d 100644
+index cf6e008..d81660c 100644
 --- a/app/lib/voice/wake_word.dart
 +++ b/app/lib/voice/wake_word.dart
-@@ -17,23 +17,16 @@ import 'package:flutter/services.dart';
- import 'package:flutter_riverpod/flutter_riverpod.dart';
- import 'package:sherpa_onnx/sherpa_onnx.dart' as sherpa;
- 
-+import '../companion/companion_voice.dart';
-+import '../speech/speech_settings.dart';
- import '../state/streaming_asr_model_state.dart';
+@@ -21,19 +21,10 @@ import '../state/streaming_asr_model_state.dart';
  import 'streaming_asr_model.dart';
  import 'wake_settings.dart';
  
@@ -244,7 +263,7 @@ index cf6e008..dfe154d 100644
  
  /// What the listener is doing.
  enum WakeListening {
-@@ -57,7 +50,7 @@ enum WakeListening {
+@@ -57,7 +48,7 @@ enum WakeListening {
  }
  
  class WakeStatus {
@@ -253,7 +272,7 @@ index cf6e008..dfe154d 100644
  
    final WakeListening listening;
  
-@@ -67,12 +60,23 @@ class WakeStatus {
+@@ -67,12 +58,23 @@ class WakeStatus {
    /// Wake words heard since launch (诊断用).
    final int hits;
  
@@ -278,7 +297,7 @@ index cf6e008..dfe154d 100644
    );
  }
  
-@@ -240,6 +244,64 @@ class WakeWordController extends Notifier<WakeStatus> {
+@@ -240,6 +242,64 @@ class WakeWordController extends Notifier<WakeStatus> {
    }
  
    int _pcmCount = 0;
@@ -343,7 +362,7 @@ index cf6e008..dfe154d 100644
  
    void _onEvent(Map<Object?, Object?> event) {
      final kind = event['kind'];
-@@ -249,8 +311,10 @@ class WakeWordController extends Notifier<WakeStatus> {
+@@ -249,8 +309,10 @@ class WakeWordController extends Notifier<WakeStatus> {
          final bytes = event['bytes'];
          if (bytes is Uint8List) {
            _pcmCount++;
@@ -355,7 +374,7 @@ index cf6e008..dfe154d 100644
              final floor = event['floor'];
              _dbg(
                'pcm #$_pcmCount bytes=${bytes.length}'
-@@ -262,8 +326,10 @@ class WakeWordController extends Notifier<WakeStatus> {
+@@ -262,8 +324,10 @@ class WakeWordController extends Notifier<WakeStatus> {
            _dbg('pcm bytes type=${bytes.runtimeType}');
          }
        case 'wake.speechEnd':
@@ -368,7 +387,7 @@ index cf6e008..dfe154d 100644
        case 'wake.listening':
          if (ref.mounted) state = state.copyWith(listening: WakeListening.listening, clearReason: true);
        case 'wake.yield':
-@@ -303,9 +369,17 @@ class WakeWordController extends Notifier<WakeStatus> {
+@@ -303,9 +367,17 @@ class WakeWordController extends Notifier<WakeStatus> {
      final samples = Float32List(bytes.length ~/ 2);
      final data = ByteData.sublistView(bytes);
      for (var i = 0; i < samples.length; i++) {
@@ -387,7 +406,7 @@ index cf6e008..dfe154d 100644
      var decoded = false;
      while (recognizer.isReady(stream)) {
        recognizer.decode(stream);
-@@ -315,17 +389,27 @@ class WakeWordController extends Notifier<WakeStatus> {
+@@ -315,17 +387,27 @@ class WakeWordController extends Notifier<WakeStatus> {
      final heard = recognizer.getResult(stream).text;
      if (heard.isNotEmpty && heard != _text) _dbg('heard: $heard');
      _text = heard;
@@ -419,7 +438,7 @@ index cf6e008..dfe154d 100644
    bool _heardWakeWord(String text) {
      final keyword = _compact(_keyword);
      if (keyword.isEmpty) return false;
-@@ -333,7 +417,14 @@ class WakeWordController extends Notifier<WakeStatus> {
+@@ -333,7 +415,14 @@ class WakeWordController extends Notifier<WakeStatus> {
      // A stream fed a room decodes it into one syllable repeated ("呵呵呵呵呵"). That is not
      // speech, and matching inside it is how a wake word fires on nothing.
      if (_isBabble(heard)) return false;
@@ -435,38 +454,7 @@ index cf6e008..dfe154d 100644
    }
  
    /// One character repeated five times or more: a recognizer's answer to noise, not a word.
-@@ -354,6 +445,20 @@ class WakeWordController extends Notifier<WakeStatus> {
-   /// 纯标点 / 「嗯啊哦」 never matches a keyword that has a letter or a han character in it.
-   static String _compact(String text) => text.replaceAll(_noise, '').toLowerCase();
- 
-+  /// Says 「我在」 through the chosen voice; silent when no voice is set up (the chime,
-+  /// the vibration and the call page already said it).
-+  Future<void> _acknowledge() async {
-+    try {
-+      final speaker = ref.read(speechSpeakerProvider);
-+      final settings = await ref.read(speechVoiceSettingsProvider.notifier).ready();
-+      if (settings == null || !await speaker.ready(settings)) return;
-+      if (!ref.mounted) return;
-+      speaker.speak('wake-ack', '我在', flush: true);
-+    } on Object {
-+      // No voice configured, or the engine refused: the wake still happened.
-+    }
-+  }
-+
-   Future<void> _fire() async {
-     final now = DateTime.now();
-     final until = _cooldownUntil;
-@@ -362,6 +467,9 @@ class WakeWordController extends Notifier<WakeStatus> {
-     final settings = ref.read(wakeSettingsProvider);
-     if (settings.chime) unawaited(SystemSound.play(SystemSoundType.alert));
-     if (settings.vibrate) unawaited(HapticFeedback.heavyImpact());
-+    // 唤醒后的回应: the phone answers before the call page is up, so waking it is not
-+    // answered with silence while the page opens.
-+    unawaited(_acknowledge());
-     _resetStream();
-     if (ref.mounted) state = state.copyWith(listening: WakeListening.paused, hits: state.hits + 1, clearReason: true);
-     // 麦克风让位: the call page records too; the two would cut each other off.
-@@ -414,19 +522,22 @@ class WakeWordController extends Notifier<WakeStatus> {
+@@ -414,19 +503,22 @@ class WakeWordController extends Notifier<WakeStatus> {
            ),
            tokens: model.tokens,
            modelType: 'zipformer',
@@ -494,7 +482,7 @@ index cf6e008..dfe154d 100644
      _streamStarted = null;
      final recognizer = _recognizer;
      final stream = _stream;
-@@ -466,6 +577,18 @@ final wakeWordProvider = NotifierProvider<WakeWordController, WakeStatus>(WakeWo
+@@ -466,12 +558,31 @@ final wakeWordProvider = NotifierProvider<WakeWordController, WakeStatus>(WakeWo
  /// chime fires this and the screen that owns a conversation answers with its call.
  final wakeCallRequestProvider = NotifierProvider<WakeCallRequest, int>(WakeCallRequest.new);
  
@@ -511,8 +499,22 @@ index cf6e008..dfe154d 100644
 +}
 +
  class WakeCallRequest extends Notifier<int> {
++  /// 唤醒词 as the person set it: the call hands it to the assistant as the first thing
++  /// said, so the assistant answers a wake instead of opening a silent page.
++  String phrase = '';
++
    @override
    int build() {
+     // Every 唤醒 asks once, even the same phrase twice in a row.
+     ref.listen(wakeWordProvider, (before, after) {
+-      if (after.hits > (before?.hits ?? 0)) state = state + 1;
++      if (after.hits > (before?.hits ?? 0)) {
++        phrase = ref.read(wakeSettingsProvider).keyword;
++        state = state + 1;
++      }
+     });
+     return 0;
+   }
 -- 
 2.43.0
 
