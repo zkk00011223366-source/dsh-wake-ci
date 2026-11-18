@@ -1,29 +1,33 @@
-From 564d58eb7b01b0c9072953ab9542159a190f3af9 Mon Sep 17 00:00:00 2001
+From 80b69e573bddcba9ff50aaf8674c0dd755b2ccd1 Mon Sep 17 00:00:00 2001
 From: dsh-wake <wake@local>
 Date: Wed, 18 Nov 2026 02:36:38 +0800
-Subject: [PATCH] feat(voice): the floating call carries no keys and parks as
- an edge sliver
+Subject: [PATCH] =?UTF-8?q?feat(voice):=20=E8=AF=AD=E9=9F=B3=E9=80=9A?=
+ =?UTF-8?q?=E8=AF=9D=20as=20a=20launcher=20shortcut,=20for=20the=20AI=20ke?=
+ =?UTF-8?q?y?=
 MIME-Version: 1.0
 Content-Type: text/plain; charset=UTF-8
 Content-Transfer-Encoding: 8bit
 
-微信's floating call, as asked for: the window shows the light and how long the call
-has run, nothing else — ending a call belongs to the call page. Dragged and released
-it parks against the nearest edge as a 12×56dp sliver that covers nothing; a tap on
-the sliver brings the window back, a tap on the window brings the conversation back.
+Honor's AI key lists the app's shortcuts (新对话, 语音输入 …); 语音通话 was not one of
+them, so the key could not open a call. It is one now, and it opens the call itself:
+shortcuts.xml → EntryActivity (action VOICE_CALL) → launcher_entries.dart ('call') →
+NewChatEntry(call: true) → wakeCallRequestProvider.request(''), the same request a
+wake word makes, so exactly one path starts a call however it was asked for.
 
-Also in this commit: picture-in-picture is gone entirely (a call could show two
-windows at once), and a touch that does not move is a tap again instead of being
-swallowed by the drag listener.
+The call card is keyless in this build too: the light and the length of the call,
+nothing to press, parking as a 12×56dp sliver at the screen's edge.
 ---
  app/android/app/src/main/AndroidManifest.xml  |   9 +
  .../ccch1mneyyy/dsh_app/MainActivity.kt       |  25 +
  .../dsh_app/call/CallForegroundService.kt     |  94 ++++
  .../ccch1mneyyy/dsh_app/call/CallOverlay.kt   | 318 ++++++++++++
  .../dsh_app/call/CallOverlayPlugin.kt         |  66 +++
+ .../dsh_app/shortcuts/EntryActivity.kt        |   3 +
+ .../dsh_app/shortcuts/ShortcutsPlugin.kt      |   3 +-
  .../ccch1mneyyy/dsh_app/wake/WakeCapture.kt   |  43 +-
- .../src/main/res/values-zh/i18n_strings.xml   |   4 +
- .../app/src/main/res/values/i18n_strings.xml  |   4 +
+ .../src/main/res/values-zh/i18n_strings.xml   |   5 +
+ .../app/src/main/res/values/i18n_strings.xml  |   5 +
+ .../app/src/main/res/xml/shortcuts.xml        |  11 +
  app/assets/kws/LICENSE.txt                    |  20 +
  app/assets/kws/NOTICE.txt                     |   4 +
  app/assets/kws/decoder.int8.onnx              | Bin 0 -> 181069 bytes
@@ -32,15 +36,17 @@ swallowed by the drag listener.
  app/assets/kws/tokens.txt                     | 227 +++++++++
  app/lib/l10n/parts/speech_en.arb              |   1 +
  app/lib/l10n/parts/speech_zh.arb              |   1 +
+ app/lib/links/launcher_entries.dart           |   7 +-
  app/lib/ui/chat/chat_screen.dart              |  35 +-
  app/lib/ui/chat/media/media_format.dart       |  16 +-
  app/lib/ui/settings/voice_settings_page.dart  |  24 +-
+ app/lib/ui/shell/system_entry_host.dart       |   6 +
  app/lib/ui/speech/voice_call_page.dart        | 102 +++-
  app/lib/ui/theme/app_icons.dart               |   4 +
  app/lib/voice/wake_keywords.dart              |  50 ++
- app/lib/voice/wake_word.dart                  | 460 +++++++++++++++---
+ app/lib/voice/wake_word.dart                  | 468 +++++++++++++++---
  app/pubspec.yaml                              |   4 +
- 24 files changed, 1409 insertions(+), 102 deletions(-)
+ 29 files changed, 1447 insertions(+), 104 deletions(-)
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallForegroundService.kt
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallOverlay.kt
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallOverlayPlugin.kt
@@ -611,6 +617,48 @@ index 0000000..fe7f5f7
 +        const val CHANNEL = "dsh/call-overlay"
 +    }
 +}
+diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/shortcuts/EntryActivity.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/shortcuts/EntryActivity.kt
+index d2e531f..31abe61 100644
+--- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/shortcuts/EntryActivity.kt
++++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/shortcuts/EntryActivity.kt
+@@ -62,6 +62,8 @@ class EntryActivity : Activity() {
+     companion object {
+         const val ACTION_NEW_CHAT = "io.github.ccch1mneyyy.dsh_app.action.NEW_CHAT"
+         const val ACTION_VOICE = "io.github.ccch1mneyyy.dsh_app.action.VOICE_INPUT"
++        // 语音通话: the AI key's key, straight into the call.
++        const val ACTION_VOICE_CALL = "io.github.ccch1mneyyy.dsh_app.action.VOICE_CALL"
+         const val ACTION_OPEN_CHAT = "io.github.ccch1mneyyy.dsh_app.action.OPEN_CHAT"
+         const val ACTION_SCREENSHOT = "io.github.ccch1mneyyy.dsh_app.action.SCREENSHOT"
+         private const val ACTION_OPEN_APP = "io.github.ccch1mneyyy.dsh_app.action.OPEN_APP"
+@@ -75,6 +77,7 @@ class EntryActivity : Activity() {
+         fun kindOf(action: String?): String? = when (action) {
+             ACTION_NEW_CHAT -> ShortcutsPlugin.KIND_NEW
+             ACTION_VOICE -> ShortcutsPlugin.KIND_VOICE
++            ACTION_VOICE_CALL -> ShortcutsPlugin.KIND_CALL
+             ACTION_OPEN_CHAT -> ShortcutsPlugin.KIND_CHAT
+             ACTION_SCREENSHOT -> ShortcutsPlugin.KIND_SCREENSHOT
+             else -> null
+diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/shortcuts/ShortcutsPlugin.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/shortcuts/ShortcutsPlugin.kt
+index cbcc8f1..82f79a2 100644
+--- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/shortcuts/ShortcutsPlugin.kt
++++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/shortcuts/ShortcutsPlugin.kt
+@@ -147,7 +147,7 @@ class ShortcutsPlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHa
+         }
+         // Consumed either way: an entry without our token goes nowhere.
+         if (intent.getStringExtra(EXTRA_TOKEN) != token) return true
+-        if (kind != KIND_NEW && kind != KIND_VOICE && kind != KIND_CHAT) return true
++        if (kind != KIND_NEW && kind != KIND_VOICE && kind != KIND_CALL && kind != KIND_CHAT) return true
+         val sessionId = intent.getStringExtra(EXTRA_SESSION)
+         if (kind == KIND_CHAT && sessionId.isNullOrEmpty()) return true
+         val event = mapOf(
+@@ -171,6 +171,7 @@ class ShortcutsPlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHa
+ 
+         const val KIND_NEW = "new"
+         const val KIND_VOICE = "voice"
++        const val KIND_CALL = "call"
+         const val KIND_CHAT = "chat"
+         const val KIND_SCREENSHOT = "screenshot"
+ 
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/wake/WakeCapture.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/wake/WakeCapture.kt
 index 2e5ad22..6f623e8 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/wake/WakeCapture.kt
@@ -727,14 +775,15 @@ index 2e5ad22..6f623e8 100644
          const val INITIAL_FLOOR_DB = -50.0
          /** At or under this a frame is digital silence, not a room, and never moves the floor. */
 diff --git a/app/android/app/src/main/res/values-zh/i18n_strings.xml b/app/android/app/src/main/res/values-zh/i18n_strings.xml
-index d764a29..fcf7baf 100644
+index d764a29..3f321f2 100644
 --- a/app/android/app/src/main/res/values-zh/i18n_strings.xml
 +++ b/app/android/app/src/main/res/values-zh/i18n_strings.xml
-@@ -114,6 +114,10 @@
+@@ -114,6 +114,11 @@
      <!-- 语音唤醒: 常驻监听通知 (wake/WakeWordService.kt). -->
      <string name="wake_channel">语音唤醒</string>
      <string name="wake_channel_description">息屏时保持麦克风监听唤醒词</string>
 +    <string name="call_overlay_hang_up">挂断</string>
++    <string name="shortcut_voice_call">语音通话</string>
 +    <string name="call_running_title">语音通话中</string>
 +    <string name="call_running_text">在其他应用上操作时保持通话麦克风</string>
 +    <string name="call_running_channel">通话麦克风</string>
@@ -742,20 +791,41 @@ index d764a29..fcf7baf 100644
      <string name="wake_stop">关闭</string>
      <string name="pet_window_title">DSH 宠物</string>
 diff --git a/app/android/app/src/main/res/values/i18n_strings.xml b/app/android/app/src/main/res/values/i18n_strings.xml
-index b0839e1..7926943 100644
+index b0839e1..66c0db1 100644
 --- a/app/android/app/src/main/res/values/i18n_strings.xml
 +++ b/app/android/app/src/main/res/values/i18n_strings.xml
-@@ -119,6 +119,10 @@
+@@ -119,6 +119,11 @@
      <!-- 语音唤醒: the always-on listener's notification (wake/WakeWordService.kt). -->
      <string name="wake_channel">Voice wake word</string>
      <string name="wake_channel_description">Keeps the microphone listening for the wake word while the screen is off</string>
 +    <string name="call_overlay_hang_up">Hang up</string>
++    <string name="shortcut_voice_call">Voice call</string>
 +    <string name="call_running_title">Call in progress</string>
 +    <string name="call_running_text">Keeps the call microphone on while you use other apps</string>
 +    <string name="call_running_channel">Call microphone</string>
      <string name="wake_running">Listening for the wake word</string>
      <string name="wake_stop">Turn off</string>
      <string name="pet_window_title">DSH pet</string>
+diff --git a/app/android/app/src/main/res/xml/shortcuts.xml b/app/android/app/src/main/res/xml/shortcuts.xml
+index 3540cb2..9226d14 100644
+--- a/app/android/app/src/main/res/xml/shortcuts.xml
++++ b/app/android/app/src/main/res/xml/shortcuts.xml
+@@ -26,4 +26,15 @@
+             android:targetClass="io.github.ccch1mneyyy.dsh_app.shortcuts.EntryActivity"
+             android:targetPackage="io.github.ccch1mneyyy.dsh_app" />
+     </shortcut>
++    <shortcut
++        android:shortcutId="voice_call"
++        android:enabled="true"
++        android:icon="@drawable/ic_shortcut_voice"
++        android:shortcutShortLabel="@string/shortcut_voice_call"
++        android:shortcutLongLabel="@string/shortcut_voice_call">
++        <intent
++            android:action="io.github.ccch1mneyyy.dsh_app.action.VOICE_CALL"
++            android:targetClass="io.github.ccch1mneyyy.dsh_app.shortcuts.EntryActivity"
++            android:targetPackage="io.github.ccch1mneyyy.dsh_app" />
++    </shortcut>
+ </shortcuts>
 diff --git a/app/assets/kws/LICENSE.txt b/app/assets/kws/LICENSE.txt
 new file mode 100644
 index 0000000..956c74d
@@ -73592,6 +73662,31 @@ index 0dd55a4..615fdd8 100644
    "speechCallPause": "停顿多久算说完",
    "speechCallPauseQuick": "快",
    "speechCallPauseNormal": "适中",
+diff --git a/app/lib/links/launcher_entries.dart b/app/lib/links/launcher_entries.dart
+index d0e32a5..73484ed 100644
+--- a/app/lib/links/launcher_entries.dart
++++ b/app/lib/links/launcher_entries.dart
+@@ -31,6 +31,8 @@ sealed class LauncherEntry {
+     return switch (raw['kind']) {
+       'new' => NewChatEntry(text: text),
+       'voice' => NewChatEntry(voice: true, text: text),
++      // 语音通话 from the AI key: a conversation opened straight into the call.
++      'call' => NewChatEntry(call: true),
+       'screenshot' when path is String && path.startsWith('/') && !path.contains('\u0000') => ScreenshotEntry(path),
+       'chat' when sessionId is String && sessionId.isNotEmpty => OpenChatEntry(
+         HostRef.decode(host is String ? host : null),
+@@ -43,7 +45,10 @@ sealed class LauncherEntry {
+ 
+ /// A new conversation; [voice] starts dictation in its composer.
+ class NewChatEntry extends LauncherEntry {
+-  const NewChatEntry({this.voice = false, this.text = ''});
++  const NewChatEntry({this.voice = false, this.call = false, this.text = ''});
++
++  /// 语音通话: open the call itself, not just the composer (the AI key's shortcut).
++  final bool call;
+ 
+   final String text;
+ 
 diff --git a/app/lib/ui/chat/chat_screen.dart b/app/lib/ui/chat/chat_screen.dart
 index d9540df..ae39a93 100644
 --- a/app/lib/ui/chat/chat_screen.dart
@@ -73719,6 +73814,30 @@ index a43eeb8..f6a8119 100644
  
  /// 唤醒词 typed by the person; the phrase is matched inside what the recognizer heard.
  Future<void> editWakeKeyword(BuildContext context, WidgetRef ref, String current) async {
+diff --git a/app/lib/ui/shell/system_entry_host.dart b/app/lib/ui/shell/system_entry_host.dart
+index 172e773..a6531d2 100644
+--- a/app/lib/ui/shell/system_entry_host.dart
++++ b/app/lib/ui/shell/system_entry_host.dart
+@@ -37,6 +37,7 @@ import '../../state/compose_inbox.dart';
+ import '../../state/draft_store.dart';
+ import '../../state/hosts_state.dart';
+ import '../../state/sessions_state.dart';
++import '../../voice/wake_word.dart' show wakeCallRequestProvider;
+ import '../common/discard_guard.dart';
+ import '../tavern/tavern_deepseek_import.dart';
+ import '../tavern/tavern_intake.dart';
+@@ -140,6 +141,11 @@ class _SystemEntryHostState extends ConsumerState<SystemEntryHost> {
+ 
+   Future<void> _onEntry(LauncherEntry entry) async {
+     switch (entry) {
++      case NewChatEntry(call: true):
++        // 语音通话 from the AI key: the call opens once the chat screen exists, the same way a
++        // wake word does it — one path for "a call starts here", whatever asked for it.
++        if (mounted) await _compose(const ComposeRequest());
++        if (mounted) ref.read(wakeCallRequestProvider.notifier).request('');
+       case NewChatEntry(:final voice, :final text):
+         // The microphone opens only for an app on screen; the shortcut's
+         // intent can arrive a beat before Flutter hears it is resumed.
 diff --git a/app/lib/ui/speech/voice_call_page.dart b/app/lib/ui/speech/voice_call_page.dart
 index 2f99689..c85d4af 100644
 --- a/app/lib/ui/speech/voice_call_page.dart
@@ -73947,7 +74066,7 @@ index 0000000..8a88271
 +  return ('', syllable);
 +}
 diff --git a/app/lib/voice/wake_word.dart b/app/lib/voice/wake_word.dart
-index cf6e008..72d5427 100644
+index cf6e008..b8b56e8 100644
 --- a/app/lib/voice/wake_word.dart
 +++ b/app/lib/voice/wake_word.dart
 @@ -10,29 +10,36 @@
@@ -74365,8 +74484,16 @@ index cf6e008..72d5427 100644
 +      _dbg('kws assets failed: $error');
 +      return null;
 +    }
-+  }
-+
+   }
+ 
+-  /// One character repeated five times or more: a recognizer's answer to noise, not a word.
+-  static bool _isBabble(String text) {
+-    var run = 1;
+-    for (var i = 1; i < text.length; i++) {
+-      if (text[i] != text[i - 1]) {
+-        run = 1;
+-      } else if (++run >= 5) {
+-        return true;
 +  Uint8List _takePreRoll() {
 +    final out = BytesBuilder(copy: false);
 +    for (final frame in _preroll) {
@@ -74403,23 +74530,15 @@ index cf6e008..72d5427 100644
 +    } on Object {
 +      return null;
 +    }
-   }
- 
--  /// One character repeated five times or more: a recognizer's answer to noise, not a word.
--  static bool _isBabble(String text) {
--    var run = 1;
--    for (var i = 1; i < text.length; i++) {
--      if (text[i] != text[i - 1]) {
--        run = 1;
--      } else if (++run >= 5) {
--        return true;
++  }
++
 +  Future<void> _recognize(Uint8List pcm) async {
 +    try {
 +      final client = ref.read(activeConnectionProvider).value?.client;
 +      if (client == null) {
 +        _dbg('recognize: no host connection');
 +        return;
-+      }
+       }
 +      final transcript = await client.transcribe(_wav(pcm));
 +      final text = transcript.text.trim();
 +      if (text.isEmpty) return;
@@ -74428,7 +74547,7 @@ index cf6e008..72d5427 100644
 +      if (_utteranceMatches(text)) {
 +        _dbg('MATCH: $text');
 +        unawaited(_fire());
-       }
++      }
 +    } on Object catch (error) {
 +      _dbg('recognize failed: $error');
      }
@@ -74529,7 +74648,7 @@ index cf6e008..72d5427 100644
      _streamStarted = null;
      final recognizer = _recognizer;
      final stream = _stream;
-@@ -466,12 +764,32 @@ final wakeWordProvider = NotifierProvider<WakeWordController, WakeStatus>(WakeWo
+@@ -466,13 +764,41 @@ final wakeWordProvider = NotifierProvider<WakeWordController, WakeStatus>(WakeWo
  /// chime fires this and the screen that owns a conversation answers with its call.
  final wakeCallRequestProvider = NotifierProvider<WakeCallRequest, int>(WakeCallRequest.new);
  
@@ -74563,6 +74682,15 @@ index cf6e008..72d5427 100644
      });
      return 0;
    }
++
++  /// 语音通话 asked for from outside the wake word — the AI key's shortcut
++  /// (`shortcuts.xml` → EntryActivity → launcher_entries.dart): the same path a wake
++  /// takes, so the call opens exactly once whichever asked.
++  void request(String phrase) {
++    this.phrase = phrase;
++    state = state + 1;
++  }
+ }
 diff --git a/app/pubspec.yaml b/app/pubspec.yaml
 index 182116d..f248ad1 100644
 --- a/app/pubspec.yaml
