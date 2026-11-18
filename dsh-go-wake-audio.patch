@@ -1,25 +1,26 @@
-From d04073950ebe5a6629ff1ad47d1e085e695c19cf Mon Sep 17 00:00:00 2001
+From 212fc438a54fbd6408277ccc492421468df9f141 Mon Sep 17 00:00:00 2001
 From: dsh-wake <wake@local>
 Date: Wed, 18 Nov 2026 02:36:38 +0800
-Subject: [PATCH] fix(voice): an apostrophe in an English resource stops the
- app build
+Subject: [PATCH] fix(voice): one window, and it opens
 MIME-Version: 1.0
 Content-Type: text/plain; charset=UTF-8
 Content-Transfer-Encoding: 8bit
 
-values/i18n_strings.xml:122 "Keeps the call's microphone…" — Android's resource
-compiler rejects a bare apostrophe, and the whole APK failed on it. Reworded, and
-the card's action handler is an if/else rather than a switch, so no case-body
-rule can bite.
+Three faults in the card, all visible at once:
 
-Everything from the last build stands: the call survives leaving the app, a
-microphone foreground service keeps it recording while the person is elsewhere,
-and the floating card (draggable, edge-docked, 挂断) is what shows instead.
+- picture-in-picture still fired on leaving the app (onUserLeaveHint had no idea the card
+  was already up), so a call showed two windows: the card and a shrunken copy of the app.
+  Picture-in-picture is gone — activity flag, params, the lot — and the card is the only
+  second window.
+- the drag listener returns true from ACTION_DOWN, which swallowed the tap: the card
+  could be dragged but never opened. A touch that did not move now calls performClick.
+- 挂断 was a worded key that wrapped to two lines once the card was drawn narrow. It is a
+  round phone glyph now, the shape the other call keys use.
 ---
- app/android/app/src/main/AndroidManifest.xml  |  10 +
- .../ccch1mneyyy/dsh_app/MainActivity.kt       |  62 +++
+ app/android/app/src/main/AndroidManifest.xml  |   9 +
+ .../ccch1mneyyy/dsh_app/MainActivity.kt       |  25 +
  .../dsh_app/call/CallForegroundService.kt     |  94 ++++
- .../ccch1mneyyy/dsh_app/call/CallOverlay.kt   | 291 +++++++++++
+ .../ccch1mneyyy/dsh_app/call/CallOverlay.kt   | 298 ++++++++++++
  .../dsh_app/call/CallOverlayPlugin.kt         |  66 +++
  .../ccch1mneyyy/dsh_app/wake/WakeCapture.kt   |  43 +-
  .../src/main/res/values-zh/i18n_strings.xml   |   4 +
@@ -35,12 +36,12 @@ and the floating card (draggable, edge-docked, 挂断) is what shows instead.
  app/lib/ui/chat/chat_screen.dart              |  35 +-
  app/lib/ui/chat/media/media_format.dart       |  16 +-
  app/lib/ui/settings/voice_settings_page.dart  |  24 +-
- app/lib/ui/speech/voice_call_page.dart        | 172 ++++++-
+ app/lib/ui/speech/voice_call_page.dart        | 102 +++-
  app/lib/ui/theme/app_icons.dart               |   4 +
  app/lib/voice/wake_keywords.dart              |  50 ++
  app/lib/voice/wake_word.dart                  | 460 +++++++++++++++---
  app/pubspec.yaml                              |   4 +
- 24 files changed, 1490 insertions(+), 102 deletions(-)
+ 24 files changed, 1389 insertions(+), 102 deletions(-)
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallForegroundService.kt
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallOverlay.kt
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallOverlayPlugin.kt
@@ -53,18 +54,10 @@ and the floating card (draggable, edge-docked, 挂断) is what shows instead.
  create mode 100644 app/lib/voice/wake_keywords.dart
 
 diff --git a/app/android/app/src/main/AndroidManifest.xml b/app/android/app/src/main/AndroidManifest.xml
-index 20c6331..5ea5583 100644
+index 20c6331..317471f 100644
 --- a/app/android/app/src/main/AndroidManifest.xml
 +++ b/app/android/app/src/main/AndroidManifest.xml
-@@ -66,6 +66,7 @@
-             android:exported="true"
-             android:launchMode="singleTop"
-             android:taskAffinity=""
-+            android:supportsPictureInPicture="true"
-             android:theme="@style/LaunchTheme"
-             android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode"
-             android:hardwareAccelerated="true"
-@@ -267,6 +268,15 @@
+@@ -267,6 +267,15 @@
              android:foregroundServiceType="microphone">
          </service>
  
@@ -81,30 +74,10 @@ index 20c6331..5ea5583 100644
          <service
              android:name=".pet.PetOverlayService"
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/MainActivity.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/MainActivity.kt
-index a5168f0..6cd8545 100644
+index a5168f0..497f3f6 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/MainActivity.kt
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/MainActivity.kt
-@@ -6,7 +6,9 @@ import android.content.Intent
- import android.content.pm.PackageManager
- import android.content.res.Configuration
- import android.graphics.Color
-+import android.app.PictureInPictureParams
- import android.os.Build
-+import android.util.Rational
- import android.os.Bundle
- import android.view.WindowManager
- import io.flutter.embedding.android.FlutterActivity
-@@ -32,6 +34,9 @@ import java.util.TimeZone
- class MainActivity : FlutterActivity() {
-     private var appChannel: MethodChannel? = null
- 
-+    /** 语音通话 is up: leaving the app puts the call in a floating window instead of stopping. */
-+    private var callActive = false
-+
-     /**
-      * One engine per process, outliving this activity: swiping the app away from recents keeps
-      * Dart running, and with it the event subscriptions behind turn-finished / needs-you
-@@ -69,6 +74,8 @@ class MainActivity : FlutterActivity() {
+@@ -69,6 +69,8 @@ class MainActivity : FlutterActivity() {
              engine.plugins.add(io.github.ccch1mneyyy.dsh_app.speech.SpeechPlugin())
              // 语音唤醒: the always-on listener's switch, and the frames it hears.
              engine.plugins.add(io.github.ccch1mneyyy.dsh_app.wake.WakeWordPlugin())
@@ -113,52 +86,13 @@ index a5168f0..6cd8545 100644
              engine.plugins.add(io.github.ccch1mneyyy.dsh_app.companion.CompanionWidgetPlugin())
              engine.dartExecutor.executeDartEntrypoint(DartExecutor.DartEntrypoint.createDefault())
              cache.put(ENGINE_ID, engine)
-@@ -176,6 +183,33 @@ class MainActivity : FlutterActivity() {
-         super.onPause()
-     }
- 
-+    /** The call in a small window over other apps; false when the system will not. */
-+    private fun enterFloatingCall(): Boolean {
-+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return false
-+        return try {
-+            enterPictureInPictureMode(
-+                PictureInPictureParams.Builder()
-+                    // A call is tall, not wide: the window keeps the call's own shape.
-+                    .setAspectRatio(Rational(9, 16))
-+                    .build(),
-+            )
-+        } catch (_: Exception) {
-+            false
-+        }
-+    }
-+
-+    /** The small window came or went: Flutter shows a call-sized layout while it is up. */
-+    override fun onPictureInPictureModeChanged(isInPictureInPictureMode: Boolean, newConfig: Configuration) {
-+        super.onPictureInPictureModeChanged(isInPictureInPictureMode, newConfig)
-+        appChannel?.invokeMethod("pipChanged", mapOf("inPip" to isInPictureInPictureMode))
-+    }
-+
-+    /** Leaving the app during a call keeps it visible instead of hiding it. */
-+    override fun onUserLeaveHint() {
-+        if (callActive && Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) enterFloatingCall()
-+        super.onUserLeaveHint()
-+    }
-+
-     /** Per activity: the handler acts on this activity, so it goes with it (see [cleanUpFlutterEngine]). */
-     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
-         super.configureFlutterEngine(flutterEngine)
-@@ -206,6 +240,34 @@ class MainActivity : FlutterActivity() {
+@@ -206,6 +208,29 @@ class MainActivity : FlutterActivity() {
                      applyRefreshRate()
                      result.success(null)
                  }
 +                // 语音通话 悬浮窗: a small window over other apps. Picture-in-picture is the
 +                // platform's own answer for a call (no overlay permission, the activity keeps
 +                // running and the microphone with it), so this is what the floating window is.
-+                "setCallActive" -> {
-+                    callActive = call.argument<Boolean>("active") == true
-+                    result.success(null)
-+                }
-+                "enterFloatingCall" -> result.success(enterFloatingCall())
 +                // The card needs 「显示在其他应用上层」; ask for it where it is granted.
 +                "requestOverlayPermission" -> {
 +                    val ok = try {
@@ -284,10 +218,10 @@ index 0000000..90a77cf
 +}
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallOverlay.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallOverlay.kt
 new file mode 100644
-index 0000000..f3aa820
+index 0000000..243144b
 --- /dev/null
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallOverlay.kt
-@@ -0,0 +1,291 @@
+@@ -0,0 +1,298 @@
 +package io.github.ccch1mneyyy.dsh_app.call
 +
 +import android.annotation.SuppressLint
@@ -472,6 +406,12 @@ index 0000000..f3aa820
 +                    true
 +                }
 +                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
++                    if (!dragging) {
++                        // The drag listener returns true from ACTION_DOWN, which swallows the
++                        // click a plain OnClickListener would have received; a touch that did
++                        // not move is the tap that brings the call back.
++                        view.performClick()
++                    }
 +                    if (dragging) {
 +                        // Rests against the side it was thrown towards; the height is kept as a
 +                        // share of the screen so a rotation does not lose it.
@@ -521,22 +461,23 @@ index 0000000..f3aa820
 +            start()
 +        }
 +        column.addView(timer, LinearLayout.LayoutParams(-1, -2))
++        // A square that holds only the phone glyph: a worded key wrapped to two lines as soon
++        // as the card was drawn narrow, and 挂断 is not a label the shape needs.
 +        val hang = TextView(context).apply {
-+            text = context.getString(io.github.ccch1mneyyy.dsh_app.R.string.call_overlay_hang_up)
++            text = "\u260e"
 +            setTextColor(Color.WHITE)
-+            textSize = 12f
++            textSize = 18f
 +            gravity = Gravity.CENTER
 +            background = GradientDrawable().apply {
-+                shape = GradientDrawable.RECTANGLE
-+                cornerRadius = 12 * px
++                shape = GradientDrawable.OVAL
 +                setColor(Color.rgb(229, 72, 77))
 +            }
 +            setOnClickListener {
 +                onAction?.invoke("hangUp")
 +            }
 +        }
-+        val hangLp = LinearLayout.LayoutParams((62 * px).roundToInt(), (34 * px).roundToInt()).apply {
-+            topMargin = (4 * px).roundToInt()
++        val hangLp = LinearLayout.LayoutParams((38 * px).roundToInt(), (38 * px).roundToInt()).apply {
++            topMargin = (6 * px).roundToInt()
 +        }
 +        column.addView(hang, hangLp)
 +        root.addView(column, FrameLayout.LayoutParams(-1, -1))
@@ -73760,7 +73701,7 @@ index a43eeb8..f6a8119 100644
  /// 唤醒词 typed by the person; the phrase is matched inside what the recognizer heard.
  Future<void> editWakeKeyword(BuildContext context, WidgetRef ref, String current) async {
 diff --git a/app/lib/ui/speech/voice_call_page.dart b/app/lib/ui/speech/voice_call_page.dart
-index 2f99689..6aac6e8 100644
+index 2f99689..c85d4af 100644
 --- a/app/lib/ui/speech/voice_call_page.dart
 +++ b/app/lib/ui/speech/voice_call_page.dart
 @@ -47,6 +47,7 @@ import '../../usage/usage_stats.dart';
@@ -73771,16 +73712,14 @@ index 2f99689..6aac6e8 100644
  import 'call/call_backdrop.dart';
  import 'call/call_parts.dart';
  import 'call/call_transcript.dart';
-@@ -118,10 +119,26 @@ class _VoiceCallPageState extends ConsumerState<VoiceCallPage> with WidgetsBindi
+@@ -118,10 +119,22 @@ class _VoiceCallPageState extends ConsumerState<VoiceCallPage> with WidgetsBindi
    /// and the page comes in without its staggered rise.
    bool _still = false;
  
 +  /// 语音唤醒 gives the microphone up for as long as this page is up, and takes it back when
 +  /// the page goes: the handoff belongs to the call, not to whichever screen opened it.
 +  WakeWordController? _wake;
-+  bool _floating = false;
 +  bool _overlay = false;
-+  bool _inPip = false;
 +
    @override
    void initState() {
@@ -73788,8 +73727,6 @@ index 2f99689..6aac6e8 100644
      WidgetsBinding.instance.addObserver(this);
 +    _wake = ref.read(wakeWordProvider.notifier);
 +    unawaited(_wake!.suspend());
-+    // 悬浮窗: the native side keeps this call visible over other apps once the person leaves.
-+    unawaited(const MethodChannel('dsh/app').invokeMethod<void>('setCallActive', {'active': true}));
 +    const MethodChannel('dsh/app').setMethodCallHandler(_onAppCall);
 +    const MethodChannel('dsh/call-overlay').setMethodCallHandler(_onOverlayCall);
 +    // 通话 keeps the microphone in the background: the assistant operating the phone during a
@@ -73798,7 +73735,7 @@ index 2f99689..6aac6e8 100644
      final callSettings = ref.read(callSettingsProvider.notifier);
      final voices = ref.read(speechVoiceSettingsProvider.notifier);
      // The chosen voice, as soon as the settings have been read (the first reply comes later).
-@@ -313,11 +330,44 @@ class _VoiceCallPageState extends ConsumerState<VoiceCallPage> with WidgetsBindi
+@@ -313,11 +326,42 @@ class _VoiceCallPageState extends ConsumerState<VoiceCallPage> with WidgetsBindi
  
    @override
    void didChangeAppLifecycleState(AppLifecycleState state) {
@@ -73813,7 +73750,7 @@ index 2f99689..6aac6e8 100644
 +  /// 切到后台: the card, and only the card. Not the picture-in-picture fallback — that one
 +  /// would pull the whole activity into a system window every time the app is left.
 +  Future<void> _floatInBackground() async {
-+    if (_overlay || _floating) return;
++    if (_overlay) return;
 +    final startedAt = _since;
 +    try {
 +      final shown = await const MethodChannel('dsh/call-overlay').invokeMethod<bool>(
@@ -73832,7 +73769,6 @@ index 2f99689..6aac6e8 100644
  
    @override
    void dispose() {
-+    _leaveFloating();
 +    if (_overlay) unawaited(const MethodChannel('dsh/call-overlay').invokeMethod<void>('hide'));
 +    unawaited(const MethodChannel('dsh/call-overlay').invokeMethod<void>('keepAlive', {'active': false}));
 +    const MethodChannel('dsh/app').setMethodCallHandler(null);
@@ -73840,28 +73776,20 @@ index 2f99689..6aac6e8 100644
 +    final wake = _wake;
 +    _wake = null;
 +    if (wake != null) unawaited(wake.resume());
-+    unawaited(const MethodChannel('dsh/app').invokeMethod<void>('setCallActive', {'active': false}));
      WidgetsBinding.instance.removeObserver(this);
      unawaited(_live?.stop());
      _leave?.cancel();
-@@ -329,6 +379,66 @@ class _VoiceCallPageState extends ConsumerState<VoiceCallPage> with WidgetsBindi
+@@ -329,6 +373,49 @@ class _VoiceCallPageState extends ConsumerState<VoiceCallPage> with WidgetsBindi
      super.dispose();
    }
  
-+  /// 悬浮窗: hands the call to the system's own small window. Returns false when the
-+  /// platform will not (a device without picture-in-picture); the call stays as it is.
-+  /// The system's small window came or went: the call lays itself out for the size it has.
++  /// The app channel: nothing was needed from it once picture-in-picture went away.
 +  Future<void> _onAppCall(MethodCall call) async {
-+    if (call.method != 'pipChanged') return;
-+    final inPip = (call.arguments as Map?)?['inPip'] == true;
-+    if (!mounted || inPip == _inPip) return;
-+    setState(() => _inPip = inPip);
-+    if (!inPip) _floating = false;
++    // Nothing to react to: the overlay card is the only second window now.
 +  }
 +
-+  /// 悬浮窗: a card of the call's own (draggable, docks to an edge), which is what a phone's
-+  /// floating call looks like. Picture-in-picture is only the fallback — it shrinks the whole
-+  /// activity into a system window and cannot be moved.
++  /// 悬浮窗: a card of the call's own — draggable, docks to an edge, and the only second
++  /// window: picture-in-picture (a shrunken copy of the app) is gone.
 +  Future<void> _float() async {
 +    final startedAt = _since;
 +    var shown = false;
@@ -73880,12 +73808,10 @@ index 2f99689..6aac6e8 100644
 +      unawaited(const MethodChannel('dsh/app').invokeMethod<void>('minimize'));
 +      return;
 +    }
-+    // No overlay permission (or a vendor build refuses the window): ask for it, and keep the
-+    // call visible the one way that needs no permission.
++    // No overlay permission (or a vendor build refuses the window): ask for it. There is no
++    // picture-in-picture fallback any more — a second window of the whole app was worse than
++    // none; the call itself keeps running and the notification brings it back.
 +    unawaited(const MethodChannel('dsh/app').invokeMethod<bool>('requestOverlayPermission'));
-+    unawaited(const MethodChannel('dsh/app').invokeMethod<bool>('enterFloatingCall').then((ok) {
-+      if (ok == true) _floating = true;
-+    }));
 +  }
 +
 +  /// The card's own key: end the call from the window.
@@ -73900,26 +73826,10 @@ index 2f99689..6aac6e8 100644
 +    }
 +  }
 +
-+  /// 小窗里通话结束了: the small window has nothing left to show, so the app comes back to
-+  /// the screen it was on (the call page is what floats — not the rest of the app).
-+  void _leaveFloating() {
-+    if (!_floating) return;
-+    _floating = false;
-+    unawaited(const MethodChannel('dsh/app').invokeMethod<void>('bringToFront'));
-+  }
-+
    void _hangUp() {
      HapticFeedback.heavyImpact();
      _call.hangUp();
-@@ -461,6 +571,7 @@ class _VoiceCallPageState extends ConsumerState<VoiceCallPage> with WidgetsBindi
-   Widget build(BuildContext context) {
-     final l10n = context.l10n;
-     final theme = Theme.of(context);
-+    if (_inPip) return _FloatingCall(since: _since, onHangUp: _hangUp, live: _call.phase != CallPhase.ended);
-     _still = AppMotion.reduced(context);
-     final settings = ref.watch(callSettingsProvider);
-     final performance = ref.watch(performanceDefaultsProvider);
-@@ -645,6 +756,17 @@ class _VoiceCallPageState extends ConsumerState<VoiceCallPage> with WidgetsBindi
+@@ -645,6 +732,17 @@ class _VoiceCallPageState extends ConsumerState<VoiceCallPage> with WidgetsBindi
                          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                          crossAxisAlignment: CrossAxisAlignment.end,
                          children: [
@@ -73937,7 +73847,7 @@ index 2f99689..6aac6e8 100644
                            _rise(
                              0.4,
                              CallKey(
-@@ -658,7 +780,7 @@ class _VoiceCallPageState extends ConsumerState<VoiceCallPage> with WidgetsBindi
+@@ -658,7 +756,7 @@ class _VoiceCallPageState extends ConsumerState<VoiceCallPage> with WidgetsBindi
                              distance: 28,
                            ),
                            _rise(
@@ -73946,56 +73856,6 @@ index 2f99689..6aac6e8 100644
                              HangUpKey(
                                key: const ValueKey('call-hang-up'),
                                icon: AppIcons.hangUp,
-@@ -860,3 +982,49 @@ class _RoundKeyState extends State<_RoundKey> {
-     );
-   }
- }
-+
-+/// 语音通话 in the system's small window: the call, not the app — the light, how long it has
-+/// been on, and the one key that ends it. Everything else the full page carries is left out
-+/// because the window is a thumbnail of the call, the way a phone's own call window is.
-+class _FloatingCall extends StatelessWidget {
-+  const _FloatingCall({required this.since, required this.onHangUp, required this.live});
-+
-+  final DateTime? since;
-+  final VoidCallback onHangUp;
-+  final bool live;
-+
-+  @override
-+  Widget build(BuildContext context) {
-+    final theme = Theme.of(context);
-+    final l10n = context.l10n;
-+    return ColoredBox(
-+      color: const Color(0xFF030712),
-+      child: SafeArea(
-+        child: Padding(
-+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-+          child: Column(
-+            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-+            children: [
-+              Container(
-+                width: 56,
-+                height: 56,
-+                decoration: const BoxDecoration(
-+                  shape: BoxShape.circle,
-+                  gradient: RadialGradient(colors: [Color(0xFFBFD4FF), Color(0xFF2A3550)]),
-+                ),
-+              ),
-+              CallTimer(since: since, live: live),
-+              FilledButton.icon(
-+                key: const ValueKey('call-float-hang-up'),
-+                onPressed: onHangUp,
-+                icon: const Icon(AppIcons.hangUp, color: Colors.white, size: 18),
-+                label: Text(l10n.speechCallHangUp, style: theme.textTheme.labelLarge?.copyWith(color: Colors.white)),
-+                style: FilledButton.styleFrom(backgroundColor: const Color(0xFFE5484D)),
-+              ),
-+            ],
-+          ),
-+        ),
-+      ),
-+    );
-+  }
-+}
 diff --git a/app/lib/ui/theme/app_icons.dart b/app/lib/ui/theme/app_icons.dart
 index 0d611ff..a10a74e 100644
 --- a/app/lib/ui/theme/app_icons.dart
