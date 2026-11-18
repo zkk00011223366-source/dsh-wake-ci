@@ -1,18 +1,19 @@
-From 6dbcc1f3860781452e5e3b837bba4cbda0919761 Mon Sep 17 00:00:00 2001
+From 31cf05d2b913759636579ac4c501442c65a5f563 Mon Sep 17 00:00:00 2001
 From: dsh-wake <wake@local>
 Date: Wed, 18 Nov 2026 02:36:38 +0800
-Subject: [PATCH] feat(voice): the call keeps floating when the app is left
+Subject: [PATCH] fix(voice): the title a call seeds never shows the app's
+ notes
 MIME-Version: 1.0
 Content-Type: text/plain; charset=UTF-8
 Content-Transfer-Encoding: 8bit
 
-悬浮窗 for a call is picture-in-picture on Android: the platform's own window over
-other apps, no draw-over permission, and the activity (with its microphone) keeps
-running. Leaving the app during a call now enters it, so the conversation stays
-visible instead of disappearing, and tapping the window brings it back.
+The pill above 语音通话 read `<dsh-note>（这…`: a call's first message carries the
+app's note for the model, and the conversation title is seeded from that message.
+chatTitleShown (the one place a title is shown) drops the notes first, so the
+call, the drawer and the export all read what the person actually said.
 
-语音通话 tells the activity when it is up (setCallActive), and MainActivity only
-floats for a call — never for the settings page or the chat behind it.
+Same build carries the floating call: leaving the app during 语音通话 puts it in
+picture-in-picture, and 语音通话 tells the activity when it is up.
 ---
  app/android/app/src/main/AndroidManifest.xml  |   1 +
  .../ccch1mneyyy/dsh_app/MainActivity.kt       |  34 ++
@@ -24,12 +25,13 @@ floats for a call — never for the settings page or the chat behind it.
  app/assets/kws/joiner.int8.onnx               | Bin 0 -> 65242 bytes
  app/assets/kws/tokens.txt                     | 227 +++++++++
  app/lib/ui/chat/chat_screen.dart              |  28 +-
+ app/lib/ui/chat/media/media_format.dart       |  15 +-
  app/lib/ui/settings/voice_settings_page.dart  |  24 +-
  app/lib/ui/speech/voice_call_page.dart        |  13 +
  app/lib/voice/wake_keywords.dart              |  50 ++
  app/lib/voice/wake_word.dart                  | 459 +++++++++++++++---
  app/pubspec.yaml                              |   4 +
- 15 files changed, 831 insertions(+), 76 deletions(-)
+ 16 files changed, 841 insertions(+), 81 deletions(-)
  create mode 100644 app/assets/kws/LICENSE.txt
  create mode 100644 app/assets/kws/NOTICE.txt
  create mode 100644 app/assets/kws/decoder.int8.onnx
@@ -73098,6 +73100,29 @@ index d9540df..9270d57 100644
            // Picks it still owes (a failed apply on the new-chat screen) are settled before it is spoken to.
            final owed = ref.read(owedSetupsProvider.notifier).of(host, id);
            if (owed != null && !await _applyOwedSetup(host, id, owed, () => mounted)) return null;
+diff --git a/app/lib/ui/chat/media/media_format.dart b/app/lib/ui/chat/media/media_format.dart
+index 2a34ba3..d0fb04a 100644
+--- a/app/lib/ui/chat/media/media_format.dart
++++ b/app/lib/ui/chat/media/media_format.dart
+@@ -103,8 +103,13 @@ String mediaParamsLine({required bool video, String? aspect, int? count, int? se
+ /// A conversation title as shown: one that begins with a generation
+ /// request's header shows what follows it, or 「生成图像」 / 「生成视频」 when
+ /// nothing does.
+-String chatTitleShown(String title) => switch (GenerateHeader.splitTitle(title)) {
+-  null => title,
+-  (:final rest, kind: _) when rest.isNotEmpty => rest,
+-  (:final kind, rest: _) => kind == GenerateKind.video ? appL10n.mediaTitleVideo : appL10n.mediaTitleImage,
+-};
++String chatTitleShown(String title) {
++  // A call's first message carries the app's notes for the model; the title it seeds must
++  // not show them (the pill above 语音通话 read `<dsh-note>（这…`).
++  final clean = withoutAppNotes(title);
++  return switch (GenerateHeader.splitTitle(clean)) {
++    null => clean,
++    (:final rest, kind: _) when rest.isNotEmpty => rest,
++    (:final kind, rest: _) => kind == GenerateKind.video ? appL10n.mediaTitleVideo : appL10n.mediaTitleImage,
++  };
++}
 diff --git a/app/lib/ui/settings/voice_settings_page.dart b/app/lib/ui/settings/voice_settings_page.dart
 index a43eeb8..f6a8119 100644
 --- a/app/lib/ui/settings/voice_settings_page.dart
