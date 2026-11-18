@@ -207,6 +207,19 @@ jobs:
           key: runtime-downloads-v1-${{ hashFiles('runtime/build-runtime.sh', 'runtime/locks/**') }}
           restore-keys: runtime-downloads-v1-
 
+      # The built runtime (Ubuntu rootfs + Node + DSH, packed into the APK) is what makes a
+      # run long: rebuilt every time, ~15 of the ~33 minutes. build-wake-apk.sh already
+      # skips rebuilding when runtime/out/<abi>/assets/runtime/manifest.json is there, so
+      # the exact directory is cached on the inputs it is built from. No restore-keys: a
+      # near miss would hand the build a runtime from other sources, which is worse than
+      # paying for a rebuild.
+      - name: Restore the built runtime
+        id: runtime-out
+        uses: actions/cache/restore@v4
+        with:
+          path: runtime/out
+          key: runtime-out-v2-${{ runner.os }}-${{ hashFiles('runtime/build-runtime.sh', 'runtime/locks/**', 'runtime/tawcroot/**', 'tooling/setup-toolchain.sh') }}
+
       # pub get -> l10n (gen-l10n, the new strings) -> runtime/out/$abi -> the APK.
       - name: What the runner has to work with
         run: |
@@ -253,6 +266,14 @@ jobs:
           kill $WATCH 2>/dev/null || true
           echo "build-exit=$status" >> /tmp/wake-build.log
           exit $status
+
+      # Saved only after the APK built, so a cache is never a half-built runtime.
+      - name: Save the built runtime
+        if: steps.runtime-out.outputs.cache-hit != 'true' && steps.build.outcome == 'success'
+        uses: actions/cache/save@v4
+        with:
+          path: runtime/out
+          key: ${{ steps.runtime-out.outputs.cache-primary-key }}
 
       # The run log is not always downloadable from this repository, so the tail is
       # committed instead: build-log.txt is then readable over the contents API.
