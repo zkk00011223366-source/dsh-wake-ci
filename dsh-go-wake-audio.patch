@@ -1,20 +1,22 @@
-From 37f98c8871f6414d167f7d4412a1899cb185061f Mon Sep 17 00:00:00 2001
+From b335a8530c6e3edf8831c36ecad9c6dcd9cf6461 Mon Sep 17 00:00:00 2001
 From: dsh-wake <wake@local>
 Date: Wed, 18 Nov 2026 02:36:38 +0800
-Subject: [PATCH] =?UTF-8?q?feat(voice):=20the=20call's=20=E6=82=AC?=
- =?UTF-8?q?=E6=B5=AE=E7=AA=97,=20and=20nothing=20else's?=
+Subject: [PATCH] feat(voice): the small window is a call, laid out for its
+ size
 MIME-Version: 1.0
 Content-Type: text/plain; charset=UTF-8
 Content-Transfer-Encoding: 8bit
 
-The floating window is for 语音通话: pressing the square in the call's top bar
-hands the call to the system's picture-in-picture window, where the call page is
-what is on screen (it is full screen over the app, so that is what the window
-shows). When the call ends there, the page comes back — the small window never
-outlives the call and never shows the chat behind it.
+A thumbnail of the whole page is not a call window. While picture-in-picture is
+up the page now draws a call-sized layout of its own — the light, how long the
+call has run, and 挂断 — the way a phone's own floating call looks. The activity
+reports the window's arrival and departure (pipChanged), and the layout follows.
+
+The square in the top bar is still how it is opened, and the window closes with
+the call.
 ---
  app/android/app/src/main/AndroidManifest.xml  |   1 +
- .../ccch1mneyyy/dsh_app/MainActivity.kt       |  34 ++
+ .../ccch1mneyyy/dsh_app/MainActivity.kt       |  40 ++
  .../ccch1mneyyy/dsh_app/wake/WakeCapture.kt   |  43 +-
  app/assets/kws/LICENSE.txt                    |  20 +
  app/assets/kws/NOTICE.txt                     |   4 +
@@ -27,12 +29,12 @@ outlives the call and never shows the chat behind it.
  app/lib/ui/chat/chat_screen.dart              |  28 +-
  app/lib/ui/chat/media/media_format.dart       |  15 +-
  app/lib/ui/settings/voice_settings_page.dart  |  24 +-
- app/lib/ui/speech/voice_call_page.dart        |  43 ++
+ app/lib/ui/speech/voice_call_page.dart        | 102 ++++
  app/lib/ui/theme/app_icons.dart               |   4 +
  app/lib/voice/wake_keywords.dart              |  50 ++
  app/lib/voice/wake_word.dart                  | 459 +++++++++++++++---
  app/pubspec.yaml                              |   4 +
- 19 files changed, 877 insertions(+), 81 deletions(-)
+ 19 files changed, 942 insertions(+), 81 deletions(-)
  create mode 100644 app/assets/kws/LICENSE.txt
  create mode 100644 app/assets/kws/NOTICE.txt
  create mode 100644 app/assets/kws/decoder.int8.onnx
@@ -54,7 +56,7 @@ index 20c6331..3dc6118 100644
              android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode"
              android:hardwareAccelerated="true"
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/MainActivity.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/MainActivity.kt
-index a5168f0..6fa68b9 100644
+index a5168f0..7f4085d 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/MainActivity.kt
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/MainActivity.kt
 @@ -6,7 +6,9 @@ import android.content.Intent
@@ -77,7 +79,7 @@ index a5168f0..6fa68b9 100644
      /**
       * One engine per process, outliving this activity: swiping the app away from recents keeps
       * Dart running, and with it the event subscriptions behind turn-finished / needs-you
-@@ -176,6 +181,27 @@ class MainActivity : FlutterActivity() {
+@@ -176,6 +181,33 @@ class MainActivity : FlutterActivity() {
          super.onPause()
      }
  
@@ -96,6 +98,12 @@ index a5168f0..6fa68b9 100644
 +        }
 +    }
 +
++    /** The small window came or went: Flutter shows a call-sized layout while it is up. */
++    override fun onPictureInPictureModeChanged(isInPictureInPictureMode: Boolean, newConfig: Configuration) {
++        super.onPictureInPictureModeChanged(isInPictureInPictureMode, newConfig)
++        appChannel?.invokeMethod("pipChanged", mapOf("inPip" to isInPictureInPictureMode))
++    }
++
 +    /** Leaving the app during a call keeps it visible instead of hiding it. */
 +    override fun onUserLeaveHint() {
 +        if (callActive && Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) enterFloatingCall()
@@ -105,7 +113,7 @@ index a5168f0..6fa68b9 100644
      /** Per activity: the handler acts on this activity, so it goes with it (see [cleanUpFlutterEngine]). */
      override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
          super.configureFlutterEngine(flutterEngine)
-@@ -206,6 +232,14 @@ class MainActivity : FlutterActivity() {
+@@ -206,6 +238,14 @@ class MainActivity : FlutterActivity() {
                      applyRefreshRate()
                      result.success(null)
                  }
@@ -73184,7 +73192,7 @@ index a43eeb8..f6a8119 100644
  /// 唤醒词 typed by the person; the phrase is matched inside what the recognizer heard.
  Future<void> editWakeKeyword(BuildContext context, WidgetRef ref, String current) async {
 diff --git a/app/lib/ui/speech/voice_call_page.dart b/app/lib/ui/speech/voice_call_page.dart
-index 2f99689..045c3df 100644
+index 2f99689..72cdcbd 100644
 --- a/app/lib/ui/speech/voice_call_page.dart
 +++ b/app/lib/ui/speech/voice_call_page.dart
 @@ -47,6 +47,7 @@ import '../../usage/usage_stats.dart';
@@ -73195,7 +73203,7 @@ index 2f99689..045c3df 100644
  import 'call/call_backdrop.dart';
  import 'call/call_parts.dart';
  import 'call/call_transcript.dart';
-@@ -118,10 +119,19 @@ class _VoiceCallPageState extends ConsumerState<VoiceCallPage> with WidgetsBindi
+@@ -118,10 +119,21 @@ class _VoiceCallPageState extends ConsumerState<VoiceCallPage> with WidgetsBindi
    /// and the page comes in without its staggered rise.
    bool _still = false;
  
@@ -73203,6 +73211,7 @@ index 2f99689..045c3df 100644
 +  /// the page goes: the handoff belongs to the call, not to whichever screen opened it.
 +  WakeWordController? _wake;
 +  bool _floating = false;
++  bool _inPip = false;
 +
    @override
    void initState() {
@@ -73212,14 +73221,16 @@ index 2f99689..045c3df 100644
 +    unawaited(_wake!.suspend());
 +    // 悬浮窗: the native side keeps this call visible over other apps once the person leaves.
 +    unawaited(const MethodChannel('dsh/app').invokeMethod<void>('setCallActive', {'active': true}));
++    const MethodChannel('dsh/app').setMethodCallHandler(_onAppCall);
      final callSettings = ref.read(callSettingsProvider.notifier);
      final voices = ref.read(speechVoiceSettingsProvider.notifier);
      // The chosen voice, as soon as the settings have been read (the first reply comes later).
-@@ -318,6 +328,11 @@ class _VoiceCallPageState extends ConsumerState<VoiceCallPage> with WidgetsBindi
+@@ -318,6 +330,12 @@ class _VoiceCallPageState extends ConsumerState<VoiceCallPage> with WidgetsBindi
  
    @override
    void dispose() {
 +    _leaveFloating();
++    const MethodChannel('dsh/app').setMethodCallHandler(null);
 +    final wake = _wake;
 +    _wake = null;
 +    if (wake != null) unawaited(wake.resume());
@@ -73227,12 +73238,21 @@ index 2f99689..045c3df 100644
      WidgetsBinding.instance.removeObserver(this);
      unawaited(_live?.stop());
      _leave?.cancel();
-@@ -329,6 +344,22 @@ class _VoiceCallPageState extends ConsumerState<VoiceCallPage> with WidgetsBindi
+@@ -329,6 +347,31 @@ class _VoiceCallPageState extends ConsumerState<VoiceCallPage> with WidgetsBindi
      super.dispose();
    }
  
 +  /// 悬浮窗: hands the call to the system's own small window. Returns false when the
 +  /// platform will not (a device without picture-in-picture); the call stays as it is.
++  /// The system's small window came or went: the call lays itself out for the size it has.
++  Future<void> _onAppCall(MethodCall call) async {
++    if (call.method != 'pipChanged') return;
++    final inPip = (call.arguments as Map?)?['inPip'] == true;
++    if (!mounted || inPip == _inPip) return;
++    setState(() => _inPip = inPip);
++    if (!inPip) _floating = false;
++  }
++
 +  void _float() {
 +    unawaited(const MethodChannel('dsh/app').invokeMethod<bool>('enterFloatingCall').then((ok) {
 +      if (ok == true) _floating = true;
@@ -73250,7 +73270,15 @@ index 2f99689..045c3df 100644
    void _hangUp() {
      HapticFeedback.heavyImpact();
      _call.hangUp();
-@@ -557,6 +588,7 @@ class _VoiceCallPageState extends ConsumerState<VoiceCallPage> with WidgetsBindi
+@@ -461,6 +504,7 @@ class _VoiceCallPageState extends ConsumerState<VoiceCallPage> with WidgetsBindi
+   Widget build(BuildContext context) {
+     final l10n = context.l10n;
+     final theme = Theme.of(context);
++    if (_inPip) return _FloatingCall(since: _since, onHangUp: _hangUp, live: _call.phase != CallPhase.ended);
+     _still = AppMotion.reduced(context);
+     final settings = ref.watch(callSettingsProvider);
+     final performance = ref.watch(performanceDefaultsProvider);
+@@ -557,6 +601,7 @@ class _VoiceCallPageState extends ConsumerState<VoiceCallPage> with WidgetsBindi
                            since: _since,
                            live: !ended && _since != null,
                            blur: keyBlur,
@@ -73258,7 +73286,7 @@ index 2f99689..045c3df 100644
                            onTranscript: _openTranscript,
                            onBackdrop: ended
                                ? null
-@@ -704,6 +736,7 @@ class _TopBar extends StatelessWidget {
+@@ -704,6 +749,7 @@ class _TopBar extends StatelessWidget {
      required this.blur,
      required this.onTranscript,
      required this.onBackdrop,
@@ -73266,7 +73294,7 @@ index 2f99689..045c3df 100644
    });
  
    final String title;
-@@ -712,6 +745,7 @@ class _TopBar extends StatelessWidget {
+@@ -712,6 +758,7 @@ class _TopBar extends StatelessWidget {
    final bool blur;
    final VoidCallback onTranscript;
    final VoidCallback? onBackdrop;
@@ -73274,7 +73302,7 @@ index 2f99689..045c3df 100644
  
    @override
    Widget build(BuildContext context) {
-@@ -767,6 +801,15 @@ class _TopBar extends StatelessWidget {
+@@ -767,6 +814,15 @@ class _TopBar extends StatelessWidget {
              ),
            ),
            const SizedBox(width: 10),
@@ -73290,6 +73318,56 @@ index 2f99689..045c3df 100644
            _RoundKey(
              key: const ValueKey('call-backdrop'),
              icon: AppIcons.settings,
+@@ -860,3 +916,49 @@ class _RoundKeyState extends State<_RoundKey> {
+     );
+   }
+ }
++
++/// 语音通话 in the system's small window: the call, not the app — the light, how long it has
++/// been on, and the one key that ends it. Everything else the full page carries is left out
++/// because the window is a thumbnail of the call, the way a phone's own call window is.
++class _FloatingCall extends StatelessWidget {
++  const _FloatingCall({required this.since, required this.onHangUp, required this.live});
++
++  final DateTime? since;
++  final VoidCallback onHangUp;
++  final bool live;
++
++  @override
++  Widget build(BuildContext context) {
++    final theme = Theme.of(context);
++    final l10n = context.l10n;
++    return ColoredBox(
++      color: const Color(0xFF030712),
++      child: SafeArea(
++        child: Padding(
++          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
++          child: Column(
++            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
++            children: [
++              Container(
++                width: 56,
++                height: 56,
++                decoration: const BoxDecoration(
++                  shape: BoxShape.circle,
++                  gradient: RadialGradient(colors: [Color(0xFFBFD4FF), Color(0xFF2A3550)]),
++                ),
++              ),
++              CallTimer(since: since, live: live),
++              FilledButton.icon(
++                key: const ValueKey('call-float-hang-up'),
++                onPressed: onHangUp,
++                icon: const Icon(AppIcons.hangUp, color: Colors.white, size: 18),
++                label: Text(l10n.speechCallHangUp, style: theme.textTheme.labelLarge?.copyWith(color: Colors.white)),
++                style: FilledButton.styleFrom(backgroundColor: const Color(0xFFE5484D)),
++              ),
++            ],
++          ),
++        ),
++      ),
++    );
++  }
++}
 diff --git a/app/lib/ui/theme/app_icons.dart b/app/lib/ui/theme/app_icons.dart
 index 0d611ff..a10a74e 100644
 --- a/app/lib/ui/theme/app_icons.dart
