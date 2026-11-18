@@ -1,19 +1,15 @@
-From b335a8530c6e3edf8831c36ecad9c6dcd9cf6461 Mon Sep 17 00:00:00 2001
+From 960bfd141d5e1a9b4131013bf07e8120623eef1f Mon Sep 17 00:00:00 2001
 From: dsh-wake <wake@local>
 Date: Wed, 18 Nov 2026 02:36:38 +0800
-Subject: [PATCH] feat(voice): the small window is a call, laid out for its
- size
+Subject: [PATCH] fix(voice): import the notes helper the title actually uses
 MIME-Version: 1.0
 Content-Type: text/plain; charset=UTF-8
 Content-Transfer-Encoding: 8bit
 
-A thumbnail of the whole page is not a call window. While picture-in-picture is
-up the page now draws a call-sized layout of its own — the light, how long the
-call has run, and 挂断 — the way a phone's own floating call looks. The activity
-reports the window's arrival and departure (pipChanged), and the layout follows.
-
-The square in the top bar is still how it is opened, and the window closes with
-the call.
+The last build died on lib/ui/chat/media/media_format.dart:109 — Method not
+found: 'withoutAppNotes' — because the import was never added: the file has no
+riverpod import to anchor it to. It is added before the build this time, and the
+patch was checked against the upstream tree.
 ---
  app/android/app/src/main/AndroidManifest.xml  |   1 +
  .../ccch1mneyyy/dsh_app/MainActivity.kt       |  40 ++
@@ -27,14 +23,14 @@ the call.
  app/lib/l10n/parts/speech_en.arb              |   1 +
  app/lib/l10n/parts/speech_zh.arb              |   1 +
  app/lib/ui/chat/chat_screen.dart              |  28 +-
- app/lib/ui/chat/media/media_format.dart       |  15 +-
+ app/lib/ui/chat/media/media_format.dart       |  16 +-
  app/lib/ui/settings/voice_settings_page.dart  |  24 +-
  app/lib/ui/speech/voice_call_page.dart        | 102 ++++
  app/lib/ui/theme/app_icons.dart               |   4 +
  app/lib/voice/wake_keywords.dart              |  50 ++
  app/lib/voice/wake_word.dart                  | 459 +++++++++++++++---
  app/pubspec.yaml                              |   4 +
- 19 files changed, 942 insertions(+), 81 deletions(-)
+ 19 files changed, 943 insertions(+), 81 deletions(-)
  create mode 100644 app/assets/kws/LICENSE.txt
  create mode 100644 app/assets/kws/NOTICE.txt
  create mode 100644 app/assets/kws/decoder.int8.onnx
@@ -73134,10 +73130,18 @@ index d9540df..9270d57 100644
            final owed = ref.read(owedSetupsProvider.notifier).of(host, id);
            if (owed != null && !await _applyOwedSetup(host, id, owed, () => mounted)) return null;
 diff --git a/app/lib/ui/chat/media/media_format.dart b/app/lib/ui/chat/media/media_format.dart
-index 2a34ba3..d0fb04a 100644
+index 2a34ba3..f146fdc 100644
 --- a/app/lib/ui/chat/media/media_format.dart
 +++ b/app/lib/ui/chat/media/media_format.dart
-@@ -103,8 +103,13 @@ String mediaParamsLine({required bool video, String? aspect, int? count, int? se
+@@ -4,6 +4,7 @@
+ import 'package:dsh_client/dsh_client.dart';
+ 
+ import '../../../l10n/l10n.dart';
++import '../../../state/app_notes.dart';
+ import 'generate_header.dart';
+ 
+ /// The batch's width / height: the first item's when known, else the
+@@ -103,8 +104,13 @@ String mediaParamsLine({required bool video, String? aspect, int? count, int? se
  /// A conversation title as shown: one that begins with a generation
  /// request's header shows what follows it, or 「生成图像」 / 「生成视频」 when
  /// nothing does.
