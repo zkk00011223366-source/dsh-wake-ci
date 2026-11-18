@@ -1,7 +1,7 @@
 == resources ==
 /dev/root        72G   51G   21G  72% /
                total        used        free      shared  buff/cache   available
-Mem:            7931        5180         190          20        2897        2751
+Mem:            7931        5244         123          20        2896        2686
 == tail ==
 
 ==> 依赖: flutter pub get
@@ -100,3 +100,6 @@ Installing Android SDK Platform 34 in /home/runner/dev/android-sdk/platforms/and
 "Install Android SDK Platform 34 (revision 3)" complete.
 "Install Android SDK Platform 34 (revision 3)" finished.
 Flutter assets will be downloaded from https://storage.googleapis.com. Make sure you trust this source!
+lib/ui/chat/media/media_format.dart:109:17: Error: Method not found: 'withoutAppNotes'.
+  final clean = withoutAppNotes(title);
+                ^^^^^^^^^^^^^^^
