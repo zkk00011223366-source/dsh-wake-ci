@@ -1,20 +1,20 @@
-From af36a9791e53b2b1cc44fd95ddd0c1d536a8e423 Mon Sep 17 00:00:00 2001
+From 9803de1dd837ec2205c72fc13763bf0f6d59a2a8 Mon Sep 17 00:00:00 2001
 From: dsh-wake <wake@local>
 Date: Wed, 18 Nov 2026 02:36:38 +0800
-Subject: [PATCH] fix(voice): the spotter wants the microphone as it is
+Subject: [PATCH] fix(voice): wake on the first try, and wake again
 MIME-Version: 1.0
 Content-Type: text/plain; charset=UTF-8
 Content-Transfer-Encoding: 8bit
 
-The keyword spotter loads and its own test audio matches, so the model and the
-keyword line are right; what it hears does not. A spotter is trained on clean
-speech, and VOICE_COMMUNICATION with the echo canceller and suppressor (what
-语音通话 wants, and what 小安语音助手 uses) reshapes the signal enough that the
-same phrase stops matching.
+It woke once, then not again: _fire stopped the listening service itself, and
+when no call page opened (the screen was on 设置, not on a conversation) nothing
+started it again until a 20 s fallback — so the second attempt spoke to a phone
+that was not listening. The service is no longer stopped there; the call page
+takes the microphone through MicArbiter when it appears, and the fallback is 6 s.
 
-Operit's wake listener opens AudioSource.MIC and nothing else; so does this now.
-Both arms hear every frame from here: the spotter answers a clean 唤醒词, the
-utterance arm catches what it misses.
+Sensitivity: the stock trigger answers only a deliberate, close-range phrase.
+The keyword bias is 1.5 and the trigger 0.15, which still requires the model to
+see the whole phrase but no longer needs it shouted.
 ---
  .../ccch1mneyyy/dsh_app/wake/WakeCapture.kt   |  43 +-
  app/assets/kws/LICENSE.txt                    |  20 +
@@ -26,9 +26,9 @@ utterance arm catches what it misses.
  app/lib/ui/chat/chat_screen.dart              |  25 +-
  app/lib/ui/settings/voice_settings_page.dart  |  24 +-
  app/lib/voice/wake_keywords.dart              |  50 +++
- app/lib/voice/wake_word.dart                  | 386 +++++++++++++++---
+ app/lib/voice/wake_word.dart                  | 397 +++++++++++++++---
  app/pubspec.yaml                              |   4 +
- 12 files changed, 710 insertions(+), 73 deletions(-)
+ 12 files changed, 718 insertions(+), 76 deletions(-)
  create mode 100644 app/assets/kws/LICENSE.txt
  create mode 100644 app/assets/kws/NOTICE.txt
  create mode 100644 app/assets/kws/decoder.int8.onnx
@@ -73107,7 +73107,7 @@ index 0000000..8a88271
 +  return ('', syllable);
 +}
 diff --git a/app/lib/voice/wake_word.dart b/app/lib/voice/wake_word.dart
-index cf6e008..698f9a1 100644
+index cf6e008..9728b85 100644
 --- a/app/lib/voice/wake_word.dart
 +++ b/app/lib/voice/wake_word.dart
 @@ -10,29 +10,36 @@
@@ -73188,6 +73188,15 @@ index cf6e008..698f9a1 100644
    );
  }
  
+@@ -115,7 +133,7 @@ class WakeWordController extends Notifier<WakeStatus> {
+   static const _burstLimit = Duration(seconds: 15);
+ 
+   /// A wake word that opened no call (no conversation on screen) comes back after this.
+-  static const _callGrace = Duration(seconds: 20);
++  static const _callGrace = Duration(seconds: 6);
+ 
+   StreamSubscription<Map<Object?, Object?>>? _events;
+   sherpa.OnlineRecognizer? _recognizer;
 @@ -131,8 +149,10 @@ class WakeWordController extends Notifier<WakeStatus> {
    @override
    WakeStatus build() {
@@ -73307,7 +73316,7 @@ index cf6e008..698f9a1 100644
        case 'wake.listening':
          if (ref.mounted) state = state.copyWith(listening: WakeListening.listening, clearReason: true);
        case 'wake.yield':
-@@ -288,44 +377,192 @@ class WakeWordController extends Notifier<WakeStatus> {
+@@ -288,44 +377,196 @@ class WakeWordController extends Notifier<WakeStatus> {
      }
    }
  
@@ -73431,8 +73440,12 @@ index cf6e008..698f9a1 100644
 +          ),
 +          keywordsBuf: line,
 +          keywordsBufSize: bytes,
-+          keywordsScore: 1.0,
-+          keywordsThreshold: 0.25,
++          // 手机里的唤醒 first tries: the stock thresholds answer only a deliberate,
++          // close-range phrase. A lower trigger and a stronger keyword bias make 小安 land
++          // on the first try without matching ordinary speech (the model still has to see
++          // the whole phrase).
++          keywordsScore: 1.5,
++          keywordsThreshold: 0.15,
 +        ),
 +      );
 +      sherpa.KeywordSpotter? spotter;
@@ -73453,9 +73466,9 @@ index cf6e008..698f9a1 100644
 +      _dbg('kws failed: $error');
 +    } finally {
 +      _kwsPreparing = false;
-+    }
-+  }
-+
+     }
+   }
+ 
 +  /// The spotter's model, copied out of assets once (sherpa reads paths, not bytes).
 +  Future<String?> _kwsDirectory() async {
 +    try {
@@ -73496,9 +73509,9 @@ index cf6e008..698f9a1 100644
 +      }
 +    } on Object catch (error) {
 +      _dbg('recognize failed: $error');
-     }
-   }
- 
++    }
++  }
++
 +  static Uint8List _wav(Uint8List pcm) {
 +    final header = ByteData(44)
 +      ..setUint32(0, 0x52494646, Endian.big) // RIFF
@@ -73528,7 +73541,7 @@ index cf6e008..698f9a1 100644
    bool _heardWakeWord(String text) {
      final keyword = _compact(_keyword);
      if (keyword.isEmpty) return false;
-@@ -333,7 +570,25 @@ class WakeWordController extends Notifier<WakeStatus> {
+@@ -333,7 +574,25 @@ class WakeWordController extends Notifier<WakeStatus> {
      // A stream fed a room decodes it into one syllable repeated ("呵呵呵呵呵"). That is not
      // speech, and matching inside it is how a wake word fires on nothing.
      if (_isBabble(heard)) return false;
@@ -73555,7 +73568,7 @@ index cf6e008..698f9a1 100644
    }
  
    /// One character repeated five times or more: a recognizer's answer to noise, not a word.
-@@ -357,7 +612,11 @@ class WakeWordController extends Notifier<WakeStatus> {
+@@ -357,17 +616,23 @@ class WakeWordController extends Notifier<WakeStatus> {
    Future<void> _fire() async {
      final now = DateTime.now();
      final until = _cooldownUntil;
@@ -73568,15 +73581,21 @@ index cf6e008..698f9a1 100644
      _cooldownUntil = now.add(_cooldown);
      final settings = ref.read(wakeSettingsProvider);
      if (settings.chime) unawaited(SystemSound.play(SystemSoundType.alert));
-@@ -368,6 +627,7 @@ class WakeWordController extends Notifier<WakeStatus> {
-     await _stopService();
+     if (settings.vibrate) unawaited(HapticFeedback.heavyImpact());
+     _resetStream();
+     if (ref.mounted) state = state.copyWith(listening: WakeListening.paused, hits: state.hits + 1, clearReason: true);
+-    // 麦克风让位: the call page records too; the two would cut each other off.
+-    await _stopService();
++    // The call page takes the microphone through MicArbiter when it opens, so listening is
++    // not stopped here: stopping it was what left the phone deaf when no call opened (the
++    // screen was on 设置, not on a conversation) until the 20 s fallback ran.
      try {
        await ref.read(wakePlatformProvider).present();
 +      _dbg('fire: presented');
      } on Object {
        // The activity could not be brought forward (or there is no such channel): the caller's
        // screen is unchanged, and the call still opens in the app when it comes back.
-@@ -414,19 +674,23 @@ class WakeWordController extends Notifier<WakeStatus> {
+@@ -414,19 +679,23 @@ class WakeWordController extends Notifier<WakeStatus> {
            ),
            tokens: model.tokens,
            modelType: 'zipformer',
@@ -73605,7 +73624,7 @@ index cf6e008..698f9a1 100644
      _streamStarted = null;
      final recognizer = _recognizer;
      final stream = _stream;
-@@ -466,12 +730,32 @@ final wakeWordProvider = NotifierProvider<WakeWordController, WakeStatus>(WakeWo
+@@ -466,12 +735,32 @@ final wakeWordProvider = NotifierProvider<WakeWordController, WakeStatus>(WakeWo
  /// chime fires this and the screen that owns a conversation answers with its call.
  final wakeCallRequestProvider = NotifierProvider<WakeCallRequest, int>(WakeCallRequest.new);
  
