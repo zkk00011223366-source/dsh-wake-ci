@@ -1,19 +1,17 @@
-From 31cf05d2b913759636579ac4c501442c65a5f563 Mon Sep 17 00:00:00 2001
+From 37f98c8871f6414d167f7d4412a1899cb185061f Mon Sep 17 00:00:00 2001
 From: dsh-wake <wake@local>
 Date: Wed, 18 Nov 2026 02:36:38 +0800
-Subject: [PATCH] fix(voice): the title a call seeds never shows the app's
- notes
+Subject: [PATCH] =?UTF-8?q?feat(voice):=20the=20call's=20=E6=82=AC?=
+ =?UTF-8?q?=E6=B5=AE=E7=AA=97,=20and=20nothing=20else's?=
 MIME-Version: 1.0
 Content-Type: text/plain; charset=UTF-8
 Content-Transfer-Encoding: 8bit
 
-The pill above 语音通话 read `<dsh-note>（这…`: a call's first message carries the
-app's note for the model, and the conversation title is seeded from that message.
-chatTitleShown (the one place a title is shown) drops the notes first, so the
-call, the drawer and the export all read what the person actually said.
-
-Same build carries the floating call: leaving the app during 语音通话 puts it in
-picture-in-picture, and 语音通话 tells the activity when it is up.
+The floating window is for 语音通话: pressing the square in the call's top bar
+hands the call to the system's picture-in-picture window, where the call page is
+what is on screen (it is full screen over the app, so that is what the window
+shows). When the call ends there, the page comes back — the small window never
+outlives the call and never shows the chat behind it.
 ---
  app/android/app/src/main/AndroidManifest.xml  |   1 +
  .../ccch1mneyyy/dsh_app/MainActivity.kt       |  34 ++
@@ -24,14 +22,17 @@ picture-in-picture, and 语音通话 tells the activity when it is up.
  app/assets/kws/encoder.int8.onnx              | Bin 0 -> 4777666 bytes
  app/assets/kws/joiner.int8.onnx               | Bin 0 -> 65242 bytes
  app/assets/kws/tokens.txt                     | 227 +++++++++
+ app/lib/l10n/parts/speech_en.arb              |   1 +
+ app/lib/l10n/parts/speech_zh.arb              |   1 +
  app/lib/ui/chat/chat_screen.dart              |  28 +-
  app/lib/ui/chat/media/media_format.dart       |  15 +-
  app/lib/ui/settings/voice_settings_page.dart  |  24 +-
- app/lib/ui/speech/voice_call_page.dart        |  13 +
+ app/lib/ui/speech/voice_call_page.dart        |  43 ++
+ app/lib/ui/theme/app_icons.dart               |   4 +
  app/lib/voice/wake_keywords.dart              |  50 ++
  app/lib/voice/wake_word.dart                  | 459 +++++++++++++++---
  app/pubspec.yaml                              |   4 +
- 16 files changed, 841 insertions(+), 81 deletions(-)
+ 19 files changed, 877 insertions(+), 81 deletions(-)
  create mode 100644 app/assets/kws/LICENSE.txt
  create mode 100644 app/assets/kws/NOTICE.txt
  create mode 100644 app/assets/kws/decoder.int8.onnx
@@ -73046,6 +73047,30 @@ index 0000000..5880fbf
 +#27 224
 +#28 225
 +#29 226
+diff --git a/app/lib/l10n/parts/speech_en.arb b/app/lib/l10n/parts/speech_en.arb
+index 5de2ab1..cd57405 100644
+--- a/app/lib/l10n/parts/speech_en.arb
++++ b/app/lib/l10n/parts/speech_en.arb
+@@ -113,6 +113,7 @@
+   "speechCallEarpiece": "Earpiece",
+   "speechBackdropTitle": "Call background",
+   "speechCallSettings": "Call settings",
++  "speechCallFloat": "Floating window",
+   "speechCallPause": "Pause before she answers",
+   "speechCallPauseQuick": "Short",
+   "speechCallPauseNormal": "Medium",
+diff --git a/app/lib/l10n/parts/speech_zh.arb b/app/lib/l10n/parts/speech_zh.arb
+index 0dd55a4..615fdd8 100644
+--- a/app/lib/l10n/parts/speech_zh.arb
++++ b/app/lib/l10n/parts/speech_zh.arb
+@@ -113,6 +113,7 @@
+   "speechCallEarpiece": "听筒",
+   "speechBackdropTitle": "通话背景",
+   "speechCallSettings": "通话设置",
++  "speechCallFloat": "悬浮窗",
+   "speechCallPause": "停顿多久算说完",
+   "speechCallPauseQuick": "快",
+   "speechCallPauseNormal": "适中",
 diff --git a/app/lib/ui/chat/chat_screen.dart b/app/lib/ui/chat/chat_screen.dart
 index d9540df..9270d57 100644
 --- a/app/lib/ui/chat/chat_screen.dart
@@ -73159,7 +73184,7 @@ index a43eeb8..f6a8119 100644
  /// 唤醒词 typed by the person; the phrase is matched inside what the recognizer heard.
  Future<void> editWakeKeyword(BuildContext context, WidgetRef ref, String current) async {
 diff --git a/app/lib/ui/speech/voice_call_page.dart b/app/lib/ui/speech/voice_call_page.dart
-index 2f99689..b6462a6 100644
+index 2f99689..045c3df 100644
 --- a/app/lib/ui/speech/voice_call_page.dart
 +++ b/app/lib/ui/speech/voice_call_page.dart
 @@ -47,6 +47,7 @@ import '../../usage/usage_stats.dart';
@@ -73170,13 +73195,14 @@ index 2f99689..b6462a6 100644
  import 'call/call_backdrop.dart';
  import 'call/call_parts.dart';
  import 'call/call_transcript.dart';
-@@ -118,10 +119,18 @@ class _VoiceCallPageState extends ConsumerState<VoiceCallPage> with WidgetsBindi
+@@ -118,10 +119,19 @@ class _VoiceCallPageState extends ConsumerState<VoiceCallPage> with WidgetsBindi
    /// and the page comes in without its staggered rise.
    bool _still = false;
  
 +  /// 语音唤醒 gives the microphone up for as long as this page is up, and takes it back when
 +  /// the page goes: the handoff belongs to the call, not to whichever screen opened it.
 +  WakeWordController? _wake;
++  bool _floating = false;
 +
    @override
    void initState() {
@@ -73189,10 +73215,11 @@ index 2f99689..b6462a6 100644
      final callSettings = ref.read(callSettingsProvider.notifier);
      final voices = ref.read(speechVoiceSettingsProvider.notifier);
      // The chosen voice, as soon as the settings have been read (the first reply comes later).
-@@ -318,6 +327,10 @@ class _VoiceCallPageState extends ConsumerState<VoiceCallPage> with WidgetsBindi
+@@ -318,6 +328,11 @@ class _VoiceCallPageState extends ConsumerState<VoiceCallPage> with WidgetsBindi
  
    @override
    void dispose() {
++    _leaveFloating();
 +    final wake = _wake;
 +    _wake = null;
 +    if (wake != null) unawaited(wake.resume());
@@ -73200,6 +73227,84 @@ index 2f99689..b6462a6 100644
      WidgetsBinding.instance.removeObserver(this);
      unawaited(_live?.stop());
      _leave?.cancel();
+@@ -329,6 +344,22 @@ class _VoiceCallPageState extends ConsumerState<VoiceCallPage> with WidgetsBindi
+     super.dispose();
+   }
+ 
++  /// 悬浮窗: hands the call to the system's own small window. Returns false when the
++  /// platform will not (a device without picture-in-picture); the call stays as it is.
++  void _float() {
++    unawaited(const MethodChannel('dsh/app').invokeMethod<bool>('enterFloatingCall').then((ok) {
++      if (ok == true) _floating = true;
++    }));
++  }
++
++  /// 小窗里通话结束了: the small window has nothing left to show, so the app comes back to
++  /// the screen it was on (the call page is what floats — not the rest of the app).
++  void _leaveFloating() {
++    if (!_floating) return;
++    _floating = false;
++    unawaited(const MethodChannel('dsh/app').invokeMethod<void>('bringToFront'));
++  }
++
+   void _hangUp() {
+     HapticFeedback.heavyImpact();
+     _call.hangUp();
+@@ -557,6 +588,7 @@ class _VoiceCallPageState extends ConsumerState<VoiceCallPage> with WidgetsBindi
+                           since: _since,
+                           live: !ended && _since != null,
+                           blur: keyBlur,
++                          onFloat: _float,
+                           onTranscript: _openTranscript,
+                           onBackdrop: ended
+                               ? null
+@@ -704,6 +736,7 @@ class _TopBar extends StatelessWidget {
+     required this.blur,
+     required this.onTranscript,
+     required this.onBackdrop,
++    required this.onFloat,
+   });
+ 
+   final String title;
+@@ -712,6 +745,7 @@ class _TopBar extends StatelessWidget {
+   final bool blur;
+   final VoidCallback onTranscript;
+   final VoidCallback? onBackdrop;
++  final VoidCallback onFloat;
+ 
+   @override
+   Widget build(BuildContext context) {
+@@ -767,6 +801,15 @@ class _TopBar extends StatelessWidget {
+             ),
+           ),
+           const SizedBox(width: 10),
++          // 悬浮窗: the call shrinks into a window over other apps, on a press.
++          _RoundKey(
++            key: const ValueKey('call-float'),
++            icon: AppIcons.floatCall,
++            label: l10n.speechCallFloat,
++            blur: blur,
++            onTap: onFloat,
++          ),
++          const SizedBox(width: 10),
+           _RoundKey(
+             key: const ValueKey('call-backdrop'),
+             icon: AppIcons.settings,
+diff --git a/app/lib/ui/theme/app_icons.dart b/app/lib/ui/theme/app_icons.dart
+index 0d611ff..a10a74e 100644
+--- a/app/lib/ui/theme/app_icons.dart
++++ b/app/lib/ui/theme/app_icons.dart
+@@ -384,6 +384,10 @@ abstract final class AppIcons {
+   /// 语音通话: hang up.
+   static const hangUp = DshGlyphs.phoneDisconnect;
+ 
++  /// 语音通话 悬浮窗: the call in a small window (a square, not an arrow: it is the
++  /// window it becomes).
++  static const floatCall = DshGlyphs.square;
++
+   /// 语音通话: the call's captions in full (as 回放's 全文).
+   static const callTranscript = DshGlyphs.article;
+ 
 diff --git a/app/lib/voice/wake_keywords.dart b/app/lib/voice/wake_keywords.dart
 new file mode 100644
 index 0000000..8a88271
