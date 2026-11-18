@@ -1,15 +1,17 @@
-From 960bfd141d5e1a9b4131013bf07e8120623eef1f Mon Sep 17 00:00:00 2001
+From b3cc1a865ff3f798550a7f16b9c92bac41eb476f Mon Sep 17 00:00:00 2001
 From: dsh-wake <wake@local>
 Date: Wed, 18 Nov 2026 02:36:38 +0800
-Subject: [PATCH] fix(voice): import the notes helper the title actually uses
+Subject: [PATCH] =?UTF-8?q?feat(voice):=20=E6=82=AC=E6=B5=AE=E7=AA=97=20am?=
+ =?UTF-8?q?ong=20the=20call=20keys,=20where=20the=20top=20bar=20has=20no?=
+ =?UTF-8?q?=20room?=
 MIME-Version: 1.0
 Content-Type: text/plain; charset=UTF-8
 Content-Transfer-Encoding: 8bit
 
-The last build died on lib/ui/chat/media/media_format.dart:109 — Method not
-found: 'withoutAppNotes' — because the import was never added: the file has no
-riverpod import to anchor it to. It is added before the build this time, and the
-patch was checked against the upstream tree.
+The top bar already runs to the edges (记录 · timer and title · 通话设置), so the
+square sits in the row that holds 静音 and 免提 instead: 静音 · 悬浮窗 · 挂断 · 免提.
+Pressing it hands the call to the system's small window, which lays itself out
+as a call (light, timer, 挂断) rather than shrinking the page.
 ---
  app/android/app/src/main/AndroidManifest.xml  |   1 +
  .../ccch1mneyyy/dsh_app/MainActivity.kt       |  40 ++
@@ -25,12 +27,12 @@ patch was checked against the upstream tree.
  app/lib/ui/chat/chat_screen.dart              |  28 +-
  app/lib/ui/chat/media/media_format.dart       |  16 +-
  app/lib/ui/settings/voice_settings_page.dart  |  24 +-
- app/lib/ui/speech/voice_call_page.dart        | 102 ++++
+ app/lib/ui/speech/voice_call_page.dart        | 101 ++++
  app/lib/ui/theme/app_icons.dart               |   4 +
  app/lib/voice/wake_keywords.dart              |  50 ++
  app/lib/voice/wake_word.dart                  | 459 +++++++++++++++---
  app/pubspec.yaml                              |   4 +
- 19 files changed, 943 insertions(+), 81 deletions(-)
+ 19 files changed, 942 insertions(+), 81 deletions(-)
  create mode 100644 app/assets/kws/LICENSE.txt
  create mode 100644 app/assets/kws/NOTICE.txt
  create mode 100644 app/assets/kws/decoder.int8.onnx
@@ -73196,7 +73198,7 @@ index a43eeb8..f6a8119 100644
  /// 唤醒词 typed by the person; the phrase is matched inside what the recognizer heard.
  Future<void> editWakeKeyword(BuildContext context, WidgetRef ref, String current) async {
 diff --git a/app/lib/ui/speech/voice_call_page.dart b/app/lib/ui/speech/voice_call_page.dart
-index 2f99689..72cdcbd 100644
+index 2f99689..aad02e1 100644
 --- a/app/lib/ui/speech/voice_call_page.dart
 +++ b/app/lib/ui/speech/voice_call_page.dart
 @@ -47,6 +47,7 @@ import '../../usage/usage_stats.dart';
@@ -73282,47 +73284,25 @@ index 2f99689..72cdcbd 100644
      _still = AppMotion.reduced(context);
      final settings = ref.watch(callSettingsProvider);
      final performance = ref.watch(performanceDefaultsProvider);
-@@ -557,6 +601,7 @@ class _VoiceCallPageState extends ConsumerState<VoiceCallPage> with WidgetsBindi
-                           since: _since,
-                           live: !ended && _since != null,
-                           blur: keyBlur,
-+                          onFloat: _float,
-                           onTranscript: _openTranscript,
-                           onBackdrop: ended
-                               ? null
-@@ -704,6 +749,7 @@ class _TopBar extends StatelessWidget {
-     required this.blur,
-     required this.onTranscript,
-     required this.onBackdrop,
-+    required this.onFloat,
-   });
- 
-   final String title;
-@@ -712,6 +758,7 @@ class _TopBar extends StatelessWidget {
-   final bool blur;
-   final VoidCallback onTranscript;
-   final VoidCallback? onBackdrop;
-+  final VoidCallback onFloat;
- 
-   @override
-   Widget build(BuildContext context) {
-@@ -767,6 +814,15 @@ class _TopBar extends StatelessWidget {
-             ),
-           ),
-           const SizedBox(width: 10),
-+          // 悬浮窗: the call shrinks into a window over other apps, on a press.
-+          _RoundKey(
-+            key: const ValueKey('call-float'),
-+            icon: AppIcons.floatCall,
-+            label: l10n.speechCallFloat,
-+            blur: blur,
-+            onTap: onFloat,
-+          ),
-+          const SizedBox(width: 10),
-           _RoundKey(
-             key: const ValueKey('call-backdrop'),
-             icon: AppIcons.settings,
-@@ -860,3 +916,49 @@ class _RoundKeyState extends State<_RoundKey> {
+@@ -659,6 +703,17 @@ class _VoiceCallPageState extends ConsumerState<VoiceCallPage> with WidgetsBindi
+                           ),
+                           _rise(
+                             0.48,
++                            CallKey(
++                              key: const ValueKey('call-float'),
++                              icon: AppIcons.floatCall,
++                              label: l10n.speechCallFloat,
++                              blur: keyBlur,
++                              onTap: ended ? null : _float,
++                            ),
++                            distance: 30,
++                          ),
++                          _rise(
++                            0.52,
+                             HangUpKey(
+                               key: const ValueKey('call-hang-up'),
+                               icon: AppIcons.hangUp,
+@@ -860,3 +915,49 @@ class _RoundKeyState extends State<_RoundKey> {
      );
    }
  }
