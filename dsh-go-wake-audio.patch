@@ -1,23 +1,35 @@
-From b2177d09640c6978e8efc5980f963553154371db Mon Sep 17 00:00:00 2001
+From e2e979c9cb245bcf1fc69f0bc4fcee6b220c035e Mon Sep 17 00:00:00 2001
 From: dsh-wake <wake@local>
 Date: Wed, 18 Nov 2026 02:36:38 +0800
-Subject: [PATCH] fix(voice): the wake phrase reaches a new conversation too
+Subject: [PATCH] feat(voice): the call gets a window of its own
 MIME-Version: 1.0
 Content-Type: text/plain; charset=UTF-8
 Content-Transfer-Encoding: 8bit
 
-A wake on a fresh chat opened the call and said nothing: the session callback
-returned the id it had just created, before the code that sends 唤醒词 — so only
-a conversation that already existed was ever told. The id is created first now,
-then the phrase goes in, then the call is handed to the page.
+A picture-in-picture window is the whole activity shrunk: it cannot be moved,
+cannot be hidden to an edge, and is a rectangle of the app rather than a card of
+the call. This adds the real thing, on the overlay path 桌面宠物 already uses:
 
-Floating window is unchanged this round: it is the system's picture-in-picture,
-which lays out the call (light, timer, 挂断) but cannot be dragged or hidden to
-an edge — that needs a real overlay window, like the one 桌面宠物 already uses.
+- CallOverlay draws a 84×150dp card (the light, a Chronometer, 挂断), adds it as
+  TYPE_APPLICATION_OVERLAY, drags with the finger and rests against the side it
+  was thrown towards (EdgeSnap, the same maths the pet docks with). The dock is
+  remembered, so the card comes back where it was left.
+- The app steps aside behind it (moveTaskToBack) and tapping the card brings the
+  conversation back; 挂断 on the card ends the call and takes the card down.
+- Without 「显示在其他应用上层」 the card cannot be added: the call asks for it and
+  falls back to picture-in-picture so the call is never lost.
+
+Also in this build: 唤醒词 now reaches a new conversation (the session callback
+returned before sending it), which is why a wake on a fresh chat opened in
+silence.
 ---
  app/android/app/src/main/AndroidManifest.xml  |   1 +
- .../ccch1mneyyy/dsh_app/MainActivity.kt       |  40 ++
+ .../ccch1mneyyy/dsh_app/MainActivity.kt       |  62 +++
+ .../ccch1mneyyy/dsh_app/call/CallOverlay.kt   | 293 +++++++++++
+ .../dsh_app/call/CallOverlayPlugin.kt         |  58 +++
  .../ccch1mneyyy/dsh_app/wake/WakeCapture.kt   |  43 +-
+ .../src/main/res/values-zh/i18n_strings.xml   |   1 +
+ .../app/src/main/res/values/i18n_strings.xml  |   1 +
  app/assets/kws/LICENSE.txt                    |  20 +
  app/assets/kws/NOTICE.txt                     |   4 +
  app/assets/kws/decoder.int8.onnx              | Bin 0 -> 181069 bytes
@@ -29,12 +41,14 @@ an edge — that needs a real overlay window, like the one 桌面宠物 already 
  app/lib/ui/chat/chat_screen.dart              |  35 +-
  app/lib/ui/chat/media/media_format.dart       |  16 +-
  app/lib/ui/settings/voice_settings_page.dart  |  24 +-
- app/lib/ui/speech/voice_call_page.dart        | 103 +++-
+ app/lib/ui/speech/voice_call_page.dart        | 142 +++++-
  app/lib/ui/theme/app_icons.dart               |   4 +
  app/lib/voice/wake_keywords.dart              |  50 ++
  app/lib/voice/wake_word.dart                  | 460 +++++++++++++++---
  app/pubspec.yaml                              |   4 +
- 19 files changed, 932 insertions(+), 101 deletions(-)
+ 23 files changed, 1346 insertions(+), 101 deletions(-)
+ create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallOverlay.kt
+ create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallOverlayPlugin.kt
  create mode 100644 app/assets/kws/LICENSE.txt
  create mode 100644 app/assets/kws/NOTICE.txt
  create mode 100644 app/assets/kws/decoder.int8.onnx
@@ -56,7 +70,7 @@ index 20c6331..3dc6118 100644
              android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode"
              android:hardwareAccelerated="true"
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/MainActivity.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/MainActivity.kt
-index a5168f0..7f4085d 100644
+index a5168f0..6cd8545 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/MainActivity.kt
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/MainActivity.kt
 @@ -6,7 +6,9 @@ import android.content.Intent
@@ -79,7 +93,16 @@ index a5168f0..7f4085d 100644
      /**
       * One engine per process, outliving this activity: swiping the app away from recents keeps
       * Dart running, and with it the event subscriptions behind turn-finished / needs-you
-@@ -176,6 +181,33 @@ class MainActivity : FlutterActivity() {
+@@ -69,6 +74,8 @@ class MainActivity : FlutterActivity() {
+             engine.plugins.add(io.github.ccch1mneyyy.dsh_app.speech.SpeechPlugin())
+             // 语音唤醒: the always-on listener's switch, and the frames it hears.
+             engine.plugins.add(io.github.ccch1mneyyy.dsh_app.wake.WakeWordPlugin())
++            // 语音通话 悬浮窗: a card of its own, draggable and docked to an edge.
++            engine.plugins.add(io.github.ccch1mneyyy.dsh_app.call.CallOverlayPlugin())
+             engine.plugins.add(io.github.ccch1mneyyy.dsh_app.companion.CompanionWidgetPlugin())
+             engine.dartExecutor.executeDartEntrypoint(DartExecutor.DartEntrypoint.createDefault())
+             cache.put(ENGINE_ID, engine)
+@@ -176,6 +183,33 @@ class MainActivity : FlutterActivity() {
          super.onPause()
      }
  
@@ -113,7 +136,7 @@ index a5168f0..7f4085d 100644
      /** Per activity: the handler acts on this activity, so it goes with it (see [cleanUpFlutterEngine]). */
      override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
          super.configureFlutterEngine(flutterEngine)
-@@ -206,6 +238,14 @@ class MainActivity : FlutterActivity() {
+@@ -206,6 +240,34 @@ class MainActivity : FlutterActivity() {
                      applyRefreshRate()
                      result.success(null)
                  }
@@ -125,9 +148,392 @@ index a5168f0..7f4085d 100644
 +                    result.success(null)
 +                }
 +                "enterFloatingCall" -> result.success(enterFloatingCall())
++                // The card needs 「显示在其他应用上层」; ask for it where it is granted.
++                "requestOverlayPermission" -> {
++                    val ok = try {
++                        startActivity(
++                            Intent(
++                                android.provider.Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
++                                android.net.Uri.parse("package:$packageName"),
++                            ),
++                        )
++                        true
++                    } catch (_: Exception) {
++                        false
++                    }
++                    result.success(ok)
++                }
++                // 悬浮窗: the card stays, the app steps aside (WeChat's floating call does the same).
++                "minimize" -> {
++                    moveTaskToBack(true)
++                    result.success(null)
++                }
                  "bringToFront" -> {
                      startActivity(
                          Intent(this, MainActivity::class.java)
+diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallOverlay.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallOverlay.kt
+new file mode 100644
+index 0000000..3a0a44b
+--- /dev/null
++++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallOverlay.kt
+@@ -0,0 +1,293 @@
++package io.github.ccch1mneyyy.dsh_app.call
++
++import android.annotation.SuppressLint
++import android.content.Context
++import android.content.Intent
++import android.graphics.Canvas
++import android.graphics.Color
++import android.graphics.Paint
++import android.graphics.PixelFormat
++import android.graphics.RadialGradient
++import android.graphics.Shader
++import android.graphics.drawable.GradientDrawable
++import android.os.Build
++import android.os.Handler
++import android.os.Looper
++import android.os.SystemClock
++import android.view.Gravity
++import android.view.MotionEvent
++import android.view.View
++import android.view.WindowManager
++import android.widget.Chronometer
++import android.widget.FrameLayout
++import android.widget.LinearLayout
++import android.widget.TextView
++import io.github.ccch1mneyyy.dsh_app.MainActivity
++import io.github.ccch1mneyyy.dsh_app.pet.Dock
++import io.github.ccch1mneyyy.dsh_app.pet.EdgeSnap
++import io.github.ccch1mneyyy.dsh_app.pet.SafeArea
++import kotlin.math.abs
++import kotlin.math.roundToInt
++
++/**
++ * 语音通话 in a window of its own: a small card that floats over whatever is on screen, can be
++ * dragged anywhere and rests against the side it was thrown towards, the way a phone's own
++ * floating call does.
++ *
++ * Not picture-in-picture: that shrinks the whole activity into a system window and cannot be
++ * moved or hidden to an edge. This is an application overlay (the same window type 桌面宠物
++ * uses), so it is only this card — and it stays up while the app is behind it.
++ */
++object CallOverlay {
++    /** What the card asks for: end the call, or bring the conversation back. */
++    var onAction: ((String) -> Unit)? = null
++
++    private const val PREFS = "call_overlay"
++    private const val KEY_SIDE = "side"
++    private const val KEY_FRACTION = "fraction"
++
++    private var wm: WindowManager? = null
++    private var card: View? = null
++    private var params: WindowManager.LayoutParams? = null
++    private var dock = Dock.DEFAULT
++    private var context: Context? = null
++    private val main = Handler(Looper.getMainLooper())
++
++    val shown: Boolean get() = card != null
++
++    fun show(context: Context, startedAtElapsed: Long): Boolean {
++        hide()
++        val app = context.applicationContext
++        val manager = app.getSystemService(Context.WINDOW_SERVICE) as? WindowManager ?: return false
++        val saved = app.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
++        dock = Dock(
++            side = if (saved.getString(KEY_SIDE, "r") == "l") io.github.ccch1mneyyy.dsh_app.pet.Side.LEFT
++            else io.github.ccch1mneyyy.dsh_app.pet.Side.RIGHT,
++            yFraction = saved.getFloat(KEY_FRACTION, Dock.DEFAULT.yFraction),
++        )
++        val area = safeArea(app, manager)
++        val px = app.resources.displayMetrics.density
++        val w = (84 * px).roundToInt()
++        val h = (150 * px).roundToInt()
++        val at = EdgeSnap.position(dock, w, h, area, (10 * px).roundToInt())
++
++        val view = buildCard(app, startedAtElapsed, px)
++        val lp = WindowManager.LayoutParams(
++            w,
++            h,
++            overlayType(),
++            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
++                WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS or
++                WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
++            PixelFormat.TRANSLUCENT,
++        ).apply {
++            gravity = Gravity.TOP or Gravity.START
++            x = at.x
++            y = at.y
++        }
++        attachDrag(app, view, manager, lp, area, px)
++        return try {
++            manager.addView(view, lp)
++            this.context = app
++            wm = manager
++            card = view
++            params = lp
++            true
++        } catch (_: Exception) {
++            card = null
++            params = null
++            wm = null
++            false
++        }
++    }
++
++    fun hide() {
++        val view = card ?: return
++        card = null
++        params = null
++        val manager = wm
++        wm = null
++        context = null
++        try {
++            manager?.removeView(view)
++        } catch (_: Exception) {
++        }
++    }
++
++    private fun overlayType(): Int =
++        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
++        else @Suppress("DEPRECATION") WindowManager.LayoutParams.TYPE_PHONE
++
++    private fun safeArea(context: Context, manager: WindowManager): SafeArea {
++        val m = context.resources.displayMetrics
++        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
++            val b = manager.currentWindowMetrics.bounds
++            SafeArea(b.width(), b.height(), 0, 0, 0, 0)
++        } else {
++            SafeArea(m.widthPixels, m.heightPixels, 0, 0, 0, 0)
++        }
++    }
++
++    @SuppressLint("ClickableViewAccessibility")
++    private fun attachDrag(
++        context: Context,
++        view: View,
++        manager: WindowManager,
++        lp: WindowManager.LayoutParams,
++        area: SafeArea,
++        px: Float,
++    ) {
++        var startX = 0f
++        var startY = 0f
++        var fromX = 0
++        var fromY = 0
++        var lastX = 0f
++        var lastAt = 0L
++        var vx = 0f
++        var dragging = false
++        val margin = (10 * px).roundToInt()
++        view.setOnTouchListener { _, event ->
++            when (event.actionMasked) {
++                MotionEvent.ACTION_DOWN -> {
++                    startX = event.rawX
++                    startY = event.rawY
++                    fromX = lp.x
++                    fromY = lp.y
++                    lastX = event.rawX
++                    lastAt = SystemClock.elapsedRealtime()
++                    vx = 0f
++                    dragging = false
++                    true
++                }
++                MotionEvent.ACTION_MOVE -> {
++                    val dx = event.rawX - startX
++                    val dy = event.rawY - startY
++                    if (!dragging && (abs(dx) > 6 * px || abs(dy) > 6 * px)) dragging = true
++                    if (dragging) {
++                        val now = SystemClock.elapsedRealtime()
++                        if (now > lastAt) vx = (event.rawX - lastX) * 1000f / (now - lastAt)
++                        lastX = event.rawX
++                        lastAt = now
++                        lp.x = (fromX + dx).roundToInt().coerceIn(
++                            EdgeSnap.minX(area, margin),
++                            EdgeSnap.maxX(area, lp.width, margin),
++                        )
++                        lp.y = (fromY + dy).roundToInt().coerceIn(
++                            EdgeSnap.minY(area, margin),
++                            EdgeSnap.maxY(area, lp.height, margin),
++                        )
++                        try {
++                            manager.updateViewLayout(view, lp)
++                        } catch (_: Exception) {
++                        }
++                    }
++                    true
++                }
++                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
++                    if (dragging) {
++                        // Rests against the side it was thrown towards; the height is kept as a
++                        // share of the screen so a rotation does not lose it.
++                        dock = EdgeSnap.dockFor(lp.x, lp.y, lp.width, lp.height, area, margin, vx)
++                        val at = EdgeSnap.position(dock, lp.width, lp.height, area, margin)
++                        lp.x = at.x
++                        lp.y = at.y
++                        try {
++                            manager.updateViewLayout(view, lp)
++                        } catch (_: Exception) {
++                        }
++                        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
++                            .putString(KEY_SIDE, if (dock.side == io.github.ccch1mneyyy.dsh_app.pet.Side.LEFT) "l" else "r")
++                            .putFloat(KEY_FRACTION, dock.yFraction)
++                            .apply()
++                    }
++                    true
++                }
++                else -> false
++            }
++        }
++    }
++
++    private fun buildCard(context: Context, startedAtElapsed: Long, px: Float): View {
++        val root = FrameLayout(context).apply {
++            background = GradientDrawable().apply {
++                cornerRadius = 22 * px
++                setColor(Color.rgb(10, 14, 24))
++                setStroke((1.5f * px).roundToInt(), Color.rgb(38, 46, 66))
++            }
++        }
++        val column = LinearLayout(context).apply {
++            orientation = LinearLayout.VERTICAL
++            gravity = Gravity.CENTER_HORIZONTAL
++            setPadding(0, (14 * px).roundToInt(), 0, (12 * px).roundToInt())
++        }
++        column.addView(Orb(context, px), LinearLayout.LayoutParams((46 * px).roundToInt(), (46 * px).roundToInt()))
++        val timer = Chronometer(context).apply {
++            // The card is told how long the call has run; Chronometer counts from a boot-time
++            // stamp, so the base is now minus that.
++            base = SystemClock.elapsedRealtime() - startedAtElapsed.coerceAtLeast(0L)
++            setTextColor(Color.rgb(226, 232, 240))
++            textSize = 12f
++            gravity = Gravity.CENTER
++            val pad = (6 * px).roundToInt()
++            setPadding(0, pad, 0, pad)
++            start()
++        }
++        column.addView(timer, LinearLayout.LayoutParams(-1, -2))
++        val hang = TextView(context).apply {
++            text = context.getString(io.github.ccch1mneyyy.dsh_app.R.string.call_overlay_hang_up)
++            setTextColor(Color.WHITE)
++            textSize = 12f
++            gravity = Gravity.CENTER
++            background = GradientDrawable().apply {
++                shape = GradientDrawable.RECTANGLE
++                cornerRadius = 12 * px
++                setColor(Color.rgb(229, 72, 77))
++            }
++            setOnClickListener {
++                onAction?.invoke("hangUp")
++            }
++        }
++        val hangLp = LinearLayout.LayoutParams((62 * px).roundToInt(), (34 * px).roundToInt()).apply {
++            topMargin = (4 * px).roundToInt()
++        }
++        column.addView(hang, hangLp)
++        root.addView(column, FrameLayout.LayoutParams(-1, -1))
++        // Tapping the card (not the hang-up key) brings the conversation back.
++        root.setOnClickListener {
++            openApp(context)
++        }
++        return root
++    }
++
++    private fun openApp(context: Context) {
++        // Back to the conversation: the card has nothing left to show once the page is up.
++        hide()
++        onAction?.invoke("open")
++        try {
++            context.startActivity(
++                Intent(context, MainActivity::class.java)
++                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_REORDER_TO_FRONT),
++            )
++        } catch (_: Exception) {
++        }
++    }
++
++    /** The light that stands for the call, drawn rather than shipped as a bitmap. */
++    private class Orb(context: Context, private val px: Float) : View(context) {
++        private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
++
++        override fun onDraw(canvas: Canvas) {
++            val r = minOf(width, height) / 2f
++            paint.shader = RadialGradient(
++                width / 2f,
++                height / 2f,
++                r,
++                intArrayOf(Color.rgb(191, 212, 255), Color.rgb(42, 53, 80)),
++                floatArrayOf(0f, 1f),
++                Shader.TileMode.CLAMP,
++            )
++            canvas.drawCircle(width / 2f, height / 2f, r, paint)
++            paint.shader = null
++        }
++    }
++}
+diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallOverlayPlugin.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallOverlayPlugin.kt
+new file mode 100644
+index 0000000..b5e040d
+--- /dev/null
++++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallOverlayPlugin.kt
+@@ -0,0 +1,58 @@
++package io.github.ccch1mneyyy.dsh_app.call
++
++import android.content.Context
++import android.os.SystemClock
++import io.flutter.embedding.engine.plugins.FlutterPlugin
++import io.flutter.plugin.common.MethodCall
++import io.flutter.plugin.common.MethodChannel
++
++/**
++ * 语音通话 悬浮窗: the card's window, and the one thing it can ask for.
++ *
++ *   dsh/call-overlay   show { startedAtElapsedMs } -> bool · hide
++ *   dsh/call-overlay   action "hangUp" (the card's key)
++ */
++class CallOverlayPlugin : FlutterPlugin, MethodChannel.MethodCallHandler {
++    private var channel: MethodChannel? = null
++    private var context: Context? = null
++
++    override fun onAttachedToEngine(binding: FlutterPlugin.FlutterPluginBinding) {
++        context = binding.applicationContext
++        val ch = MethodChannel(binding.binaryMessenger, CHANNEL)
++        ch.setMethodCallHandler(this)
++        channel = ch
++        CallOverlay.onAction = { action -> ch.invokeMethod("action", action) }
++    }
++
++    override fun onDetachedFromEngine(binding: FlutterPlugin.FlutterPluginBinding) {
++        CallOverlay.onAction = null
++        CallOverlay.hide()
++        channel?.setMethodCallHandler(null)
++        channel = null
++        context = null
++    }
++
++    override fun onMethodCall(call: MethodCall, result: MethodChannel.Result) {
++        val app = context
++        when (call.method) {
++            "show" -> {
++                if (app == null) {
++                    result.success(false)
++                    return
++                }
++                val startedAt = (call.argument<Number>("startedAtElapsedMs"))?.toLong()
++                    ?: SystemClock.elapsedRealtime()
++                result.success(CallOverlay.show(app, startedAt))
++            }
++            "hide" -> {
++                CallOverlay.hide()
++                result.success(null)
++            }
++            else -> result.notImplemented()
++        }
++    }
++
++    private companion object {
++        const val CHANNEL = "dsh/call-overlay"
++    }
++}
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/wake/WakeCapture.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/wake/WakeCapture.kt
 index 2e5ad22..6f623e8 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/wake/WakeCapture.kt
@@ -243,6 +649,30 @@ index 2e5ad22..6f623e8 100644
          /** A quiet room, before the first frames have said how quiet this one actually is. */
          const val INITIAL_FLOOR_DB = -50.0
          /** At or under this a frame is digital silence, not a room, and never moves the floor. */
+diff --git a/app/android/app/src/main/res/values-zh/i18n_strings.xml b/app/android/app/src/main/res/values-zh/i18n_strings.xml
+index d764a29..38958b3 100644
+--- a/app/android/app/src/main/res/values-zh/i18n_strings.xml
++++ b/app/android/app/src/main/res/values-zh/i18n_strings.xml
+@@ -114,6 +114,7 @@
+     <!-- 语音唤醒: 常驻监听通知 (wake/WakeWordService.kt). -->
+     <string name="wake_channel">语音唤醒</string>
+     <string name="wake_channel_description">息屏时保持麦克风监听唤醒词</string>
++    <string name="call_overlay_hang_up">挂断</string>
+     <string name="wake_running">正在监听唤醒词</string>
+     <string name="wake_stop">关闭</string>
+     <string name="pet_window_title">DSH 宠物</string>
+diff --git a/app/android/app/src/main/res/values/i18n_strings.xml b/app/android/app/src/main/res/values/i18n_strings.xml
+index b0839e1..30470c4 100644
+--- a/app/android/app/src/main/res/values/i18n_strings.xml
++++ b/app/android/app/src/main/res/values/i18n_strings.xml
+@@ -119,6 +119,7 @@
+     <!-- 语音唤醒: the always-on listener's notification (wake/WakeWordService.kt). -->
+     <string name="wake_channel">Voice wake word</string>
+     <string name="wake_channel_description">Keeps the microphone listening for the wake word while the screen is off</string>
++    <string name="call_overlay_hang_up">Hang up</string>
+     <string name="wake_running">Listening for the wake word</string>
+     <string name="wake_stop">Turn off</string>
+     <string name="pet_window_title">DSH pet</string>
 diff --git a/app/assets/kws/LICENSE.txt b/app/assets/kws/LICENSE.txt
 new file mode 100644
 index 0000000..956c74d
@@ -73207,7 +73637,7 @@ index a43eeb8..f6a8119 100644
  /// 唤醒词 typed by the person; the phrase is matched inside what the recognizer heard.
  Future<void> editWakeKeyword(BuildContext context, WidgetRef ref, String current) async {
 diff --git a/app/lib/ui/speech/voice_call_page.dart b/app/lib/ui/speech/voice_call_page.dart
-index 2f99689..0207277 100644
+index 2f99689..51e7aaa 100644
 --- a/app/lib/ui/speech/voice_call_page.dart
 +++ b/app/lib/ui/speech/voice_call_page.dart
 @@ -47,6 +47,7 @@ import '../../usage/usage_stats.dart';
@@ -73218,7 +73648,7 @@ index 2f99689..0207277 100644
  import 'call/call_backdrop.dart';
  import 'call/call_parts.dart';
  import 'call/call_transcript.dart';
-@@ -118,10 +119,21 @@ class _VoiceCallPageState extends ConsumerState<VoiceCallPage> with WidgetsBindi
+@@ -118,10 +119,23 @@ class _VoiceCallPageState extends ConsumerState<VoiceCallPage> with WidgetsBindi
    /// and the page comes in without its staggered rise.
    bool _still = false;
  
@@ -73226,6 +73656,7 @@ index 2f99689..0207277 100644
 +  /// the page goes: the handoff belongs to the call, not to whichever screen opened it.
 +  WakeWordController? _wake;
 +  bool _floating = false;
++  bool _overlay = false;
 +  bool _inPip = false;
 +
    @override
@@ -73237,15 +73668,18 @@ index 2f99689..0207277 100644
 +    // 悬浮窗: the native side keeps this call visible over other apps once the person leaves.
 +    unawaited(const MethodChannel('dsh/app').invokeMethod<void>('setCallActive', {'active': true}));
 +    const MethodChannel('dsh/app').setMethodCallHandler(_onAppCall);
++    const MethodChannel('dsh/call-overlay').setMethodCallHandler(_onOverlayCall);
      final callSettings = ref.read(callSettingsProvider.notifier);
      final voices = ref.read(speechVoiceSettingsProvider.notifier);
      // The chosen voice, as soon as the settings have been read (the first reply comes later).
-@@ -318,6 +330,12 @@ class _VoiceCallPageState extends ConsumerState<VoiceCallPage> with WidgetsBindi
+@@ -318,6 +332,14 @@ class _VoiceCallPageState extends ConsumerState<VoiceCallPage> with WidgetsBindi
  
    @override
    void dispose() {
 +    _leaveFloating();
++    if (_overlay) unawaited(const MethodChannel('dsh/call-overlay').invokeMethod<void>('hide'));
 +    const MethodChannel('dsh/app').setMethodCallHandler(null);
++    const MethodChannel('dsh/call-overlay').setMethodCallHandler(null);
 +    final wake = _wake;
 +    _wake = null;
 +    if (wake != null) unawaited(wake.resume());
@@ -73253,7 +73687,7 @@ index 2f99689..0207277 100644
      WidgetsBinding.instance.removeObserver(this);
      unawaited(_live?.stop());
      _leave?.cancel();
-@@ -329,6 +347,31 @@ class _VoiceCallPageState extends ConsumerState<VoiceCallPage> with WidgetsBindi
+@@ -329,6 +351,66 @@ class _VoiceCallPageState extends ConsumerState<VoiceCallPage> with WidgetsBindi
      super.dispose();
    }
  
@@ -73268,10 +73702,45 @@ index 2f99689..0207277 100644
 +    if (!inPip) _floating = false;
 +  }
 +
-+  void _float() {
++  /// 悬浮窗: a card of the call's own (draggable, docks to an edge), which is what a phone's
++  /// floating call looks like. Picture-in-picture is only the fallback — it shrinks the whole
++  /// activity into a system window and cannot be moved.
++  Future<void> _float() async {
++    final startedAt = _since;
++    var shown = false;
++    try {
++      shown = await const MethodChannel('dsh/call-overlay').invokeMethod<bool>(
++            'show',
++            {'startedAtElapsedMs': startedAt == null ? 0 : DateTime.now().difference(startedAt).inMilliseconds},
++          ) ??
++          false;
++    } on Object {
++      shown = false;
++    }
++    if (shown) {
++      _overlay = true;
++      // The card is what stays; the app steps aside behind it.
++      unawaited(const MethodChannel('dsh/app').invokeMethod<void>('minimize'));
++      return;
++    }
++    // No overlay permission (or a vendor build refuses the window): ask for it, and keep the
++    // call visible the one way that needs no permission.
++    unawaited(const MethodChannel('dsh/app').invokeMethod<bool>('requestOverlayPermission'));
 +    unawaited(const MethodChannel('dsh/app').invokeMethod<bool>('enterFloatingCall').then((ok) {
 +      if (ok == true) _floating = true;
 +    }));
++  }
++
++  /// The card's own key: end the call from the window.
++  Future<void> _onOverlayCall(MethodCall call) async {
++    if (call.method != 'action') return;
++    switch (call.arguments) {
++      case 'hangUp':
++        if (mounted) _hangUp();
++      case 'open':
++        // The card brought the page back: it has done its job.
++        _overlay = false;
++    }
 +  }
 +
 +  /// 小窗里通话结束了: the small window has nothing left to show, so the app comes back to
@@ -73285,7 +73754,7 @@ index 2f99689..0207277 100644
    void _hangUp() {
      HapticFeedback.heavyImpact();
      _call.hangUp();
-@@ -461,6 +504,7 @@ class _VoiceCallPageState extends ConsumerState<VoiceCallPage> with WidgetsBindi
+@@ -461,6 +543,7 @@ class _VoiceCallPageState extends ConsumerState<VoiceCallPage> with WidgetsBindi
    Widget build(BuildContext context) {
      final l10n = context.l10n;
      final theme = Theme.of(context);
@@ -73293,7 +73762,7 @@ index 2f99689..0207277 100644
      _still = AppMotion.reduced(context);
      final settings = ref.watch(callSettingsProvider);
      final performance = ref.watch(performanceDefaultsProvider);
-@@ -645,6 +689,17 @@ class _VoiceCallPageState extends ConsumerState<VoiceCallPage> with WidgetsBindi
+@@ -645,6 +728,17 @@ class _VoiceCallPageState extends ConsumerState<VoiceCallPage> with WidgetsBindi
                          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                          crossAxisAlignment: CrossAxisAlignment.end,
                          children: [
@@ -73311,7 +73780,7 @@ index 2f99689..0207277 100644
                            _rise(
                              0.4,
                              CallKey(
-@@ -658,7 +713,7 @@ class _VoiceCallPageState extends ConsumerState<VoiceCallPage> with WidgetsBindi
+@@ -658,7 +752,7 @@ class _VoiceCallPageState extends ConsumerState<VoiceCallPage> with WidgetsBindi
                              distance: 28,
                            ),
                            _rise(
@@ -73320,7 +73789,7 @@ index 2f99689..0207277 100644
                              HangUpKey(
                                key: const ValueKey('call-hang-up'),
                                icon: AppIcons.hangUp,
-@@ -860,3 +915,49 @@ class _RoundKeyState extends State<_RoundKey> {
+@@ -860,3 +954,49 @@ class _RoundKeyState extends State<_RoundKey> {
      );
    }
  }
