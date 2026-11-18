@@ -1,22 +1,19 @@
-From b6dadd61fd0801b01643462361c47e4b7b5477bd Mon Sep 17 00:00:00 2001
+From b2177d09640c6978e8efc5980f963553154371db Mon Sep 17 00:00:00 2001
 From: dsh-wake <wake@local>
 Date: Wed, 18 Nov 2026 02:36:38 +0800
-Subject: [PATCH] =?UTF-8?q?fix(voice):=20wake=20again=20=E2=80=94=20the=20?=
- =?UTF-8?q?spotter=20never=20matched,=20the=20utterance=20arm=20did?=
+Subject: [PATCH] fix(voice): the wake phrase reaches a new conversation too
 MIME-Version: 1.0
 Content-Type: text/plain; charset=UTF-8
 Content-Transfer-Encoding: 8bit
 
-The trace is unambiguous: MATCH(kws) appears zero times in the whole log, and
-every wake this phone has ever had came from the utterance arm — which the
-previous build switched off on the belief that the spotter was the working one.
+A wake on a fresh chat opened the call and said nothing: the session callback
+returned the id it had just created, before the code that sends 唤醒词 — so only
+a conversation that already existed was ever told. The id is created first now,
+then the phrase goes in, then the call is handed to the page.
 
-- the spotter is built with an empty model_type first. That is the shape the
-  offline run (and the model's own test audio) actually detects with; a wrong
-  type that loads silently is exactly how a spotter ends up never matching.
-- the utterance arm hears every frame again, held to a strict rule: the whole
-  utterance is 唤醒词, it starts with it, or it is short and contains it. A
-  conversation that merely says 小安小安 no longer opens a call.
+Floating window is unchanged this round: it is the system's picture-in-picture,
+which lays out the call (light, timer, 挂断) but cannot be dragged or hidden to
+an edge — that needs a real overlay window, like the one 桌面宠物 already uses.
 ---
  app/android/app/src/main/AndroidManifest.xml  |   1 +
  .../ccch1mneyyy/dsh_app/MainActivity.kt       |  40 ++
@@ -29,7 +26,7 @@ previous build switched off on the belief that the spotter was the working one.
  app/assets/kws/tokens.txt                     | 227 +++++++++
  app/lib/l10n/parts/speech_en.arb              |   1 +
  app/lib/l10n/parts/speech_zh.arb              |   1 +
- app/lib/ui/chat/chat_screen.dart              |  28 +-
+ app/lib/ui/chat/chat_screen.dart              |  35 +-
  app/lib/ui/chat/media/media_format.dart       |  16 +-
  app/lib/ui/settings/voice_settings_page.dart  |  24 +-
  app/lib/ui/speech/voice_call_page.dart        | 103 +++-
@@ -37,7 +34,7 @@ previous build switched off on the belief that the spotter was the working one.
  app/lib/voice/wake_keywords.dart              |  50 ++
  app/lib/voice/wake_word.dart                  | 460 +++++++++++++++---
  app/pubspec.yaml                              |   4 +
- 19 files changed, 927 insertions(+), 99 deletions(-)
+ 19 files changed, 932 insertions(+), 101 deletions(-)
  create mode 100644 app/assets/kws/LICENSE.txt
  create mode 100644 app/assets/kws/NOTICE.txt
  create mode 100644 app/assets/kws/decoder.int8.onnx
@@ -73083,7 +73080,7 @@ index 0dd55a4..615fdd8 100644
    "speechCallPauseQuick": "快",
    "speechCallPauseNormal": "适中",
 diff --git a/app/lib/ui/chat/chat_screen.dart b/app/lib/ui/chat/chat_screen.dart
-index d9540df..9270d57 100644
+index d9540df..ae39a93 100644
 --- a/app/lib/ui/chat/chat_screen.dart
 +++ b/app/lib/ui/chat/chat_screen.dart
 @@ -369,8 +369,22 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
@@ -73119,10 +73116,17 @@ index d9540df..9270d57 100644
      // 语音唤醒 gives the microphone up before the call takes it (voice/wake_word.dart).
      final wake = ref.read(wakeWordProvider.notifier);
      await wake.suspend();
-@@ -1507,6 +1521,16 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
+@@ -1505,8 +1519,21 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
+         session: () async {
+           // Another host now: its conversation of the same id is not this call's.
            if (!mounted || ref.read(activeHostProvider) != host) return null;
-           final id = pinned;
-           if (id == null) return pinned = await _ensureSession(isCurrent: () => mounted);
+-          final id = pinned;
+-          if (id == null) return pinned = await _ensureSession(isCurrent: () => mounted);
++          // A new chat has no conversation yet, and the old code returned from here with
++          // the id it had just made — skipping the wake phrase entirely, which is why a
++          // wake on a fresh conversation opened the call in silence.
++          final id = pinned ??= await _ensureSession(isCurrent: () => mounted);
++          if (id == null) return null;
 +          // 唤醒词 goes in as what the person said, so the assistant answers a wake
 +          // instead of the call opening in silence. What the microphone had just heard
 +          // (the wake phrase and anything said with it) wins when it says more.
