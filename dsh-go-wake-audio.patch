@@ -1,15 +1,22 @@
-From 26a33b1874d934a26165f2ea1a90293e9fa803e8 Mon Sep 17 00:00:00 2001
+From b6dadd61fd0801b01643462361c47e4b7b5477bd Mon Sep 17 00:00:00 2001
 From: dsh-wake <wake@local>
 Date: Wed, 18 Nov 2026 02:36:38 +0800
-Subject: [PATCH] =?UTF-8?q?feat(voice):=20=E6=82=AC=E6=B5=AE=E7=AA=97=20as?=
- =?UTF-8?q?=20the=20leftmost=20call=20key?=
+Subject: [PATCH] =?UTF-8?q?fix(voice):=20wake=20again=20=E2=80=94=20the=20?=
+ =?UTF-8?q?spotter=20never=20matched,=20the=20utterance=20arm=20did?=
 MIME-Version: 1.0
 Content-Type: text/plain; charset=UTF-8
 Content-Transfer-Encoding: 8bit
 
-静音 stays where a thumb expects it (second from the left), and the square that
-puts the call in a small window takes the corner the eye reaches first:
-悬浮窗 · 静音 · 挂断 · 免提.
+The trace is unambiguous: MATCH(kws) appears zero times in the whole log, and
+every wake this phone has ever had came from the utterance arm — which the
+previous build switched off on the belief that the spotter was the working one.
+
+- the spotter is built with an empty model_type first. That is the shape the
+  offline run (and the model's own test audio) actually detects with; a wrong
+  type that loads silently is exactly how a spotter ends up never matching.
+- the utterance arm hears every frame again, held to a strict rule: the whole
+  utterance is 唤醒词, it starts with it, or it is short and contains it. A
+  conversation that merely says 小安小安 no longer opens a call.
 ---
  app/android/app/src/main/AndroidManifest.xml  |   1 +
  .../ccch1mneyyy/dsh_app/MainActivity.kt       |  40 ++
@@ -28,9 +35,9 @@ puts the call in a small window takes the corner the eye reaches first:
  app/lib/ui/speech/voice_call_page.dart        | 103 +++-
  app/lib/ui/theme/app_icons.dart               |   4 +
  app/lib/voice/wake_keywords.dart              |  50 ++
- app/lib/voice/wake_word.dart                  | 459 +++++++++++++++---
+ app/lib/voice/wake_word.dart                  | 460 +++++++++++++++---
  app/pubspec.yaml                              |   4 +
- 19 files changed, 943 insertions(+), 82 deletions(-)
+ 19 files changed, 927 insertions(+), 99 deletions(-)
  create mode 100644 app/assets/kws/LICENSE.txt
  create mode 100644 app/assets/kws/NOTICE.txt
  create mode 100644 app/assets/kws/decoder.int8.onnx
@@ -73431,7 +73438,7 @@ index 0000000..8a88271
 +  return ('', syllable);
 +}
 diff --git a/app/lib/voice/wake_word.dart b/app/lib/voice/wake_word.dart
-index cf6e008..1c8d28d 100644
+index cf6e008..72d5427 100644
 --- a/app/lib/voice/wake_word.dart
 +++ b/app/lib/voice/wake_word.dart
 @@ -10,29 +10,36 @@
@@ -73657,7 +73664,7 @@ index cf6e008..1c8d28d 100644
        case 'wake.listening':
          if (ref.mounted) state = state.copyWith(listening: WakeListening.listening, clearReason: true);
        case 'wake.yield':
-@@ -288,44 +387,245 @@ class WakeWordController extends Notifier<WakeStatus> {
+@@ -288,65 +387,251 @@ class WakeWordController extends Notifier<WakeStatus> {
      }
    }
  
@@ -73676,11 +73683,24 @@ index cf6e008..1c8d28d 100644
 -    if (started != null && now.difference(started) > _burstLimit) _resetStream();
 -    if (_ensureRecognizer() == null) {
 -      if (_pcmCount % 200 == 1) _dbg('no recognizer (model null?)');
--      return;
 +    _preroll.add(bytes);
 +    _prerollBytes += bytes.length;
 +    while (_prerollBytes > _prerollLimit && _preroll.isNotEmpty) {
 +      _prerollBytes -= _preroll.removeAt(0).length;
++    }
++    if (_keyword != _kwsKeyword) unawaited(_prepareSpotter());
++    final spotter = _spotter;
++    final stream = _kwsStream;
++    // Both arms hear every frame again. The spotter is the fast one; the utterance arm is
++    // kept because it is the only one that has ever woken this phone (the spotter loads but
++    // has never matched), and it is held to a strict rule below so a conversation that
++    // merely mentions 小安小安 no longer opens a call.
++    if (spotter != null && stream != null) _feedSpotter(spotter, stream, bytes);
++    if (_lastLevel > -40) {
++      _inSpeech = true;
++      _quietSamples = 0;
++      _utterance.add(bytes);
+       return;
      }
 -    final recognizer = _recognizer;
 -    final stream = _stream;
@@ -73689,35 +73709,6 @@ index cf6e008..1c8d28d 100644
 -    final data = ByteData.sublistView(bytes);
 -    for (var i = 0; i < samples.length; i++) {
 -      samples[i] = data.getInt16(i * 2, Endian.little) / 32768.0;
-+    if (_keyword != _kwsKeyword) unawaited(_prepareSpotter());
-+    final spotter = _spotter;
-+    final stream = _kwsStream;
-+    // The spotter alone answers 唤醒词 once it is up. The utterance arm is kept for the
-+    // phrases pinyin cannot spell, but it must not run alongside: it can only decide after
-+    // 1.2 s of quiet plus a round trip to the engine, so a wake would always arrive a beat
-+    // (sometimes half a minute) late, and it also matches ordinary speech that happens to
-+    // contain the phrase.
-+    if (spotter != null && stream != null) {
-+      _feedSpotter(spotter, stream, bytes);
-+      return;
-     }
--    stream.acceptWaveform(samples: samples, sampleRate: 16000);
--    var decoded = false;
--    while (recognizer.isReady(stream)) {
--      recognizer.decode(stream);
--      decoded = true;
-+    if (_lastLevel > -40) {
-+      _inSpeech = true;
-+      _quietSamples = 0;
-+      _utterance.add(bytes);
-+      return;
-     }
--    if (!decoded) return;
--    final heard = recognizer.getResult(stream).text;
--    if (heard.isNotEmpty && heard != _text) _dbg('heard: $heard');
--    _text = heard;
--    if (_heardWakeWord(_text)) {
--      _dbg('MATCH: $_text');
 +    if (!_inSpeech) return;
 +    _utterance.add(bytes);
 +    _quietSamples += bytes.length;
@@ -73747,16 +73738,17 @@ index cf6e008..1c8d28d 100644
 +      _dbg('MATCH(kws): $hit');
 +      if (ref.mounted) state = state.copyWith(heard: hit);
 +      spotter.reset(stream);
-       unawaited(_fire());
--    } else if (recognizer.isEndpoint(stream) || _isBabble(_compact(_text))) {
--      // 一个音节重复到底 is the model stuck on noise: it never endpoints on its own, so the
--      // stream has to be dropped here or every later word is decoded into the same loop.
--      _resetStream();
++      unawaited(_fire());
 +    } on Object catch (error) {
 +      _dbg('kws feed failed: $error');
 +      _spotter = null;
 +      _kwsStream = null;
-+    }
+     }
+-    stream.acceptWaveform(samples: samples, sampleRate: 16000);
+-    var decoded = false;
+-    while (recognizer.isReady(stream)) {
+-      recognizer.decode(stream);
+-      decoded = true;
 +  }
 +
 +  Future<void> _prepareSpotter() async {
@@ -73768,7 +73760,18 @@ index cf6e008..1c8d28d 100644
 +      // Not a phrase pinyin can spell (letters, digits): the utterance arm answers instead.
 +      _dbg('kws: "$keyword" cannot be written as pinyin');
 +      return;
-+    }
+     }
+-    if (!decoded) return;
+-    final heard = recognizer.getResult(stream).text;
+-    if (heard.isNotEmpty && heard != _text) _dbg('heard: $heard');
+-    _text = heard;
+-    if (_heardWakeWord(_text)) {
+-      _dbg('MATCH: $_text');
+-      unawaited(_fire());
+-    } else if (recognizer.isEndpoint(stream) || _isBabble(_compact(_text))) {
+-      // 一个音节重复到底 is the model stuck on noise: it never endpoints on its own, so the
+-      // stream has to be dropped here or every later word is decoded into the same loop.
+-      _resetStream();
 +    // Once per keyword: a failure here is remembered, not retried on every frame.
 +    _kwsKeyword = keyword;
 +    _kwsPreparing = true;
@@ -73801,7 +73804,10 @@ index cf6e008..1c8d28d 100644
 +        ),
 +      );
 +      sherpa.KeywordSpotter? spotter;
-+      for (final type in ['zipformer2', '']) {
++      // Empty first: the offline run that does detect 小安小安 (and the model's own test
++      // audio) passes no model_type at all, and a wrong-but-accepted one loads silently and
++      // never matches. zipformer2 stays as the second try.
++      for (final type in ['', 'zipformer2']) {
 +        try {
 +          spotter = build(type);
 +          break;
@@ -73818,9 +73824,18 @@ index cf6e008..1c8d28d 100644
 +      _dbg('kws failed: $error');
 +    } finally {
 +      _kwsPreparing = false;
-+    }
-+  }
-+
+     }
+   }
+ 
+-  /// 唤醒词 found in what was heard: punctuation, spaces and case ignored.
+-  bool _heardWakeWord(String text) {
+-    final keyword = _compact(_keyword);
+-    if (keyword.isEmpty) return false;
+-    final heard = _compact(text);
+-    // A stream fed a room decodes it into one syllable repeated ("呵呵呵呵呵"). That is not
+-    // speech, and matching inside it is how a wake word fires on nothing.
+-    if (_isBabble(heard)) return false;
+-    return heard.contains(keyword);
 +  /// The spotter's model, copied out of assets once (sherpa reads paths, not bytes).
 +  Future<String?> _kwsDirectory() async {
 +    try {
@@ -73865,9 +73880,9 @@ index cf6e008..1c8d28d 100644
 +      return text.isEmpty ? null : text;
 +    } on Object {
 +      return null;
-     }
-   }
- 
++    }
++  }
++
 +  /// The pre-roll text of the wake that just happened, waiting at most [wait]. Reading it
 +  /// clears it: one wake, one message.
 +  Future<String?> takeWakeUtterance({Duration wait = const Duration(milliseconds: 1500)}) async {
@@ -73879,8 +73894,16 @@ index cf6e008..1c8d28d 100644
 +    } on Object {
 +      return null;
 +    }
-+  }
-+
+   }
+ 
+-  /// One character repeated five times or more: a recognizer's answer to noise, not a word.
+-  static bool _isBabble(String text) {
+-    var run = 1;
+-    for (var i = 1; i < text.length; i++) {
+-      if (text[i] != text[i - 1]) {
+-        run = 1;
+-      } else if (++run >= 5) {
+-        return true;
 +  Future<void> _recognize(Uint8List pcm) async {
 +    try {
 +      final client = ref.read(activeConnectionProvider).value?.client;
@@ -73893,13 +73916,14 @@ index cf6e008..1c8d28d 100644
 +      if (text.isEmpty) return;
 +      _dbg('heard: $text');
 +      if (ref.mounted && text != state.heard) state = state.copyWith(heard: text);
-+      if (_heardWakeWord(text)) {
++      if (_utteranceMatches(text)) {
 +        _dbg('MATCH: $text');
 +        unawaited(_fire());
-+      }
+       }
 +    } on Object catch (error) {
 +      _dbg('recognize failed: $error');
-+    }
+     }
+-    return false;
 +  }
 +
 +  static Uint8List _wav(Uint8List pcm) {
@@ -73923,42 +73947,22 @@ index cf6e008..1c8d28d 100644
 +    return out.takeBytes();
 +  }
 +
-   /// 唤醒词 found in what was heard: punctuation, spaces and case ignored.
++  /// 唤醒词 at the start of what was said, which is how a person calls the assistant.
 +  ///
-+  /// 「小安小安」 is also answered by 「小安」: a wake phrase is usually a name said
-+  /// once, and a recognizer that stops at the first half (or hears the person say
-+  /// it once) should still open the call.
-   bool _heardWakeWord(String text) {
-     final keyword = _compact(_keyword);
-     if (keyword.isEmpty) return false;
-@@ -333,7 +633,25 @@ class WakeWordController extends Notifier<WakeStatus> {
-     // A stream fed a room decodes it into one syllable repeated ("呵呵呵呵呵"). That is not
-     // speech, and matching inside it is how a wake word fires on nothing.
-     if (_isBabble(heard)) return false;
--    return heard.contains(keyword);
-+    if (heard.contains(keyword)) return true;
-+    // Only a phrase that repeats itself may be answered by its first half (小安 from 小安小安).
-+    // A word the person typed themselves is matched whole, so 更改唤醒词 never leaves a
-+    // shorter phrase waking it by accident.
-+    if (keyword.length < 4 || keyword.length.isOdd) return false;
-+    final half = keyword.substring(0, keyword.length ~/ 2);
-+    if (half + half != keyword) return false;
-+    return half.length >= 2 && heard.contains(half);
-+  }
-+
-+  /// The longest run of one repeated character, in the compacted text.
-+  static int _longestRun(String text) {
-+    var best = 1;
-+    var run = 1;
-+    for (var i = 1; i < text.length; i++) {
-+      run = text[i] == text[i - 1] ? run + 1 : 1;
-+      if (run > best) best = run;
-+    }
-+    return text.isEmpty ? 0 : best;
++  /// 整段识别 cannot tell "小安小安" from a sentence that happens to mention it, and it only
++  /// answers once the utterance ends — so it is held to: the whole utterance is the phrase,
++  /// it begins with the phrase, or it is short and contains it (a 「嗯」 in front, nothing more).
++  bool _utteranceMatches(String text) {
++    final keyword = _compact(_keyword);
++    if (keyword.isEmpty) return false;
++    final heard = _compact(text);
++    if (heard.isEmpty) return false;
++    if (heard == keyword || heard.startsWith(keyword)) return true;
++    return heard.length <= keyword.length + 4 && heard.contains(keyword);
    }
  
-   /// One character repeated five times or more: a recognizer's answer to noise, not a word.
-@@ -357,17 +675,26 @@ class WakeWordController extends Notifier<WakeStatus> {
+   static final _noise = RegExp(r'[^0-9A-Za-z\u4e00-\u9fff]+');
+@@ -357,17 +642,26 @@ class WakeWordController extends Notifier<WakeStatus> {
    Future<void> _fire() async {
      final now = DateTime.now();
      final until = _cooldownUntil;
@@ -73987,7 +73991,7 @@ index cf6e008..1c8d28d 100644
      } on Object {
        // The activity could not be brought forward (or there is no such channel): the caller's
        // screen is unchanged, and the call still opens in the app when it comes back.
-@@ -414,19 +741,23 @@ class WakeWordController extends Notifier<WakeStatus> {
+@@ -414,19 +708,23 @@ class WakeWordController extends Notifier<WakeStatus> {
            ),
            tokens: model.tokens,
            modelType: 'zipformer',
@@ -74016,7 +74020,7 @@ index cf6e008..1c8d28d 100644
      _streamStarted = null;
      final recognizer = _recognizer;
      final stream = _stream;
-@@ -466,12 +797,32 @@ final wakeWordProvider = NotifierProvider<WakeWordController, WakeStatus>(WakeWo
+@@ -466,12 +764,32 @@ final wakeWordProvider = NotifierProvider<WakeWordController, WakeStatus>(WakeWo
  /// chime fires this and the screen that owns a conversation answers with its call.
  final wakeCallRequestProvider = NotifierProvider<WakeCallRequest, int>(WakeCallRequest.new);
  
