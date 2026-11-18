@@ -1,20 +1,25 @@
-From 8b9f4a71ddba236d690de445071e63382eef4c70 Mon Sep 17 00:00:00 2001
+From 564d58eb7b01b0c9072953ab9542159a190f3af9 Mon Sep 17 00:00:00 2001
 From: dsh-wake <wake@local>
 Date: Wed, 18 Nov 2026 02:36:38 +0800
-Subject: [PATCH] feat(voice): the call window keeps its hang-up key and parks
- as a sliver
+Subject: [PATCH] feat(voice): the floating call carries no keys and parks as
+ an edge sliver
 MIME-Version: 1.0
 Content-Type: text/plain; charset=UTF-8
 Content-Transfer-Encoding: 8bit
 
-Both, not either: 挂断 stays as a round wordless key (a word wrapped at 84dp), the
-light and the timer stay above it, and dragged to an edge the window still parks as
-a 12×56dp sliver that brings it back on a tap.
+微信's floating call, as asked for: the window shows the light and how long the call
+has run, nothing else — ending a call belongs to the call page. Dragged and released
+it parks against the nearest edge as a 12×56dp sliver that covers nothing; a tap on
+the sliver brings the window back, a tap on the window brings the conversation back.
+
+Also in this commit: picture-in-picture is gone entirely (a call could show two
+windows at once), and a touch that does not move is a tap again instead of being
+swallowed by the drag listener.
 ---
  app/android/app/src/main/AndroidManifest.xml  |   9 +
  .../ccch1mneyyy/dsh_app/MainActivity.kt       |  25 +
  .../dsh_app/call/CallForegroundService.kt     |  94 ++++
- .../ccch1mneyyy/dsh_app/call/CallOverlay.kt   | 334 +++++++++++++
+ .../ccch1mneyyy/dsh_app/call/CallOverlay.kt   | 318 ++++++++++++
  .../dsh_app/call/CallOverlayPlugin.kt         |  66 +++
  .../ccch1mneyyy/dsh_app/wake/WakeCapture.kt   |  43 +-
  .../src/main/res/values-zh/i18n_strings.xml   |   4 +
@@ -35,7 +40,7 @@ a 12×56dp sliver that brings it back on a tap.
  app/lib/voice/wake_keywords.dart              |  50 ++
  app/lib/voice/wake_word.dart                  | 460 +++++++++++++++---
  app/pubspec.yaml                              |   4 +
- 24 files changed, 1425 insertions(+), 102 deletions(-)
+ 24 files changed, 1409 insertions(+), 102 deletions(-)
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallForegroundService.kt
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallOverlay.kt
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallOverlayPlugin.kt
@@ -212,10 +217,10 @@ index 0000000..90a77cf
 +}
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallOverlay.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallOverlay.kt
 new file mode 100644
-index 0000000..cc4ec91
+index 0000000..16627bf
 --- /dev/null
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallOverlay.kt
-@@ -0,0 +1,334 @@
+@@ -0,0 +1,318 @@
 +package io.github.ccch1mneyyy.dsh_app.call
 +
 +import android.annotation.SuppressLint
@@ -248,10 +253,11 @@ index 0000000..cc4ec91
 +/**
 + * 语音通话 in a window of its own — 微信's floating call, not picture-in-picture.
 + *
-+ * The window shows the light, how long the call has run, and one round 挂断 key (wordless: a word
-+ * wraps at this width). Dragged and released, it parks against the nearest edge and shrinks to a
-+ * thin sliver — a tab at the screen's edge that keeps nothing covered. A tap on the sliver brings
-+ * the window back; a tap on the window brings the conversation back.
++ * The window carries no keys: ending a call belongs to the call page, and a key that small was
++ * both easy to hit by accident and too narrow for a word. It shows the light and how long the
++ * call has run. Dragged and released, it parks against the nearest edge and shrinks to a thin
++ * sliver — a tab that keeps nothing covered. A tap on the sliver brings the window back; a tap
++ * on the window brings the conversation back.
 + */
 +object CallOverlay {
 +    /** What the window asks for: bring the conversation back. */
@@ -263,7 +269,7 @@ index 0000000..cc4ec91
 +
 +    /** A window width (dp) and height (dp) for the two shapes it takes. */
 +    private const val CARD_W = 84f
-+    private const val CARD_H = 140f
++    private const val CARD_H = 104f
 +    private const val SLIVER_W = 12f
 +    private const val SLIVER_H = 56f
 +
@@ -497,23 +503,6 @@ index 0000000..cc4ec91
 +            start()
 +        }
 +        column.addView(timer, LinearLayout.LayoutParams(-1, -2))
-+        // 挂断 stays, round and wordless: the card is what the person reaches for while the
-+        // call runs, and a word would wrap at this width.
-+        val hang = android.widget.TextView(context).apply {
-+            text = "\u260e"
-+            setTextColor(Color.WHITE)
-+            textSize = 17f
-+            gravity = Gravity.CENTER
-+            background = GradientDrawable().apply {
-+                shape = GradientDrawable.OVAL
-+                setColor(Color.rgb(229, 72, 77))
-+            }
-+            setOnClickListener { onAction?.invoke("hangUp") }
-+        }
-+        val hangLp = LinearLayout.LayoutParams((36 * px).roundToInt(), (36 * px).roundToInt()).apply {
-+            topMargin = (6 * px).roundToInt()
-+        }
-+        column.addView(hang, hangLp)
 +        root.addView(column, FrameLayout.LayoutParams(-1, -1))
 +        return root
 +    }
