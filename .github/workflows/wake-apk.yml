@@ -187,17 +187,30 @@ jobs:
       # The runner has no key, so one is made here: app/android/key.properties is
       # gitignored (*.jks too), and build.gradle.kts picks the release key up from it
       # and signs all three schemes with it.
-      - name: Make a keystore and let Gradle sign with it
+      # One key for every build, from a secret: a freshly generated key each run makes every
+      # APK a different signer, and Android then refuses to install it over the last one —
+      # the app had to be uninstalled (losing its models and settings) between builds.
+      - name: Sign with the profile's key
+        env:
+          KEYSTORE_B64: ${{ secrets.WAKE_KEYSTORE }}
+          KEYSTORE_PASSWORD: ${{ secrets.WAKE_KEYSTORE_PASSWORD }}
         run: |
           set -eu
           keystore="$GITHUB_WORKSPACE/app/android/wake-ci.jks"
-          keytool -genkeypair -noprompt \
-            -keystore "$keystore" -storetype PKCS12 \
-            -storepass dshpass -keypass dshpass \
-            -alias dshgo -keyalg RSA -keysize 2048 -validity 10000 \
-            -dname "CN=dsh-go-wake, OU=CI, O=dsh-go, C=CN"
-          printf 'storeFile=%s\nstorePassword=dshpass\nkeyAlias=dshgo\nkeyPassword=dshpass\n' \
-            "$keystore" > app/android/key.properties
+          if [ -n "${KEYSTORE_B64:-}" ]; then
+            printf '%s' "$KEYSTORE_B64" | base64 -d > "$keystore"
+            pass="$KEYSTORE_PASSWORD"
+          else
+            # No secret yet: still a build, just one that cannot install over itself.
+            keytool -genkeypair -noprompt \
+              -keystore "$keystore" -storetype PKCS12 \
+              -storepass dshpass -keypass dshpass \
+              -alias dshgo -keyalg RSA -keysize 2048 -validity 10000 \
+              -dname "CN=dsh-go-wake, OU=CI, O=dsh-go, C=CN"
+            pass=dshpass
+          fi
+          printf 'storeFile=%s\nstorePassword=%s\nkeyAlias=dshgo\nkeyPassword=%s\n' \
+            "$keystore" "$pass" "$pass" > app/android/key.properties
 
       - name: Restore the runtime downloads
         id: runtime
@@ -304,17 +317,20 @@ jobs:
       # Gradle signs with the key above; this reads it back, and signs the APK here
       # if it somehow came out debug-signed (key.properties unread, say).
       - name: Check the signature is the CI key
+        env:
+          KEYSTORE_PASSWORD: ${{ secrets.WAKE_KEYSTORE_PASSWORD }}
         run: |
           set -eu
           apksigner=$(ls -1d "$ANDROID_HOME"/build-tools/*/apksigner | sort -V | tail -n 1)
           keystore="$GITHUB_WORKSPACE/app/android/wake-ci.jks"
+          pass="${KEYSTORE_PASSWORD:-dshpass}"
           for apk in app/build/app/outputs/flutter-apk/*.apk; do
             if ! "$apksigner" verify --print-certs "$apk" | grep -q 'CN=dsh-go-wake'; then
               echo "::notice file=$apk::not the CI key; signing it here"
               aligned="${apk%.apk}-aligned.apk"
               "$(dirname "$apksigner")/zipalign" -f -p 4 "$apk" "$aligned"
-              "$apksigner" sign --ks "$keystore" --ks-pass pass:dshpass \
-                --key-pass pass:dshpass --ks-key-alias dshgo \
+              "$apksigner" sign --ks "$keystore" --ks-pass "pass:$pass" \
+                --key-pass "pass:$pass" --ks-key-alias dshgo \
                 --out "${apk%.apk}-signed.apk" "$aligned"
               mv -f "${apk%.apk}-signed.apk" "$apk"
               rm -f "$aligned"
