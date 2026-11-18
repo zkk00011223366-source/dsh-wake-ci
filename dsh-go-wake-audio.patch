@@ -1,26 +1,53 @@
-From 05a1286cccbb4621ef2f2311e39b40912c670b99 Mon Sep 17 00:00:00 2001
+From 0184dd3516edd1c10018427cbe387119768593c1 Mon Sep 17 00:00:00 2001
 From: dsh-wake <wake@local>
 Date: Wed, 18 Nov 2026 02:36:38 +0800
-Subject: [PATCH] feat(voice): show what the wake path hears, under the switch
+Subject: [PATCH] =?UTF-8?q?fix(voice):=20do=20what=20=E5=B0=8F=E5=AE=89?=
+ =?UTF-8?q?=E8=AF=AD=E9=9F=B3=E5=8A=A9=E6=89=8B=20does=20=E2=80=94=205x=20?=
+ =?UTF-8?q?into=20the=20model,=20one=20decode=20per=20200=20ms,=20AEC?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
 
-The path had no readable output at all, so every round of 'it does not work'
-started from zero. The settings row now carries the recognizer's last text
-after the state line, so the answer is one look away instead of a log file.
+小安语音助手 works on this phone, and reading its WakeWordDetector shows three
+things this path did not do:
 
-The audio sample is asked for by a marker file and records the next 20 s from
-the moment the marker is seen, instead of the 8 s before an utterance ended:
-a stray knock used to consume the marker and hand back silence.
+- it multiplies every sample by 5 and clips, so a phone on a table is a voice
+  and not a room;
+- it decodes once per 3200 samples (200 ms), not once per 20 ms frame;
+- it turns on the platform echo canceller and noise suppressor for its session.
+
+The stream still resets on a pause and on a repetition loop, and the settings
+row still carries the recognizer's last text so the next failure says what it
+heard instead of that it heard nothing.
 ---
- .../ccch1mneyyy/dsh_app/wake/WakeCapture.kt   |  19 ++-
+ .../ccch1mneyyy/dsh_app/wake/WakeCapture.kt   |  42 +++++-
  app/lib/ui/settings/voice_settings_page.dart  |  24 ++--
- app/lib/voice/wake_word.dart                  | 110 ++++++++++++++----
- 3 files changed, 115 insertions(+), 38 deletions(-)
+ app/lib/voice/wake_word.dart                  | 126 ++++++++++++++----
+ 3 files changed, 153 insertions(+), 39 deletions(-)
 
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/wake/WakeCapture.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/wake/WakeCapture.kt
-index 2e5ad22..233efa1 100644
+index 2e5ad22..e1bb449 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/wake/WakeCapture.kt
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/wake/WakeCapture.kt
-@@ -39,7 +39,11 @@ class WakeCapture(
+@@ -4,6 +4,8 @@ import android.annotation.SuppressLint
+ import android.media.AudioFormat
+ import android.media.AudioRecord
+ import android.media.MediaRecorder
++import android.media.audiofx.AcousticEchoCanceler
++import android.media.audiofx.NoiseSuppressor
+ import android.os.SystemClock
+ import io.github.ccch1mneyyy.dsh_app.nativemedia.SpeechGate
+ 
+@@ -26,6 +28,8 @@ class WakeCapture(
+     private val onError: (String) -> Unit,
+ ) {
+     private var record: AudioRecord? = null
++    private var aec: AcousticEchoCanceler? = null
++    private var ns: NoiseSuppressor? = null
+     private var thread: Thread? = null
+     @Volatile private var running = false
+     private var session = 0
+@@ -39,7 +43,11 @@ class WakeCapture(
          if (min <= 0) return false
          val r = runCatching {
              AudioRecord(
@@ -33,7 +60,27 @@ index 2e5ad22..233efa1 100644
                  RATE,
                  AudioFormat.CHANNEL_IN_MONO,
                  AudioFormat.ENCODING_PCM_16BIT,
-@@ -94,14 +98,17 @@ class WakeCapture(
+@@ -50,8 +58,19 @@ class WakeCapture(
+             r.release()
+             return false
+         }
++        // What 小安语音助手 does with its session, and what 语音通话 does here: the platform's
++        // echo canceller and noise suppressor, so the model is handed the voice and not the room.
++        runCatching {
++            if (AcousticEchoCanceler.isAvailable()) {
++                aec = AcousticEchoCanceler.create(r.audioSessionId)?.also { it.enabled = true }
++            }
++            if (NoiseSuppressor.isAvailable()) {
++                ns = NoiseSuppressor.create(r.audioSessionId)?.also { it.enabled = true }
++            }
++        }
+         val started = runCatching { r.startRecording() }.isSuccess && r.recordingState == AudioRecord.RECORDSTATE_RECORDING
+         if (!started) {
++            releaseEffects()
+             r.release()
+             return false
+         }
+@@ -94,14 +113,17 @@ class WakeCapture(
                  if (!speaking && loud >= LOUD_FRAMES) {
                      speaking = true
                  }
@@ -56,6 +103,28 @@ index 2e5ad22..233efa1 100644
              }
          } catch (_: RuntimeException) {
              report(mine) { onError("capture") }
+@@ -114,6 +136,13 @@ class WakeCapture(
+         if (mine == session && running) block()
+     }
+ 
++    private fun releaseEffects() {
++        runCatching { aec?.release() }
++        aec = null
++        runCatching { ns?.release() }
++        ns = null
++    }
++
+     /** Ends the capture: the thread leaves its read and the recorder is released. */
+     fun stop(): Boolean {
+         session++
+@@ -125,6 +154,7 @@ class WakeCapture(
+         thread = null
+         runCatching { t?.join(JOIN_MS) }
+         val ended = t?.isAlive != true
++        releaseEffects()
+         runCatching { r.release() }
+         return ended
+     }
 diff --git a/app/lib/ui/settings/voice_settings_page.dart b/app/lib/ui/settings/voice_settings_page.dart
 index a43eeb8..f6a8119 100644
 --- a/app/lib/ui/settings/voice_settings_page.dart
@@ -92,7 +161,7 @@ index a43eeb8..f6a8119 100644
  /// 唤醒词 typed by the person; the phrase is matched inside what the recognizer heard.
  Future<void> editWakeKeyword(BuildContext context, WidgetRef ref, String current) async {
 diff --git a/app/lib/voice/wake_word.dart b/app/lib/voice/wake_word.dart
-index cf6e008..fd6ede0 100644
+index cf6e008..a8eb147 100644
 --- a/app/lib/voice/wake_word.dart
 +++ b/app/lib/voice/wake_word.dart
 @@ -21,19 +21,10 @@ import '../state/streaming_asr_model_state.dart';
@@ -153,10 +222,16 @@ index cf6e008..fd6ede0 100644
    );
  }
  
-@@ -241,6 +243,57 @@ class WakeWordController extends Notifier<WakeStatus> {
+@@ -240,6 +242,62 @@ class WakeWordController extends Notifier<WakeStatus> {
+   }
  
    int _pcmCount = 0;
- 
++  int _pending = 0;
++
++  /// 小安语音助手's numbers on this phone: 5x into the model, one decode per 200 ms.
++  static const _gain = 5.0;
++  static const _decodeEvery = 3200;
++
 +  /// A sample of what the path hears, taken only when a marker file asks for it (the
 +  /// terminal drops one). It records the NEXT 20 s from the moment the marker is seen,
 +  /// whatever the gate thinks of it, so asking is not a race with a stray knock.
@@ -207,11 +282,10 @@ index cf6e008..fd6ede0 100644
 +      _dbg('sample failed: $error');
 +    }
 +  }
-+
+ 
    void _onEvent(Map<Object?, Object?> event) {
      final kind = event['kind'];
-     if (kind != 'wake.pcm') _dbg('event $kind');
-@@ -249,6 +302,7 @@ class WakeWordController extends Notifier<WakeStatus> {
+@@ -249,6 +307,7 @@ class WakeWordController extends Notifier<WakeStatus> {
          final bytes = event['bytes'];
          if (bytes is Uint8List) {
            _pcmCount++;
@@ -219,7 +293,7 @@ index cf6e008..fd6ede0 100644
            if (_pcmCount % 50 == 1) {
              final level = event['level'];
              final floor = event['floor'];
-@@ -262,7 +316,7 @@ class WakeWordController extends Notifier<WakeStatus> {
+@@ -262,7 +321,7 @@ class WakeWordController extends Notifier<WakeStatus> {
            _dbg('pcm bytes type=${bytes.runtimeType}');
          }
        case 'wake.speechEnd':
@@ -228,7 +302,26 @@ index cf6e008..fd6ede0 100644
          _resetStream();
        case 'wake.listening':
          if (ref.mounted) state = state.copyWith(listening: WakeListening.listening, clearReason: true);
-@@ -315,6 +369,9 @@ class WakeWordController extends Notifier<WakeStatus> {
+@@ -303,9 +362,17 @@ class WakeWordController extends Notifier<WakeStatus> {
+     final samples = Float32List(bytes.length ~/ 2);
+     final data = ByteData.sublistView(bytes);
+     for (var i = 0; i < samples.length; i++) {
+-      samples[i] = data.getInt16(i * 2, Endian.little) / 32768.0;
++      // 小安语音助手 feeds the model a quiet phone at 5x (clipped), and that gain is the
++      // difference between a room and a voice on this phone.
++      final value = data.getInt16(i * 2, Endian.little) / 32768.0 * _gain;
++      samples[i] = value > 1.0 ? 1.0 : (value < -1.0 ? -1.0 : value);
+     }
+     stream.acceptWaveform(samples: samples, sampleRate: 16000);
++    // Decode every 200 ms of audio, not every 20 ms frame: 小安语音助手 does one decode per
++    // 3200 samples, and the model is what it is between those.
++    _pending += samples.length;
++    if (_pending < _decodeEvery) return;
++    _pending = 0;
+     var decoded = false;
+     while (recognizer.isReady(stream)) {
+       recognizer.decode(stream);
+@@ -315,6 +382,9 @@ class WakeWordController extends Notifier<WakeStatus> {
      final heard = recognizer.getResult(stream).text;
      if (heard.isNotEmpty && heard != _text) _dbg('heard: $heard');
      _text = heard;
@@ -238,7 +331,7 @@ index cf6e008..fd6ede0 100644
      if (_heardWakeWord(_text)) {
        _dbg('MATCH: $_text');
        unawaited(_fire());
-@@ -326,6 +383,10 @@ class WakeWordController extends Notifier<WakeStatus> {
+@@ -326,6 +396,10 @@ class WakeWordController extends Notifier<WakeStatus> {
    }
  
    /// 唤醒词 found in what was heard: punctuation, spaces and case ignored.
@@ -249,7 +342,7 @@ index cf6e008..fd6ede0 100644
    bool _heardWakeWord(String text) {
      final keyword = _compact(_keyword);
      if (keyword.isEmpty) return false;
-@@ -333,7 +394,11 @@ class WakeWordController extends Notifier<WakeStatus> {
+@@ -333,7 +407,11 @@ class WakeWordController extends Notifier<WakeStatus> {
      // A stream fed a room decodes it into one syllable repeated ("呵呵呵呵呵"). That is not
      // speech, and matching inside it is how a wake word fires on nothing.
      if (_isBabble(heard)) return false;
@@ -262,7 +355,7 @@ index cf6e008..fd6ede0 100644
    }
  
    /// One character repeated five times or more: a recognizer's answer to noise, not a word.
-@@ -414,13 +479,14 @@ class WakeWordController extends Notifier<WakeStatus> {
+@@ -414,19 +492,21 @@ class WakeWordController extends Notifier<WakeStatus> {
            ),
            tokens: model.tokens,
            modelType: 'zipformer',
@@ -282,6 +375,13 @@ index cf6e008..fd6ede0 100644
        ),
      );
    }
+ 
+   void _resetStream() {
+     _text = '';
++    _pending = 0;
+     _streamStarted = null;
+     final recognizer = _recognizer;
+     final stream = _stream;
 -- 
 2.43.0
 
