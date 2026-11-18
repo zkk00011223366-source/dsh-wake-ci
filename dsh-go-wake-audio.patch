@@ -1,26 +1,25 @@
-From 212fc438a54fbd6408277ccc492421468df9f141 Mon Sep 17 00:00:00 2001
+From de0f8bde196ac9fbbba53b4ff61edab40dcb55ef Mon Sep 17 00:00:00 2001
 From: dsh-wake <wake@local>
 Date: Wed, 18 Nov 2026 02:36:38 +0800
-Subject: [PATCH] fix(voice): one window, and it opens
+Subject: [PATCH] =?UTF-8?q?feat(voice):=20the=20floating=20call=20is=20?=
+ =?UTF-8?q?=E5=BE=AE=E4=BF=A1's=20=E2=80=94=20no=20keys,=20parks=20as=20an?=
+ =?UTF-8?q?=20edge=20sliver?=
 MIME-Version: 1.0
 Content-Type: text/plain; charset=UTF-8
 Content-Transfer-Encoding: 8bit
 
-Three faults in the card, all visible at once:
+The card carried a 挂断 key, which on a window that small was both easy to hit by
+accident and too narrow for the word. It is gone: what the window shows is the
+light and how long the call has run, and nothing on it can end the call.
 
-- picture-in-picture still fired on leaving the app (onUserLeaveHint had no idea the card
-  was already up), so a call showed two windows: the card and a shrunken copy of the app.
-  Picture-in-picture is gone — activity flag, params, the lot — and the card is the only
-  second window.
-- the drag listener returns true from ACTION_DOWN, which swallowed the tap: the card
-  could be dragged but never opened. A touch that did not move now calls performClick.
-- 挂断 was a worded key that wrapped to two lines once the card was drawn narrow. It is a
-  round phone glyph now, the shape the other call keys use.
+Dragged and released, the window parks against the nearest edge and shrinks to a
+12×56dp sliver — a tab at the screen's edge that covers nothing. A tap on the
+sliver brings the window back; a tap on the window brings the conversation back.
 ---
  app/android/app/src/main/AndroidManifest.xml  |   9 +
  .../ccch1mneyyy/dsh_app/MainActivity.kt       |  25 +
  .../dsh_app/call/CallForegroundService.kt     |  94 ++++
- .../ccch1mneyyy/dsh_app/call/CallOverlay.kt   | 298 ++++++++++++
+ .../ccch1mneyyy/dsh_app/call/CallOverlay.kt   | 318 ++++++++++++
  .../dsh_app/call/CallOverlayPlugin.kt         |  66 +++
  .../ccch1mneyyy/dsh_app/wake/WakeCapture.kt   |  43 +-
  .../src/main/res/values-zh/i18n_strings.xml   |   4 +
@@ -41,7 +40,7 @@ Three faults in the card, all visible at once:
  app/lib/voice/wake_keywords.dart              |  50 ++
  app/lib/voice/wake_word.dart                  | 460 +++++++++++++++---
  app/pubspec.yaml                              |   4 +
- 24 files changed, 1389 insertions(+), 102 deletions(-)
+ 24 files changed, 1409 insertions(+), 102 deletions(-)
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallForegroundService.kt
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallOverlay.kt
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallOverlayPlugin.kt
@@ -218,10 +217,10 @@ index 0000000..90a77cf
 +}
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallOverlay.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallOverlay.kt
 new file mode 100644
-index 0000000..243144b
+index 0000000..55d403f
 --- /dev/null
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallOverlay.kt
-@@ -0,0 +1,298 @@
+@@ -0,0 +1,318 @@
 +package io.github.ccch1mneyyy.dsh_app.call
 +
 +import android.annotation.SuppressLint
@@ -243,36 +242,43 @@ index 0000000..243144b
 +import android.widget.Chronometer
 +import android.widget.FrameLayout
 +import android.widget.LinearLayout
-+import android.widget.TextView
 +import io.github.ccch1mneyyy.dsh_app.MainActivity
 +import io.github.ccch1mneyyy.dsh_app.pet.Dock
 +import io.github.ccch1mneyyy.dsh_app.pet.EdgeSnap
 +import io.github.ccch1mneyyy.dsh_app.pet.SafeArea
++import io.github.ccch1mneyyy.dsh_app.pet.Side
 +import kotlin.math.abs
 +import kotlin.math.roundToInt
 +
 +/**
-+ * 语音通话 in a window of its own: a small card that floats over whatever is on screen, can be
-+ * dragged anywhere and rests against the side it was thrown towards, the way a phone's own
-+ * floating call does.
++ * 语音通话 in a window of its own — 微信's floating call, not picture-in-picture.
 + *
-+ * Not picture-in-picture: that shrinks the whole activity into a system window and cannot be
-+ * moved or hidden to an edge. This is an application overlay (the same window type 桌面宠物
-+ * uses), so it is only this card — and it stays up while the app is behind it.
++ * The window carries no keys: ending a call belongs to the call page, and a key that small was
++ * both easy to hit by accident and too narrow for a word. What it shows is the light and how
++ * long the call has run. Dragged and released, it parks against the nearest edge and shrinks to
++ * a thin sliver — a tab at the screen's edge that keeps nothing of the call covered. A tap on the
++ * sliver brings the window back; a tap on the window brings the conversation back.
 + */
 +object CallOverlay {
-+    /** What the card asks for: end the call, or bring the conversation back. */
++    /** What the window asks for: bring the conversation back. */
 +    var onAction: ((String) -> Unit)? = null
 +
 +    private const val PREFS = "call_overlay"
 +    private const val KEY_SIDE = "side"
 +    private const val KEY_FRACTION = "fraction"
 +
++    /** A window width (dp) and height (dp) for the two shapes it takes. */
++    private const val CARD_W = 84f
++    private const val CARD_H = 104f
++    private const val SLIVER_W = 12f
++    private const val SLIVER_H = 56f
++
 +    private var wm: WindowManager? = null
 +    private var card: View? = null
 +    private var params: WindowManager.LayoutParams? = null
 +    private var dock = Dock.DEFAULT
 +    private var context: Context? = null
++    private var collapsed = false
 +
 +    val shown: Boolean get() = card != null
 +
@@ -282,14 +288,13 @@ index 0000000..243144b
 +        val manager = app.getSystemService(Context.WINDOW_SERVICE) as? WindowManager ?: return false
 +        val saved = app.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
 +        dock = Dock(
-+            side = if (saved.getString(KEY_SIDE, "r") == "l") io.github.ccch1mneyyy.dsh_app.pet.Side.LEFT
-+            else io.github.ccch1mneyyy.dsh_app.pet.Side.RIGHT,
++            side = if (saved.getString(KEY_SIDE, "r") == "l") Side.LEFT else Side.RIGHT,
 +            yFraction = saved.getFloat(KEY_FRACTION, Dock.DEFAULT.yFraction),
 +        )
 +        val area = safeArea(app, manager)
 +        val px = app.resources.displayMetrics.density
-+        val w = (84 * px).roundToInt()
-+        val h = (150 * px).roundToInt()
++        val w = (CARD_W * px).roundToInt()
++        val h = (CARD_H * px).roundToInt()
 +        val at = EdgeSnap.position(dock, w, h, area, (10 * px).roundToInt())
 +
 +        val view = buildCard(app, startedAtElapsed, px)
@@ -306,13 +311,14 @@ index 0000000..243144b
 +            x = at.x
 +            y = at.y
 +        }
-+        attachDrag(app, view, manager, lp, area, px)
++        attachTouch(app, view, manager, lp, area, px)
 +        return try {
 +            manager.addView(view, lp)
 +            this.context = app
 +            wm = manager
 +            card = view
 +            params = lp
++            collapsed = false
 +            true
 +        } catch (_: Exception) {
 +            card = null
@@ -326,6 +332,7 @@ index 0000000..243144b
 +        val view = card ?: return
 +        card = null
 +        params = null
++        collapsed = false
 +        val manager = wm
 +        wm = null
 +        context = null
@@ -340,18 +347,18 @@ index 0000000..243144b
 +        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
 +        else WindowManager.LayoutParams.TYPE_PHONE
 +
-+    private fun safeArea(context: Context, manager: WindowManager): SafeArea {
-+        val m = context.resources.displayMetrics
-+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
++    private fun safeArea(context: Context, manager: WindowManager): SafeArea =
++        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
 +            val b = manager.currentWindowMetrics.bounds
 +            SafeArea(b.width(), b.height(), 0, 0, 0, 0)
 +        } else {
++            val m = context.resources.displayMetrics
 +            SafeArea(m.widthPixels, m.heightPixels, 0, 0, 0, 0)
 +        }
-+    }
 +
++    /** The window's shape: the card with the light and the timer, and the sliver it parks as. */
 +    @SuppressLint("ClickableViewAccessibility")
-+    private fun attachDrag(
++    private fun attachTouch(
 +        context: Context,
 +        view: View,
 +        manager: WindowManager,
@@ -359,6 +366,7 @@ index 0000000..243144b
 +        area: SafeArea,
 +        px: Float,
 +    ) {
++        val margin = (10 * px).roundToInt()
 +        var startX = 0f
 +        var startY = 0f
 +        var fromX = 0
@@ -367,8 +375,40 @@ index 0000000..243144b
 +        var lastAt = 0L
 +        var vx = 0f
 +        var dragging = false
-+        val margin = (10 * px).roundToInt()
++        val cardW = (CARD_W * px).roundToInt()
++        val cardH = (CARD_H * px).roundToInt()
++        val sliverW = (SLIVER_W * px).roundToInt()
++        val sliverH = (SLIVER_H * px).roundToInt()
++
++        fun applyShape(toCollapsed: Boolean) {
++            collapsed = toCollapsed
++            val w = if (toCollapsed) sliverW else cardW
++            val h = if (toCollapsed) sliverH else cardH
++            val at = EdgeSnap.position(dock, w, h, area, margin)
++            lp.width = w
++            lp.height = h
++            lp.x = at.x
++            lp.y = at.y
++            view.layoutParams = lp
++            try {
++                manager.updateViewLayout(view, lp)
++            } catch (_: Exception) {
++            }
++            // The card's own content hides while parked; the sliver is drawn by the window's
++            // background, so nothing has to be swapped out.
++            (view as? FrameLayout)?.getChildAt(0)?.visibility =
++                if (toCollapsed) View.INVISIBLE else View.VISIBLE
++            view.background = if (toCollapsed) sliverBackground(px) else cardBackground(px)
++        }
++
 +        view.setOnTouchListener { _, event ->
++            if (collapsed) {
++                if (event.actionMasked == MotionEvent.ACTION_UP) {
++                    applyShape(false)
++                    view.performClick()
++                }
++                return true
++            }
 +            when (event.actionMasked) {
 +                MotionEvent.ACTION_DOWN -> {
 +                    startX = event.rawX
@@ -408,26 +448,21 @@ index 0000000..243144b
 +                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
 +                    if (!dragging) {
 +                        // The drag listener returns true from ACTION_DOWN, which swallows the
-+                        // click a plain OnClickListener would have received; a touch that did
-+                        // not move is the tap that brings the call back.
++                        // tap a plain OnClickListener would have received; a touch that did not
++                        // move is the tap that brings the conversation back.
 +                        view.performClick()
++                        return true
 +                    }
-+                    if (dragging) {
-+                        // Rests against the side it was thrown towards; the height is kept as a
-+                        // share of the screen so a rotation does not lose it.
-+                        dock = EdgeSnap.dockFor(lp.x, lp.y, lp.width, lp.height, area, margin, vx)
-+                        val at = EdgeSnap.position(dock, lp.width, lp.height, area, margin)
-+                        lp.x = at.x
-+                        lp.y = at.y
-+                        try {
-+                            manager.updateViewLayout(view, lp)
-+                        } catch (_: Exception) {
-+                        }
-+                        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
-+                            .putString(KEY_SIDE, if (dock.side == io.github.ccch1mneyyy.dsh_app.pet.Side.LEFT) "l" else "r")
-+                            .putFloat(KEY_FRACTION, dock.yFraction)
-+                            .apply()
-+                    }
++                    dock = EdgeSnap.dockFor(lp.x, lp.y, lp.width, lp.height, area, margin, vx)
++                    val flung = abs(vx) >= EdgeSnap.FLING_PX_PER_S
++                    val nearEdge = lp.x <= EdgeSnap.minX(area, margin) + (12 * px).roundToInt() ||
++                        lp.x >= EdgeSnap.maxX(area, lp.width, margin) - (12 * px).roundToInt()
++                    context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
++                        .putString(KEY_SIDE, if (dock.side == Side.LEFT) "l" else "r")
++                        .putFloat(KEY_FRACTION, dock.yFraction)
++                        .apply()
++                    // Thrown at a side, or put down against it: the card parks as a sliver.
++                    applyShape(flung || nearEdge)
 +                    true
 +                }
 +                else -> false
@@ -435,61 +470,45 @@ index 0000000..243144b
 +        }
 +    }
 +
++    private fun cardBackground(px: Float) = GradientDrawable().apply {
++        cornerRadius = 22 * px
++        setColor(Color.rgb(10, 14, 24))
++        setStroke((1.5f * px).roundToInt(), Color.rgb(38, 46, 66))
++    }
++
++    private fun sliverBackground(px: Float) = GradientDrawable().apply {
++        cornerRadius = 6 * px
++        setColor(Color.argb(200, 60, 72, 100))
++    }
++
 +    private fun buildCard(context: Context, startedAtElapsed: Long, px: Float): View {
 +        val root = FrameLayout(context).apply {
-+            background = GradientDrawable().apply {
-+                cornerRadius = 22 * px
-+                setColor(Color.rgb(10, 14, 24))
-+                setStroke((1.5f * px).roundToInt(), Color.rgb(38, 46, 66))
-+            }
++            background = cardBackground(px)
++            setOnClickListener { openApp(context) }
 +        }
 +        val column = LinearLayout(context).apply {
 +            orientation = LinearLayout.VERTICAL
 +            gravity = Gravity.CENTER_HORIZONTAL
-+            setPadding(0, (14 * px).roundToInt(), 0, (12 * px).roundToInt())
++            setPadding(0, (12 * px).roundToInt(), 0, (10 * px).roundToInt())
 +        }
-+        column.addView(Orb(context, px), LinearLayout.LayoutParams((46 * px).roundToInt(), (46 * px).roundToInt()))
++        column.addView(Orb(context), LinearLayout.LayoutParams((44 * px).roundToInt(), (44 * px).roundToInt()))
 +        val timer = Chronometer(context).apply {
-+            // The card is told how long the call has run; Chronometer counts from a boot-time
++            // The window is told how long the call has run; Chronometer counts from a boot-time
 +            // stamp, so the base is now minus that.
 +            base = SystemClock.elapsedRealtime() - startedAtElapsed.coerceAtLeast(0L)
 +            setTextColor(Color.rgb(226, 232, 240))
 +            textSize = 12f
 +            gravity = Gravity.CENTER
-+            val pad = (6 * px).roundToInt()
-+            setPadding(0, pad, 0, pad)
++            setPadding(0, (6 * px).roundToInt(), 0, 0)
 +            start()
 +        }
 +        column.addView(timer, LinearLayout.LayoutParams(-1, -2))
-+        // A square that holds only the phone glyph: a worded key wrapped to two lines as soon
-+        // as the card was drawn narrow, and 挂断 is not a label the shape needs.
-+        val hang = TextView(context).apply {
-+            text = "\u260e"
-+            setTextColor(Color.WHITE)
-+            textSize = 18f
-+            gravity = Gravity.CENTER
-+            background = GradientDrawable().apply {
-+                shape = GradientDrawable.OVAL
-+                setColor(Color.rgb(229, 72, 77))
-+            }
-+            setOnClickListener {
-+                onAction?.invoke("hangUp")
-+            }
-+        }
-+        val hangLp = LinearLayout.LayoutParams((38 * px).roundToInt(), (38 * px).roundToInt()).apply {
-+            topMargin = (6 * px).roundToInt()
-+        }
-+        column.addView(hang, hangLp)
 +        root.addView(column, FrameLayout.LayoutParams(-1, -1))
-+        // Tapping the card (not the hang-up key) brings the conversation back.
-+        root.setOnClickListener {
-+            openApp(context)
-+        }
 +        return root
 +    }
 +
 +    private fun openApp(context: Context) {
-+        // Back to the conversation: the card has nothing left to show once the page is up.
++        // Back to the conversation: the window has done its job once the page is up.
 +        hide()
 +        onAction?.invoke("open")
 +        try {
@@ -502,7 +521,7 @@ index 0000000..243144b
 +    }
 +
 +    /** The light that stands for the call, drawn rather than shipped as a bitmap. */
-+    private class Orb(context: Context, private val px: Float) : View(context) {
++    private class Orb(context: Context) : View(context) {
 +        private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
 +
 +        override fun onDraw(canvas: Canvas) {
