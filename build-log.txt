@@ -1,7 +1,7 @@
 == resources ==
 /dev/root        72G   54G   19G  75% /
                total        used        free      shared  buff/cache   available
-Mem:            7931        5152         236          32        2888        2779
+Mem:            7931        5030         328          40        2927        2901
 == tail ==
 
 ==> 依赖: flutter pub get
@@ -110,3 +110,20 @@ Note: Recompile with -Xlint:unchecked for details.
 /home/runner/work/dsh-wake-ci/dsh-wake-ci/app/android/app/src/main/res/values/i18n_strings.xml:122:4: Failed to flatten XML for resource 'call_running_text' with error: Invalid unicode escape sequence in string
 "{str}"
 /home/runner/work/dsh-wake-ci/dsh-wake-ci/app/android/app/src/main/res/values/i18n_strings.xml:122:4: string/call_running_text does not contain a valid string resource.
+
+FAILURE: Build failed with an exception.
+
+* What went wrong:
+Execution failed for task ':app:mergeArm64ReleaseResources'.
+> A failure occurred while executing com.android.build.gradle.internal.res.ResourceCompilerRunnable
+   > Resource compilation failed (Failed to compile values resource file /home/runner/work/dsh-wake-ci/dsh-wake-ci/app/build/app/intermediates/incremental/arm64Release/mergeArm64ReleaseResources/merged.dir/values/values.xml. Cause: java.lang.IllegalStateException: Can not extract resource from com.android.aaptcompiler.ParsedResource@2dd6a1d7.). Check logs for more details.
+
+* Try:
+> Run with --stacktrace option to get the stack trace.
+> Run with --info or --debug option to get more log output.
+> Run with --scan to get full insights from a Build Scan (powered by Develocity).
+> Get more help at https://help.gradle.org.
+
+BUILD FAILED in 10m 54s
+Running Gradle task 'assembleArm64Release'...                     655.5s
+Gradle task assembleArm64Release failed with exit code 1
