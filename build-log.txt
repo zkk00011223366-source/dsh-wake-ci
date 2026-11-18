@@ -1,7 +1,7 @@
 == resources ==
 /dev/root        72G   54G   19G  75% /
                total        used        free      shared  buff/cache   available
-Mem:            7931        4677         150          32        3448        3253
+Mem:            7931        4746         127          32        3403        3184
 == tail ==
 
 ==> 依赖: flutter pub get
@@ -107,3 +107,6 @@ Note: Some input files use or override a deprecated API.
 Note: Recompile with -Xlint:deprecation for details.
 Note: Some input files use unchecked or unsafe operations.
 Note: Recompile with -Xlint:unchecked for details.
+/home/runner/work/dsh-wake-ci/dsh-wake-ci/app/android/app/src/main/res/values/i18n_strings.xml:122:4: Failed to flatten XML for resource 'call_running_text' with error: Invalid unicode escape sequence in string
+"{str}"
+/home/runner/work/dsh-wake-ci/dsh-wake-ci/app/android/app/src/main/res/values/i18n_strings.xml:122:4: string/call_running_text does not contain a valid string resource.
