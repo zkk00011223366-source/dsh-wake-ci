@@ -1,29 +1,28 @@
-From 0d27de5ef81eb72008cf84fbf674a2d73942fdce Mon Sep 17 00:00:00 2001
+From 2fc8f7ef9f6394e21a566c1e788872772c240b3c Mon Sep 17 00:00:00 2001
 From: dsh-wake <wake@local>
 Date: Wed, 18 Nov 2026 02:36:38 +0800
-Subject: [PATCH] fix(voice): a fresh stream at the start of speech
+Subject: [PATCH] feat(voice): recognize the utterance instead of streaming it
 MIME-Version: 1.0
 Content-Type: text/plain; charset=UTF-8
 Content-Transfer-Encoding: 8bit
 
-The trace settled it: at 11:44:31, while the recording holds 小安 at -21 dB, the
-in-app recognizer was still writing 哈哈哈哈, and the same 20 s decoded offline
-finds 小安 at 8.8 s. Same audio, same model, different stream state.
+The trace settled the streaming path: on the same 20 s of audio the in-app
+recognizer wrote 哈哈哈哈 while the same model decoded offline found 小安 at
+8.8 s, and a quiet room decoded to nothing offline but to 呵呵呵 in the app. A
+streaming model that reaches that state does not leave it, and every reset only
+moved the failure.
 
-A streaming recognizer that has been answering a room with one syllable does not
-leave that state by being fed a word — the answer lives inside the stream. Two
-resets now keep that from reaching a wake word:
-
-- 声音起来了: 0.75 s of quiet followed by sound starts a fresh stream, which is
-  the state the offline decode begins from.
-- a run of eight identical characters is a loop, not speech, and drops the stream
-  (a real phrase never repeats one character that many times).
+So the wake path now does what 小安语音助手 does, with the recognizer this app
+already trusts: record the utterance (from sound over -40 dB to 1.2 s of quiet),
+send it to the engine's SenseVoice through speech/transcribe — the same call
+语音输入 makes — and match the text it returns. No stream, no state to get stuck
+in, and 实时字幕's model is no longer a precondition for listening.
 ---
- .../ccch1mneyyy/dsh_app/wake/WakeCapture.kt   |  53 ++++-
+ .../ccch1mneyyy/dsh_app/wake/WakeCapture.kt   |  53 +++-
  app/lib/ui/chat/chat_screen.dart              |  25 +-
  app/lib/ui/settings/voice_settings_page.dart  |  24 +-
- app/lib/voice/wake_word.dart                  | 213 +++++++++++++++---
- 4 files changed, 266 insertions(+), 49 deletions(-)
+ app/lib/voice/wake_word.dart                  | 269 ++++++++++++++----
+ 4 files changed, 296 insertions(+), 75 deletions(-)
 
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/wake/WakeCapture.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/wake/WakeCapture.kt
 index 2e5ad22..9ddecc9 100644
@@ -238,10 +237,20 @@ index a43eeb8..f6a8119 100644
  /// 唤醒词 typed by the person; the phrase is matched inside what the recognizer heard.
  Future<void> editWakeKeyword(BuildContext context, WidgetRef ref, String current) async {
 diff --git a/app/lib/voice/wake_word.dart b/app/lib/voice/wake_word.dart
-index cf6e008..438ac0a 100644
+index cf6e008..7bc6633 100644
 --- a/app/lib/voice/wake_word.dart
 +++ b/app/lib/voice/wake_word.dart
-@@ -21,18 +21,20 @@ import '../state/streaming_asr_model_state.dart';
+@@ -13,26 +13,30 @@ import 'dart:async';
+ import 'dart:io';
+ import 'dart:typed_data';
+ 
++import 'package:dsh_client/dsh_client.dart';
+ import 'package:flutter/services.dart';
+ import 'package:flutter_riverpod/flutter_riverpod.dart';
+ import 'package:sherpa_onnx/sherpa_onnx.dart' as sherpa;
+ 
++import '../state/connection_state.dart';
+ import '../state/streaming_asr_model_state.dart';
  import 'streaming_asr_model.dart';
  import 'wake_settings.dart';
  
@@ -269,7 +278,7 @@ index cf6e008..438ac0a 100644
  }
  
  /// What the listener is doing.
-@@ -57,7 +59,7 @@ enum WakeListening {
+@@ -57,7 +61,7 @@ enum WakeListening {
  }
  
  class WakeStatus {
@@ -278,7 +287,7 @@ index cf6e008..438ac0a 100644
  
    final WakeListening listening;
  
-@@ -67,12 +69,23 @@ class WakeStatus {
+@@ -67,12 +71,23 @@ class WakeStatus {
    /// Wake words heard since launch (诊断用).
    final int hits;
  
@@ -303,7 +312,29 @@ index cf6e008..438ac0a 100644
    );
  }
  
-@@ -240,6 +253,65 @@ class WakeWordController extends Notifier<WakeStatus> {
+@@ -131,8 +146,10 @@ class WakeWordController extends Notifier<WakeStatus> {
+   @override
+   WakeStatus build() {
+     final settings = ref.watch(wakeSettingsProvider);
+-    // A model arriving (设置 › 语音 › 实时字幕 下载完成) is what makes listening possible at all.
+-    final hasModel = ref.watch(streamingAsrModelProvider.select((state) => state.model != null));
++    // No model of its own any more: what it hears is recognized by the engine's SenseVoice,
++    // the recognizer 语音输入 already uses, so 实时字幕's downloaded model is not a
++    // precondition for listening.
++    const hasModel = true;
+     _keyword = settings.keyword;
+     if (_events == null) {
+       _events = ref.read(wakePlatformProvider).events.listen(_onEvent, onError: (Object _) {});
+@@ -167,7 +184,7 @@ class WakeWordController extends Notifier<WakeStatus> {
+     _resumeTimer?.cancel();
+     final settings = await ref.read(wakeSettingsProvider.notifier).ready();
+     if (!settings.enabled) return;
+-    await _sync(settings, hasModel: ref.read(streamingAsrModelProvider).model != null);
++    await _sync(settings, hasModel: true);
+   }
+ 
+   Future<void> _sync(WakeSettings settings, {required bool hasModel}) async {
+@@ -240,6 +257,65 @@ class WakeWordController extends Notifier<WakeStatus> {
    }
  
    int _pcmCount = 0;
@@ -369,7 +400,7 @@ index cf6e008..438ac0a 100644
  
    void _onEvent(Map<Object?, Object?> event) {
      final kind = event['kind'];
-@@ -249,8 +321,10 @@ class WakeWordController extends Notifier<WakeStatus> {
+@@ -249,8 +325,10 @@ class WakeWordController extends Notifier<WakeStatus> {
          final bytes = event['bytes'];
          if (bytes is Uint8List) {
            _pcmCount++;
@@ -381,7 +412,7 @@ index cf6e008..438ac0a 100644
              final floor = event['floor'];
              _dbg(
                'pcm #$_pcmCount bytes=${bytes.length}'
-@@ -262,8 +336,10 @@ class WakeWordController extends Notifier<WakeStatus> {
+@@ -262,8 +340,10 @@ class WakeWordController extends Notifier<WakeStatus> {
            _dbg('pcm bytes type=${bytes.runtimeType}');
          }
        case 'wake.speechEnd':
@@ -394,82 +425,109 @@ index cf6e008..438ac0a 100644
        case 'wake.listening':
          if (ref.mounted) state = state.copyWith(listening: WakeListening.listening, clearReason: true);
        case 'wake.yield':
-@@ -289,12 +365,19 @@ class WakeWordController extends Notifier<WakeStatus> {
+@@ -288,44 +368,80 @@ class WakeWordController extends Notifier<WakeStatus> {
+     }
    }
  
++  /// What is being said, as raw 16 kHz mono PCM16, from the first frame over the floor to
++  /// 1.2 s after the last one.
++  final BytesBuilder _utterance = BytesBuilder(copy: false);
++  bool _inSpeech = false;
++
++  /// A whole utterance goes to the engine's recognizer (SenseVoice, the one 语音输入 uses)
++  /// instead of being decoded by a streaming model that cannot leave its own loop. 小安语音助手
++  /// does the same: record, recognize once, match. There is no stream state to get stuck in.
    void _feed(Uint8List bytes) {
--    if (!ref.read(wakeSettingsProvider).enabled || _suspended) return;
-+    if (!ref.read(wakeSettingsProvider).enabled) {
-+      if (_pcmCount % 200 == 1) _dbg('feed: settings disabled');
-+      return;
-+    }
-+    if (_suspended) {
-+      if (_pcmCount % 200 == 1) _dbg('feed: suspended');
-+      return;
-+    }
-     final now = DateTime.now();
-     final started = _streamStarted;
-     if (started != null && now.difference(started) > _burstLimit) _resetStream();
-     if (_ensureRecognizer() == null) {
+     if (!ref.read(wakeSettingsProvider).enabled || _suspended) return;
+-    final now = DateTime.now();
+-    final started = _streamStarted;
+-    if (started != null && now.difference(started) > _burstLimit) _resetStream();
+-    if (_ensureRecognizer() == null) {
 -      if (_pcmCount % 200 == 1) _dbg('no recognizer (model null?)');
-+      if (_pcmCount % 200 == 1) _dbg('feed: no recognizer');
++    if (_lastLevel > -40) {
++      _inSpeech = true;
++      _quietSamples = 0;
++      _utterance.add(bytes);
        return;
      }
-     final recognizer = _recognizer;
-@@ -303,9 +386,25 @@ class WakeWordController extends Notifier<WakeStatus> {
-     final samples = Float32List(bytes.length ~/ 2);
-     final data = ByteData.sublistView(bytes);
-     for (var i = 0; i < samples.length; i++) {
+-    final recognizer = _recognizer;
+-    final stream = _stream;
+-    if (recognizer == null || stream == null) return;
+-    final samples = Float32List(bytes.length ~/ 2);
+-    final data = ByteData.sublistView(bytes);
+-    for (var i = 0; i < samples.length; i++) {
 -      samples[i] = data.getInt16(i * 2, Endian.little) / 32768.0;
-+      // 小安语音助手 feeds the model a quiet phone at 5x (clipped), and that gain is the
-+      // difference between a room and a voice on this phone.
-+      final value = data.getInt16(i * 2, Endian.little) / 32768.0 * _gain;
-+      samples[i] = value > 1.0 ? 1.0 : (value < -1.0 ? -1.0 : value);
-+    }
-+    // 声音起来了: a stream that has been hearing a room answers the first word with an
-+    // endless run of one syllable and never recovers. A fresh stream at the start of speech
-+    // is what the same audio gets offline, where decoding that recording finds 小安 at 8.8 s.
-+    if (_lastLevel > -38 && _quietSamples >= 12000) {
-+      _dbg('onset: fresh stream');
-+      _resetStream();
-     }
-+    _quietSamples = _lastLevel < -40 ? _quietSamples + samples.length : 0;
-     stream.acceptWaveform(samples: samples, sampleRate: 16000);
-+    // Decode every 200 ms of audio, not every 20 ms frame: 小安语音助手 does one decode per
-+    // 3200 samples, and the model is what it is between those.
-+    _pending += samples.length;
-+    if (_pending < _decodeEvery) return;
-+    _pending = 0;
-     var decoded = false;
-     while (recognizer.isReady(stream)) {
-       recognizer.decode(stream);
-@@ -315,17 +414,30 @@ class WakeWordController extends Notifier<WakeStatus> {
-     final heard = recognizer.getResult(stream).text;
-     if (heard.isNotEmpty && heard != _text) _dbg('heard: $heard');
-     _text = heard;
-+    if (heard.isNotEmpty && ref.mounted && heard != state.heard) {
-+      state = state.copyWith(heard: heard);
-+    }
-     if (_heardWakeWord(_text)) {
-       _dbg('MATCH: $_text');
-       unawaited(_fire());
+-    }
+-    stream.acceptWaveform(samples: samples, sampleRate: 16000);
+-    var decoded = false;
+-    while (recognizer.isReady(stream)) {
+-      recognizer.decode(stream);
+-      decoded = true;
+-    }
+-    if (!decoded) return;
+-    final heard = recognizer.getResult(stream).text;
+-    if (heard.isNotEmpty && heard != _text) _dbg('heard: $heard');
+-    _text = heard;
+-    if (_heardWakeWord(_text)) {
+-      _dbg('MATCH: $_text');
+-      unawaited(_fire());
 -    } else if (recognizer.isEndpoint(stream) || _isBabble(_compact(_text))) {
 -      // 一个音节重复到底 is the model stuck on noise: it never endpoints on its own, so the
 -      // stream has to be dropped here or every later word is decoded into the same loop.
 -      _resetStream();
-+    } else {
-+      _streamSamples += samples.length;
-+      // A recognizer that answers a room with the same syllable over and over does not stop
-+      // on its own: the state it needs to leave is inside the stream. Drop it and start clean.
-+      // A real phrase never repeats one character eight times, so 小安小安 is safe here.
-+      if (_longestRun(_text) >= 8 ||
-+          (_streamSamples > 16000 * 5 && _lastLevel < -40) ||
-+          _streamSamples > 16000 * 15) {
-+        _resetStream();
++    if (!_inSpeech) return;
++    _utterance.add(bytes);
++    _quietSamples += bytes.length;
++    if (_quietSamples < 19200) return; // 1.2 s of quiet ends what was said
++    final pcm = _utterance.takeBytes();
++    _inSpeech = false;
++    _quietSamples = 0;
++    if (pcm.length < 16000) return; // under half a second is a knock, not a word
++    unawaited(_recognize(pcm));
++  }
++
++  Future<void> _recognize(Uint8List pcm) async {
++    try {
++      final client = ref.read(activeConnectionProvider).value?.client;
++      if (client == null) {
++        _dbg('recognize: no host connection');
++        return;
 +      }
++      final transcript = await client.transcribe(_wav(pcm));
++      final text = transcript.text.trim();
++      if (text.isEmpty) return;
++      _dbg('heard: $text');
++      if (ref.mounted && text != state.heard) state = state.copyWith(heard: text);
++      if (_heardWakeWord(text)) {
++        _dbg('MATCH: $text');
++        unawaited(_fire());
++      }
++    } on Object catch (error) {
++      _dbg('recognize failed: $error');
      }
    }
  
++  static Uint8List _wav(Uint8List pcm) {
++    final header = ByteData(44)
++      ..setUint32(0, 0x52494646, Endian.big) // RIFF
++      ..setUint32(4, 36 + pcm.length, Endian.little)
++      ..setUint32(8, 0x57415645, Endian.big) // WAVE
++      ..setUint32(12, 0x666d7420, Endian.big) // fmt
++      ..setUint32(16, 16, Endian.little)
++      ..setUint16(20, 1, Endian.little) // PCM
++      ..setUint16(22, 1, Endian.little) // mono
++      ..setUint32(24, 16000, Endian.little)
++      ..setUint32(28, 32000, Endian.little)
++      ..setUint16(32, 2, Endian.little)
++      ..setUint16(34, 16, Endian.little)
++      ..setUint32(36, 0x64617461, Endian.big) // data
++      ..setUint32(40, pcm.length, Endian.little);
++    final out = BytesBuilder(copy: false)
++      ..add(header.buffer.asUint8List())
++      ..add(pcm);
++    return out.takeBytes();
++  }
++
    /// 唤醒词 found in what was heard: punctuation, spaces and case ignored.
 +  ///
 +  /// 「小安小安」 is also answered by 「小安」: a wake phrase is usually a name said
@@ -478,7 +536,7 @@ index cf6e008..438ac0a 100644
    bool _heardWakeWord(String text) {
      final keyword = _compact(_keyword);
      if (keyword.isEmpty) return false;
-@@ -333,7 +445,25 @@ class WakeWordController extends Notifier<WakeStatus> {
+@@ -333,7 +449,25 @@ class WakeWordController extends Notifier<WakeStatus> {
      // A stream fed a room decodes it into one syllable repeated ("呵呵呵呵呵"). That is not
      // speech, and matching inside it is how a wake word fires on nothing.
      if (_isBabble(heard)) return false;
@@ -505,7 +563,7 @@ index cf6e008..438ac0a 100644
    }
  
    /// One character repeated five times or more: a recognizer's answer to noise, not a word.
-@@ -357,7 +487,11 @@ class WakeWordController extends Notifier<WakeStatus> {
+@@ -357,7 +491,11 @@ class WakeWordController extends Notifier<WakeStatus> {
    Future<void> _fire() async {
      final now = DateTime.now();
      final until = _cooldownUntil;
@@ -518,7 +576,7 @@ index cf6e008..438ac0a 100644
      _cooldownUntil = now.add(_cooldown);
      final settings = ref.read(wakeSettingsProvider);
      if (settings.chime) unawaited(SystemSound.play(SystemSoundType.alert));
-@@ -368,6 +502,7 @@ class WakeWordController extends Notifier<WakeStatus> {
+@@ -368,6 +506,7 @@ class WakeWordController extends Notifier<WakeStatus> {
      await _stopService();
      try {
        await ref.read(wakePlatformProvider).present();
@@ -526,7 +584,7 @@ index cf6e008..438ac0a 100644
      } on Object {
        // The activity could not be brought forward (or there is no such channel): the caller's
        // screen is unchanged, and the call still opens in the app when it comes back.
-@@ -414,19 +549,23 @@ class WakeWordController extends Notifier<WakeStatus> {
+@@ -414,19 +553,23 @@ class WakeWordController extends Notifier<WakeStatus> {
            ),
            tokens: model.tokens,
            modelType: 'zipformer',
@@ -555,7 +613,7 @@ index cf6e008..438ac0a 100644
      _streamStarted = null;
      final recognizer = _recognizer;
      final stream = _stream;
-@@ -466,12 +605,32 @@ final wakeWordProvider = NotifierProvider<WakeWordController, WakeStatus>(WakeWo
+@@ -466,12 +609,32 @@ final wakeWordProvider = NotifierProvider<WakeWordController, WakeStatus>(WakeWo
  /// chime fires this and the screen that owns a conversation answers with its call.
  final wakeCallRequestProvider = NotifierProvider<WakeCallRequest, int>(WakeCallRequest.new);
  
