@@ -1,7 +1,7 @@
 == resources ==
-/dev/root        72G   51G   21G  72% /
+/dev/root        72G   52G   21G  72% /
                total        used        free      shared  buff/cache   available
-Mem:            7931        5244         123          20        2896        2686
+Mem:            7931        2668        2498          25        3103        5263
 == tail ==
 
 ==> 依赖: flutter pub get
@@ -103,3 +103,22 @@ Flutter assets will be downloaded from https://storage.googleapis.com. Make sure
 lib/ui/chat/media/media_format.dart:109:17: Error: Method not found: 'withoutAppNotes'.
   final clean = withoutAppNotes(title);
                 ^^^^^^^^^^^^^^^
+Target kernel_snapshot_program failed: Exception
+
+
+FAILURE: Build failed with an exception.
+
+* What went wrong:
+Execution failed for task ':app:compileFlutterBuildArm64Release'.
+> Process 'command '/home/runner/dev/flutter/bin/flutter'' finished with non-zero exit value 1
+
+* Try:
+> Run with --stacktrace option to get the stack trace.
+> Run with --info or --debug option to get more log output.
+> Run with --scan to get full insights from a Build Scan (powered by Develocity).
+> Get more help at https://help.gradle.org.
+
+BUILD FAILED in 6m 11s
+[=========                              ] 25%                                   
+Running Gradle task 'assembleArm64Release'...                     374.2s
+Gradle task assembleArm64Release failed with exit code 1
