@@ -1,27 +1,20 @@
-From 2ba7f8bf824cb8feb297ed5f7e4147cea082f1e4 Mon Sep 17 00:00:00 2001
+From d04073950ebe5a6629ff1ad47d1e085e695c19cf Mon Sep 17 00:00:00 2001
 From: dsh-wake <wake@local>
 Date: Wed, 18 Nov 2026 02:36:38 +0800
-Subject: [PATCH] feat(voice): a call survives leaving the app, and the phone
- being operated
+Subject: [PATCH] fix(voice): an apostrophe in an English resource stops the
+ app build
 MIME-Version: 1.0
 Content-Type: text/plain; charset=UTF-8
 Content-Transfer-Encoding: 8bit
 
-A call ended the moment the app went behind (_call.backgrounded() in the lifecycle
-callback), so 助手 operating the phone during a call killed it — the two could
-never happen together. Three things had to change together:
+values/i18n_strings.xml:122 "Keeps the call's microphone…" — Android's resource
+compiler rejects a bare apostrophe, and the whole APK failed on it. Reworded, and
+the card's action handler is an if/else rather than a switch, so no case-body
+rule can bite.
 
-- leaving the app no longer ends the call; the floating card appears instead,
-  and tapping it comes back to the same page with the call still up.
-- Android refuses the microphone to a backgrounded app with no foreground
-  service of that type, so CallForegroundService (microphone, low-importance
-  notification 语音通话中) keeps the call's recording alive while the person is
-  elsewhere. It starts with the call page and stops with it.
-- the card is the only thing shown when leaving: the picture-in-picture fallback
-  would drag the whole activity into a system window every time.
-
-The card itself is unchanged from the last build: 84×150dp, draggable, docks to
-the edge it is thrown towards, 挂断 ends the call and takes the card down.
+Everything from the last build stands: the call survives leaving the app, a
+microphone foreground service keeps it recording while the person is elsewhere,
+and the floating card (draggable, edge-docked, 挂断) is what shows instead.
 ---
  app/android/app/src/main/AndroidManifest.xml  |  10 +
  .../ccch1mneyyy/dsh_app/MainActivity.kt       |  62 +++
@@ -789,7 +782,7 @@ index d764a29..fcf7baf 100644
      <string name="wake_stop">关闭</string>
      <string name="pet_window_title">DSH 宠物</string>
 diff --git a/app/android/app/src/main/res/values/i18n_strings.xml b/app/android/app/src/main/res/values/i18n_strings.xml
-index b0839e1..3862b86 100644
+index b0839e1..7926943 100644
 --- a/app/android/app/src/main/res/values/i18n_strings.xml
 +++ b/app/android/app/src/main/res/values/i18n_strings.xml
 @@ -119,6 +119,10 @@
@@ -798,7 +791,7 @@ index b0839e1..3862b86 100644
      <string name="wake_channel_description">Keeps the microphone listening for the wake word while the screen is off</string>
 +    <string name="call_overlay_hang_up">Hang up</string>
 +    <string name="call_running_title">Call in progress</string>
-+    <string name="call_running_text">Keeps the call's microphone while you use other apps</string>
++    <string name="call_running_text">Keeps the call microphone on while you use other apps</string>
 +    <string name="call_running_channel">Call microphone</string>
      <string name="wake_running">Listening for the wake word</string>
      <string name="wake_stop">Turn off</string>
@@ -73767,7 +73760,7 @@ index a43eeb8..f6a8119 100644
  /// 唤醒词 typed by the person; the phrase is matched inside what the recognizer heard.
  Future<void> editWakeKeyword(BuildContext context, WidgetRef ref, String current) async {
 diff --git a/app/lib/ui/speech/voice_call_page.dart b/app/lib/ui/speech/voice_call_page.dart
-index 2f99689..d264fae 100644
+index 2f99689..6aac6e8 100644
 --- a/app/lib/ui/speech/voice_call_page.dart
 +++ b/app/lib/ui/speech/voice_call_page.dart
 @@ -47,6 +47,7 @@ import '../../usage/usage_stats.dart';
@@ -73898,12 +73891,12 @@ index 2f99689..d264fae 100644
 +  /// The card's own key: end the call from the window.
 +  Future<void> _onOverlayCall(MethodCall call) async {
 +    if (call.method != 'action') return;
-+    switch (call.arguments) {
-+      case 'hangUp':
-+        if (mounted) _hangUp();
-+      case 'open':
-+        // The card brought the page back: it has done its job.
-+        _overlay = false;
++    final action = call.arguments;
++    if (action == 'hangUp') {
++      if (mounted) _hangUp();
++    } else if (action == 'open') {
++      // The card brought the page back: it has done its job.
++      _overlay = false;
 +    }
 +  }
 +
