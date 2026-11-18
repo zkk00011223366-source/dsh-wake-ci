@@ -1,20 +1,20 @@
-From 538027a660abee49981059c5d6f9a26cc18bcec4 Mon Sep 17 00:00:00 2001
+From c33598c8670b8b0667e59b866d521ab640ebb784 Mon Sep 17 00:00:00 2001
 From: dsh-wake <wake@local>
 Date: Wed, 18 Nov 2026 02:36:38 +0800
-Subject: [PATCH] =?UTF-8?q?fix(voice):=20the=20spotter=20alone=20answers?=
- =?UTF-8?q?=20=E5=94=A4=E9=86=92=E8=AF=8D;=20the=20utterance=20arm=20only?=
- =?UTF-8?q?=20for=20phrases=20it=20cannot=20spell?=
+Subject: [PATCH] =?UTF-8?q?fix(voice):=20=E5=94=A4=E9=86=92=E8=AF=8D=20rep?=
+ =?UTF-8?q?eated=20wakes=20it=20again?=
 MIME-Version: 1.0
 Content-Type: text/plain; charset=UTF-8
 Content-Transfer-Encoding: 8bit
 
-The trace showed three fires in four minutes: one from the spotter, then two
-from the utterance arm on ordinary speech that happened to contain 小安小安 —
-each arriving a beat after the person stopped talking, because that arm must
-wait 1.2 s of quiet and a round trip to the engine before it decides.
+The 8 s cooldown made a second 小安小安 a no-op, which is not how a wake word
+behaves: a person says it, the call opens, they close it, they say it again. The
+guard is now 1.2 s, which is only enough that one phrase cannot fire twice (the
+spotter is reset on the hit).
 
-So the spotter is exclusive while it is up. The utterance arm stays for a
-phrase pinyin cannot spell, and only then.
+Everything else stands: the spotter alone answers 唤醒词 (no utterance arm
+running beside it, so no wake that waits for the sentence to end), MIC without
+the platform's echo suppressor, and 唤醒词 matched as typed.
 ---
  .../ccch1mneyyy/dsh_app/wake/WakeCapture.kt   |  43 +-
  app/assets/kws/LICENSE.txt                    |  20 +
@@ -26,9 +26,9 @@ phrase pinyin cannot spell, and only then.
  app/lib/ui/chat/chat_screen.dart              |  25 +-
  app/lib/ui/settings/voice_settings_page.dart  |  24 +-
  app/lib/voice/wake_keywords.dart              |  50 +++
- app/lib/voice/wake_word.dart                  | 403 +++++++++++++++---
+ app/lib/voice/wake_word.dart                  | 407 +++++++++++++++---
  app/pubspec.yaml                              |   4 +
- 12 files changed, 724 insertions(+), 76 deletions(-)
+ 12 files changed, 727 insertions(+), 77 deletions(-)
  create mode 100644 app/assets/kws/LICENSE.txt
  create mode 100644 app/assets/kws/NOTICE.txt
  create mode 100644 app/assets/kws/decoder.int8.onnx
@@ -73107,7 +73107,7 @@ index 0000000..8a88271
 +  return ('', syllable);
 +}
 diff --git a/app/lib/voice/wake_word.dart b/app/lib/voice/wake_word.dart
-index cf6e008..3193f54 100644
+index cf6e008..e955c6e 100644
 --- a/app/lib/voice/wake_word.dart
 +++ b/app/lib/voice/wake_word.dart
 @@ -10,29 +10,36 @@
@@ -73188,7 +73188,16 @@ index cf6e008..3193f54 100644
    );
  }
  
-@@ -115,7 +133,7 @@ class WakeWordController extends Notifier<WakeStatus> {
+@@ -109,13 +127,15 @@ final wakePlatformProvider = Provider<WakePlatform>((ref) => const WakePlatform(
+ 
+ class WakeWordController extends Notifier<WakeStatus> {
+   /// 唤醒后 8 秒内不再触发 (answered, or the same phrase twice).
+-  static const _cooldown = Duration(seconds: 8);
++  // Long enough that one 小安小安 cannot fire twice (the spotter resets on the hit), short
++  // enough that saying it again a moment later wakes it again.
++  static const _cooldown = Duration(milliseconds: 1200);
+ 
+   /// A burst longer than this starts a fresh recognizer stream (nothing said for 15 s anyway).
    static const _burstLimit = Duration(seconds: 15);
  
    /// A wake word that opened no call (no conversation on screen) comes back after this.
@@ -73197,7 +73206,7 @@ index cf6e008..3193f54 100644
  
    StreamSubscription<Map<Object?, Object?>>? _events;
    sherpa.OnlineRecognizer? _recognizer;
-@@ -131,8 +149,10 @@ class WakeWordController extends Notifier<WakeStatus> {
+@@ -131,8 +151,10 @@ class WakeWordController extends Notifier<WakeStatus> {
    @override
    WakeStatus build() {
      final settings = ref.watch(wakeSettingsProvider);
@@ -73210,7 +73219,7 @@ index cf6e008..3193f54 100644
      _keyword = settings.keyword;
      if (_events == null) {
        _events = ref.read(wakePlatformProvider).events.listen(_onEvent, onError: (Object _) {});
-@@ -167,7 +187,7 @@ class WakeWordController extends Notifier<WakeStatus> {
+@@ -167,7 +189,7 @@ class WakeWordController extends Notifier<WakeStatus> {
      _resumeTimer?.cancel();
      final settings = await ref.read(wakeSettingsProvider.notifier).ready();
      if (!settings.enabled) return;
@@ -73219,7 +73228,7 @@ index cf6e008..3193f54 100644
    }
  
    Future<void> _sync(WakeSettings settings, {required bool hasModel}) async {
-@@ -241,6 +261,71 @@ class WakeWordController extends Notifier<WakeStatus> {
+@@ -241,6 +263,71 @@ class WakeWordController extends Notifier<WakeStatus> {
  
    int _pcmCount = 0;
  
@@ -73291,7 +73300,7 @@ index cf6e008..3193f54 100644
    void _onEvent(Map<Object?, Object?> event) {
      final kind = event['kind'];
      if (kind != 'wake.pcm') _dbg('event $kind');
-@@ -249,8 +334,10 @@ class WakeWordController extends Notifier<WakeStatus> {
+@@ -249,8 +336,10 @@ class WakeWordController extends Notifier<WakeStatus> {
          final bytes = event['bytes'];
          if (bytes is Uint8List) {
            _pcmCount++;
@@ -73303,7 +73312,7 @@ index cf6e008..3193f54 100644
              final floor = event['floor'];
              _dbg(
                'pcm #$_pcmCount bytes=${bytes.length}'
-@@ -262,8 +349,10 @@ class WakeWordController extends Notifier<WakeStatus> {
+@@ -262,8 +351,10 @@ class WakeWordController extends Notifier<WakeStatus> {
            _dbg('pcm bytes type=${bytes.runtimeType}');
          }
        case 'wake.speechEnd':
@@ -73316,7 +73325,7 @@ index cf6e008..3193f54 100644
        case 'wake.listening':
          if (ref.mounted) state = state.copyWith(listening: WakeListening.listening, clearReason: true);
        case 'wake.yield':
-@@ -288,44 +377,202 @@ class WakeWordController extends Notifier<WakeStatus> {
+@@ -288,44 +379,202 @@ class WakeWordController extends Notifier<WakeStatus> {
      }
    }
  
@@ -73547,7 +73556,7 @@ index cf6e008..3193f54 100644
    bool _heardWakeWord(String text) {
      final keyword = _compact(_keyword);
      if (keyword.isEmpty) return false;
-@@ -333,7 +580,25 @@ class WakeWordController extends Notifier<WakeStatus> {
+@@ -333,7 +582,25 @@ class WakeWordController extends Notifier<WakeStatus> {
      // A stream fed a room decodes it into one syllable repeated ("呵呵呵呵呵"). That is not
      // speech, and matching inside it is how a wake word fires on nothing.
      if (_isBabble(heard)) return false;
@@ -73574,7 +73583,7 @@ index cf6e008..3193f54 100644
    }
  
    /// One character repeated five times or more: a recognizer's answer to noise, not a word.
-@@ -357,17 +622,23 @@ class WakeWordController extends Notifier<WakeStatus> {
+@@ -357,17 +624,23 @@ class WakeWordController extends Notifier<WakeStatus> {
    Future<void> _fire() async {
      final now = DateTime.now();
      final until = _cooldownUntil;
@@ -73601,7 +73610,7 @@ index cf6e008..3193f54 100644
      } on Object {
        // The activity could not be brought forward (or there is no such channel): the caller's
        // screen is unchanged, and the call still opens in the app when it comes back.
-@@ -414,19 +685,23 @@ class WakeWordController extends Notifier<WakeStatus> {
+@@ -414,19 +687,23 @@ class WakeWordController extends Notifier<WakeStatus> {
            ),
            tokens: model.tokens,
            modelType: 'zipformer',
@@ -73630,7 +73639,7 @@ index cf6e008..3193f54 100644
      _streamStarted = null;
      final recognizer = _recognizer;
      final stream = _stream;
-@@ -466,12 +741,32 @@ final wakeWordProvider = NotifierProvider<WakeWordController, WakeStatus>(WakeWo
+@@ -466,12 +743,32 @@ final wakeWordProvider = NotifierProvider<WakeWordController, WakeStatus>(WakeWo
  /// chime fires this and the screen that owns a conversation answers with its call.
  final wakeCallRequestProvider = NotifierProvider<WakeCallRequest, int>(WakeCallRequest.new);
  
