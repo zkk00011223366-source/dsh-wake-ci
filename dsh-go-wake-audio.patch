@@ -1,21 +1,19 @@
-From 6b08b6413bcefb624374ec969027bcf921c24e54 Mon Sep 17 00:00:00 2001
+From d8d071e78167fb649f911bbcec1e0b3fac9f382f Mon Sep 17 00:00:00 2001
 From: dsh-wake <wake@local>
 Date: Wed, 18 Nov 2026 02:36:38 +0800
-Subject: [PATCH] fix(voice): the call owns the microphone for as long as it is
- up
+Subject: [PATCH] feat(voice): keep the two seconds before the wake
 MIME-Version: 1.0
 Content-Type: text/plain; charset=UTF-8
 Content-Transfer-Encoding: 8bit
 
-Operit's wake service does not hand the microphone to whatever opened the
-surface and hope: the surface itself suspends the listener while it is up
-(ACTION_SET_WAKE_LISTENING_SUSPENDED_FOR_FLOATING_FULLSCREEN) and the listener
-comes back when it closes. This does the same — 语音通话's page suspends on
-init and resumes on dispose — so the handoff holds no matter which screen
-opened the call, and listening can never overlap the call's own capture.
+品牌助手 hand the pre-roll to the assistant on a wake, because a wake phrase is
+the tail of a sentence, not the whole of it. This keeps the last two seconds of
+microphone audio, and when the wake fires it sends that to the engine's
+recognizer in the background; whatever it heard (小安小安 and the command said
+with it) becomes the call's first message when it says more than the keyword.
 
-The fire still gives the microphone up first, and a wake that cannot open a
-call is followed by listening again after 6 s.
+The call still opens the moment the spotter fires: only the first message waits,
+and it waits at most 1.5 s.
 ---
  .../ccch1mneyyy/dsh_app/wake/WakeCapture.kt   |  43 +-
  app/assets/kws/LICENSE.txt                    |  20 +
@@ -23,14 +21,14 @@ call is followed by listening again after 6 s.
  app/assets/kws/decoder.int8.onnx              | Bin 0 -> 181069 bytes
  app/assets/kws/encoder.int8.onnx              | Bin 0 -> 4777666 bytes
  app/assets/kws/joiner.int8.onnx               | Bin 0 -> 65242 bytes
- app/assets/kws/tokens.txt                     | 227 ++++++++++
- app/lib/ui/chat/chat_screen.dart              |  25 +-
+ app/assets/kws/tokens.txt                     | 227 +++++++++
+ app/lib/ui/chat/chat_screen.dart              |  28 +-
  app/lib/ui/settings/voice_settings_page.dart  |  24 +-
  app/lib/ui/speech/voice_call_page.dart        |  10 +
- app/lib/voice/wake_keywords.dart              |  50 +++
- app/lib/voice/wake_word.dart                  | 406 +++++++++++++++---
+ app/lib/voice/wake_keywords.dart              |  50 ++
+ app/lib/voice/wake_word.dart                  | 459 +++++++++++++++---
  app/pubspec.yaml                              |   4 +
- 13 files changed, 737 insertions(+), 76 deletions(-)
+ 13 files changed, 793 insertions(+), 76 deletions(-)
  create mode 100644 app/assets/kws/LICENSE.txt
  create mode 100644 app/assets/kws/NOTICE.txt
  create mode 100644 app/assets/kws/decoder.int8.onnx
@@ -72967,7 +72965,7 @@ index 0000000..5880fbf
 +#28 225
 +#29 226
 diff --git a/app/lib/ui/chat/chat_screen.dart b/app/lib/ui/chat/chat_screen.dart
-index d9540df..88ad0d8 100644
+index d9540df..9270d57 100644
 --- a/app/lib/ui/chat/chat_screen.dart
 +++ b/app/lib/ui/chat/chat_screen.dart
 @@ -369,8 +369,22 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
@@ -73003,15 +73001,18 @@ index d9540df..88ad0d8 100644
      // 语音唤醒 gives the microphone up before the call takes it (voice/wake_word.dart).
      final wake = ref.read(wakeWordProvider.notifier);
      await wake.suspend();
-@@ -1507,6 +1521,13 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
+@@ -1507,6 +1521,16 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
            if (!mounted || ref.read(activeHostProvider) != host) return null;
            final id = pinned;
            if (id == null) return pinned = await _ensureSession(isCurrent: () => mounted);
 +          // 唤醒词 goes in as what the person said, so the assistant answers a wake
-+          // instead of the call opening in silence.
-+          final phrase = wakePhrase;
++          // instead of the call opening in silence. What the microphone had just heard
++          // (the wake phrase and anything said with it) wins when it says more.
++          var phrase = wakePhrase;
 +          if (phrase != null && phrase.trim().isNotEmpty) {
 +            wakePhrase = null;
++            final heard = await ref.read(wakeWordProvider.notifier).takeWakeUtterance();
++            if (heard != null && heard.trim().length >= phrase.trim().length) phrase = heard;
 +            await ref.read(chatProvider(id).notifier).send(phrase.trim());
 +          }
            // Picks it still owes (a failed apply on the new-chat screen) are settled before it is spoken to.
@@ -73148,7 +73149,7 @@ index 0000000..8a88271
 +  return ('', syllable);
 +}
 diff --git a/app/lib/voice/wake_word.dart b/app/lib/voice/wake_word.dart
-index cf6e008..52a6bd0 100644
+index cf6e008..1c8d28d 100644
 --- a/app/lib/voice/wake_word.dart
 +++ b/app/lib/voice/wake_word.dart
 @@ -10,29 +10,36 @@
@@ -73269,10 +73270,18 @@ index cf6e008..52a6bd0 100644
    }
  
    Future<void> _sync(WakeSettings settings, {required bool hasModel}) async {
-@@ -241,6 +263,71 @@ class WakeWordController extends Notifier<WakeStatus> {
+@@ -241,6 +263,79 @@ class WakeWordController extends Notifier<WakeStatus> {
  
    int _pcmCount = 0;
  
++  /// The last two seconds of audio, so what was said together with 唤醒词 is not lost when
++  /// the call page takes over the microphone (品牌助手 hand the pre-roll on for the same
++  /// reason: the phrase is the tail of a sentence, not the whole of it).
++  final List<Uint8List> _preroll = <Uint8List>[];
++  int _prerollBytes = 0;
++  static const _prerollLimit = 2 * 32000; // 2 s of 16 kHz mono PCM16
++  Future<String?>? _wakeUtterance;
++
 +  /// 唤醒词 as a keyword spotter, built the first time a frame arrives.
 +  sherpa.KeywordSpotter? _spotter;
 +  sherpa.OnlineStream? _kwsStream;
@@ -73341,7 +73350,7 @@ index cf6e008..52a6bd0 100644
    void _onEvent(Map<Object?, Object?> event) {
      final kind = event['kind'];
      if (kind != 'wake.pcm') _dbg('event $kind');
-@@ -249,8 +336,10 @@ class WakeWordController extends Notifier<WakeStatus> {
+@@ -249,8 +344,10 @@ class WakeWordController extends Notifier<WakeStatus> {
          final bytes = event['bytes'];
          if (bytes is Uint8List) {
            _pcmCount++;
@@ -73353,7 +73362,7 @@ index cf6e008..52a6bd0 100644
              final floor = event['floor'];
              _dbg(
                'pcm #$_pcmCount bytes=${bytes.length}'
-@@ -262,8 +351,10 @@ class WakeWordController extends Notifier<WakeStatus> {
+@@ -262,8 +359,10 @@ class WakeWordController extends Notifier<WakeStatus> {
            _dbg('pcm bytes type=${bytes.runtimeType}');
          }
        case 'wake.speechEnd':
@@ -73366,7 +73375,7 @@ index cf6e008..52a6bd0 100644
        case 'wake.listening':
          if (ref.mounted) state = state.copyWith(listening: WakeListening.listening, clearReason: true);
        case 'wake.yield':
-@@ -288,44 +379,202 @@ class WakeWordController extends Notifier<WakeStatus> {
+@@ -288,44 +387,245 @@ class WakeWordController extends Notifier<WakeStatus> {
      }
    }
  
@@ -73385,6 +73394,19 @@ index cf6e008..52a6bd0 100644
 -    if (started != null && now.difference(started) > _burstLimit) _resetStream();
 -    if (_ensureRecognizer() == null) {
 -      if (_pcmCount % 200 == 1) _dbg('no recognizer (model null?)');
+-      return;
++    _preroll.add(bytes);
++    _prerollBytes += bytes.length;
++    while (_prerollBytes > _prerollLimit && _preroll.isNotEmpty) {
++      _prerollBytes -= _preroll.removeAt(0).length;
+     }
+-    final recognizer = _recognizer;
+-    final stream = _stream;
+-    if (recognizer == null || stream == null) return;
+-    final samples = Float32List(bytes.length ~/ 2);
+-    final data = ByteData.sublistView(bytes);
+-    for (var i = 0; i < samples.length; i++) {
+-      samples[i] = data.getInt16(i * 2, Endian.little) / 32768.0;
 +    if (_keyword != _kwsKeyword) unawaited(_prepareSpotter());
 +    final spotter = _spotter;
 +    final stream = _kwsStream;
@@ -73395,16 +73417,8 @@ index cf6e008..52a6bd0 100644
 +    // contain the phrase.
 +    if (spotter != null && stream != null) {
 +      _feedSpotter(spotter, stream, bytes);
-       return;
++      return;
      }
--    final recognizer = _recognizer;
--    final stream = _stream;
--    if (recognizer == null || stream == null) return;
--    final samples = Float32List(bytes.length ~/ 2);
--    final data = ByteData.sublistView(bytes);
--    for (var i = 0; i < samples.length; i++) {
--      samples[i] = data.getInt16(i * 2, Endian.little) / 32768.0;
--    }
 -    stream.acceptWaveform(samples: samples, sampleRate: 16000);
 -    var decoded = false;
 -    while (recognizer.isReady(stream)) {
@@ -73544,9 +73558,47 @@ index cf6e008..52a6bd0 100644
 +    } on Object catch (error) {
 +      _dbg('kws assets failed: $error');
 +      return null;
++    }
++  }
++
++  Uint8List _takePreRoll() {
++    final out = BytesBuilder(copy: false);
++    for (final frame in _preroll) {
++      out.add(frame);
++    }
++    _preroll.clear();
++    _prerollBytes = 0;
++    return out.takeBytes();
++  }
++
++  /// What was said around 唤醒词, from the pre-roll; null when the engine is unreachable or
++  /// has nothing to say (the keyword alone is then the message).
++  Future<String?> _transcribePreRoll(Uint8List pcm) async {
++    try {
++      if (pcm.length < 16000) return null;
++      final client = ref.read(activeConnectionProvider).value?.client;
++      if (client == null) return null;
++      final transcript = await client.transcribe(_wav(pcm)).timeout(const Duration(seconds: 3));
++      final text = transcript.text.trim();
++      return text.isEmpty ? null : text;
++    } on Object {
++      return null;
      }
    }
  
++  /// The pre-roll text of the wake that just happened, waiting at most [wait]. Reading it
++  /// clears it: one wake, one message.
++  Future<String?> takeWakeUtterance({Duration wait = const Duration(milliseconds: 1500)}) async {
++    final pending = _wakeUtterance;
++    _wakeUtterance = null;
++    if (pending == null) return null;
++    try {
++      return await pending.timeout(wait);
++    } on Object {
++      return null;
++    }
++  }
++
 +  Future<void> _recognize(Uint8List pcm) async {
 +    try {
 +      final client = ref.read(activeConnectionProvider).value?.client;
@@ -73597,7 +73649,7 @@ index cf6e008..52a6bd0 100644
    bool _heardWakeWord(String text) {
      final keyword = _compact(_keyword);
      if (keyword.isEmpty) return false;
-@@ -333,7 +582,25 @@ class WakeWordController extends Notifier<WakeStatus> {
+@@ -333,7 +633,25 @@ class WakeWordController extends Notifier<WakeStatus> {
      // A stream fed a room decodes it into one syllable repeated ("呵呵呵呵呵"). That is not
      // speech, and matching inside it is how a wake word fires on nothing.
      if (_isBabble(heard)) return false;
@@ -73624,7 +73676,7 @@ index cf6e008..52a6bd0 100644
    }
  
    /// One character repeated five times or more: a recognizer's answer to noise, not a word.
-@@ -357,17 +624,24 @@ class WakeWordController extends Notifier<WakeStatus> {
+@@ -357,17 +675,26 @@ class WakeWordController extends Notifier<WakeStatus> {
    Future<void> _fire() async {
      final now = DateTime.now();
      final until = _cooldownUntil;
@@ -73639,6 +73691,8 @@ index cf6e008..52a6bd0 100644
      if (settings.chime) unawaited(SystemSound.play(SystemSoundType.alert));
      if (settings.vibrate) unawaited(HapticFeedback.heavyImpact());
      _resetStream();
++    final preroll = _takePreRoll();
++    _wakeUtterance = _transcribePreRoll(preroll);
      if (ref.mounted) state = state.copyWith(listening: WakeListening.paused, hits: state.hits + 1, clearReason: true);
 -    // 麦克风让位: the call page records too; the two would cut each other off.
 +    // 麦克风让位 before the call page opens: two AudioRecords on the same microphone make the
@@ -73651,7 +73705,7 @@ index cf6e008..52a6bd0 100644
      } on Object {
        // The activity could not be brought forward (or there is no such channel): the caller's
        // screen is unchanged, and the call still opens in the app when it comes back.
-@@ -414,19 +688,23 @@ class WakeWordController extends Notifier<WakeStatus> {
+@@ -414,19 +741,23 @@ class WakeWordController extends Notifier<WakeStatus> {
            ),
            tokens: model.tokens,
            modelType: 'zipformer',
@@ -73680,7 +73734,7 @@ index cf6e008..52a6bd0 100644
      _streamStarted = null;
      final recognizer = _recognizer;
      final stream = _stream;
-@@ -466,12 +744,32 @@ final wakeWordProvider = NotifierProvider<WakeWordController, WakeStatus>(WakeWo
+@@ -466,12 +797,32 @@ final wakeWordProvider = NotifierProvider<WakeWordController, WakeStatus>(WakeWo
  /// chime fires this and the screen that owns a conversation answers with its call.
  final wakeCallRequestProvider = NotifierProvider<WakeCallRequest, int>(WakeCallRequest.new);
  
