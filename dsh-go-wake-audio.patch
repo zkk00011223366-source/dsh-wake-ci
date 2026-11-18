@@ -1,13 +1,21 @@
-From 4e7d58b70bd77ad5f041f30f56a7b677e4776c47 Mon Sep 17 00:00:00 2001
+From 6b08b6413bcefb624374ec969027bcf921c24e54 Mon Sep 17 00:00:00 2001
 From: dsh-wake <wake@local>
 Date: Wed, 18 Nov 2026 02:36:38 +0800
-Subject: [PATCH] fix(voice): give the microphone up before the call opens
+Subject: [PATCH] fix(voice): the call owns the microphone for as long as it is
+ up
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
 
-The call page came up hearing nothing and the assistant talked over itself:
-two AudioRecords on one microphone, because the wake service kept capturing
-after the fire. Listening stops first again, before the call page is pushed.
-A wake always opens the call now, and when it cannot the 6 s fallback starts
-listening again, so stopping here no longer leaves the phone deaf.
+Operit's wake service does not hand the microphone to whatever opened the
+surface and hope: the surface itself suspends the listener while it is up
+(ACTION_SET_WAKE_LISTENING_SUSPENDED_FOR_FLOATING_FULLSCREEN) and the listener
+comes back when it closes. This does the same — 语音通话's page suspends on
+init and resumes on dispose — so the handoff holds no matter which screen
+opened the call, and listening can never overlap the call's own capture.
+
+The fire still gives the microphone up first, and a wake that cannot open a
+call is followed by listening again after 6 s.
 ---
  .../ccch1mneyyy/dsh_app/wake/WakeCapture.kt   |  43 +-
  app/assets/kws/LICENSE.txt                    |  20 +
@@ -18,10 +26,11 @@ listening again, so stopping here no longer leaves the phone deaf.
  app/assets/kws/tokens.txt                     | 227 ++++++++++
  app/lib/ui/chat/chat_screen.dart              |  25 +-
  app/lib/ui/settings/voice_settings_page.dart  |  24 +-
+ app/lib/ui/speech/voice_call_page.dart        |  10 +
  app/lib/voice/wake_keywords.dart              |  50 +++
  app/lib/voice/wake_word.dart                  | 406 +++++++++++++++---
  app/pubspec.yaml                              |   4 +
- 12 files changed, 727 insertions(+), 76 deletions(-)
+ 13 files changed, 737 insertions(+), 76 deletions(-)
  create mode 100644 app/assets/kws/LICENSE.txt
  create mode 100644 app/assets/kws/NOTICE.txt
  create mode 100644 app/assets/kws/decoder.int8.onnx
@@ -73043,6 +73052,45 @@ index a43eeb8..f6a8119 100644
  
  /// 唤醒词 typed by the person; the phrase is matched inside what the recognizer heard.
  Future<void> editWakeKeyword(BuildContext context, WidgetRef ref, String current) async {
+diff --git a/app/lib/ui/speech/voice_call_page.dart b/app/lib/ui/speech/voice_call_page.dart
+index 2f99689..91ffc94 100644
+--- a/app/lib/ui/speech/voice_call_page.dart
++++ b/app/lib/ui/speech/voice_call_page.dart
+@@ -47,6 +47,7 @@ import '../../usage/usage_stats.dart';
+ import '../../voice/live_words.dart';
+ import '../../voice/live_words_model.dart';
+ import '../../voice/streaming_pcm.dart';
++import '../../voice/wake_word.dart';
+ import 'call/call_backdrop.dart';
+ import 'call/call_parts.dart';
+ import 'call/call_transcript.dart';
+@@ -118,10 +119,16 @@ class _VoiceCallPageState extends ConsumerState<VoiceCallPage> with WidgetsBindi
+   /// and the page comes in without its staggered rise.
+   bool _still = false;
+ 
++  /// 语音唤醒 gives the microphone up for as long as this page is up, and takes it back when
++  /// the page goes: the handoff belongs to the call, not to whichever screen opened it.
++  WakeWordController? _wake;
++
+   @override
+   void initState() {
+     super.initState();
+     WidgetsBinding.instance.addObserver(this);
++    _wake = ref.read(wakeWordProvider.notifier);
++    unawaited(_wake!.suspend());
+     final callSettings = ref.read(callSettingsProvider.notifier);
+     final voices = ref.read(speechVoiceSettingsProvider.notifier);
+     // The chosen voice, as soon as the settings have been read (the first reply comes later).
+@@ -318,6 +325,9 @@ class _VoiceCallPageState extends ConsumerState<VoiceCallPage> with WidgetsBindi
+ 
+   @override
+   void dispose() {
++    final wake = _wake;
++    _wake = null;
++    if (wake != null) unawaited(wake.resume());
+     WidgetsBinding.instance.removeObserver(this);
+     unawaited(_live?.stop());
+     _leave?.cancel();
 diff --git a/app/lib/voice/wake_keywords.dart b/app/lib/voice/wake_keywords.dart
 new file mode 100644
 index 0000000..8a88271
