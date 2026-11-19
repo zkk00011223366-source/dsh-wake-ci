@@ -1,21 +1,24 @@
-From 150d74c4987e9a653b40a2b11f0b38e9fe039661 Mon Sep 17 00:00:00 2001
+From b6436f0777aba9e05dfa56f891987c8a0f1c7e1b Mon Sep 17 00:00:00 2001
 From: dsh-wake <wake@local>
 Date: Wed, 18 Nov 2026 02:36:38 +0800
-Subject: [PATCH] fix(voice): the wake phrase is sent before the call opens,
- not from inside it
+Subject: [PATCH] =?UTF-8?q?fix(voice):=20the=20AI=20key's=20=E8=AF=AD?=
+ =?UTF-8?q?=E9=9F=B3=E9=80=9A=E8=AF=9D=20shortcut=20actually=20opens=20the?=
+ =?UTF-8?q?=20call?=
 MIME-Version: 1.0
 Content-Type: text/plain; charset=UTF-8
 Content-Transfer-Encoding: 8bit
 
-A call sends through ChatCallConversation.send, and that is where the session closure
-runs — so a phrase sent from inside the closure waited for a send that only a spoken
-sentence could start. A wake therefore opened the page and said nothing, every time.
+The shortcut pointed at EntryActivity, which is not exported — a launcher shortcut is
+started as someone else's process, so the AI key could list 语音通话 and do nothing at
+all when it was pressed. MainActivity is exported already: the shortcut targets it, and
+the VOICE_CALL intent is rewritten into the entry the shortcuts plugin delivers, on both
+the cold start and onNewIntent paths.
 
-The phrase (or what the microphone heard around it) now goes in first, on a session
-resolved before the page opens; the closure keeps only the owed-setup work.
+Same build also carries: the wake phrase is sent before the call opens (it used to wait
+for a send from inside the call, which only a spoken sentence could start).
 ---
  app/android/app/src/main/AndroidManifest.xml  |   9 +
- .../ccch1mneyyy/dsh_app/MainActivity.kt       |  25 +
+ .../ccch1mneyyy/dsh_app/MainActivity.kt       |  45 ++
  .../dsh_app/call/CallForegroundService.kt     |  94 ++++
  .../ccch1mneyyy/dsh_app/call/CallOverlay.kt   | 318 ++++++++++++
  .../dsh_app/call/CallOverlayPlugin.kt         |  66 +++
@@ -43,7 +46,7 @@ resolved before the page opens; the closure keeps only the owed-setup work.
  app/lib/voice/wake_keywords.dart              |  50 ++
  app/lib/voice/wake_word.dart                  | 468 +++++++++++++++---
  app/pubspec.yaml                              |   4 +
- 29 files changed, 1453 insertions(+), 104 deletions(-)
+ 29 files changed, 1473 insertions(+), 104 deletions(-)
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallForegroundService.kt
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallOverlay.kt
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallOverlayPlugin.kt
@@ -76,7 +79,7 @@ index 20c6331..317471f 100644
          <service
              android:name=".pet.PetOverlayService"
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/MainActivity.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/MainActivity.kt
-index a5168f0..497f3f6 100644
+index a5168f0..99b6f21 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/MainActivity.kt
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/MainActivity.kt
 @@ -69,6 +69,8 @@ class MainActivity : FlutterActivity() {
@@ -88,7 +91,19 @@ index a5168f0..497f3f6 100644
              engine.plugins.add(io.github.ccch1mneyyy.dsh_app.companion.CompanionWidgetPlugin())
              engine.dartExecutor.executeDartEntrypoint(DartExecutor.DartEntrypoint.createDefault())
              cache.put(ENGINE_ID, engine)
-@@ -206,6 +208,29 @@ class MainActivity : FlutterActivity() {
+@@ -96,6 +98,11 @@ class MainActivity : FlutterActivity() {
+             intent.action = Intent.ACTION_MAIN
+             intent.replaceExtras(Bundle())
+         }
++        // AI 键's 语音通话 shortcut lands here rather than in EntryActivity: a launcher shortcut
++        // started as someone else's process cannot open a non-exported activity, and the AI key
++        // does exactly that — the shortcut showed, and pressing it did nothing. MainActivity is
++        // exported already, so the intent is rewritten into the entry the plugin already knows.
++        routeVoiceCall(intent)
+         super.onCreate(savedInstanceState)
+         // Fully transparent system bars, no OEM scrim behind the gesture handle.
+         window.statusBarColor = Color.TRANSPARENT
+@@ -206,6 +213,29 @@ class MainActivity : FlutterActivity() {
                      applyRefreshRate()
                      result.success(null)
                  }
@@ -118,6 +133,29 @@ index a5168f0..497f3f6 100644
                  "bringToFront" -> {
                      startActivity(
                          Intent(this, MainActivity::class.java)
+@@ -231,7 +261,22 @@ class MainActivity : FlutterActivity() {
+     /** Flutter produced a frame recently (see RefreshRateService): auto mode follows it. */
+     private var framesActive = true
+ 
++
++    /** 语音通话 from the AI key: the entry the shortcuts plugin delivers, built here. */
++    private fun routeVoiceCall(incoming: Intent?) {
++        if (incoming == null) return
++        if (incoming.action != ACTION_VOICE_CALL) return
++        incoming.action = io.github.ccch1mneyyy.dsh_app.shortcuts.ShortcutsPlugin.ACTION_ENTRY
++        incoming.putExtra(io.github.ccch1mneyyy.dsh_app.shortcuts.ShortcutsPlugin.EXTRA_KIND,
++            io.github.ccch1mneyyy.dsh_app.shortcuts.ShortcutsPlugin.KIND_CALL)
++        incoming.putExtra(io.github.ccch1mneyyy.dsh_app.shortcuts.ShortcutsPlugin.EXTRA_TOKEN,
++            io.github.ccch1mneyyy.dsh_app.shortcuts.ShortcutsPlugin.token)
++    }
++
+     companion object {
++        /** The AI key's shortcut action (res/xml/shortcuts.xml). */
++        private const val ACTION_VOICE_CALL = "io.github.ccch1mneyyy.dsh_app.action.VOICE_CALL"
++
+         private const val ENGINE_ID = "dsh-main"
+ 
+         /** 设置 › 性能 › 刷新率; the Flutter side owns the stored choice. */
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallForegroundService.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallForegroundService.kt
 new file mode 100644
 index 0000000..90a77cf
@@ -804,7 +842,7 @@ index b0839e1..66c0db1 100644
      <string name="wake_stop">Turn off</string>
      <string name="pet_window_title">DSH pet</string>
 diff --git a/app/android/app/src/main/res/xml/shortcuts.xml b/app/android/app/src/main/res/xml/shortcuts.xml
-index 3540cb2..9226d14 100644
+index 3540cb2..ce1c201 100644
 --- a/app/android/app/src/main/res/xml/shortcuts.xml
 +++ b/app/android/app/src/main/res/xml/shortcuts.xml
 @@ -26,4 +26,15 @@
@@ -819,7 +857,7 @@ index 3540cb2..9226d14 100644
 +        android:shortcutLongLabel="@string/shortcut_voice_call">
 +        <intent
 +            android:action="io.github.ccch1mneyyy.dsh_app.action.VOICE_CALL"
-+            android:targetClass="io.github.ccch1mneyyy.dsh_app.shortcuts.EntryActivity"
++            android:targetClass="io.github.ccch1mneyyy.dsh_app.MainActivity"
 +            android:targetPackage="io.github.ccch1mneyyy.dsh_app" />
 +    </shortcut>
  </shortcuts>
