@@ -1,34 +1,38 @@
-From a77577865b93ba441591fb1ab75c104a980433e5 Mon Sep 17 00:00:00 2001
+From 808291cb592785134f8d96c7bbc074bde1b06438 Mon Sep 17 00:00:00 2001
 From: wake-ci <ci@local>
-Date: Thu, 19 Nov 2026 11:45:34 +0800
-Subject: [PATCH] private build: wake call + virtual screen complete
+Date: Thu, 19 Nov 2026 12:56:47 +0800
+Subject: [PATCH] private build: all
 
 ---
  .gitattributes                                |    3 +
  .github/workflows/wake-apk.yml                |  192 ++
  app/android/app/build.gradle.kts              |    6 +-
  app/android/app/src/main/AndroidManifest.xml  |   30 +-
- .../ccch1mneyyy/dsh_app/MainActivity.kt       |   65 +
+ .../ccch1mneyyy/dsh_app/MainActivity.kt       |   80 +
  .../dsh_app/call/CallForegroundService.kt     |   94 +
  .../ccch1mneyyy/dsh_app/call/CallOverlay.kt   |  317 +++
  .../dsh_app/call/CallOverlayPlugin.kt         |   66 +
  .../dsh_app/phone/PhoneAndroidShell.kt        |   10 +-
- .../ccch1mneyyy/dsh_app/phone/PhoneControl.kt |    2 +
+ .../ccch1mneyyy/dsh_app/phone/PhoneControl.kt |   26 +
+ .../ccch1mneyyy/dsh_app/phone/PhoneCore.kt    |   50 +-
  .../ccch1mneyyy/dsh_app/phone/PhonePlugin.kt  |   44 +
+ .../dsh_app/phone/PhoneTaskSessions.kt        |    2 +-
+ .../dsh_app/phone/PhoneToolCatalog.kt         |    8 +-
  .../ccch1mneyyy/dsh_app/phone/SafetyGate.kt   |    4 +-
- .../phone/background/BackgroundControl.kt     |   34 +
+ .../phone/background/BackgroundControl.kt     |   36 +
  .../phone/background/BackgroundCoordinates.kt |    2 +
  .../phone/background/BackgroundDisplay.kt     |   40 +
  .../background/BackgroundProbeActivity.kt     |    4 +-
- .../phone/background/PrivilegedDisplayCore.kt |   84 +
- .../phone/background/PrivilegedProtocol.kt    |   10 +-
+ .../phone/background/PrivilegedDisplayCore.kt |  134 ++
+ .../phone/background/PrivilegedProtocol.kt    |   13 +-
  .../dsh_app/phone/vscreen/TaskMover.kt        |   43 +
  .../phone/vscreen/VirtualScreenOverlay.kt     |  297 +++
  .../phone/vscreen/VirtualScreenPlugin.kt      |   60 +
  .../dsh_app/shortcuts/EntryActivity.kt        |    3 +
- .../dsh_app/shortcuts/ShortcutsPlugin.kt      |    3 +-
+ .../dsh_app/shortcuts/ShortcutsPlugin.kt      |   13 +-
  .../dsh_app/wake/WakeBootReceiver.kt          |   29 +
  .../ccch1mneyyy/dsh_app/wake/WakeCapture.kt   |  172 ++
+ .../ccch1mneyyy/dsh_app/wake/WakeTrace.kt     |   39 +
  .../dsh_app/wake/WakeWordPlugin.kt            |  131 ++
  .../dsh_app/wake/WakeWordService.kt           |  216 ++
  .../src/main/res/values-zh/i18n_strings.xml   |   10 +
@@ -50,18 +54,22 @@ Subject: [PATCH] private build: wake call + virtual screen complete
  app/lib/l10n/parts/speech_en.arb              |   19 +-
  app/lib/l10n/parts/speech_zh.arb              |   19 +-
  app/lib/links/launcher_entries.dart           |    7 +-
- app/lib/phone/phone_channel.dart              |   74 +
+ app/lib/phone/phone_channel.dart              |   78 +
  app/lib/phone/virtual_screen_window.dart      |   99 +
  app/lib/state/app_info.dart                   |    5 +
  app/lib/state/update_state.dart               |    9 +
- app/lib/state/virtual_screen_state.dart       |   81 +
- app/lib/ui/chat/chat_screen.dart              |   89 +-
+ app/lib/state/virtual_screen_state.dart       |  207 ++
+ app/lib/ui/chat/chat_screen.dart              |  104 +-
  app/lib/ui/chat/media/media_format.dart       |   16 +-
  app/lib/ui/phone/android_shell_page.dart      |   28 +
- app/lib/ui/phone/background_preview.dart      |  167 +-
- app/lib/ui/phone/dnd_mode_page.dart           |   76 +-
+ app/lib/ui/phone/background_preview.dart      |  264 +--
+ app/lib/ui/phone/dnd_mode_page.dart           |   74 +-
+ app/lib/ui/phone/virtual_screen_host.dart     |   69 +
+ app/lib/ui/phone/virtual_screen_page.dart     |  115 +
+ app/lib/ui/phone/virtual_screen_surface.dart  |  286 +++
  app/lib/ui/settings/voice_settings_page.dart  |   89 +
- app/lib/ui/shell/system_entry_host.dart       |    7 +
+ app/lib/ui/shell/home_shell.dart              |    4 +
+ app/lib/ui/shell/system_entry_host.dart       |   21 +
  app/lib/ui/speech/voice_call_page.dart        |  111 +-
  app/lib/ui/theme/app_icons.dart               |    4 +
  app/lib/voice/wake_keywords.dart              |   50 +
@@ -71,7 +79,7 @@ Subject: [PATCH] private build: wake call + virtual screen complete
  docs/wake-word.md                             |  107 +
  dsh-go-wake.patch                             | 2065 +++++++++++++++++
  tooling/build-wake-apk.sh                     |   68 +
- 67 files changed, 6390 insertions(+), 40 deletions(-)
+ 75 files changed, 7143 insertions(+), 218 deletions(-)
  create mode 100644 .github/workflows/wake-apk.yml
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallForegroundService.kt
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallOverlay.kt
@@ -81,6 +89,7 @@ Subject: [PATCH] private build: wake call + virtual screen complete
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenPlugin.kt
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/wake/WakeBootReceiver.kt
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/wake/WakeCapture.kt
+ create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/wake/WakeTrace.kt
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/wake/WakeWordPlugin.kt
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/wake/WakeWordService.kt
  create mode 100644 app/assets/kws/LICENSE.txt
@@ -91,6 +100,9 @@ Subject: [PATCH] private build: wake call + virtual screen complete
  create mode 100644 app/assets/kws/tokens.txt
  create mode 100644 app/lib/phone/virtual_screen_window.dart
  create mode 100644 app/lib/state/virtual_screen_state.dart
+ create mode 100644 app/lib/ui/phone/virtual_screen_host.dart
+ create mode 100644 app/lib/ui/phone/virtual_screen_page.dart
+ create mode 100644 app/lib/ui/phone/virtual_screen_surface.dart
  create mode 100644 app/lib/voice/wake_keywords.dart
  create mode 100644 app/lib/voice/wake_settings.dart
  create mode 100644 app/lib/voice/wake_word.dart
@@ -393,7 +405,7 @@ index 1473ba2..317471f 100644
          <provider
              android:name="androidx.core.content.FileProvider"
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/MainActivity.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/MainActivity.kt
-index f7f9490..a499c6d 100644
+index f7f9490..671e35b 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/MainActivity.kt
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/MainActivity.kt
 @@ -8,6 +8,7 @@ import android.content.res.Configuration
@@ -417,7 +429,7 @@ index f7f9490..a499c6d 100644
              engine.plugins.add(io.github.ccch1mneyyy.dsh_app.companion.CompanionWidgetPlugin())
              engine.dartExecutor.executeDartEntrypoint(DartExecutor.DartEntrypoint.createDefault())
              cache.put(ENGINE_ID, engine)
-@@ -93,6 +100,11 @@ class MainActivity : FlutterActivity() {
+@@ -93,6 +100,12 @@ class MainActivity : FlutterActivity() {
              intent.action = Intent.ACTION_MAIN
              intent.replaceExtras(Bundle())
          }
@@ -425,11 +437,32 @@ index f7f9490..a499c6d 100644
 +        // started as someone else's process cannot open a non-exported activity, and the AI key
 +        // does exactly that — the shortcut showed, and pressing it did nothing. MainActivity is
 +        // exported already, so the intent is rewritten into the entry the plugin already knows.
-+        routeVoiceCall(intent)
++        io.github.ccch1mneyyy.dsh_app.wake.WakeTrace.log("main: onCreate action=${intent.action}")
++        routeVoiceCall(intent, "create")
          super.onCreate(savedInstanceState)
          // Fully transparent system bars, no OEM scrim behind the gesture handle.
          window.statusBarColor = Color.TRANSPARENT
-@@ -117,6 +129,21 @@ class MainActivity : FlutterActivity() {
+@@ -108,6 +121,19 @@ class MainActivity : FlutterActivity() {
+         LaunchThemeSync.sync(this)
+     }
+ 
++    override fun onNewIntent(intent: Intent) {
++        // AI 键 pressed while the app is already up: launchMode=singleTop hands it here, not to
++        // onCreate, and nothing used to rewrite it — the key only brought the app forward onto
++        // whatever chat it was showing. Same rewrite as a cold start, before Flutter's plugins
++        // see the intent (they are NewIntentListeners on super.onNewIntent).
++        io.github.ccch1mneyyy.dsh_app.wake.WakeTrace.log("main: onNewIntent action=${intent.action}")
++        routeVoiceCall(intent, "new")
++        super.onNewIntent(intent)
++        // Recreated later (a config change), the activity re-reads this intent: it must be the
++        // rewritten entry, and the entry must not be delivered twice.
++        setIntent(intent)
++    }
++
+     override fun onConfigurationChanged(newConfig: Configuration) {
+         super.onConfigurationChanged(newConfig)
+         // Light / dark: a custom launch screen's plain splash colour (the page's) may change with it.
+@@ -117,6 +143,21 @@ class MainActivity : FlutterActivity() {
      override fun onResume() {
          super.onResume()
          io.github.ccch1mneyyy.dsh_app.phone.background.BackgroundControl.get(applicationContext).restoreKeptChannel()
@@ -451,7 +484,7 @@ index f7f9490..a499c6d 100644
          inForeground = true
          // Coming back counts as activity: the first frames may not be scheduled yet.
          framesActive = true
-@@ -188,6 +215,29 @@ class MainActivity : FlutterActivity() {
+@@ -188,6 +229,29 @@ class MainActivity : FlutterActivity() {
                      applyRefreshRate()
                      result.success(null)
                  }
@@ -481,15 +514,16 @@ index f7f9490..a499c6d 100644
                  "bringToFront" -> {
                      startActivity(
                          Intent(this, MainActivity::class.java)
-@@ -213,7 +263,22 @@ class MainActivity : FlutterActivity() {
+@@ -213,7 +277,23 @@ class MainActivity : FlutterActivity() {
      /** Flutter produced a frame recently (see RefreshRateService): auto mode follows it. */
      private var framesActive = true
  
 +
 +    /** 语音通话 from the AI key: the entry the shortcuts plugin delivers, built here. */
-+    private fun routeVoiceCall(incoming: Intent?) {
++    private fun routeVoiceCall(incoming: Intent?, source: String) {
 +        if (incoming == null) return
 +        if (incoming.action != ACTION_VOICE_CALL) return
++        io.github.ccch1mneyyy.dsh_app.wake.WakeTrace.log("main: voice_call seen ($source), rewriting to entry")
 +        incoming.action = io.github.ccch1mneyyy.dsh_app.shortcuts.ShortcutsPlugin.ACTION_ENTRY
 +        incoming.putExtra(io.github.ccch1mneyyy.dsh_app.shortcuts.ShortcutsPlugin.EXTRA_KIND,
 +            io.github.ccch1mneyyy.dsh_app.shortcuts.ShortcutsPlugin.KIND_CALL)
@@ -1028,10 +1062,41 @@ index bb9c803..aa39cdc 100644
                  val prompt = ConfirmRequest(
                      ui.get("phone_shell_confirm",
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneControl.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneControl.kt
-index 2fc7cd5..563f816 100644
+index 2fc7cd5..e8d6110 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneControl.kt
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneControl.kt
-@@ -1008,6 +1008,8 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
+@@ -999,6 +999,30 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
+         else -> A11yState.DISABLED
+     }
+ 
++    /**
++     * 默认操作目标是虚拟屏：设置里选的是它（默认值就是它），而且后台屏这条通道此刻真的可用。
++     * 通道坏了就退回主屏 —— 默认值不能把每个工具都变成一条「后台屏用不了」。
++     * 状态读一下要问几个通道，1 秒内复用同一个答案，工具连着调用时不必每次重算。
++     */
++    @Volatile private var prefersBackgroundAt = 0L
++    @Volatile private var prefersBackgroundValue = false
++
++    override fun prefersBackground(): Boolean {
++        val now = SystemClock.elapsedRealtime()
++        if (now - prefersBackgroundAt < 1_000L) return prefersBackgroundValue
++        val value = runCatching {
++            val chosen = app.getSharedPreferences("FlutterSharedPreferences", Context.MODE_PRIVATE)
++                .getString("flutter.virtual_screen_target", "virtual")
++            if (chosen == "main") return@runCatching false
++            val status = background.status()
++            val privileged = status["privileged"] as? Map<*, *>
++            privileged?.get("ready") == true || status["ready"] == true
++        }.getOrDefault(false)
++        prefersBackgroundValue = value
++        prefersBackgroundAt = now
++        return value
++    }
++
+     override fun backgroundUnavailable(): String {
+         val reason = (backgroundStatus()["reason"] as? String)?.let { "（$it）" } ?: ""
+         // l10n:keep agent stop reason
+@@ -1008,6 +1032,8 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
      override fun system(): SystemApi = system
  
      override fun androidShell(): PhoneShellExecutor = PhoneShellExecutor { ownerId, command, timeoutMs, live, confirm ->
@@ -1040,6 +1105,114 @@ index 2fc7cd5..563f816 100644
          shell.execute(ownerId, command, timeoutMs, live, confirm)
      }
  
+diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneCore.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneCore.kt
+index 6c70185..7a6d0c5 100644
+--- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneCore.kt
++++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneCore.kt
+@@ -23,6 +23,12 @@ interface PhoneEnv {
+     fun a11yState(): A11yState
+     /** Why the background display can't be used, as a sentence for the model. */
+     fun backgroundUnavailable(): String
++
++    /**
++     * 默认操作目标是不是虚拟屏（后台屏）。工具没有明说 background 时按这个走；主屏是显式的
++     * 特例。后台屏用不了时必须为 false —— 那就只剩主屏可操作。
++     */
++    fun prefersBackground(): Boolean = false
+     fun system(): SystemApi
+     fun androidShell(): PhoneShellExecutor? = null
+     fun uiText(): PhoneUiText = PhoneUiText.DEFAULT
+@@ -102,10 +108,17 @@ class PhoneCore(
+         internal var borrowedMainForBackgroundOpen = false
+         @Volatile internal var backgroundOpenConfirmed = false
+         val knownApp: PhoneAppIdentity? get() = (launch?.target as? SystemTarget.Known)?.app?.identity ?: replayApp
++        /**
++         * 打开应用时落在哪块屏：明说的 background 优先，否则默认虚拟屏；应用的启动身份读不
++         * 出来时留在主屏（后台屏只迁得动一个确定的 app）。
++         */
++        val opensInBackground: Boolean
++            get() = args.bool("background") ?: (launch?.target is SystemTarget.Known)
++
+         // A MAIN observation has no trustworthy window UID. BG open only queries the
+         // selected package on MAIN before moving it; its actual target is checked by T1a.
+         val unknownApp: Boolean get() = PhoneScreen.MAIN in screens &&
+-            !(name == PhoneToolCatalog.OPEN && args.bool("background") == true)
++            !(name == PhoneToolCatalog.OPEN && opensInBackground)
+     }
+ 
+     /** Only a first claimed native Selection reaches this path; public args never construct it. */
+@@ -361,7 +374,7 @@ class PhoneCore(
+             // MAIN already excludes other app holders. Resolve again after waiting for it,
+             // keeping the originally selected package if its label or launcher has changed.
+             val refreshMain = name == PhoneToolCatalog.INTENT ||
+-                (name == PhoneToolCatalog.OPEN && a.bool("background") != true)
++                (name == PhoneToolCatalog.OPEN && !backgroundTarget(a))
+             val call = if (prepared != null && !refreshMain) prepared else when (
+                 val result = prepare(name, a, owner, prepared?.requestedApp)
+             ) {
+@@ -523,7 +536,12 @@ class PhoneCore(
+         if (!current(owner)) return stoppedOut("open")
+         val a = call.args
+         val url = a.str("url")
+-        val background = a.bool("background") == true
++        // 虚拟屏 is the default target; a link, or an app whose launch identity could not be
++        // read, stays on the phone's own screen. An open the model did not explicitly put on the
++        // background screen falls back to 主屏 when that screen cannot be had right now.
++        val explicitBackground = a.bool("background")
++        val background = url == null && call.opensInBackground &&
++            (explicitBackground == true || env.driver(PhoneScreen.BACKGROUND, owner) != null)
+         if (env.isLocked()) return locked("open")
+         val plan = checkNotNull(call.launch)
+         if (url != null) {
+@@ -818,6 +836,12 @@ class PhoneCore(
+ 
+     private fun actionScreenParameter(name: String) = if (name == PhoneToolCatalog.TAP_XY || name == FOCUS_TEXT) "observation" else "screen"
+ 
++    /**
++     * 虚拟屏是默认的操作目标：工具没写 background 时就在后台屏上做事。主屏是显式的特例
++     * （background:false，或设置里把目标改回主屏），后台屏不可用时也只会在主屏操作。
++     */
++    internal fun backgroundTarget(a: Args): Boolean = a.bool("background") ?: env.prefersBackground()
++
+     /** Admission uses the same argument coercion and routing as the actual tool body. */
+     fun requiredScreens(name: String, args: Map<String, Any?>): Either<String, List<PhoneScreen>> {
+         return requiredScreens(name, Args(args))
+@@ -826,9 +850,9 @@ class PhoneCore(
+     private fun requiredScreens(name: String, a: Args): Either<String, List<PhoneScreen>> {
+         return when (name) {
+             PhoneToolCatalog.APPS, PhoneToolCatalog.NOTIFY, PhoneToolCatalog.CLIPBOARD -> Either.Right(emptyList())
+-            PhoneToolCatalog.OPEN -> Either.Right(if (a.bool("background") == true)
++            PhoneToolCatalog.OPEN -> Either.Right(if (backgroundTarget(a))
+                 listOf(PhoneScreen.MAIN, PhoneScreen.BACKGROUND) else listOf(PhoneScreen.MAIN))
+-            PhoneToolCatalog.SCREEN -> Either.Right(listOf(if (a.bool("background") == true) PhoneScreen.BACKGROUND else PhoneScreen.MAIN))
++            PhoneToolCatalog.SCREEN -> Either.Right(listOf(if (backgroundTarget(a)) PhoneScreen.BACKGROUND else PhoneScreen.MAIN))
+             // Arbitrary system commands take the main/global unknown-app lease, without reading a screen.
+             PhoneToolCatalog.INTENT, PhoneToolCatalog.ANDROID_SHELL -> Either.Right(listOf(PhoneScreen.MAIN))
+             PhoneToolCatalog.HANDOFF -> Either.Right(if (lastScreen == PhoneScreen.BACKGROUND)
+@@ -871,11 +895,19 @@ class PhoneCore(
+ 
+     private fun screen(a: Args, owner: PhoneTasks.Owner): Out {
+         if (!current(owner)) return stoppedOut("screen")
+-        val which = if (a.bool("background") == true) PhoneScreen.BACKGROUND else PhoneScreen.MAIN
++        var which = if (backgroundTarget(a)) PhoneScreen.BACKGROUND else PhoneScreen.MAIN
++        var resolved = driverFor(which, owner)
++        // 默认目标不是命令：后台屏这一下真的起不来时读主屏，而不是让模型卡在一个它没要求的屏上。
++        // 明说 background:true 的照实报错。
++        if (which == PhoneScreen.BACKGROUND && resolved is Either.Left && a.bool("background") != true) {
++            which = PhoneScreen.MAIN
++            resolved = driverFor(which, owner)
++        }
+         val summary = if (which == PhoneScreen.BACKGROUND) ui.get("phone_log_background_read", "读后台屏") else ui.get("phone_log_screen_read", "读屏") // l10n:keep test default
+-        val driver = when (val d = driverFor(which, owner)) {
+-            is Either.Left -> return Out(d.value, error = true, summary = summary, decision = "unavailable")
+-            is Either.Right -> d.value
++        val picked = resolved
++        val driver = when (picked) {
++            is Either.Left -> return Out(picked.value, error = true, summary = summary, decision = "unavailable")
++            is Either.Right -> picked.value
+         }
+         if (env.isLocked()) return locked(summary)
+         lastScreen = which
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhonePlugin.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhonePlugin.kt
 index 4a76535..ca9704c 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhonePlugin.kt
@@ -1095,6 +1268,57 @@ index 4a76535..ca9704c 100644
              "setBackgroundKeep" -> {
                  val selected = call.argument<String>("mode").orEmpty()
                  val enabled = call.argument<Boolean>("enabled") == true
+diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneTaskSessions.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneTaskSessions.kt
+index 3fd6e48..75446be 100644
+--- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneTaskSessions.kt
++++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneTaskSessions.kt
+@@ -472,7 +472,7 @@ class PhoneTaskSessions(
+         fun acquire(): String? = synchronized(a) {
+             if (remainingMs(a) <= 0) return@synchronized deadlineOutput().text
+             call.borrowedMainForBackgroundOpen = call.name == PhoneToolCatalog.OPEN &&
+-                call.args.bool("background") == true && PhoneScreen.MAIN in needed && mainHolder == null
++                call.opensInBackground && PhoneScreen.MAIN in needed && mainHolder == null
+             if (PhoneScreen.MAIN in needed) mainHolder = task
+             if (PhoneScreen.BACKGROUND in needed) backgroundHolders += task
+             if (known != null) task.heldApps += known
+diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneToolCatalog.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneToolCatalog.kt
+index cbfb0de..075fed7 100644
+--- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneToolCatalog.kt
++++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneToolCatalog.kt
+@@ -79,14 +79,14 @@ object PhoneToolCatalog {
+         Tool(
+             OPEN,
+             // l10n:keep agent tool catalog
+-            "尝试打开应用或链接（app 或 url 二选一）。background:true 仅用于在后台屏打开应用（需用户开通不打扰模式）；可读取时返回新屏幕。启动回话不表示目标业务已经完成。",
++            "尝试打开应用或链接（app 或 url 二选一）。应用默认在虚拟屏（后台屏）打开，background:false 改在主屏；链接只能打开在主屏。可读取时返回新屏幕。启动回话不表示目标业务已经完成。",
+             linkedMapOf(
+                 // l10n:keep agent tool catalog
+                 "app" to str("包名或应用名"),
+                 // l10n:keep agent tool catalog
+                 "url" to str("网址或深链"),
+                 // l10n:keep agent tool catalog
+-                "background" to bool("在后台屏打开"),
++                "background" to bool("在虚拟屏（后台屏）打开；false 回到主屏"),
+             ),
+             emptyList(),
+         ),
+@@ -167,14 +167,14 @@ object PhoneToolCatalog {
+         Tool(
+             SCREEN,
+             // l10n:keep agent tool catalog
+-            "读当前屏幕：每行一个元素，[编号] 只在本屏有效。detail:true 附坐标，结果可能截断；image:true 请求截图，安全或能力限制时可能不附图（主屏可带编号，后台图不带编号）；background:true 读后台屏。元素少或为空不表示页面安全；本机文字识别不可用时按回话提示处理，无法核对目标就 handoff。",
++            "读当前屏幕：每行一个元素，[编号] 只在本屏有效。detail:true 附坐标，结果可能截断；image:true 请求截图，安全或能力限制时可能不附图（主屏可带编号，后台图不带编号）；默认读虚拟屏（后台屏），background:false 读主屏。元素少或为空不表示页面安全；本机文字识别不可用时按回话提示处理，无法核对目标就 handoff。",
+             linkedMapOf(
+                 // l10n:keep agent tool catalog
+                 "detail" to bool("附上已返回元素的坐标，不保证完整页面"),
+                 // l10n:keep agent tool catalog
+                 "image" to bool("请求附带截图；可能因安全或能力限制省略"),
+                 // l10n:keep agent tool catalog
+-                "background" to bool("读后台屏（不打扰模式）"),
++                "background" to bool("读虚拟屏（后台屏），默认就是它；false 读主屏"),
+             ),
+             emptyList(),
+         ),
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/SafetyGate.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/SafetyGate.kt
 index e50373c..5e1126b 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/SafetyGate.kt
@@ -1111,10 +1335,10 @@ index e50373c..5e1126b 100644
      /**
       * The word that makes tapping [label] sensitive, or null. Delegates to [SensitiveWords] (shared
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/BackgroundControl.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/BackgroundControl.kt
-index 79cae46..dbd3fd4 100644
+index 79cae46..09aec33 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/BackgroundControl.kt
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/BackgroundControl.kt
-@@ -149,6 +149,40 @@ class BackgroundControl private constructor(context: Context) {
+@@ -149,6 +149,42 @@ class BackgroundControl private constructor(context: Context) {
  
      fun previewTarget(taskId: Long): BackgroundPreviewTarget? = previewTargets[taskId]
  
@@ -1132,7 +1356,9 @@ index 79cae46..dbd3fd4 100644
 +            putString(Proto.TASK_DIRECTION, if (toMain) Proto.DIR_MAIN else Proto.DIR_VIRTUAL)
 +        }
 +        fun result(reply: Bundle): Map<String, Any?> = if (reply.getBoolean(Proto.OK)) {
-+            mapOf("ok" to true, "reason" to null, "packageName" to reply.getString(Proto.TASK_PKG))
++            mapOf("ok" to true, "reason" to null, "packageName" to reply.getString(Proto.TASK_PKG),
++                // 系统不给搬，引擎在目标屏上重新打开了它：成功，但不是原来那个任务。
++                "fallback" to reply.getBoolean(Proto.TASK_FALLBACK))
 +        } else {
 +            mapOf("ok" to false, "reason" to (reply.getString(Proto.ERROR) ?: "moveRejected"),
 +                "packageName" to reply.getString(Proto.TASK_PKG))
@@ -1242,7 +1468,7 @@ index 6f0a450..58c6ea1 100644
      const val NONCE = "nonce"
      const val DISPLAY = "display"
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/PrivilegedDisplayCore.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/PrivilegedDisplayCore.kt
-index c7ed0f7..fe00e90 100644
+index c7ed0f7..5227f63 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/PrivilegedDisplayCore.kt
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/PrivilegedDisplayCore.kt
 @@ -121,6 +121,25 @@ class PrivilegedDisplayCore internal constructor(
@@ -1285,7 +1511,7 @@ index c7ed0f7..fe00e90 100644
          val pkg = request.getString(Proto.PKG).orEmpty()
          if (!PACKAGE.matches(pkg)) throw Fault("invalidArguments")
          val opening = op == Proto.OP_CREATE || op == Proto.OP_LAUNCH
-@@ -729,6 +755,64 @@ class PrivilegedDisplayCore internal constructor(
+@@ -729,6 +755,114 @@ class PrivilegedDisplayCore internal constructor(
      private fun displayId(): Int = display?.display?.displayId ?: throw Fault("displayMissing")
      private fun requireDisplay() { if (display == null) throw Fault("displayMissing") }
  
@@ -1331,27 +1557,77 @@ index c7ed0f7..fe00e90 100644
 +            Proto.DIR_VIRTUAL -> (topMainTask() ?: throw Fault("noTask")) to here
 +            else -> throw Fault("invalidArguments")
 +        }
-+        val move = moveTaskMethod ?: throw Fault("noMoveApi")
-+        val moved = try {
-+            move.invoke(taskManager, row.first, target) as? Boolean ?: true
++        val pkg = row.second
++        val refusal = moveRootTask(row.first, target)
++        if (refusal != null) {
++            // 回退：系统不给搬（没有接口，或 shell 身份也被拒）就在目标屏上重新打开那个应用。
++            // 状态过不去，所以回复里写明这是重新打开，界面照实说。
++            if (pkg == null) throw Fault(refusal)
++            relaunchOn(pkg, target)
++            response.putInt(Proto.TASK_ID, row.first)
++            response.putString(Proto.TASK_PKG, pkg)
++            response.putInt(Proto.DISPLAY_ID, target)
++            response.putBoolean(Proto.TASK_FALLBACK, true)
++            return
++        }
++        response.putInt(Proto.TASK_ID, row.first)
++        pkg?.let { response.putString(Proto.TASK_PKG, it) }
++        response.putInt(Proto.DISPLAY_ID, target)
++    }
++
++    /** null when the task really moved; else the stable reason the move did not happen. */
++    private fun moveRootTask(taskId: Int, displayId: Int): String? {
++        val move = moveTaskMethod ?: return "noMoveApi"
++        return try {
++            if (move.invoke(taskManager, taskId, displayId) as? Boolean ?: true) null else "moveRejected"
 +        } catch (e: InvocationTargetException) {
-+            throw when (e.cause) {
-+                is SecurityException -> Fault("systemOperationDenied")
-+                is IllegalArgumentException -> Fault("noTask")
-+                else -> Fault("moveRejected")
++            when (e.cause) {
++                is SecurityException -> "systemOperationDenied"
++                is IllegalArgumentException -> "noTask"
++                else -> "moveRejected"
 +            }
 +        }
-+        if (!moved) throw Fault("moveRejected")
-+        response.putInt(Proto.TASK_ID, row.first)
-+        row.second?.let { response.putString(Proto.TASK_PKG, it) }
-+        response.putInt(Proto.DISPLAY_ID, target)
++    }
++
++    /**
++     * The move API's stand-in: open [pkg] on [displayId] and wait until the display really owns a
++     * task of that app. The caller's reply says fallback, because the app's own state did not
++     * come along — it is a relaunch, not a move.
++     */
++    private fun relaunchOn(pkg: String, displayId: Int) {
++        val manager = privileged.getSystemService(DisplayManager::class.java) ?: throw Fault("displayMissing")
++        val display = runCatching { manager.getDisplay(displayId) }.getOrNull() ?: throw Fault("noTask")
++        val intent = runCatching { privileged.packageManager.getLaunchIntentForPackage(pkg) }.getOrNull()
++            ?: throw Fault("notLaunchable")
++        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_MULTIPLE_TASK)
++        val options = ActivityOptions.makeBasic().apply { launchDisplayId = displayId }
++        var pending: PendingIntent? = null
++        try {
++            pending = PendingIntent.getActivity(
++                privileged.createDisplayContext(display), displayId, intent,
++                PendingIntent.FLAG_ONE_SHOT or PendingIntent.FLAG_IMMUTABLE,
++            )
++            pending.send(privileged, 0, null, null, null, null, options.toBundle())
++        } catch (_: SecurityException) {
++            throw Fault("launchDenied")
++        } catch (_: PendingIntent.CanceledException) {
++            throw Fault("launchCancelled")
++        } finally {
++            pending?.let { runCatching { it.cancel() } }
++        }
++        val deadline = SystemClock.uptimeMillis() + 4_000
++        while (SystemClock.uptimeMillis() < deadline) {
++            if (rootTaskInfos(displayId).any { taskRow(it)?.second == pkg }) return
++            sleepChecked(120)
++        }
++        throw Fault("launchUnconfirmed")
 +    }
 +
      private fun requestedViewport(request: Bundle): BackgroundPolicy.Viewport? {
          if (!request.containsKey(Proto.VIEWPORT_PRESET)) return null
          val preset = BackgroundPolicy.Viewport.parse(request.get(Proto.VIEWPORT_PRESET)) ?: throw Fault("invalidArguments")
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/PrivilegedProtocol.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/PrivilegedProtocol.kt
-index 4c327b1..374475e 100644
+index 4c327b1..3904159 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/PrivilegedProtocol.kt
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/PrivilegedProtocol.kt
 @@ -19,7 +19,7 @@ object Proto {
@@ -1363,7 +1639,7 @@ index 4c327b1..374475e 100644
  
      // request keys
      const val OP = "op"
-@@ -125,6 +125,14 @@ object Proto {
+@@ -125,6 +125,17 @@ object Proto {
      const val OP_TEXT = "text"
      const val RELEASE_RECEIPT = "releaseReceipt"
      const val TASK_SCOPE_EMPTY = "taskScopeEmpty"
@@ -1375,6 +1651,9 @@ index 4c327b1..374475e 100644
 +    const val DIR_VIRTUAL = "virtual"
 +    const val TASK_ID = "taskId"
 +    const val TASK_PKG = "taskPkg"
++
++    /** The move API refused: the app was opened on the target display instead (no state carried). */
++    const val TASK_FALLBACK = "taskFallback"
      const val OP_RELEASE = "release"
      const val OP_DESTROY = "destroy"
      const val OP_COLLECT_SYSTEM_IME = "collectSystemIme"
@@ -1818,19 +2097,36 @@ index d2e531f..31abe61 100644
              ACTION_SCREENSHOT -> ShortcutsPlugin.KIND_SCREENSHOT
              else -> null
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/shortcuts/ShortcutsPlugin.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/shortcuts/ShortcutsPlugin.kt
-index cbcc8f1..82f79a2 100644
+index cbcc8f1..0a50cdd 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/shortcuts/ShortcutsPlugin.kt
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/shortcuts/ShortcutsPlugin.kt
-@@ -147,7 +147,7 @@ class ShortcutsPlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHa
+@@ -139,6 +139,11 @@ class ShortcutsPlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHa
+     private fun take(intent: Intent): Boolean {
+         if (intent.action != ACTION_ENTRY) return false
+         val kind = intent.getStringExtra(EXTRA_KIND) ?: return true
++        // The AI key's whole path, one line per step: an entry that never arrives here never
++        // reaches Dart, and a shortcut that only brought the app forward looked the same.
++        if (kind == KIND_CALL) {
++            io.github.ccch1mneyyy.dsh_app.wake.WakeTrace.log("shortcuts: call entry (ready=$ready)")
++        }
+         if (kind == KIND_SCREENSHOT) {
+             val event = ScreenshotEntry.event(context.cacheDir, token,
+                 intent.getStringExtra(EXTRA_TOKEN), intent.getStringExtra(EXTRA_PATH)) ?: return true
+@@ -146,8 +151,11 @@ class ShortcutsPlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHa
+             return true
          }
          // Consumed either way: an entry without our token goes nowhere.
-         if (intent.getStringExtra(EXTRA_TOKEN) != token) return true
+-        if (intent.getStringExtra(EXTRA_TOKEN) != token) return true
 -        if (kind != KIND_NEW && kind != KIND_VOICE && kind != KIND_CHAT) return true
++        if (intent.getStringExtra(EXTRA_TOKEN) != token) {
++            if (kind == KIND_CALL) io.github.ccch1mneyyy.dsh_app.wake.WakeTrace.log("shortcuts: call entry without our token, dropped")
++            return true
++        }
 +        if (kind != KIND_NEW && kind != KIND_VOICE && kind != KIND_CALL && kind != KIND_CHAT) return true
          val sessionId = intent.getStringExtra(EXTRA_SESSION)
          if (kind == KIND_CHAT && sessionId.isNullOrEmpty()) return true
          val event = mapOf(
-@@ -171,6 +171,7 @@ class ShortcutsPlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHa
+@@ -171,6 +179,7 @@ class ShortcutsPlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHa
  
          const val KIND_NEW = "new"
          const val KIND_VOICE = "voice"
@@ -2049,6 +2345,51 @@ index 0000000..6f623e8
 +        const val INITIAL_FLOOR_DB = -50.0
 +        /** At or under this a frame is digital silence, not a room, and never moves the floor. */
 +        const val SILENCE_DB = -90.0
++    }
++}
+diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/wake/WakeTrace.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/wake/WakeTrace.kt
+new file mode 100644
+index 0000000..024ef57
+--- /dev/null
++++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/wake/WakeTrace.kt
+@@ -0,0 +1,39 @@
++package io.github.ccch1mneyyy.dsh_app.wake
++
++import java.io.File
++import java.text.SimpleDateFormat
++import java.util.Date
++import java.util.Locale
++
++/**
++ * 唤醒 / AI 键 的原生轨迹，写进 Dart 侧 diagWake 的同一个文件
++ * (`/sdcard/Download/DSH-Go/wake-debug.log`)：`.wake-log` 存在时才写，写不进去就算了。
++ *
++ * 存在的意义只有一个：一条 AI 键从系统意图到 Dart 的每一步都能在日志里看到，少一步就是
++ * 那一步断了（之前只有 Dart 侧的轨迹，所以「按了没反应」看不出断在原生哪一段）。
++ */
++object WakeTrace {
++    private const val DIR = "/sdcard/Download/DSH-Go"
++    private val marker = File(DIR, ".wake-log")
++    private val file = File(DIR, "wake-debug.log")
++
++    @Volatile private var on: Boolean? = null
++
++    fun log(message: String) {
++        try {
++            if (on != true) {
++                if (!marker.exists()) return
++                on = true
++            }
++            file.appendText(stamp() + " " + message + "\n")
++        } catch (_: Throwable) {
++            // No marker, no storage: the trace is best effort.
++        }
++    }
++
++    private fun stamp(): String = try {
++        SimpleDateFormat("HH:mm:ss.SSS", Locale.US).format(Date())
++    } catch (_: Throwable) {
++        "--:--:--.---"
 +    }
 +}
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/wake/WakeWordPlugin.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/wake/WakeWordPlugin.kt
@@ -75543,10 +75884,10 @@ index d0e32a5..73484ed 100644
    final String text;
  
 diff --git a/app/lib/phone/phone_channel.dart b/app/lib/phone/phone_channel.dart
-index 61789e5..418a62e 100644
+index 61789e5..1efa53b 100644
 --- a/app/lib/phone/phone_channel.dart
 +++ b/app/lib/phone/phone_channel.dart
-@@ -847,6 +847,32 @@ class PhoneResult {
+@@ -847,6 +847,36 @@ class PhoneResult {
    final bool pending;
  }
  
@@ -75563,23 +75904,27 @@ index 61789e5..418a62e 100644
 +
 +/// One 任务迁移 hand-over: `reason` is native's fixed code (noMoveApi / noTask / …).
 +class PhoneHandOverResult {
-+  const PhoneHandOverResult(this.ok, [this.reason, this.packageName]);
++  const PhoneHandOverResult(this.ok, [this.reason, this.packageName, this.fallback = false]);
 +
 +  factory PhoneHandOverResult.fromMap(Map<Object?, Object?> m) => PhoneHandOverResult(
 +    _flag(m['ok']),
 +    _text(m['reason']),
 +    _text(m['packageName']),
++    m['fallback'] == true,
 +  );
 +
 +  final bool ok;
 +  final String? reason;
 +  final String? packageName;
++
++  /// 系统不给搬，引擎在目标屏上重新打开了这个应用：成了，但应用自己的进度没跟着过去。
++  final bool fallback;
 +}
 +
  /// Reply of `testScreen`: the main screen read once.
  class ScreenTestResult {
    const ScreenTestResult({required this.ok, this.text, this.reason});
-@@ -1355,6 +1381,54 @@ class PhoneChannel {
+@@ -1355,6 +1385,54 @@ class PhoneChannel {
      return controller.stream.map(PhonePreviewFrame.parse);
    }
  
@@ -75777,18 +76122,28 @@ index c089d19..a15b64d 100644
  
 diff --git a/app/lib/state/virtual_screen_state.dart b/app/lib/state/virtual_screen_state.dart
 new file mode 100644
-index 0000000..0583950
+index 0000000..02c78ab
 --- /dev/null
 +++ b/app/lib/state/virtual_screen_state.dart
-@@ -0,0 +1,81 @@
+@@ -0,0 +1,207 @@
 +import 'dart:async';
 +
 +import 'package:flutter_riverpod/flutter_riverpod.dart';
 +import 'package:shared_preferences/shared_preferences.dart';
 +
-+/// 虚拟屏 悬浮窗 的设置：画面刷新多快、画质多高、操作目标在哪块屏。
++import '../phone/phone_channel.dart';
++import '../phone/virtual_screen_window.dart';
++import 'phone_state.dart';
++
++/// 虚拟屏 悬浮窗 的设置：画面刷新多快、画质多高、操作目标在哪块屏、悬浮窗开着没有。
 +class VirtualScreenSettings {
-+  const VirtualScreenSettings({this.fps = 6, this.quality = 80, this.target = VirtualScreenTarget.virtual});
++  const VirtualScreenSettings({
++    this.fps = 6,
++    this.quality = 80,
++    this.target = VirtualScreenTarget.virtual,
++    // 悬浮屏常开：后台任务一起来就摆出来，关了也记得住（下次不再自己弹）。
++    this.window = true,
++  });
 +
 +  final int fps;
 +
@@ -75797,11 +76152,19 @@ index 0000000..0583950
 +
 +  final VirtualScreenTarget target;
 +
-+  VirtualScreenSettings copyWith({int? fps, int? quality, VirtualScreenTarget? target}) =>
-+      VirtualScreenSettings(fps: fps ?? this.fps, quality: quality ?? this.quality, target: target ?? this.target);
++  /// 悬浮屏开关：开着就记住，重开 App 自动恢复；后台任务起来时也会自己弹出来。
++  final bool window;
++
++  VirtualScreenSettings copyWith({int? fps, int? quality, VirtualScreenTarget? target, bool? window}) =>
++      VirtualScreenSettings(
++        fps: fps ?? this.fps,
++        quality: quality ?? this.quality,
++        target: target ?? this.target,
++        window: window ?? this.window,
++      );
 +}
 +
-+/// 助手动手的地方：后台那块屏，还是人眼前的这块。
++/// 助手动手的地方：虚拟屏（默认），还是人眼前的这块（特例）。
 +enum VirtualScreenTarget { virtual, main }
 +
 +final virtualScreenSettingsProvider =
@@ -75811,6 +76174,7 @@ index 0000000..0583950
 +  static const _fpsKey = 'virtual_screen_fps';
 +  static const _qualityKey = 'virtual_screen_quality';
 +  static const _targetKey = 'virtual_screen_target';
++  static const _windowKey = 'virtual_screen_window';
 +
 +  @override
 +  VirtualScreenSettings build() {
@@ -75829,6 +76193,7 @@ index 0000000..0583950
 +        fps: fps == null ? state.fps : fps.clamp(1, 15),
 +        quality: quality == null ? state.quality : quality.clamp(40, 100),
 +        target: VirtualScreenTarget.values.asNameMap()[target] ?? state.target,
++        window: prefs.getBool(_windowKey) ?? state.window,
 +      );
 +    } catch (_) {}
 +  }
@@ -75854,16 +76219,122 @@ index 0000000..0583950
 +    unawaited(_save(_targetKey, target.name));
 +  }
 +
++  /// 悬浮屏开关：记住，重开 App 时由 [virtualWindowProvider] 恢复。
++  void setWindow(bool on) {
++    if (on == state.window) return;
++    state = state.copyWith(window: on);
++    unawaited(_save(_windowKey, on));
++  }
++
 +  Future<void> _save(String key, Object value) async {
 +    try {
 +      final prefs = await SharedPreferences.getInstance();
 +      if (value is int) await prefs.setInt(key, value);
 +      if (value is String) await prefs.setString(key, value);
++      if (value is bool) await prefs.setBool(key, value);
 +    } catch (_) {}
 +  }
 +}
++
++/// 悬浮窗此刻的样子：开着没有、看的是哪个任务。
++class VirtualWindowState {
++  const VirtualWindowState({this.open = false, this.taskId});
++
++  final bool open;
++  final int? taskId;
++}
++
++/// 那块能在手机屏上看后台屏的小窗口。它常开：设置里开着就恢复，后台任务一开始就自己弹出来；
++/// 窗口自己只负责显示，画面从 [PhoneChannel.previewFrames] 来。
++final virtualWindowProvider = NotifierProvider<VirtualWindowController, VirtualWindowState>(
++  VirtualWindowController.new,
++);
++
++class VirtualWindowController extends Notifier<VirtualWindowState> {
++  VirtualScreenWindow? _window;
++
++  /// 窗口本身。dispose 之后不再新建（那时 ref 已经不能用了）。
++  VirtualScreenWindow get _frames => _window ??= VirtualScreenWindow(ref.read(phoneChannelProvider));
++
++  /// 正在开/关：状态推送会把 [sync] 再叫一次，别让它把同一件事排队做两遍。
++  bool _busy = false;
++
++  @override
++  VirtualWindowState build() {
++    _frames; // 先建好：dispose 时才有东西可关
++    ref.listen(virtualScreenSettingsProvider, (before, after) {
++      _window?.setFps(after.fps);
++      if (before?.window != after.window) _applySetting(after.window);
++    });
++    ref.listen(phoneProvider, (_, after) => sync(after.status));
++    ref.onDispose(() {
++      final window = _window;
++      if (window != null) unawaited(window.close());
++    });
++    return const VirtualWindowState();
++  }
++
++  /// 跟着任务状态走：有后台任务、开关开着，就把它摆出来；任务没了就收起来。
++  void sync(PhoneStatus status) {
++    if (_busy) return;
++    final taskId = firstBackgroundTaskId(status);
++    if (!ref.read(virtualScreenSettingsProvider).window || taskId == null) {
++      if (state.open) unawaited(close());
++      return;
++    }
++    if (state.open && state.taskId == taskId) return;
++    unawaited(open(taskId));
++  }
++
++  void _applySetting(bool on) {
++    if (!on) {
++      unawaited(close());
++      return;
++    }
++    final taskId = firstBackgroundTaskId(ref.read(phoneProvider).status);
++    if (taskId != null) unawaited(open(taskId));
++  }
++
++  Future<bool> open(int taskId) async {
++    if (state.open && state.taskId == taskId) return true;
++    if (_busy) return false;
++    _busy = true;
++    try {
++      // 悬浮窗看的是预览通道：没开就先开，不然窗口里永远是空的。
++      await ref.read(phoneProvider.notifier).setBackgroundPreview(true);
++      final ok = await _frames.open(taskId, fps: ref.read(virtualScreenSettingsProvider).fps);
++      if (ok) state = VirtualWindowState(open: true, taskId: taskId);
++      return ok;
++    } finally {
++      _busy = false;
++    }
++  }
++
++  Future<void> close() async {
++    if (!state.open) return;
++    state = const VirtualWindowState();
++    _busy = true;
++    try {
++      await _frames.close();
++    } finally {
++      _busy = false;
++    }
++  }
++}
++
++/// 能放进悬浮窗的那块屏：有 id、还在跑，而且（有槽位信息时）占着后台槽。
++int? firstBackgroundTaskId(PhoneStatus status) {
++  final modern = status.background.parallelism != null ||
++      status.task.backgroundSlot != null ||
++      status.tasks.any((task) => task.backgroundSlot != null);
++  for (final task in modern ? status.tasks : [status.task]) {
++    final id = task.id;
++    if (task.active && id != null && id > 0 && (!modern || task.backgroundSlot == true)) return id;
++  }
++  return null;
++}
 diff --git a/app/lib/ui/chat/chat_screen.dart b/app/lib/ui/chat/chat_screen.dart
-index 46d2fd3..0d17a1b 100644
+index 46d2fd3..7c21f3d 100644
 --- a/app/lib/ui/chat/chat_screen.dart
 +++ b/app/lib/ui/chat/chat_screen.dart
 @@ -28,6 +28,8 @@ import '../../state/streaming_pcm_state.dart';
@@ -75875,7 +76346,22 @@ index 46d2fd3..0d17a1b 100644
  import '../../state/agents_state.dart' show subagentParentProvider;
  import '../../state/attachments.dart';
  import '../../state/balance_state.dart';
-@@ -366,6 +368,35 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
+@@ -178,6 +180,14 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
+ 
+   @override
+   void didChangeAppLifecycleState(AppLifecycleState state) {
++    // 回前台: a network that changed while the app was behind (VPN switch, Wi-Fi → 5G) leaves
++    // the old connection dead, and nothing used to rebuild it — the next send failed with
++    // TRANSPORT and every retry landed on the same dead socket. Coming back is the moment to
++    // reconnect, not the next failure.
++    if (state == AppLifecycleState.resumed) {
++      if (ref.read(activeConnectionProvider).value == null) _reconnect();
++      return;
++    }
+     if (state == AppLifecycleState.resumed) _scheduleInteraction();
+   }
+ 
+@@ -366,6 +376,32 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
      WidgetsBinding.instance.addObserver(this);
      _scheduleInteraction();
      ref.listenManual(currentSessionProvider, (_, _) => _scheduleInteraction());
@@ -75886,17 +76372,14 @@ index 46d2fd3..0d17a1b 100644
 +        unawaited(_startCall(() => mounted, wakePhrase: ref.read(wakeCallRequestProvider.notifier).phrase));
 +      }
 +    });
-+    // 语音通话 from the AI key: this conversation was opened for it, so the call starts as soon
-+    // as the page exists — before any typing, and through the same start a wake uses.
-+    WidgetsBinding.instance.addPostFrameCallback((_) {
-+      if (!mounted) return;
-+      // The AI key says "open a call" the way a wake word does, so it also sends what a wake
-+      // would: the assistant is spoken to at once instead of the page opening in silence.
-+      if (ref.read(callOnOpenProvider.notifier).take()) {
-+        diagWake('shortcut-call: mark taken, starting call');
-+        unawaited(_startCall(() => mounted, wakePhrase: ref.read(wakeSettingsProvider).keyword));
-+      }
++    // 语音通话 from the AI key: this conversation is where it lands. The mark can be set before
++    // this page exists (a cold start, or a fresh chat composed for it) or while it is already up
++    // (the app was in the foreground and the key only brought it forward), so it is taken on the
++    // first frame and again on every later mark.
++    ref.listenManual(callOnOpenProvider, (_, marked) {
++      if (marked) _takeCallOnOpen();
 +    });
++    WidgetsBinding.instance.addPostFrameCallback((_) => _takeCallOnOpen());
 +    // A wake word that matched while this screen was not up: answer it once the first frame
 +    // is up, so the call opens on a screen that exists (and after _voice is built).
 +    final pendingWake = ref.read(wakeCallRequestProvider);
@@ -75911,8 +76394,20 @@ index 46d2fd3..0d17a1b 100644
      _voice = VoiceInputController(
        input: _input,
        bridge: ref.read(voiceBridgeProvider),
-@@ -1476,16 +1507,38 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
+@@ -1474,18 +1510,50 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
+     showUsageSheet(context, sessionId: sessionId, model: model);
+   }
  
++  /// 语音通话 from the AI key: takes the mark once and opens the call the way a wake does.
++  /// The AI key says "open a call" the way a wake word does, so it also sends what a wake would:
++  /// the assistant is spoken to at once instead of the page opening in silence.
++  void _takeCallOnOpen() {
++    if (!mounted) return;
++    if (!ref.read(callOnOpenProvider.notifier).take()) return;
++    diagWake('shortcut-call: mark taken, starting call');
++    unawaited(_startCall(() => mounted, wakePhrase: ref.read(wakeSettingsProvider).keyword));
++  }
++
    /// 「语音通话」 with this conversation (a new chat gets its conversation
    /// with the first thing said); [ownsDraft]: still the conversation it was asked from.
 -  Future<void> _startCall(bool Function() ownsDraft) async {
@@ -75952,7 +76447,7 @@ index 46d2fd3..0d17a1b 100644
      unawaited(
        openChatCall(
          context,
-@@ -1493,15 +1546,41 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
+@@ -1493,15 +1561,41 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
          session: () async {
            // Another host now: its conversation of the same id is not this call's.
            if (!mounted || ref.read(activeHostProvider) != host) return null;
@@ -76089,72 +76584,113 @@ index 1214058..3ea9dc8 100644
                title: l10n.androidShellStatus,
                subtitle: _loading
 diff --git a/app/lib/ui/phone/background_preview.dart b/app/lib/ui/phone/background_preview.dart
-index 173f148..4e388bb 100644
+index 173f148..b9863c1 100644
 --- a/app/lib/ui/phone/background_preview.dart
 +++ b/app/lib/ui/phone/background_preview.dart
-@@ -1,4 +1,5 @@
+@@ -1,13 +1,13 @@
  import 'dart:async';
-+import 'dart:math' as math;
- import 'dart:ui' as ui;
+-import 'dart:ui' as ui;
  
  import 'package:flutter/material.dart';
-@@ -34,6 +35,12 @@ class _PhoneBackgroundPreviewDialogState extends State<PhoneBackgroundPreviewDia
-   ui.Image? _image;
-   PhonePreviewFrame? _pending;
-   bool _decoding = false;
-+  // 手动点滑: a drag's two ends, and one gesture in flight at a time.
-+  Offset? _swipeFrom;
-+  Offset? _swipeLast;
+-import 'package:flutter/services.dart';
+ 
+ import '../../l10n/l10n.dart';
+ import '../../phone/phone_channel.dart';
++import 'virtual_screen_surface.dart';
+ 
+-/// A fixed, visible dialog surface. It owns decoded images, bypassing ImageCache.
++/// 放大预览的对话框：同一条画面（[VirtualScreenSurface]），加两个动作——把这块屏上的应用
++/// 交回主屏，或把主屏上的应用交给 AI。手指点/长按/滑动的注入也在画面里，不在对话框上。
+ class PhoneBackgroundPreviewDialog extends StatefulWidget {
+   const PhoneBackgroundPreviewDialog({required this.channel, required this.taskId, this.enabled = true, super.key});
+ 
+@@ -20,180 +20,118 @@ class PhoneBackgroundPreviewDialog extends StatefulWidget {
+ }
+ 
+ class _PhoneBackgroundPreviewDialogState extends State<PhoneBackgroundPreviewDialog> {
+-  late final AppLifecycleListener _lifecycle;
+-  StreamSubscription<PhonePreviewFrame?>? _subscription;
+-  Future<void> _transition = Future.value();
+-  bool _resumed = false;
+-  bool _routeCurrent = false;
+-  bool _visible = false;
+-  int _epoch = 0;
+-  int _imageRevision = 0;
+-  int _nativeGeneration = -1;
+-  int _nativeSequence = -1;
+-  String _state = 'waiting';
+-  ui.Image? _image;
+-  PhonePreviewFrame? _pending;
+-  bool _decoding = false;
+-
+-  @override
+-  void initState() {
+-    super.initState();
+-    _resumed = WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed;
+-    _lifecycle = AppLifecycleListener(onStateChange: (state) {
+-      _resumed = state == AppLifecycleState.resumed;
+-      _syncVisibility();
+-    });
+-  }
+-
+-  @override
+-  void didChangeDependencies() {
+-    super.didChangeDependencies();
+-    // ModalRoute.of establishes a dependency on isCurrent; a covering route stops capture.
+-    _routeCurrent = ModalRoute.of(context)?.isCurrent == true;
+-    _syncVisibility();
+-  }
+-
+-  @override
+-  void didUpdateWidget(PhoneBackgroundPreviewDialog oldWidget) {
+-    super.didUpdateWidget(oldWidget);
+-    if (oldWidget.enabled != widget.enabled) _syncVisibility();
+-  }
+-
+-  void _clearImage() {
+-    _imageRevision++;
+-    _pending = null;
+-    final old = _image;
+-    _image = null;
+-    old?.dispose();
+-  }
+-
+-  Future<void> _cancelSubscription() async {
+-    final old = _subscription;
+-    _subscription = null;
+-    try {
+-      await old?.cancel();
+-    } on MissingPluginException {
+-      // A detached native engine has no remaining consumer to remove.
+-    } on PlatformException {
+-      // Native task/engine retirement also clears its preview consumer.
+-    }
+-  }
+-
+-  void _syncVisibility() {
+-    final visible = widget.enabled && _resumed && _routeCurrent;
+-    if (_visible == visible) return;
+-    _visible = visible;
+-    final epoch = ++_epoch;
+-    _clearImage();
+-    _nativeGeneration = -1;
+-    _nativeSequence = -1;
+-    setState(() => _state = 'waiting');
+-    // Wait for the old EventChannel cancel before listening again on the same channel.
+-    _transition = _transition.then((_) async {
+-      await _cancelSubscription();
+-      if (!mounted || !_visible || _epoch != epoch) return;
+-      _subscription = widget.channel.previewFrames(widget.taskId).listen(
+-        (frame) { if (mounted && _visible && _epoch == epoch) _receive(frame); },
+-        onError: (Object _) {
+-          if (!mounted || !_visible || _epoch != epoch) return;
+-          _clearImage();
+-          setState(() => _state = 'unavailable');
+-        },
+-      );
 +  bool _gestureBusy = false;
 +  bool _handOverBusy = false;
 +  String? _actionError;
- 
-   @override
-   void initState() {
-@@ -176,24 +183,166 @@ class _PhoneBackgroundPreviewDialogState extends State<PhoneBackgroundPreviewDia
-     super.dispose();
-   }
- 
-+  /// 手动点滑: where a touch landed, as a fraction of the picture (0..1). Native maps the
-+  /// fraction onto the virtual screen, so the preview's scaled-down size never matters. The
-+  /// letterbox around a letter-shaped screen is not a target, so a touch there is dropped.
-+  Offset? _toPictureFraction(Offset local, Size box, {bool clamp = false}) {
-+    final image = _image;
-+    if (image == null || image.width <= 0 || image.height <= 0) return null;
-+    final iw = image.width.toDouble(), ih = image.height.toDouble();
-+    final scale = math.min(box.width / iw, box.height / ih);
-+    if (!scale.isFinite || scale <= 0) return null;
-+    final left = (box.width - iw * scale) / 2, top = (box.height - ih * scale) / 2;
-+    final x = (local.dx - left) / scale / iw, y = (local.dy - top) / scale / ih;
-+    if (clamp) return Offset(x.clamp(0.0, 1.0).toDouble(), y.clamp(0.0, 1.0).toDouble());
-+    if (x < 0 || y < 0 || x >= 1 || y >= 1) return null;
-+    return Offset(x, y);
-+  }
-+
-+  /// One gesture on the enlarged picture: the finger is the consent, native takes a fresh
-+  /// observation and injects it into the virtual screen.
-+  Future<void> _gesture(String action, Offset from, Size box, {Offset? to}) async {
-+    if (_gestureBusy || _handOverBusy) return;
-+    final start = _toPictureFraction(from, box);
-+    // A swipe that leaves the picture still ends at its edge, not nowhere.
-+    final end = to == null ? null : _toPictureFraction(to, box, clamp: true);
-+    if (start == null || action == 'swipe' && end == null) return;
-+    setState(() => _gestureBusy = true);
-+    final result = await widget.channel.previewGesture(
-+      taskId: widget.taskId,
-+      action: action,
-+      x: start.dx,
-+      y: start.dy,
-+      x2: end?.dx,
-+      y2: end?.dy,
-+      durationMs: action == 'swipe' ? 300 : 400,
-+    );
-+    if (!mounted) return;
-+    setState(() {
-+      _gestureBusy = false;
-+      _actionError = result.ok ? null : (result.message ?? '这次手势没有发出去。');
-+    });
-+  }
 +
 +  /// 任务迁移: hand the app on this virtual screen back to the phone, or hand the phone's own
 +  /// foreground app to the assistant here. Closing the dialog tells the page to fold the
@@ -76164,33 +76700,91 @@ index 173f148..4e388bb 100644
 +    setState(() {
 +      _handOverBusy = true;
 +      _actionError = null;
-+    });
+     });
+-  }
+-
+-  void _receive(PhonePreviewFrame? frame) {
+-    if (frame == null) {
+-      _clearImage();
+-      setState(() => _state = 'unavailable');
 +    final result = await widget.channel.handOverTask(taskId: widget.taskId, toMain: toMain);
 +    if (!mounted) return;
 +    setState(() => _handOverBusy = false);
 +    if (!result.ok) {
-+      setState(() => _actionError = _handOverMessage(result.reason));
-+      return;
-+    }
-+    Navigator.of(context).pop(toMain ? PhonePreviewHandOver.toMain : PhonePreviewHandOver.toVirtual);
-+  }
-+
-+  /// Native's fixed hand-over codes; anything else stays one plain sentence.
-+  String _handOverMessage(String? code) => switch (code) {
-+    'noMoveApi' => '这台系统没有提供任务迁移接口，应用还在原处。',
-+    'noTask' => '要搬的那块屏上没有应用。',
-+    'systemOperationDenied' => '系统拒绝了任务迁移（特权权限不足）。',
-+    'moveRejected' => '系统没接受这次任务迁移，应用还在原处。',
-+    'noTarget' => '这块后台屏已经不在预览里了。',
-+    'locked' => '锁屏状态下不能迁移。',
-+    'deviceUnavailable' || 'releasePending' => '后台屏通道已断开，先重新开不打扰模式。',
-+    _ => '任务迁移没成功，应用还在原处。',
-+  };
-+
++      setState(() => _actionError = phoneHandOverMessage(result.reason));
+       return;
+     }
+-    if (frame.taskId != widget.taskId || frame.generation < _nativeGeneration ||
+-        frame.generation == _nativeGeneration && frame.sequence <= _nativeSequence) {
+-      return;
+-    }
+-    if (frame.generation != _nativeGeneration) {
+-      _clearImage();
+-      setState(() => _state = 'waiting');
+-    }
+-    _nativeGeneration = frame.generation;
+-    _nativeSequence = frame.sequence;
+-    if (frame.state != 'frame') {
+-      _clearImage();
+-      setState(() => _state = frame.state);
+-      return;
+-    }
+-    _pending = frame; // one latest pending frame; a slow decoder never accumulates a queue
+-    unawaited(_decodeLatest());
+-  }
+-
+-  Future<void> _decodeLatest() async {
+-    if (_decoding) return;
+-    _decoding = true;
+-    try {
+-      while (_pending != null) {
+-        final frame = _pending!;
+-        _pending = null;
+-        final epoch = _epoch;
+-        final revision = _imageRevision;
+-        ui.Codec? codec;
+-        ui.Image? decoded;
+-        try {
+-          codec = await ui.instantiateImageCodec(frame.imageBytes!, targetWidth: frame.width,
+-              targetHeight: frame.height, allowUpscaling: false);
+-          decoded = (await codec.getNextFrame()).image;
+-        } catch (_) {
+-          // No exception details or image bytes enter logs or diagnostics.
+-          if (mounted && _visible && _epoch == epoch && _imageRevision == revision && _pending == null) {
+-            _clearImage();
+-            setState(() => _state = 'unavailable');
+-          }
+-        } finally {
+-          codec?.dispose();
+-        }
+-        if (decoded == null) continue;
+-        if (!mounted || !_visible || _epoch != epoch || _imageRevision != revision) {
+-          decoded.dispose();
+-          continue;
+-        }
+-        final old = _image;
+-        setState(() { _image = decoded; _state = 'frame'; });
+-        old?.dispose();
+-      }
+-    } finally {
+-      _decoding = false;
+-    }
+-  }
+-
+-  @override
+-  void dispose() {
+-    _visible = false;
+-    _epoch++;
+-    _clearImage();
+-    _lifecycle.dispose();
+-    _transition = _transition.then((_) => _cancelSubscription());
+-    super.dispose();
++    Navigator.of(context).pop(PhoneHandOverDone(toMain: toMain, fallback: result.fallback));
+   }
+ 
    @override
    Widget build(BuildContext context) {
      final l10n = context.l10n;
-+    final image = _image;
 +    final pictureHeight = MediaQuery.sizeOf(context).height * 0.42;
      return AlertDialog(
        title: Text(l10n.phonePreviewTitle),
@@ -76211,42 +76805,18 @@ index 173f148..4e388bb 100644
 +          children: [
 +            SizedBox(
 +              height: pictureHeight,
-+              child: image != null
-+                  ? LayoutBuilder(
-+                      builder: (context, box) {
-+                        final size = Size(box.maxWidth, box.maxHeight);
-+                        return GestureDetector(
-+                          behavior: HitTestBehavior.opaque,
-+                          onTapUp: (d) => unawaited(_gesture('tap', d.localPosition, size)),
-+                          onLongPressStart: (d) => unawaited(_gesture('long', d.localPosition, size)),
-+                          onPanStart: (d) {
-+                            _swipeFrom = d.localPosition;
-+                            _swipeLast = d.localPosition;
-+                          },
-+                          onPanUpdate: (d) => _swipeLast = d.localPosition,
-+                          onPanEnd: (_) {
-+                            final from = _swipeFrom;
-+                            final to = _swipeLast;
-+                            _swipeFrom = null;
-+                            _swipeLast = null;
-+                            if (from != null && to != null) unawaited(_gesture('swipe', from, size, to: to));
-+                          },
-+                          child: RawImage(
-+                            image: image,
-+                            fit: BoxFit.contain,
-+                            filterQuality: FilterQuality.low,
-+                          ),
-+                        );
-+                      },
-+                    )
-+                  : Center(
-+                      child: Text(switch (_state) {
-+                        'off' => l10n.phonePreviewOff,
-+                        'inUse' => l10n.phonePreviewInUse,
-+                        'unavailable' || 'protected' => l10n.phonePreviewUnavailable,
-+                        _ => l10n.phonePreviewWaiting,
-+                      }, textAlign: TextAlign.center),
-+                    ),
++              child: VirtualScreenSurface(
++                channel: widget.channel,
++                taskId: widget.taskId,
++                enabled: widget.enabled,
++                onGestureBusy: (busy) {
++                  if (mounted) setState(() => _gestureBusy = busy);
++                },
++                onGestureResult: (result) {
++                  if (!mounted) return;
++                  setState(() => _actionError = result.ok ? null : (result.message ?? '这次手势没有发出去。'));
++                },
++              ),
 +            ),
 +            const SizedBox(height: 6),
 +            // 私版：两个新动作暂时只有中文文案（l10n 生成需要 Flutter 工具链）。
@@ -76284,87 +76854,95 @@ index 173f148..4e388bb 100644
    }
  }
 +
-+/// What the enlarged preview did before it closed: the page folds the floating window and
-+/// switches the operation target accordingly.
-+enum PhonePreviewHandOver { toMain, toVirtual }
++/// What the preview did before it closed: the page folds the floating window and switches the
++/// operation target accordingly. [fallback]: the system would not move the task, so the app was
++/// reopened on the target screen instead (its own state did not come along).
++class PhoneHandOverDone {
++  const PhoneHandOverDone({required this.toMain, this.fallback = false});
++
++  final bool toMain;
++  final bool fallback;
++}
++
++/// 迁移成完之后的一句话：真的搬过去了，还是系统不支持、在目标屏上重新打开。
++String handOverNotice(PhoneHandOverDone done) {
++  if (done.fallback) {
++    return done.toMain ? '系统不支持直接迁移，已在主屏重新打开应用' : '系统不支持直接迁移，已在虚拟屏重新打开应用';
++  }
++  return done.toMain ? '已切到主屏，操作目标改为主屏' : '已交给 AI（虚拟屏），操作目标改为虚拟屏';
++}
++
++/// Native's fixed hand-over codes, as one sentence each; anything else stays plain.
++String phoneHandOverMessage(String? code) => switch (code) {
++  'noMoveApi' => '这台系统没有提供任务迁移接口，应用还在原处。',
++  'noTask' => '要搬的那块屏上没有应用。',
++  'systemOperationDenied' => '系统拒绝了任务迁移（特权权限不足）。',
++  'moveRejected' => '系统没接受这次任务迁移，应用还在原处。',
++  'noTarget' => '这块后台屏已经不在预览里了。',
++  'locked' => '锁屏状态下不能迁移。',
++  'deviceUnavailable' || 'releasePending' => '后台屏通道已断开，先重新开不打扰模式。',
++  _ => '任务迁移没成功，应用还在原处。',
++};
 diff --git a/app/lib/ui/phone/dnd_mode_page.dart b/app/lib/ui/phone/dnd_mode_page.dart
-index 3a23e52..08eef06 100644
+index 3a23e52..7da91f2 100644
 --- a/app/lib/ui/phone/dnd_mode_page.dart
 +++ b/app/lib/ui/phone/dnd_mode_page.dart
-@@ -16,6 +16,8 @@ import '../common/row_marks.dart';
+@@ -16,8 +16,10 @@ import '../common/row_marks.dart';
  import '../shell/page_frame.dart';
  import '../theme/app_icons.dart';
  import '../theme/theme.dart';
-+import '../../phone/virtual_screen_window.dart';
 +import '../../state/virtual_screen_state.dart';
  import 'phone_widgets.dart';
  import 'background_preview.dart';
++import 'virtual_screen_page.dart';
  import 'restricted_settings_guide.dart' show RomFamily;
-@@ -73,6 +75,9 @@ class _PhoneDndPageState extends ConsumerState<PhoneDndPage> {
-   PhonePrivilegedMode? _open;
-   bool _busy = false;
-   bool _previewOpen = false;
-+  /// 悬浮屏 window: the same frames, in a card of their own.
-+  bool _virtualOpen = false;
-+  late final VirtualScreenWindow _window = VirtualScreenWindow(ref.read(phoneChannelProvider));
-   String? _error;
-   late final AppLifecycleListener _lifecycle;
  
-@@ -83,10 +88,22 @@ class _PhoneDndPageState extends ConsumerState<PhoneDndPage> {
-   void initState() {
-     super.initState();
-     _lifecycle = AppLifecycleListener(onResume: () => unawaited(_phone.refreshStatus()));
-+    // 悬浮窗被点了：原生把窗口收起，这里把全屏预览打开（同一条画面，放大看）。
-+    const MethodChannel('dsh/virtual-screen').setMethodCallHandler((call) async {
-+      if (call.method != 'action') return null;
-+      if (call.arguments == 'open' && mounted) {
-+        setState(() => _virtualOpen = false);
-+        final tasks = _previewTasks(ref.read(phoneProvider).status).toList();
-+        if (tasks.isNotEmpty && tasks.first.id != null) await _showPreview(tasks.first.id!);
-+      }
-+      return null;
-+    });
+ /// Shizuku's own download page (official site).
+@@ -193,6 +195,8 @@ class _PhoneDndPageState extends ConsumerState<PhoneDndPage> {
+     );
    }
  
-   @override
-   void dispose() {
-+    const MethodChannel('dsh/virtual-screen').setMethodCallHandler(null);
-+    unawaited(_window.close());
-     _lifecycle.dispose();
-     super.dispose();
-   }
-@@ -203,7 +220,7 @@ class _PhoneDndPageState extends ConsumerState<PhoneDndPage> {
++  /// 放大看 / 动手改：整页的可操作虚拟屏（不是弹窗），页面自己在迁移成功后收起悬浮窗、
++  /// 换操作目标。
+   Future<void> _showPreview(int taskId) async {
+     final status = ref.read(phoneProvider).status;
+     if (_previewOpen ||
+@@ -203,16 +207,9 @@ class _PhoneDndPageState extends ConsumerState<PhoneDndPage> {
      }
      _previewOpen = true;
      try {
 -      await showAppDialog<void>(
-+      final moved = await showAppDialog<PhonePreviewHandOver>(
-         context: context,
-         builder: (_) => Consumer(
-           builder: (_, ref, _) => PhoneBackgroundPreviewDialog(
-@@ -213,6 +230,16 @@ class _PhoneDndPageState extends ConsumerState<PhoneDndPage> {
-           ),
-         ),
-       );
+-        context: context,
+-        builder: (_) => Consumer(
+-          builder: (_, ref, _) => PhoneBackgroundPreviewDialog(
+-            channel: ref.read(phoneChannelProvider),
+-            taskId: taskId,
+-            enabled: ref.watch(phoneProvider.select((s) => s.status.ready)),
+-          ),
+-        ),
+-      );
++      final moved = await Navigator.of(context, rootNavigator: true).push(VirtualScreenPage.route(taskId));
 +      if (!mounted || moved == null) return;
-+      // 任务迁移成功：收起悬浮窗，操作目标跟着应用走。
-+      await _window.close();
-+      if (!mounted) return;
-+      setState(() => _virtualOpen = false);
-+      final toMain = moved == PhonePreviewHandOver.toMain;
-+      ref.read(virtualScreenSettingsProvider.notifier)
-+          .setTarget(toMain ? VirtualScreenTarget.main : VirtualScreenTarget.virtual);
-+      showBriefNotice(context, toMain ? '已切到主屏，操作目标改为主屏' : '已交给 AI（虚拟屏），操作目标改为虚拟屏');
-+      unawaited(_phone.refreshStatus());
++      showBriefNotice(context, handOverNotice(moved));
      } finally {
        _previewOpen = false;
      }
-@@ -290,6 +317,53 @@ class _PhoneDndPageState extends ConsumerState<PhoneDndPage> {
+@@ -226,6 +223,8 @@ class _PhoneDndPageState extends ConsumerState<PhoneDndPage> {
+     final hasSlotMetadata = _hasSlotMetadata(status);
+     final previewTasks = _previewTasks(status);
+     final using = bg.effectiveMode;
++    final windowOn = ref.watch(virtualScreenSettingsProvider.select((s) => s.window));
++    final target = ref.watch(virtualScreenSettingsProvider.select((s) => s.target));
+     final waiting = using == PhonePrivilegedMode.root && bg.root.starting;
+     final open = _open ?? (bg.effectiveReady ? PhonePrivilegedMode.off : using);
+     final choices = <Widget>[
+@@ -290,6 +289,61 @@ class _PhoneDndPageState extends ConsumerState<PhoneDndPage> {
                                unawaited(_run(() async => PhoneResult(await _phone.setBackgroundPreview(enabled)))),
                    ),
                  ),
 +                // 悬浮屏: the same frames, in a window of their own, so the work stays visible
-+                // while the phone is used for something else.
++                // while the phone is used for something else. 开关记在设置里：重开 App 自动恢复，
++                // 后台任务一起来就自己弹出来。
 +                ListPageRow(
 +                  key: const ValueKey('phone-virtual-window'),
 +                  leading: const SizedBox(),
@@ -76372,25 +76950,21 @@ index 3a23e52..08eef06 100644
 +                  subtitle: appL10n.phoneVirtualWindowDescription,
 +                  subtitleMaxLines: 3,
 +                  trailing: Switch(
-+                    value: _virtualOpen,
++                    value: windowOn,
 +                    onChanged: !_ready || _busy || previewTasks.isEmpty
 +                        ? null
 +                        : (on) => unawaited(_run(() async {
-+                              if (on) {
-+                                await ref.read(phoneProvider.notifier).setBackgroundPreview(true);
-+                                final id = previewTasks.first.id!;
-+                                final ok = await _window.open(id,
-+                                    fps: ref.read(virtualScreenSettingsProvider).fps);
-+                                if (mounted) setState(() => _virtualOpen = ok);
-+                                return PhoneResult(ok);
++                              ref.read(virtualScreenSettingsProvider.notifier).setWindow(on);
++                              final controller = ref.read(virtualWindowProvider.notifier);
++                              if (!on) {
++                                await controller.close();
++                                return const PhoneResult(true);
 +                              }
-+                              await _window.close();
-+                              if (mounted) setState(() => _virtualOpen = false);
-+                              return const PhoneResult(true);
++                              return PhoneResult(await controller.open(previewTasks.first.id!));
 +                            })),
 +                  ),
 +                ),
-+                if (_virtualOpen) ...[
++                if (windowOn) ...[
 +                  ListPageRow(
 +                    leading: const SizedBox(),
 +                    title: appL10n.phoneVirtualFpsTitle,
@@ -76400,19 +76974,518 @@ index 3a23e52..08eef06 100644
 +                        Padding(
 +                          padding: const EdgeInsets.symmetric(horizontal: 2),
 +                          child: TextButton(
-+                            onPressed: () {
-+                              ref.read(virtualScreenSettingsProvider.notifier).setFps(fps);
-+                              _window.setFps(fps);
-+                            },
++                            onPressed: () => ref.read(virtualScreenSettingsProvider.notifier).setFps(fps),
 +                            child: Text('$fps'),
 +                          ),
 +                        ),
 +                    ]),
 +                  ),
++                  // 主屏是特例：默认在虚拟屏上做事，需要时把操作目标切回去。
++                  ListPageRow(
++                    key: const ValueKey('phone-virtual-target'),
++                    leading: Icon(target == VirtualScreenTarget.virtual ? AppIcons.radioOn : AppIcons.radioOff),
++                    title: 'AI 默认操作虚拟屏',
++                    subtitle: '关掉就默认操作主屏（切到主屏／交给 AI 也会改这一项）',
++                    subtitleMaxLines: 2,
++                    trailing: Switch(
++                      value: target == VirtualScreenTarget.virtual,
++                      onChanged: (on) => ref
++                          .read(virtualScreenSettingsProvider.notifier)
++                          .setTarget(on ? VirtualScreenTarget.virtual : VirtualScreenTarget.main),
++                    ),
++                  ),
 +                ],
                  if (bg.previewEnabled)
                    for (final candidate in previewTasks)
                      ListPageRow(
+diff --git a/app/lib/ui/phone/virtual_screen_host.dart b/app/lib/ui/phone/virtual_screen_host.dart
+new file mode 100644
+index 0000000..e0690b5
+--- /dev/null
++++ b/app/lib/ui/phone/virtual_screen_host.dart
+@@ -0,0 +1,69 @@
++import 'package:flutter/material.dart';
++import 'package:flutter/services.dart';
++import 'package:flutter_riverpod/flutter_riverpod.dart';
++
++import '../../state/phone_state.dart';
++import '../../state/virtual_screen_state.dart';
++import '../common/brief_notice.dart';
++import 'background_preview.dart' show handOverNotice;
++import 'virtual_screen_page.dart';
++
++/// 悬浮窗按下之后回到 App：直接开可操作的虚拟屏整页（不是预览弹窗），手指点哪里就是哪里。
++/// 也把 [virtualWindowProvider] 挂在界面上——它不在 home shell 里就没人恢复「悬浮屏」开关，
++/// 也没人在后台任务起来时把窗口摆出来。画面上不占位置。
++class VirtualScreenHost extends ConsumerStatefulWidget {
++  const VirtualScreenHost({super.key});
++
++  @override
++  ConsumerState<VirtualScreenHost> createState() => _VirtualScreenHostState();
++}
++
++class _VirtualScreenHostState extends ConsumerState<VirtualScreenHost> {
++  static const MethodChannel _channel = MethodChannel('dsh/virtual-screen');
++  bool _opening = false;
++
++  @override
++  void initState() {
++    super.initState();
++    _channel.setMethodCallHandler(_onCall);
++  }
++
++  @override
++  void dispose() {
++    _channel.setMethodCallHandler(null);
++    super.dispose();
++  }
++
++  Future<void> _onCall(MethodCall call) async {
++    if (call.method != 'action' || call.arguments != 'open' || !mounted) return;
++    await _openPage();
++  }
++
++  Future<void> _openPage() async {
++    if (_opening || !mounted) return;
++    final window = ref.read(virtualWindowProvider.notifier);
++    final taskId = ref.read(virtualWindowProvider).taskId ?? firstBackgroundTaskId(ref.read(phoneProvider).status);
++    if (taskId == null) return;
++    _opening = true;
++    // 点了窗口，原生那边已经把它收起来；这里的状态跟着归零，页面关掉后再摆回去。
++    await window.close();
++    var handedOver = false;
++    try {
++      final moved = await Navigator.of(context, rootNavigator: true).push(VirtualScreenPage.route(taskId));
++      if (!mounted || moved == null) return;
++      handedOver = true;
++      showBriefNotice(context, handOverNotice(moved));
++    } finally {
++      _opening = false;
++      // 常开：只是看了一眼就回来，窗口摆回去。迁移过的这一次由页面说了算（可能那块屏上
++      // 已经空了，硬摆出来只会是一个黑框）。
++      if (mounted && !handedOver) window.sync(ref.read(phoneProvider).status);
++    }
++  }
++
++  @override
++  Widget build(BuildContext context) {
++    ref.watch(virtualWindowProvider);
++    return const SizedBox.shrink();
++  }
++}
+diff --git a/app/lib/ui/phone/virtual_screen_page.dart b/app/lib/ui/phone/virtual_screen_page.dart
+new file mode 100644
+index 0000000..6e3808c
+--- /dev/null
++++ b/app/lib/ui/phone/virtual_screen_page.dart
+@@ -0,0 +1,115 @@
++import 'dart:async';
++
++import 'package:flutter/material.dart';
++import 'package:flutter_riverpod/flutter_riverpod.dart';
++
++import '../../phone/phone_channel.dart';
++import '../../state/phone_state.dart';
++import '../../state/virtual_screen_state.dart';
++import 'background_preview.dart' show PhoneHandOverDone, phoneHandOverMessage;
++import 'virtual_screen_surface.dart';
++
++/// 可操作的虚拟屏：整页，不是弹窗。手指点/长按/滑动直接作用于后台屏上的应用，底下两个动作
++/// ——「切到主屏」把这块屏上的应用交回手机，「交给 AI（虚拟屏）」把主屏上的应用搬过来。
++class VirtualScreenPage extends ConsumerStatefulWidget {
++  const VirtualScreenPage({required this.taskId, super.key});
++
++  final int taskId;
++
++  static Route<PhoneHandOverDone> route(int taskId) => MaterialPageRoute<PhoneHandOverDone>(
++    builder: (_) => VirtualScreenPage(taskId: taskId),
++  );
++
++  @override
++  ConsumerState<VirtualScreenPage> createState() => _VirtualScreenPageState();
++}
++
++class _VirtualScreenPageState extends ConsumerState<VirtualScreenPage> {
++  bool _gestureBusy = false;
++  bool _handOverBusy = false;
++  String? _error;
++
++  /// 任务迁移：成功后收起悬浮窗、把操作目标交给应用所在的屏，再把这一页关掉。
++  Future<void> _handOver({required bool toMain}) async {
++    if (_handOverBusy || _gestureBusy) return;
++    setState(() {
++      _handOverBusy = true;
++      _error = null;
++    });
++    final result = await ref.read(phoneChannelProvider).handOverTask(taskId: widget.taskId, toMain: toMain);
++    if (!mounted) return;
++    setState(() => _handOverBusy = false);
++    if (!result.ok) {
++      setState(() => _error = phoneHandOverMessage(result.reason));
++      return;
++    }
++    await ref.read(virtualWindowProvider.notifier).close();
++    ref.read(virtualScreenSettingsProvider.notifier)
++        .setTarget(toMain ? VirtualScreenTarget.main : VirtualScreenTarget.virtual);
++    unawaited(ref.read(phoneProvider.notifier).refreshStatus());
++    if (mounted) {
++      Navigator.of(context).pop(PhoneHandOverDone(toMain: toMain, fallback: result.fallback));
++    }
++  }
++
++  @override
++  Widget build(BuildContext context) {
++    final ready = ref.watch(phoneProvider.select((s) => s.status.ready));
++    return Scaffold(
++      appBar: AppBar(title: const Text('虚拟屏')),
++      body: SafeArea(
++        child: Column(
++          children: [
++            Expanded(
++              child: ColoredBox(
++                color: const Color(0xFF070911),
++                child: VirtualScreenSurface(
++                  channel: ref.read(phoneChannelProvider),
++                  taskId: widget.taskId,
++                  enabled: ready,
++                  onGestureBusy: (busy) {
++                    if (mounted) setState(() => _gestureBusy = busy);
++                  },
++                  onGestureResult: (result) {
++                    if (!mounted) return;
++                    setState(() => _error = result.ok ? null : (result.message ?? '这次手势没有发出去。'));
++                  },
++                ),
++              ),
++            ),
++            Padding(
++              padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
++              child: Text(
++                _error ?? '直接用手指点、长按、滑动这块屏；改动的是后台屏上的应用。',
++                maxLines: 3,
++                style: Theme.of(context).textTheme.bodySmall?.copyWith(
++                  color: _error == null
++                      ? Theme.of(context).colorScheme.onSurfaceVariant
++                      : Theme.of(context).colorScheme.error,
++                ),
++              ),
++            ),
++            Padding(
++              padding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
++              child: Row(
++                mainAxisAlignment: MainAxisAlignment.end,
++                children: [
++                  TextButton(
++                    key: const ValueKey('virtual-screen-to-main'),
++                    onPressed: _handOverBusy || _gestureBusy ? null : () => unawaited(_handOver(toMain: true)),
++                    child: const Text('切到主屏'),
++                  ),
++                  TextButton(
++                    key: const ValueKey('virtual-screen-to-virtual'),
++                    onPressed: _handOverBusy || _gestureBusy ? null : () => unawaited(_handOver(toMain: false)),
++                    child: const Text('交给 AI（虚拟屏）'),
++                  ),
++                ],
++              ),
++            ),
++          ],
++        ),
++      ),
++    );
++  }
++}
+diff --git a/app/lib/ui/phone/virtual_screen_surface.dart b/app/lib/ui/phone/virtual_screen_surface.dart
+new file mode 100644
+index 0000000..5bd725a
+--- /dev/null
++++ b/app/lib/ui/phone/virtual_screen_surface.dart
+@@ -0,0 +1,286 @@
++import 'dart:async';
++import 'dart:math' as math;
++import 'dart:ui' as ui;
++
++import 'package:flutter/material.dart';
++import 'package:flutter/services.dart';
++
++import '../../l10n/l10n.dart';
++import '../../phone/phone_channel.dart';
++
++/// 虚拟屏的画面本身：订阅后台屏的帧、解码、画出来，并把手指的点/长按/滑动换成对那块屏的
++/// 手势。放大预览的对话框和可操作的虚拟屏页面用的是同一个它，所以两处看到的是同一条画面、
++/// 同一套手势。
++class VirtualScreenSurface extends StatefulWidget {
++  const VirtualScreenSurface({
++    required this.channel,
++    required this.taskId,
++    this.enabled = true,
++    this.onGestureBusy,
++    this.onGestureResult,
++    super.key,
++  });
++
++  final PhoneChannel channel;
++  final int taskId;
++
++  /// 通道/页面还能用吗（预览被关掉、页面被别的页盖住时不再订阅）。
++  final bool enabled;
++
++  /// 一次手势正在路上：调用方据此先别做别的（迁移会挪走这块屏）。
++  final ValueChanged<bool>? onGestureBusy;
++
++  /// 手势的结果，没发出去时带着原因。
++  final ValueChanged<PhoneGestureResult>? onGestureResult;
++
++  @override
++  State<VirtualScreenSurface> createState() => _VirtualScreenSurfaceState();
++}
++
++class _VirtualScreenSurfaceState extends State<VirtualScreenSurface> {
++  late final AppLifecycleListener _lifecycle;
++  StreamSubscription<PhonePreviewFrame?>? _subscription;
++  Future<void> _transition = Future.value();
++  bool _resumed = false;
++  bool _routeCurrent = false;
++  bool _visible = false;
++  int _epoch = 0;
++  int _imageRevision = 0;
++  int _nativeGeneration = -1;
++  int _nativeSequence = -1;
++  String _state = 'waiting';
++  ui.Image? _image;
++  PhonePreviewFrame? _pending;
++  bool _decoding = false;
++  // 手动点滑: a drag's two ends, and one gesture in flight at a time.
++  Offset? _swipeFrom;
++  Offset? _swipeLast;
++  bool _gestureBusy = false;
++
++  @override
++  void initState() {
++    super.initState();
++    _resumed = WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed;
++    _lifecycle = AppLifecycleListener(onStateChange: (state) {
++      _resumed = state == AppLifecycleState.resumed;
++      _syncVisibility();
++    });
++  }
++
++  @override
++  void didChangeDependencies() {
++    super.didChangeDependencies();
++    // ModalRoute.of establishes a dependency on isCurrent; a covering route stops capture.
++    _routeCurrent = ModalRoute.of(context)?.isCurrent == true;
++    _syncVisibility();
++  }
++
++  @override
++  void didUpdateWidget(VirtualScreenSurface oldWidget) {
++    super.didUpdateWidget(oldWidget);
++    if (oldWidget.enabled != widget.enabled || oldWidget.taskId != widget.taskId) _syncVisibility();
++  }
++
++  void _clearImage() {
++    _imageRevision++;
++    _pending = null;
++    final old = _image;
++    _image = null;
++    old?.dispose();
++  }
++
++  Future<void> _cancelSubscription() async {
++    final old = _subscription;
++    _subscription = null;
++    try {
++      await old?.cancel();
++    } on MissingPluginException {
++      // A detached native engine has no remaining consumer to remove.
++    } on PlatformException {
++      // Native task/engine retirement also clears its preview consumer.
++    }
++  }
++
++  void _syncVisibility() {
++    final visible = widget.enabled && _resumed && _routeCurrent;
++    if (_visible == visible) return;
++    _visible = visible;
++    final epoch = ++_epoch;
++    _clearImage();
++    _nativeGeneration = -1;
++    _nativeSequence = -1;
++    if (mounted) setState(() => _state = 'waiting');
++    // Wait for the old EventChannel cancel before listening again on the same channel.
++    _transition = _transition.then((_) async {
++      await _cancelSubscription();
++      if (!mounted || !_visible || _epoch != epoch) return;
++      _subscription = widget.channel.previewFrames(widget.taskId).listen(
++        (frame) {
++          if (mounted && _visible && _epoch == epoch) _receive(frame);
++        },
++        onError: (Object _) {
++          if (!mounted || !_visible || _epoch != epoch) return;
++          _clearImage();
++          setState(() => _state = 'unavailable');
++        },
++      );
++    });
++  }
++
++  void _receive(PhonePreviewFrame? frame) {
++    if (frame == null) {
++      _clearImage();
++      setState(() => _state = 'unavailable');
++      return;
++    }
++    if (frame.taskId != widget.taskId ||
++        frame.generation < _nativeGeneration ||
++        frame.generation == _nativeGeneration && frame.sequence <= _nativeSequence) {
++      return;
++    }
++    if (frame.generation != _nativeGeneration) {
++      _clearImage();
++      setState(() => _state = 'waiting');
++    }
++    _nativeGeneration = frame.generation;
++    _nativeSequence = frame.sequence;
++    if (frame.state != 'frame') {
++      _clearImage();
++      setState(() => _state = frame.state);
++      return;
++    }
++    _pending = frame; // one latest pending frame; a slow decoder never accumulates a queue
++    unawaited(_decodeLatest());
++  }
++
++  Future<void> _decodeLatest() async {
++    if (_decoding) return;
++    _decoding = true;
++    try {
++      while (_pending != null) {
++        final frame = _pending!;
++        _pending = null;
++        final epoch = _epoch;
++        final revision = _imageRevision;
++        ui.Codec? codec;
++        ui.Image? decoded;
++        try {
++          codec = await ui.instantiateImageCodec(frame.imageBytes!,
++              targetWidth: frame.width, targetHeight: frame.height, allowUpscaling: false);
++          decoded = (await codec.getNextFrame()).image;
++        } catch (_) {
++          // No exception details or image bytes enter logs or diagnostics.
++          if (mounted && _visible && _epoch == epoch && _imageRevision == revision && _pending == null) {
++            _clearImage();
++            setState(() => _state = 'unavailable');
++          }
++        } finally {
++          codec?.dispose();
++        }
++        if (decoded == null) continue;
++        if (!mounted || !_visible || _epoch != epoch || _imageRevision != revision) {
++          decoded.dispose();
++          continue;
++        }
++        final old = _image;
++        setState(() {
++          _image = decoded;
++          _state = 'frame';
++        });
++        old?.dispose();
++      }
++    } finally {
++      _decoding = false;
++    }
++  }
++
++  @override
++  void dispose() {
++    _visible = false;
++    _epoch++;
++    _clearImage();
++    _lifecycle.dispose();
++    _transition = _transition.then((_) => _cancelSubscription());
++    super.dispose();
++  }
++
++  /// 手动点滑: where a touch landed, as a fraction of the picture (0..1). Native maps the
++  /// fraction onto the virtual screen, so the preview's scaled-down size never matters. The
++  /// letterbox around a letter-shaped screen is not a target, so a touch there is dropped.
++  Offset? _toPictureFraction(Offset local, Size box, {bool clamp = false}) {
++    final image = _image;
++    if (image == null || image.width <= 0 || image.height <= 0) return null;
++    final iw = image.width.toDouble(), ih = image.height.toDouble();
++    final scale = math.min(box.width / iw, box.height / ih);
++    if (!scale.isFinite || scale <= 0) return null;
++    final left = (box.width - iw * scale) / 2, top = (box.height - ih * scale) / 2;
++    final x = (local.dx - left) / scale / iw, y = (local.dy - top) / scale / ih;
++    if (clamp) return Offset(x.clamp(0.0, 1.0).toDouble(), y.clamp(0.0, 1.0).toDouble());
++    if (x < 0 || y < 0 || x >= 1 || y >= 1) return null;
++    return Offset(x, y);
++  }
++
++  /// One gesture on the enlarged picture: the finger is the consent, native takes a fresh
++  /// observation and injects it into the virtual screen.
++  Future<void> _gesture(String action, Offset from, Size box, {Offset? to}) async {
++    if (_gestureBusy) return;
++    final start = _toPictureFraction(from, box);
++    // A swipe that leaves the picture still ends at its edge, not nowhere.
++    final end = to == null ? null : _toPictureFraction(to, box, clamp: true);
++    if (start == null || action == 'swipe' && end == null) return;
++    setState(() => _gestureBusy = true);
++    widget.onGestureBusy?.call(true);
++    final result = await widget.channel.previewGesture(
++      taskId: widget.taskId,
++      action: action,
++      x: start.dx,
++      y: start.dy,
++      x2: end?.dx,
++      y2: end?.dy,
++      durationMs: action == 'swipe' ? 300 : 400,
++    );
++    if (!mounted) return;
++    setState(() => _gestureBusy = false);
++    widget.onGestureBusy?.call(false);
++    widget.onGestureResult?.call(result);
++  }
++
++  @override
++  Widget build(BuildContext context) {
++    final l10n = context.l10n;
++    final image = _image;
++    if (image == null) {
++      return Center(
++        child: Text(switch (_state) {
++          'off' => l10n.phonePreviewOff,
++          'inUse' => l10n.phonePreviewInUse,
++          'unavailable' || 'protected' => l10n.phonePreviewUnavailable,
++          _ => l10n.phonePreviewWaiting,
++        }, textAlign: TextAlign.center),
++      );
++    }
++    return LayoutBuilder(
++      builder: (context, box) {
++        final size = Size(box.maxWidth, box.maxHeight);
++        return GestureDetector(
++          behavior: HitTestBehavior.opaque,
++          onTapUp: (d) => unawaited(_gesture('tap', d.localPosition, size)),
++          onLongPressStart: (d) => unawaited(_gesture('long', d.localPosition, size)),
++          onPanStart: (d) {
++            _swipeFrom = d.localPosition;
++            _swipeLast = d.localPosition;
++          },
++          onPanUpdate: (d) => _swipeLast = d.localPosition,
++          onPanEnd: (_) {
++            final from = _swipeFrom;
++            final to = _swipeLast;
++            _swipeFrom = null;
++            _swipeLast = null;
++            if (from != null && to != null) unawaited(_gesture('swipe', from, size, to: to));
++          },
++          child: RawImage(image: image, fit: BoxFit.contain, filterQuality: FilterQuality.low),
++        );
++      },
++    );
++  }
++}
 diff --git a/app/lib/ui/settings/voice_settings_page.dart b/app/lib/ui/settings/voice_settings_page.dart
 index 38418e6..185aa3f 100644
 --- a/app/lib/ui/settings/voice_settings_page.dart
@@ -76534,28 +77607,64 @@ index 38418e6..185aa3f 100644
        ],
      );
    }
+diff --git a/app/lib/ui/shell/home_shell.dart b/app/lib/ui/shell/home_shell.dart
+index 9a236c7..0809e69 100644
+--- a/app/lib/ui/shell/home_shell.dart
++++ b/app/lib/ui/shell/home_shell.dart
+@@ -34,6 +34,7 @@ import '../plugins/plugins_screen.dart';
+ import '../pets/pet_settings_page.dart';
+ import '../phone/phone_stop_watcher.dart';
+ import '../phone/system_actions_host.dart';
++import '../phone/virtual_screen_host.dart';
+ import '../remote/host_switcher.dart' show showHostSheet;
+ import '../remote/remote_screen.dart';
+ import '../safe_mode/safe_mode_notice_listener.dart';
+@@ -370,6 +371,9 @@ class _HomeShellState extends ConsumerState<HomeShell> with TickerProviderStateM
+                       const TavernIntakeHost(),
+                       // Share sheet, launcher shortcuts, the tile: into the chat (draws nothing).
+                       SystemEntryHost(onReveal: _revealChat),
++                      // 悬浮屏: the window's own switch is remembered here, and a tap on it opens
++                      // the operable virtual screen page (draws nothing).
++                      const VirtualScreenHost(),
+                       // Forum links (sign-in return, topics): registers them with the router.
+                       const ForumLinkHost(),
+                       // DS Bot: keeps its feed and notifications alive with the shell.
 diff --git a/app/lib/ui/shell/system_entry_host.dart b/app/lib/ui/shell/system_entry_host.dart
-index 172e773..96d75d1 100644
+index 172e773..ef2657a 100644
 --- a/app/lib/ui/shell/system_entry_host.dart
 +++ b/app/lib/ui/shell/system_entry_host.dart
-@@ -37,6 +37,7 @@ import '../../state/compose_inbox.dart';
+@@ -37,6 +37,8 @@ import '../../state/compose_inbox.dart';
  import '../../state/draft_store.dart';
  import '../../state/hosts_state.dart';
  import '../../state/sessions_state.dart';
-+import '../../voice/wake_word.dart' show callOnOpenProvider;
++import '../../voice/wake_settings.dart';
++import '../../voice/wake_word.dart' show callOnOpenProvider, diagWake;
  import '../common/discard_guard.dart';
  import '../tavern/tavern_deepseek_import.dart';
  import '../tavern/tavern_intake.dart';
-@@ -140,6 +141,12 @@ class _SystemEntryHostState extends ConsumerState<SystemEntryHost> {
+@@ -140,6 +142,25 @@ class _SystemEntryHostState extends ConsumerState<SystemEntryHost> {
  
    Future<void> _onEntry(LauncherEntry entry) async {
      switch (entry) {
 +      case NewChatEntry(call: true):
-+        // 语音通话 from the AI key: mark, then open the conversation. The conversation itself
-+        // takes the mark on its first frame and starts the call — asking from here could be
-+        // answered by whatever screen happened to be up, or by none (a chat, no call).
-+        if (mounted) ref.read(callOnOpenProvider.notifier).mark();
-+        if (mounted) await _compose(const ComposeRequest());
++        // 语音通话 from the AI key: the conversation is opened, then marked. The conversation
++        // itself takes the mark and starts the call — asking from here could be answered by
++        // whatever screen happened to be up, or by none (a chat, no call).
++        diagWake('shortcut-call: entry reached Dart');
++        // The conversation page has to be up *before* the mark is set: taking it opens the call
++        // on whatever is on top, and the pop back to the chat that follows would then pop the
++        // call too. So: show the chat, then mark. On a cold start that same pop is what puts a
++        // conversation page there at all — without it the mark had nobody to take it.
++        if (!await _showChat() || !mounted) {
++          diagWake('shortcut-call: stayed, no call');
++          return;
++        }
++        // 接着上次 vs 开新对话, the same switch the wake word obeys: opening a new chat here
++        // made 「接着上次」 pointless for the AI key — it always landed on a fresh one.
++        final fresh = ref.read(wakeSettingsProvider).freshChat;
++        if (fresh) ref.read(composeInboxProvider.notifier).push(const ComposeRequest());
++        ref.read(callOnOpenProvider.notifier).mark();
++        diagWake('shortcut-call: chat shown (fresh=$fresh), marked');
        case NewChatEntry(:final voice, :final text):
          // The microphone opens only for an app on screen; the shortcut's
          // intent can arrive a beat before Flutter hears it is resumed.
