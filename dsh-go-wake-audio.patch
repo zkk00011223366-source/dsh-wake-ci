@@ -1,7 +1,7 @@
-From 83a7ee8374629e424cdf5eec3f779d797dcf0ae7 Mon Sep 17 00:00:00 2001
+From 6e8b60c83597c19b3eb6384f375e486995666beb Mon Sep 17 00:00:00 2001
 From: wake-ci <ci@local>
-Date: Thu, 19 Nov 2026 22:22:06 +0800
-Subject: [PATCH] private build: continuity
+Date: Thu, 19 Nov 2026 22:23:20 +0800
+Subject: [PATCH] private build: continuity 2
 
 ---
  .gitattributes                                |    3 +
@@ -14,10 +14,10 @@ Subject: [PATCH] private build: continuity
  .../dsh_app/call/CallOverlayPlugin.kt         |   66 +
  .../dsh_app/phone/PhoneAndroidShell.kt        |   10 +-
  .../dsh_app/phone/PhoneBackGuard.kt           |  146 +
- .../dsh_app/phone/PhoneContracts.kt           |   18 +
+ .../dsh_app/phone/PhoneContracts.kt           |   21 +
  .../ccch1mneyyy/dsh_app/phone/PhoneControl.kt |   34 +-
  .../ccch1mneyyy/dsh_app/phone/PhoneCore.kt    |  134 +-
- .../ccch1mneyyy/dsh_app/phone/PhonePlugin.kt  |   86 +
+ .../ccch1mneyyy/dsh_app/phone/PhonePlugin.kt  |   93 +
  .../dsh_app/phone/PhoneTaskSessions.kt        |   11 +-
  .../ccch1mneyyy/dsh_app/phone/PhoneTasks.kt   |   11 +
  .../dsh_app/phone/PhoneToolCatalog.kt         |   15 +-
@@ -38,7 +38,7 @@ Subject: [PATCH] private build: continuity
  .../dsh_app/phone/vscreen/TaskMover.kt        |   43 +
  .../dsh_app/phone/vscreen/TransferBall.kt     |  395 ++
  .../phone/vscreen/VirtualScreenOverlay.kt     | 1138 ++++++
- .../phone/vscreen/VirtualScreenPlugin.kt      |   89 +
+ .../phone/vscreen/VirtualScreenPlugin.kt      |   96 +
  .../ccch1mneyyy/dsh_app/runtime/GuestSetup.kt |   42 +-
  .../dsh_app/shortcuts/EntryActivity.kt        |    3 +
  .../dsh_app/shortcuts/ShortcutsPlugin.kt      |   13 +-
@@ -79,6 +79,7 @@ Subject: [PATCH] private build: continuity
  app/lib/state/app_info.dart                   |    5 +
  app/lib/state/update_state.dart               |    9 +
  app/lib/state/virtual_screen_state.dart       |  242 ++
+ app/lib/ui/chat/chat_rows.dart                |    2 +
  app/lib/ui/chat/chat_screen.dart              |   94 +-
  app/lib/ui/chat/media/media_format.dart       |   16 +-
  app/lib/ui/phone/android_shell_page.dart      |   28 +
@@ -101,7 +102,7 @@ Subject: [PATCH] private build: continuity
  docs/wake-word.md                             |  107 +
  dsh-go-wake.patch                             | 2065 +++++++++++
  tooling/build-wake-apk.sh                     |   68 +
- 97 files changed, 12154 insertions(+), 2064 deletions(-)
+ 98 files changed, 12173 insertions(+), 2064 deletions(-)
  create mode 100644 .github/workflows/wake-apk.yml
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallForegroundService.kt
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallOverlay.kt
@@ -1240,10 +1241,10 @@ index 0000000..175e47b
 +    }
 +}
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneContracts.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneContracts.kt
-index 612f94d..5523631 100644
+index 612f94d..5e615eb 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneContracts.kt
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneContracts.kt
-@@ -353,6 +353,24 @@ interface ControlListener {
+@@ -353,6 +353,27 @@ interface ControlListener {
  object PhoneRegistry {
      @Volatile var mainDriver: PhoneDriver? = null
  
@@ -1264,6 +1265,9 @@ index 612f94d..5523631 100644
 +     * 由 PhonePlugin 在初始化时接上，VirtualScreenPlugin 在 show/hide 时调用。
 +     */
 +    @Volatile var holdDisplayForWindow: ((Boolean) -> Unit)? = null
++
++    /** 关窗时把虚拟屏上的应用交回手机主屏（不杀应用、内容连续）。 */
++    @Volatile var handBackToMain: (() -> Unit)? = null
 +
      /** Overlay gate when the accessibility service runs, else the notification gate. */
      @Volatile var overlayGate: UserGate? = null
@@ -1638,7 +1642,7 @@ index 6c70185..0612726 100644
          private val WRITES = setOf(FOCUS_TEXT, PhoneToolCatalog.TAP, PhoneToolCatalog.TYPE, PhoneToolCatalog.TAP_XY, PhoneToolCatalog.OPEN)
          /** An uncertain effect call tightens draft eligibility; it does not prove input was dispatched. */
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhonePlugin.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhonePlugin.kt
-index 4a76535..cfa27ac 100644
+index 4a76535..38cd352 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhonePlugin.kt
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhonePlugin.kt
 @@ -2,6 +2,7 @@ package io.github.ccch1mneyyy.dsh_app.phone
@@ -1649,11 +1653,18 @@ index 4a76535..cfa27ac 100644
  import io.github.ccch1mneyyy.dsh_app.phone.background.BackgroundPreview
  import android.app.Activity
  import android.app.Application
-@@ -77,6 +78,12 @@ class PhonePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
+@@ -77,6 +78,19 @@ class PhonePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
          promptOwner = Any()
          attached = true
          control.background.restoreKeptChannel()
 +        // 悬浮窗开关：窗口开着时占住虚拟屏，别让一次任务收尾把屏销毁（A 方案）。
++        PhoneRegistry.handBackToMain = {
++            runCatching {
++                val target = control.background.anyPreviewTarget()
++                if (target != null) control.background.handOverTask(target, toMain = true)
++            }
++            Unit
++        }
 +        PhoneRegistry.holdDisplayForWindow = { on ->
 +            val display = control.driver(PhoneScreen.BACKGROUND) as? BackgroundDisplay
 +            if (on) display?.holdForWindow() else display?.dropHoldForWindow()
@@ -1662,7 +1673,7 @@ index 4a76535..cfa27ac 100644
          methods = MethodChannel(binding.binaryMessenger, "dsh/phone").also { it.setMethodCallHandler(this) }
          events = EventChannel(binding.binaryMessenger, "dsh/phone/events").also { it.setStreamHandler(this) }
          previewEvents = EventChannel(binding.binaryMessenger, "dsh/phone/preview").also { channel ->
-@@ -249,6 +256,85 @@ class PhonePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
+@@ -249,6 +263,85 @@ class PhonePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
                  result.success(if (removed) mapOf("kind" to "discarded") else replayRejected("stale"))
              }
              "setBackgroundPreview" -> result.success(control.preview.setEnabled(call.argument<Boolean>("enabled") == true))
@@ -4533,10 +4544,10 @@ index 0000000..06eaee6
 +}
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenPlugin.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenPlugin.kt
 new file mode 100644
-index 0000000..250a49c
+index 0000000..557bd13
 --- /dev/null
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenPlugin.kt
-@@ -0,0 +1,89 @@
+@@ -0,0 +1,96 @@
 +package io.github.ccch1mneyyy.dsh_app.phone.vscreen
 +
 +import android.content.Context
@@ -4595,9 +4606,16 @@ index 0000000..250a49c
 +            }
 +            "hide" -> {
 +                VirtualScreenOverlay.hide()
-+                // 窗口关了才真正放开；期间被压住的释放请求在这里补上。
-+                PhoneRegistry.holdDisplayForWindow?.invoke(false)
++                // 关窗时先把屏里的应用搬回手机（内容不丢失、不被杀），再放开占屏。
++                val target = PhoneRegistry.holdDisplayForWindow
 +                result.success(null)
++                Thread {
++                    runCatching {
++                        val hand = PhoneRegistry.handBackToMain
++                        hand?.invoke()
++                    }
++                    target?.invoke(false)
++                }.start()
 +            }
 +            "frame" -> {
 +                val bytes = call.argument<ByteArray>("bytes")
@@ -87856,6 +87874,19 @@ index 0000000..7be7b44
 +  );
 +  return all.isEmpty ? null : all.first.id;
 +}
+diff --git a/app/lib/ui/chat/chat_rows.dart b/app/lib/ui/chat/chat_rows.dart
+index 0702d0a..d5e8951 100644
+--- a/app/lib/ui/chat/chat_rows.dart
++++ b/app/lib/ui/chat/chat_rows.dart
+@@ -448,6 +448,8 @@ List<ChatRow> deriveRows({
+         tools.add(item);
+         turnTools.add(item);
+       case UserChatItem():
++        // 唤醒招呼是给助手的内部指令，不是用户说的话：不进聊天记录（第十一节 4 的成品要求）。
++        if (item.text.startsWith('（唤醒）')) break;
+         // 同一轮里的用户消息是运行中插话:插话之前的那一片单独收尾。
+         // 不知道属于哪一轮时,一条用户消息就是一轮的分界。
+         close(cut: turn == null ? null : item.seq, artifactsBefore: item.seq);
 diff --git a/app/lib/ui/chat/chat_screen.dart b/app/lib/ui/chat/chat_screen.dart
 index 46d2fd3..741ffe4 100644
 --- a/app/lib/ui/chat/chat_screen.dart
@@ -89940,7 +89971,7 @@ index 172e773..a1f9c8d 100644
          // The microphone opens only for an app on screen; the shortcut's
          // intent can arrive a beat before Flutter hears it is resumed.
 diff --git a/app/lib/ui/speech/voice_call_page.dart b/app/lib/ui/speech/voice_call_page.dart
-index 2f99689..8941b1d 100644
+index 2f99689..4bad0f2 100644
 --- a/app/lib/ui/speech/voice_call_page.dart
 +++ b/app/lib/ui/speech/voice_call_page.dart
 @@ -12,11 +12,14 @@ import 'dart:io';
@@ -90061,7 +90092,7 @@ index 2f99689..8941b1d 100644
 +    if (first.isNotEmpty) {
 +      // Through the conversation, not the chat provider: only what the conversation sends is
 +      // spoken when the reply arrives. expectReply 补上「第一句的回复也要念」的缺口（十五节）。
-+      _call.expectReply();
++      // 不调用 expectReply()：这条回应交给下面的朗读通道念，两套一起念会重复。
 +      unawaited(widget.conversation.send(first));
 +      // 兜底：用「朗读」那条已经验证有声音的通道念这次回应。
 +      // 三个参考 App 都是「有回复就念」，不看是哪条链路发的；通话自己的 TTS 没出声时，
