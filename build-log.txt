@@ -1,7 +1,7 @@
 == resources ==
-/dev/root        72G   48G   24G  67% /
+/dev/root        72G   52G   21G  72% /
                total        used        free      shared  buff/cache   available
-Mem:            7931        1363         474          50        6558        6568
+Mem:            7931        3172        2283          27        2816        4758
 == tail ==
 
 ==> 依赖: flutter pub get
@@ -72,9 +72,62 @@ To use the command line arguments, delete the l10n.yaml file in the Flutter proj
 ==> 运行时: 已存在 runtime/out/arm64-v8a
 
 ==> 打包: tooling/build-apk.sh -f arm64 --keep-daemon
-dsh-go 1.1.0 (11191434, 2026-11-19 14:34 UTC+8) · release · arm64
+dsh-go 1.1.0 (11191428, 2026-11-19 14:28 UTC+8) · release · arm64
 runtime verified: arm64 (arm64-v8a), schema 1, 5 files
 tawcroot: /home/runner/work/dsh-wake-ci/dsh-wake-ci/runtime/out-tawcroot
-→ flutter build apk --release --flavor arm64 --target-platform android-arm64 --build-name 1.1.0 --build-number 11191434 --dart-define=DSH_APP_VERSION=1.1.0+11191434
+→ flutter build apk --release --flavor arm64 --target-platform android-arm64 --build-name 1.1.0 --build-number 11191428 --dart-define=DSH_APP_VERSION=1.1.0+11191428
 Flutter assets will be downloaded from https://storage.googleapis.com. Make sure you trust this source!
 Running Gradle task 'assembleArm64Release'...                   
+WARNING: Your app uses the following plugins that apply Kotlin Gradle Plugin (KGP): flutter_webrtc
+Future versions of Flutter will fail to build if your app uses plugins that apply KGP.
+
+Please check the changelogs of these plugins and upgrade to a version that supports Built-in Kotlin.
+If no such version exists, report the issue to the plugin. If necessary, here is a guide on filing
+an issue against a plugin: https://docs.flutter.dev/release/breaking-changes/migrate-to-built-in-kotlin/for-app-developers#report-incompatible-kotlin-gradle-plugin-usage-to-plugin-authors
+
+If you are a plugin author, please migrate your plugin to Built-in Kotlin using this guide: https://docs.flutter.dev/release/breaking-changes/migrate-to-built-in-kotlin/for-plugin-authors
+Checking the license for package Android SDK Platform 35 in /home/runner/dev/android-sdk/licenses
+License for package Android SDK Platform 35 accepted.
+Preparing "Install Android SDK Platform 35 (revision 2)".
+"Install Android SDK Platform 35 (revision 2)" ready.
+Installing Android SDK Platform 35 in /home/runner/dev/android-sdk/platforms/android-35
+"Install Android SDK Platform 35 (revision 2)" complete.
+"Install Android SDK Platform 35 (revision 2)" finished.
+[=========                              ] 25%                                   
+Checking the license for package Android SDK Platform 34 in /home/runner/dev/android-sdk/licenses
+License for package Android SDK Platform 34 accepted.
+Preparing "Install Android SDK Platform 34 (revision 3)".
+"Install Android SDK Platform 34 (revision 3)" ready.
+Installing Android SDK Platform 34 in /home/runner/dev/android-sdk/platforms/android-34
+"Install Android SDK Platform 34 (revision 3)" complete.
+"Install Android SDK Platform 34 (revision 3)" finished.
+Flutter assets will be downloaded from https://storage.googleapis.com. Make sure you trust this source!
+lib/ui/shell/system_entry_host.dart:169:47: Error: The method 'chatProvider' isn't defined for the type '_SystemEntryHostState'.
+ - '_SystemEntryHostState' is from 'package:dsh_app/ui/shell/system_entry_host.dart' ('lib/ui/shell/system_entry_host.dart').
+Try correcting the name to the name of an existing method, or defining a method named 'chatProvider'.
+        final title = chatTitleShown(ref.read(chatProvider(sessionId)).title.trim());
+                                              ^^^^^^^^^^^^
+lib/ui/shell/system_entry_host.dart:180:28: Error: The method 'chatProvider' isn't defined for the type '_SystemEntryHostState'.
+ - '_SystemEntryHostState' is from 'package:dsh_app/ui/shell/system_entry_host.dart' ('lib/ui/shell/system_entry_host.dart').
+Try correcting the name to the name of an existing method, or defining a method named 'chatProvider'.
+            await ref.read(chatProvider(sessionId).notifier).send(phrase.trim());
+                           ^^^^^^^^^^^^
+Target kernel_snapshot_program failed: Exception
+
+
+FAILURE: Build failed with an exception.
+
+* What went wrong:
+Execution failed for task ':app:compileFlutterBuildArm64Release'.
+> Process 'command '/home/runner/dev/flutter/bin/flutter'' finished with non-zero exit value 1
+
+* Try:
+> Run with --stacktrace option to get the stack trace.
+> Run with --info or --debug option to get more log output.
+> Run with --scan to get full insights from a Build Scan (powered by Develocity).
+> Get more help at https://help.gradle.org.
+
+BUILD FAILED in 6m 2s
+[=========                              ] 25%                                   
+Running Gradle task 'assembleArm64Release'...                     365.1s
+Gradle task assembleArm64Release failed with exit code 1
