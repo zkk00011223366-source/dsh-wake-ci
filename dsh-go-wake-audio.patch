@@ -1,25 +1,16 @@
-From 8d056a71535602ebf21fe380e9b27d1cb5c17dbd Mon Sep 17 00:00:00 2001
+From 26d9680d10910172930d72754f367971eda62de0 Mon Sep 17 00:00:00 2001
 From: dsh-wake <wake@local>
 Date: Wed, 18 Nov 2026 02:36:38 +0800
-Subject: [PATCH] fix(voice): the card goes away when the call page comes back
-MIME-Version: 1.0
-Content-Type: text/plain; charset=UTF-8
-Content-Transfer-Encoding: 8bit
+Subject: [PATCH] fix(voice): the sliver opens the card, not the app
 
-Tapping the card opened the app and left the card floating over the page it had just
-opened — the native side hid the window it owned, but a card made by the background
-path could survive it. The page itself now hides the card whenever it resumes, so the
-window is gone whichever way the person came back: the card, recents, or the
-notification.
-
-Also in this build: 语音通话 from the AI key opens the call (the shortcut pointed at a
-non-exported activity and did nothing), and the wake phrase is sent before the call
-opens instead of waiting for a send that only speech could start.
+A tap on the parked sliver expanded the window and then fired the click listener in the
+same gesture, so the app came forward and the card was never seen. The sliver only
+expands now; the card's own tap is what opens the call.
 ---
  app/android/app/src/main/AndroidManifest.xml  |   9 +
  .../ccch1mneyyy/dsh_app/MainActivity.kt       |  45 ++
  .../dsh_app/call/CallForegroundService.kt     |  94 ++++
- .../ccch1mneyyy/dsh_app/call/CallOverlay.kt   | 318 ++++++++++++
+ .../ccch1mneyyy/dsh_app/call/CallOverlay.kt   | 317 ++++++++++++
  .../dsh_app/call/CallOverlayPlugin.kt         |  66 +++
  .../dsh_app/shortcuts/EntryActivity.kt        |   3 +
  .../dsh_app/shortcuts/ShortcutsPlugin.kt      |   3 +-
@@ -45,7 +36,7 @@ opens instead of waiting for a send that only speech could start.
  app/lib/voice/wake_keywords.dart              |  50 ++
  app/lib/voice/wake_word.dart                  | 468 +++++++++++++++---
  app/pubspec.yaml                              |   4 +
- 29 files changed, 1482 insertions(+), 104 deletions(-)
+ 29 files changed, 1481 insertions(+), 104 deletions(-)
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallForegroundService.kt
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallOverlay.kt
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallOverlayPlugin.kt
@@ -257,10 +248,10 @@ index 0000000..90a77cf
 +}
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallOverlay.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallOverlay.kt
 new file mode 100644
-index 0000000..6917b40
+index 0000000..3e374a4
 --- /dev/null
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallOverlay.kt
-@@ -0,0 +1,318 @@
+@@ -0,0 +1,317 @@
 +package io.github.ccch1mneyyy.dsh_app.call
 +
 +import android.annotation.SuppressLint
@@ -443,10 +434,9 @@ index 0000000..6917b40
 +
 +        view.setOnTouchListener { _, event ->
 +            if (collapsed) {
-+                if (event.actionMasked == MotionEvent.ACTION_UP) {
-+                    applyShape(false)
-+                    view.performClick()
-+                }
++                // A tap on the sliver only brings the card back; opening the call is the
++                // card's own tap, one step later. Doing both here skipped the card entirely.
++                if (event.actionMasked == MotionEvent.ACTION_UP) applyShape(false)
 +                return@setOnTouchListener true
 +            }
 +            when (event.actionMasked) {
