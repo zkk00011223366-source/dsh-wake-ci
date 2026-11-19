@@ -1,7 +1,7 @@
 From 2fba2026bfebdbe11a2b0c6a3bd25aab9a6e389b Mon Sep 17 00:00:00 2001
 From: dsh-wake <wake@local>
 Date: Thu, 19 Nov 2026 09:46:03 +0800
-Subject: [PATCH 1/2] fix(voice): the AI key's shortcut opens the call, not
+Subject: [PATCH 1/3] fix(voice): the AI key's shortcut opens the call, not
  just a chat
 MIME-Version: 1.0
 Content-Type: text/plain; charset=UTF-8
@@ -101,7 +101,7 @@ index b8b56e8..d5fc3ab 100644
 From f0cb3b0b9807e0b827d7d8182a2c83b12904d812 Mon Sep 17 00:00:00 2001
 From: dsh-wake <wake@local>
 Date: Thu, 19 Nov 2026 09:46:15 +0800
-Subject: [PATCH 2/2] revert(phone): own-app guards stay as they were
+Subject: [PATCH 2/3] revert(phone): own-app guards stay as they were
 
 UI operation is out of scope for this round. Only the package-name fix remains, because the
 shortcuts need it.
@@ -183,6 +183,50 @@ index f95e573..0d55002 100644
          // l10n:keep agent screen result
          if (snap.protectedPage && !lifted.systemPages) return ActionResult(false, "这是系统权限 / 安全相关页面，DSH 不在这里点击。需要的话请用 handoff 交给用户。")
          // l10n:keep agent screen result
+-- 
+2.43.0
+
+
+From d75835e3e02ef7db3e7ea90773ebc9d2dda86d00 Mon Sep 17 00:00:00 2001
+From: dsh-wake <wake@local>
+Date: Thu, 19 Nov 2026 09:47:17 +0800
+Subject: [PATCH 3/3] feat(voice): the shortcut speaks too
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Opening a call from the AI key now sends the wake phrase as the first thing said, the same
+way a wake word does — the assistant answers immediately instead of the page opening in
+silence.
+---
+ app/lib/ui/chat/chat_screen.dart | 7 ++++++-
+ 1 file changed, 6 insertions(+), 1 deletion(-)
+
+diff --git a/app/lib/ui/chat/chat_screen.dart b/app/lib/ui/chat/chat_screen.dart
+index de74bb3..18aefb4 100644
+--- a/app/lib/ui/chat/chat_screen.dart
++++ b/app/lib/ui/chat/chat_screen.dart
+@@ -28,6 +28,7 @@ import '../../state/streaming_pcm_state.dart';
+ import '../../voice/live_words.dart';
+ import '../../voice/live_words_model.dart';
+ import '../../voice/streaming_pcm.dart';
++import '../../voice/wake_settings.dart';
+ import '../../voice/wake_word.dart';
+ import '../../state/agents_state.dart' show subagentParentProvider;
+ import '../../state/attachments.dart';
+@@ -378,7 +379,11 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
+     // as the page exists — before any typing, and through the same start a wake uses.
+     WidgetsBinding.instance.addPostFrameCallback((_) {
+       if (!mounted) return;
+-      if (ref.read(callOnOpenProvider.notifier).take()) unawaited(_startCall(() => mounted));
++      // The AI key says "open a call" the way a wake word does, so it also sends what a wake
++      // would: the assistant is spoken to at once instead of the page opening in silence.
++      if (ref.read(callOnOpenProvider.notifier).take()) {
++        unawaited(_startCall(() => mounted, wakePhrase: ref.read(wakeSettingsProvider).keyword));
++      }
+     });
+     // A wake word that matched while this screen was not up: answer it once the first frame
+     // is up, so the call opens on a screen that exists (and after _voice is built).
 -- 
 2.43.0
 
