@@ -1,8 +1,7 @@
-From d90eea2b4bb17da61f189bd445ef30ed55e73007 Mon Sep 17 00:00:00 2001
+From 45023c058dbb4c2dd13a2c5144c9976ab96b2f27 Mon Sep 17 00:00:00 2001
 From: wake-ci <ci@local>
-Date: Thu, 19 Nov 2026 17:38:48 +0800
-Subject: [PATCH] vscreen: first-open retry, pixel-only small window, wake
- greeting, waiting text
+Date: Thu, 19 Nov 2026 17:41:11 +0800
+Subject: [PATCH] vscreen + wake greeting
 
 ---
  .gitattributes                                |    3 +
@@ -72,7 +71,7 @@ Subject: [PATCH] vscreen: first-open retry, pixel-only small window, wake
  app/lib/state/app_info.dart                   |    5 +
  app/lib/state/update_state.dart               |    9 +
  app/lib/state/virtual_screen_state.dart       |  235 ++
- app/lib/ui/chat/chat_screen.dart              |   95 +-
+ app/lib/ui/chat/chat_screen.dart              |   92 +-
  app/lib/ui/chat/media/media_format.dart       |   16 +-
  app/lib/ui/phone/android_shell_page.dart      |   28 +
  app/lib/ui/phone/background_preview.dart      |  264 +-
@@ -83,17 +82,17 @@ Subject: [PATCH] vscreen: first-open retry, pixel-only small window, wake
  app/lib/ui/phone/virtual_screen_surface.dart  |  286 ++
  app/lib/ui/settings/voice_settings_page.dart  |   89 +
  app/lib/ui/shell/home_shell.dart              |    4 +
- app/lib/ui/shell/system_entry_host.dart       |   43 +
+ app/lib/ui/shell/system_entry_host.dart       |   36 +
  app/lib/ui/speech/voice_call_page.dart        |  127 +-
  app/lib/ui/theme/app_icons.dart               |    4 +
  app/lib/voice/wake_keywords.dart              |   50 +
  app/lib/voice/wake_settings.dart              |  106 +
- app/lib/voice/wake_word.dart                  |  841 +++++
+ app/lib/voice/wake_word.dart                  |  847 +++++
  app/pubspec.yaml                              |    4 +
  docs/wake-word.md                             |  107 +
  dsh-go-wake.patch                             | 2065 +++++++++++
  tooling/build-wake-apk.sh                     |   68 +
- 88 files changed, 11587 insertions(+), 1902 deletions(-)
+ 88 files changed, 11583 insertions(+), 1902 deletions(-)
  create mode 100644 .github/workflows/wake-apk.yml
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallForegroundService.kt
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallOverlay.kt
@@ -86700,7 +86699,7 @@ index 0000000..cd4561c
 +  return all.isEmpty ? null : all.first.id;
 +}
 diff --git a/app/lib/ui/chat/chat_screen.dart b/app/lib/ui/chat/chat_screen.dart
-index 46d2fd3..8c0488f 100644
+index 46d2fd3..f1967b1 100644
 --- a/app/lib/ui/chat/chat_screen.dart
 +++ b/app/lib/ui/chat/chat_screen.dart
 @@ -28,6 +28,8 @@ import '../../state/streaming_pcm_state.dart';
@@ -86768,7 +86767,7 @@ index 46d2fd3..8c0488f 100644
      _voice = VoiceInputController(
        input: _input,
        bridge: ref.read(voiceBridgeProvider),
-@@ -1474,33 +1511,78 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
+@@ -1474,33 +1511,75 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
      showUsageSheet(context, sessionId: sessionId, model: model);
    }
  
@@ -86825,10 +86824,7 @@ index 46d2fd3..8c0488f 100644
 +        // 唤醒的三段式（需求单 16:30）：唤醒 → 助手先说一句「我在」 → 用户再说话。
 +        // 发的是给助手的内部指令，不是把唤醒词当问题；它的回复走通话的流式朗读，
 +        // 所以 1–2 秒内就该出声，而不是安静地开一个通话页。
-+        firstWords: wakePhrase == null
-+            ? null
-+            : '（唤醒）有人刚叫了你。用一句话回应「我在，你说」，然后停下等对方开口。'
-+                '不要调用工具，不要展开。',
++        firstWords: wakePhrase == null ? null : wakeGreetingInstruction,
          session: () async {
            // Another host now: its conversation of the same id is not this call's.
            if (!mounted || ref.read(activeHostProvider) != host) return null;
@@ -86852,7 +86848,7 @@ index 46d2fd3..8c0488f 100644
      );
    }
  
-@@ -2176,6 +2258,9 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
+@@ -2176,6 +2255,9 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
                                        strip: false,
                                      ),
                                    ),
@@ -88630,7 +88626,7 @@ index 9a236c7..0809e69 100644
                        const ForumLinkHost(),
                        // DS Bot: keeps its feed and notifications alive with the shell.
 diff --git a/app/lib/ui/shell/system_entry_host.dart b/app/lib/ui/shell/system_entry_host.dart
-index 172e773..2a77d60 100644
+index 172e773..620edd3 100644
 --- a/app/lib/ui/shell/system_entry_host.dart
 +++ b/app/lib/ui/shell/system_entry_host.dart
 @@ -37,9 +37,14 @@ import '../../state/compose_inbox.dart';
@@ -88648,7 +88644,7 @@ index 172e773..2a77d60 100644
  
  /// Draws nothing. Put it once in the home shell's stack, next to [LinkHost].
  class SystemEntryHost extends ConsumerStatefulWidget {
-@@ -140,6 +145,44 @@ class _SystemEntryHostState extends ConsumerState<SystemEntryHost> {
+@@ -140,6 +145,37 @@ class _SystemEntryHostState extends ConsumerState<SystemEntryHost> {
  
    Future<void> _onEntry(LauncherEntry entry) async {
      switch (entry) {
@@ -88676,20 +88672,13 @@ index 172e773..2a77d60 100644
 +        final sessionId = id;
 +        final title = chatTitleShown(ref.read(chatProvider(sessionId)).title?.trim() ?? '');
 +        diagWake('shortcut-call: opening the call page (fresh=$freshCall)');
++        // AI 键和唤醒词同一条路：通话自己发那句内部指令，回复才会被流式念出来。
 +        await openChatCall(
 +          context,
 +          title: title.isEmpty ? appL10n.commonNewChat : title,
++          firstWords: wakeGreetingInstruction,
 +          session: () async => sessionId,
 +        );
-+        // Said after the page is up: the call must open whatever the send does.
-+        final phrase = ref.read(wakeSettingsProvider).keyword;
-+        if (phrase.trim().isNotEmpty) {
-+          try {
-+            await ref.read(chatProvider(sessionId).notifier).send(phrase.trim());
-+          } on Object {
-+            // The call is already open; the person can speak.
-+          }
-+        }
        case NewChatEntry(:final voice, :final text):
          // The microphone opens only for an app on screen; the shortcut's
          // intent can arrive a beat before Flutter hears it is resumed.
@@ -89091,10 +89080,10 @@ index 0000000..1ef92b1
 +final wakeSettingsProvider = NotifierProvider<WakeSettingsController, WakeSettings>(WakeSettingsController.new);
 diff --git a/app/lib/voice/wake_word.dart b/app/lib/voice/wake_word.dart
 new file mode 100644
-index 0000000..7a20d05
+index 0000000..b8713ac
 --- /dev/null
 +++ b/app/lib/voice/wake_word.dart
-@@ -0,0 +1,841 @@
+@@ -0,0 +1,847 @@
 +// 语音唤醒（常驻监听）: the switch, the recognizer and what a wake word does.
 +//
 +// Where each piece runs:
@@ -89221,6 +89210,12 @@ index 0000000..7a20d05
 +}
 +
 +final wakePlatformProvider = Provider<WakePlatform>((ref) => const WakePlatform());
++
++/// 唤醒/AI 键进通话后发给助手的第一句（需求单 16:30 的三段式）。
++/// 这是给助手的内部指令，不是把唤醒词当问题发；它的回复走通话的流式朗读，
++/// 所以 1–2 秒内就该听到「我在」，然后等用户开口。
++const wakeGreetingInstruction =
++    '（唤醒）有人刚叫了你。用一句话回应「我在，你说」，然后停下等对方开口。不要调用工具，不要展开。';
 +
 +class WakeWordController extends Notifier<WakeStatus> {
 +  /// 唤醒后 8 秒内不再触发 (answered, or the same phrase twice).
