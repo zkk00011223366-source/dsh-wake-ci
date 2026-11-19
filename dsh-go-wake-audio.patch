@@ -1,7 +1,7 @@
-From f577719def5f51933ee483b6d601f592dc65bee7 Mon Sep 17 00:00:00 2001
+From 83a7ee8374629e424cdf5eec3f779d797dcf0ae7 Mon Sep 17 00:00:00 2001
 From: wake-ci <ci@local>
-Date: Thu, 19 Nov 2026 22:16:43 +0800
-Subject: [PATCH] private build: night 2
+Date: Thu, 19 Nov 2026 22:22:06 +0800
+Subject: [PATCH] private build: continuity
 
 ---
  .gitattributes                                |    3 +
@@ -18,7 +18,7 @@ Subject: [PATCH] private build: night 2
  .../ccch1mneyyy/dsh_app/phone/PhoneControl.kt |   34 +-
  .../ccch1mneyyy/dsh_app/phone/PhoneCore.kt    |  134 +-
  .../ccch1mneyyy/dsh_app/phone/PhonePlugin.kt  |   86 +
- .../dsh_app/phone/PhoneTaskSessions.kt        |    5 +-
+ .../dsh_app/phone/PhoneTaskSessions.kt        |   11 +-
  .../ccch1mneyyy/dsh_app/phone/PhoneTasks.kt   |   11 +
  .../dsh_app/phone/PhoneToolCatalog.kt         |   15 +-
  .../ccch1mneyyy/dsh_app/phone/SafetyGate.kt   |    4 +-
@@ -101,7 +101,7 @@ Subject: [PATCH] private build: night 2
  docs/wake-word.md                             |  107 +
  dsh-go-wake.patch                             | 2065 +++++++++++
  tooling/build-wake-apk.sh                     |   68 +
- 97 files changed, 12149 insertions(+), 2063 deletions(-)
+ 97 files changed, 12154 insertions(+), 2064 deletions(-)
  create mode 100644 .github/workflows/wake-apk.yml
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallForegroundService.kt
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallOverlay.kt
@@ -1749,10 +1749,23 @@ index 4a76535..cfa27ac 100644
                  val selected = call.argument<String>("mode").orEmpty()
                  val enabled = call.argument<Boolean>("enabled") == true
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneTaskSessions.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneTaskSessions.kt
-index 3fd6e48..a3da978 100644
+index 3fd6e48..ffb1e8f 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneTaskSessions.kt
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneTaskSessions.kt
-@@ -472,7 +472,7 @@ class PhoneTaskSessions(
+@@ -29,7 +29,11 @@ class PhoneTaskSessions(
+     private val journal: PhoneTaskJournal? = null,
+     private val createBackgroundWorker: () -> SerialWorker = { SerialWorker("dsh-phone-background") },
+     // Pure in-memory capability/setting snapshot. Never probe a peer or read preferences here.
+-    private val backgroundCapacity: () -> Int = { 1 },
++    //
++    // 虚拟屏只有一块，但一块屏能同时装下多个任务（就像一块显示器可以开好几个窗口）。
++    // 之前把它当成容量 1 的独占资源，于是「窗口开着不释放屏」之后，下一个任务永远等不到锁。
++    // 现在不再按独占排队：要操作虚拟屏就直接用同一块屏。
++    private val backgroundCapacity: () -> Int = { Int.MAX_VALUE },
+     private val screenRecoveryReady: () -> Boolean = { false },
+     // Connection preparation precedes any new screen lease and runs outside registry/Tasks locks.
+     private val prepareBackground: (Task, PhoneTasks.Owner) -> String? = { _, _ -> null },
+@@ -472,7 +476,7 @@ class PhoneTaskSessions(
          fun acquire(): String? = synchronized(a) {
              if (remainingMs(a) <= 0) return@synchronized deadlineOutput().text
              call.borrowedMainForBackgroundOpen = call.name == PhoneToolCatalog.OPEN &&
@@ -1761,7 +1774,7 @@ index 3fd6e48..a3da978 100644
              if (PhoneScreen.MAIN in needed) mainHolder = task
              if (PhoneScreen.BACKGROUND in needed) backgroundHolders += task
              if (known != null) task.heldApps += known
-@@ -700,7 +700,6 @@ class PhoneTaskSessions(
+@@ -700,7 +704,6 @@ class PhoneTaskSessions(
                  else mapOf("kind" to "known", "packageName" to checkNotNull(task.waitingApp).packageName)
              mapOf("sessionId" to task.sessionId, "runId" to task.runId,
              "identity" to if (task.sessionId == null) "legacy" else "session",
@@ -1769,7 +1782,7 @@ index 3fd6e48..a3da978 100644
              "waitingForScreen" to task.waitingScreens.firstOrNull { screen ->
                  when (screen) {
                      PhoneScreen.MAIN -> mainHolder != null && mainHolder !== task
-@@ -948,7 +947,7 @@ class PhoneTaskSessions(
+@@ -948,7 +951,7 @@ class PhoneTaskSessions(
  
      companion object {
          // l10n:keep agent resource admission
