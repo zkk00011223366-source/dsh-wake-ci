@@ -1,24 +1,26 @@
-From fa0c935eff2b0d4a9ee728069845af390a91eccf Mon Sep 17 00:00:00 2001
+From 63f6c0f9eb8882b6b3d0d736535f1b13bb18bc36 Mon Sep 17 00:00:00 2001
 From: dsh-wake <wake@local>
 Date: Wed, 18 Nov 2026 02:36:38 +0800
-Subject: [PATCH] fix(app): the private build's shortcuts and self-recognition
- follow its own id
+Subject: [PATCH] =?UTF-8?q?feat(phone):=20DSH=20=E8=87=AA=E5=B7=B1?=
+ =?UTF-8?q?=E7=9A=84=E7=95=8C=E9=9D=A2=20is=20operable=20and=20readable?=
 MIME-Version: 1.0
 Content-Type: text/plain; charset=UTF-8
 Content-Transfer-Encoding: 8bit
 
-The private build ships as io.github.ccch1mneyyy.dsh_app.private, but shortcuts.xml and two
-constants still named the original package — so 新对话, 语音输入 and 语音通话 all opened DSH Go
-instead of this app, and the phone-control safety gate took DSH Go for itself and this app for
-a stranger. All three now use this build's id (targetPackage in the shortcut XML, and
-BuildConfig.APPLICATION_ID at runtime).
+Every own-app refusal is gone — read, collect, tap, verify, open, write. The operator
+asked for it and 解除限制 already carries the switch; refusing by package name only made
+the private build skip its own screens while the package-literal bug made it skip DSH
+Go's instead.
+
+Still refused: system permission pages and password/verification pages unless unlocked.
 ---
  app/android/app/src/main/AndroidManifest.xml  |   9 +
  .../ccch1mneyyy/dsh_app/MainActivity.kt       |  45 ++
  .../dsh_app/call/CallForegroundService.kt     |  94 ++++
  .../ccch1mneyyy/dsh_app/call/CallOverlay.kt   | 317 ++++++++++++
  .../dsh_app/call/CallOverlayPlugin.kt         |  66 +++
- .../ccch1mneyyy/dsh_app/phone/SafetyGate.kt   |   4 +-
+ .../ccch1mneyyy/dsh_app/phone/SafetyGate.kt   |  11 +-
+ .../dsh_app/phone/a11y/MainScreenDriver.kt    |   9 +-
  .../background/BackgroundProbeActivity.kt     |   4 +-
  .../dsh_app/shortcuts/EntryActivity.kt        |   3 +
  .../dsh_app/shortcuts/ShortcutsPlugin.kt      |   3 +-
@@ -44,7 +46,7 @@ BuildConfig.APPLICATION_ID at runtime).
  app/lib/voice/wake_keywords.dart              |  50 ++
  app/lib/voice/wake_word.dart                  | 468 +++++++++++++++---
  app/pubspec.yaml                              |   4 +
- 31 files changed, 1490 insertions(+), 110 deletions(-)
+ 32 files changed, 1497 insertions(+), 119 deletions(-)
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallForegroundService.kt
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallOverlay.kt
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallOverlayPlugin.kt
@@ -650,7 +652,7 @@ index 0000000..fe7f5f7
 +    }
 +}
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/SafetyGate.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/SafetyGate.kt
-index e50373c..5e1126b 100644
+index e50373c..646d3c6 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/SafetyGate.kt
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/SafetyGate.kt
 @@ -113,7 +113,9 @@ enum class ConfirmMode(val wire: String) {
@@ -664,6 +666,75 @@ index e50373c..5e1126b 100644
  
      /**
       * The word that makes tapping [label] sensitive, or null. Delegates to [SensitiveWords] (shared
+@@ -226,7 +228,8 @@ class SafetyGate(
+         packages.firstNotNullOfOrNull { checkRead(p, it, null) }
+ 
+     private fun checkRead(p: PhonePolicies, pkg: String?, appLabel: String?): Verdict.Refuse? {
+-        if (pkg == ownPackage && !p.unlocks.ownApp) return Verdict.Refuse(OWN_APP, "own-app")
++        // DSH 自己 is operable like any other app: the operator asked for it and 解除限制 has the
++        // switch. Nothing here refuses it by package any more.
+         if (pkg != null && pkg in p.denyPackages) return Verdict.Refuse(denied(labelOf(pkg, appLabel)), "deny-list")
+         return null
+     }
+@@ -235,7 +238,7 @@ class SafetyGate(
+     fun checkOpen(pkg: String, appLabel: String?): Verdict.Refuse? {
+         val p = policies()
+         // l10n:keep agent safety result
+-        if (pkg == ownPackage && !p.unlocks.ownApp) return Verdict.Refuse("DSH 自己不需要用 open 打开。", "own-app")
++        // open on itself is pointless but harmless: no refusal by package any more.
+         if (pkg in p.denyPackages) return Verdict.Refuse(denied(labelOf(pkg, appLabel)), "deny-list")
+         return null
+     }
+@@ -260,7 +263,7 @@ class SafetyGate(
+         if (kind == WriteKind.KEY) return Verdict.Allow // back / home / recents / shade: always a way out
+         val p = policies()
+         val lifted = p.unlocks
+-        if (pkg == ownPackage && !lifted.ownApp) return Verdict.Refuse(OWN_APP, "own-app")
++        // Same as above: operating DSH itself is allowed.
+         if (pkg != null && pkg in p.denyPackages) return Verdict.Refuse(denied(app), "deny-list")
+         if (kind == WriteKind.SCROLL) return Verdict.Allow
+         if (SafetyRules.isSystemPackage(pkg) && !lifted.systemPages) {
+diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/a11y/MainScreenDriver.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/a11y/MainScreenDriver.kt
+index 0d55002..f95e573 100644
+--- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/a11y/MainScreenDriver.kt
++++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/a11y/MainScreenDriver.kt
+@@ -198,8 +198,6 @@ internal class MainScreenDriver(private val service: PhoneA11yService, private v
+             if (publicImage || readLocal) {
+                 val left = OBSERVE_MS - (SystemClock.uptimeMillis() - start)
+                 when {
+-                    // l10n:keep agent screen result
+-                    snap.ownApp && !lifted.ownApp -> text.append("\n提示：DSH 自己的界面不截图。")
+                     // l10n:keep agent screen result
+                     ScreenFormat.index(cap.windows).any { it.fullText.contains("«银行卡") || it.fullText.contains("«身份证") } ->
+                         // l10n:keep agent screen result
+@@ -381,8 +379,7 @@ internal class MainScreenDriver(private val service: PhoneA11yService, private v
+     private fun verifyFocus(candidate: FocusCandidate, input: FocusCapturedInput33): Boolean {
+         if (!focusCurrent(candidate) || !input.currentBeforeDispatch() || !availability().ok) return false
+         val unlocks = lifted
+-        if ((candidate.element.packageName == ownPackage || candidate.snapshot.ownApp) && !unlocks.ownApp ||
+-            candidate.snapshot.protectedPage && !unlocks.systemPages) return false
++        if (candidate.snapshot.protectedPage && !unlocks.systemPages) return false
+         val witness = input.snapshot
+         if (witness.editor.packageName != candidate.element.packageName ||
+             witness.editor.inputType != candidate.inputType || witness.selectionStart != candidate.selectionStart ||
+@@ -788,7 +785,7 @@ internal class MainScreenDriver(private val service: PhoneA11yService, private v
+                 return CollectResult(emptyList(), 0, "屏幕编号 $screenId 已过期，请先看新屏幕再 collect", observeQuiet(), rejection = CollectRejection.INVALID_TARGET)
+             }
+             // l10n:keep agent screen result
+-            if (snap.ownApp && !lifted.ownApp) return CollectResult(emptyList(), 0, "这是 DSH 自己的界面，不读取", null, rejection = CollectRejection.READ_REFUSED)
++            // DSH 自己 is readable like any other app now.
+             var el = snap.screen.element(listElementId)
+                 // l10n:keep agent screen result
+                 ?: return CollectResult(emptyList(), 0, "屏幕 $screenId 里没有编号 $listElementId", null, rejection = CollectRejection.INVALID_TARGET)
+@@ -1127,7 +1124,7 @@ internal class MainScreenDriver(private val service: PhoneA11yService, private v
+             // l10n:keep agent screen result
+             ?: return ActionResult(false, "坐标 (${a.x}, ${a.y}) 不在这张截图里（${geometry.width}×${geometry.height}）。")
+         // l10n:keep agent screen result
+-        if (snap.ownApp && !lifted.ownApp) return ActionResult(false, "这是 DSH 自己的界面，不操作。")
++        // DSH 自己的界面 is operable: the operator asked for it.
+         // l10n:keep agent screen result
+         if (snap.protectedPage && !lifted.systemPages) return ActionResult(false, "这是系统权限 / 安全相关页面，DSH 不在这里点击。需要的话请用 handoff 交给用户。")
+         // l10n:keep agent screen result
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/BackgroundProbeActivity.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/BackgroundProbeActivity.kt
 index 6f0a450..58c6ea1 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/BackgroundProbeActivity.kt
