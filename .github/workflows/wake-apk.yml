@@ -33,8 +33,10 @@ permissions:
   contents: write
 
 concurrency:
-  group: wake-apk-${{ github.ref }}
-  cancel-in-progress: true
+  # This branch is the full-feature build: a second dispatch must queue, never cancel the run
+  # that is already past the toolchain step.
+  group: wake-apk-${{ github.ref }}-full
+  cancel-in-progress: false
 
 jobs:
   apk:
