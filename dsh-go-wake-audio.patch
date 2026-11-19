@@ -1,7 +1,7 @@
-From 18519f7879de44bfe78808aa859ae09a2d4ac1e2 Mon Sep 17 00:00:00 2001
-From: dsh private <private@local>
-Date: Thu, 19 Nov 2026 15:08:26 +0800
-Subject: [PATCH] private build: mika parity
+From d0cc23bf07c99a2ba28a220544e0515d8084a679 Mon Sep 17 00:00:00 2001
+From: wake-ci <ci@local>
+Date: Thu, 19 Nov 2026 15:18:02 +0800
+Subject: [PATCH] private build: call speaks the wake phrase
 
 ---
  .gitattributes                                |    3 +
@@ -35,7 +35,7 @@ Subject: [PATCH] private build: mika parity
  .../dsh_app/phone/vscreen/TaskMover.kt        |   43 +
  .../dsh_app/phone/vscreen/TransferBall.kt     |  339 ++
  .../phone/vscreen/VirtualScreenOverlay.kt     |  899 +++++
- .../phone/vscreen/VirtualScreenPlugin.kt      |   82 +
+ .../phone/vscreen/VirtualScreenPlugin.kt      |   83 +
  .../dsh_app/shortcuts/EntryActivity.kt        |    3 +
  .../dsh_app/shortcuts/ShortcutsPlugin.kt      |   13 +-
  .../dsh_app/wake/WakeBootReceiver.kt          |   29 +
@@ -71,7 +71,7 @@ Subject: [PATCH] private build: mika parity
  app/lib/state/app_info.dart                   |    5 +
  app/lib/state/update_state.dart               |    9 +
  app/lib/state/virtual_screen_state.dart       |  230 ++
- app/lib/ui/chat/chat_screen.dart              |  108 +-
+ app/lib/ui/chat/chat_screen.dart              |   90 +-
  app/lib/ui/chat/media/media_format.dart       |   16 +-
  app/lib/ui/phone/android_shell_page.dart      |   28 +
  app/lib/ui/phone/background_preview.dart      |  264 +-
@@ -83,7 +83,7 @@ Subject: [PATCH] private build: mika parity
  app/lib/ui/settings/voice_settings_page.dart  |   89 +
  app/lib/ui/shell/home_shell.dart              |    4 +
  app/lib/ui/shell/system_entry_host.dart       |   43 +
- app/lib/ui/speech/voice_call_page.dart        |  111 +-
+ app/lib/ui/speech/voice_call_page.dart        |  127 +-
  app/lib/ui/theme/app_icons.dart               |    4 +
  app/lib/voice/wake_keywords.dart              |   50 +
  app/lib/voice/wake_settings.dart              |  106 +
@@ -92,7 +92,7 @@ Subject: [PATCH] private build: mika parity
  docs/wake-word.md                             |  107 +
  dsh-go-wake.patch                             | 2065 +++++++++++
  tooling/build-wake-apk.sh                     |   68 +
- 88 files changed, 11430 insertions(+), 1897 deletions(-)
+ 88 files changed, 11427 insertions(+), 1899 deletions(-)
  create mode 100644 .github/workflows/wake-apk.yml
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallForegroundService.kt
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallOverlay.kt
@@ -3552,10 +3552,10 @@ index 0000000..1cb2db4
 +}
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenPlugin.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenPlugin.kt
 new file mode 100644
-index 0000000..c974763
+index 0000000..99c71d1
 --- /dev/null
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenPlugin.kt
-@@ -0,0 +1,82 @@
+@@ -0,0 +1,83 @@
 +package io.github.ccch1mneyyy.dsh_app.phone.vscreen
 +
 +import android.content.Context
@@ -3590,7 +3590,8 @@ index 0000000..c974763
 +        VirtualScreenOverlay.onAction = null
 +        TransferBall.onAction = null
 +        VirtualScreenOverlay.hide()
-+        TransferBall.hide()
++        // 球自己每 2 秒看一眼主屏：通道没了就一起停，别留一个没人处理的球。
++        TransferBall.setWanted(false)
 +        channel?.setMethodCallHandler(null)
 +        channel = null
 +        context = null
@@ -86555,7 +86556,7 @@ index 0000000..97aa324
 +  return null;
 +}
 diff --git a/app/lib/ui/chat/chat_screen.dart b/app/lib/ui/chat/chat_screen.dart
-index 46d2fd3..2ae0785 100644
+index 46d2fd3..6485a80 100644
 --- a/app/lib/ui/chat/chat_screen.dart
 +++ b/app/lib/ui/chat/chat_screen.dart
 @@ -28,6 +28,8 @@ import '../../state/streaming_pcm_state.dart';
@@ -86623,7 +86624,7 @@ index 46d2fd3..2ae0785 100644
      _voice = VoiceInputController(
        input: _input,
        bridge: ref.read(voiceBridgeProvider),
-@@ -1474,18 +1511,50 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
+@@ -1474,33 +1511,73 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
      showUsageSheet(context, sessionId: sessionId, model: model);
    }
  
@@ -86676,7 +86677,9 @@ index 46d2fd3..2ae0785 100644
      unawaited(
        openChatCall(
          context,
-@@ -1493,15 +1562,41 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
+         title: title,
++        // 唤醒词交给通话页自己发：只有通话发的消息，回复才会被念出来。
++        firstWords: wakePhrase,
          session: () async {
            // Another host now: its conversation of the same id is not this call's.
            if (!mounted || ref.read(activeHostProvider) != host) return null;
@@ -86698,30 +86701,9 @@ index 46d2fd3..2ae0785 100644
 +        unawaited(wake.resume());
 +      }),
      );
-+    // 唤醒词 after the page is up: the call must open whatever the send does — a wake that
-+    // only produced a text reply was a call that never opened because the send threw first.
-+    if (wakePhrase != null && wakePhrase.trim().isNotEmpty) {
-+      final id = pinned ?? await _ensureSession(isCurrent: () => mounted);
-+      if (id != null) {
-+        pinned = id;
-+        var text = wakePhrase;
-+        try {
-+          final heard = await ref.read(wakeWordProvider.notifier).takeWakeUtterance();
-+          if (heard != null && heard.trim().length >= wakePhrase.trim().length) text = heard;
-+        } on Object {
-+          // The phrase as configured is enough.
-+        }
-+        try {
-+          await ref.read(chatProvider(id).notifier).send(text.trim());
-+        } on Object {
-+          // Said silently: the call is already open and the person can speak.
-+        }
-+      }
-+    }
    }
  
-   /// The stop key; what waits in the inbox goes right away (see
-@@ -2176,6 +2271,9 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
+@@ -2176,6 +2253,9 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
                                        strip: false,
                                      ),
                                    ),
@@ -88550,7 +88532,7 @@ index 172e773..2a77d60 100644
          // The microphone opens only for an app on screen; the shortcut's
          // intent can arrive a beat before Flutter hears it is resumed.
 diff --git a/app/lib/ui/speech/voice_call_page.dart b/app/lib/ui/speech/voice_call_page.dart
-index 2f99689..6b531c0 100644
+index 2f99689..1808651 100644
 --- a/app/lib/ui/speech/voice_call_page.dart
 +++ b/app/lib/ui/speech/voice_call_page.dart
 @@ -47,6 +47,7 @@ import '../../usage/usage_stats.dart';
@@ -88561,7 +88543,42 @@ index 2f99689..6b531c0 100644
  import 'call/call_backdrop.dart';
  import 'call/call_parts.dart';
  import 'call/call_transcript.dart';
-@@ -118,10 +119,22 @@ class _VoiceCallPageState extends ConsumerState<VoiceCallPage> with WidgetsBindi
+@@ -59,6 +60,7 @@ Future<void> openChatCall(
+   BuildContext context, {
+   required String title,
+   required Future<String?> Function() session,
++  String? firstWords,
+ }) async {
+   final container = ProviderScope.containerOf(context, listen: false);
+   container.read(readAloudProvider.notifier).stop();
+@@ -68,7 +70,8 @@ Future<void> openChatCall(
+       fullscreenDialog: true,
+       transitionDuration: AppMotion.of(context, const Duration(milliseconds: 520)),
+       reverseTransitionDuration: AppMotion.of(context, AppMotion.collapse),
+-      pageBuilder: (_, _, _) => VoiceCallPage(title: title, conversation: ChatCallConversation(container, session)),
++      pageBuilder: (_, _, _) =>
++          VoiceCallPage(title: title, conversation: ChatCallConversation(container, session), firstWords: firstWords),
+       transitionsBuilder: (_, animation, _, child) {
+         final curve = CurvedAnimation(parent: animation, curve: AppMotion.enter, reverseCurve: AppMotion.exit);
+         // Opening: the page rises out of the dark.
+@@ -84,11 +87,15 @@ Future<void> openChatCall(
+ }
+ 
+ class VoiceCallPage extends ConsumerStatefulWidget {
+-  const VoiceCallPage({super.key, required this.title, required this.conversation});
++  const VoiceCallPage({super.key, required this.title, required this.conversation, this.firstWords});
+ 
+   final String title;
+   final CallConversation conversation;
+ 
++  /// 唤醒词/快捷键带进来的第一句：由通话自己发，回复才会被念出来——从外面用 chat.send
++  /// 发出去的消息，通话不认为那是自己的回合，只会显示文字。
++  final String? firstWords;
++
+   @override
+   ConsumerState<VoiceCallPage> createState() => _VoiceCallPageState();
+ }
+@@ -118,10 +125,22 @@ class _VoiceCallPageState extends ConsumerState<VoiceCallPage> with WidgetsBindi
    /// and the page comes in without its staggered rise.
    bool _still = false;
  
@@ -88584,7 +88601,20 @@ index 2f99689..6b531c0 100644
      final callSettings = ref.read(callSettingsProvider.notifier);
      final voices = ref.read(speechVoiceSettingsProvider.notifier);
      // The chosen voice, as soon as the settings have been read (the first reply comes later).
-@@ -313,11 +326,51 @@ class _VoiceCallPageState extends ConsumerState<VoiceCallPage> with WidgetsBindi
+@@ -214,6 +233,12 @@ class _VoiceCallPageState extends ConsumerState<VoiceCallPage> with WidgetsBindi
+     final asr = ref.read(streamingAsrProvider);
+     final found = liveWordsModel(ref);
+     await _call.start();
++    final first = widget.firstWords?.trim() ?? '';
++    if (first.isNotEmpty) {
++      // Through the conversation, not the chat provider: only what the conversation sends is
++      // spoken when the reply arrives.
++      unawaited(widget.conversation.send(first));
++    }
+     try {
+       final chosen = await found;
+       if (chosen == null || !mounted || _call.phase == CallPhase.ended) return;
+@@ -313,11 +338,51 @@ class _VoiceCallPageState extends ConsumerState<VoiceCallPage> with WidgetsBindi
  
    @override
    void didChangeAppLifecycleState(AppLifecycleState state) {
@@ -88637,7 +88667,7 @@ index 2f99689..6b531c0 100644
      WidgetsBinding.instance.removeObserver(this);
      unawaited(_live?.stop());
      _leave?.cancel();
-@@ -329,6 +382,49 @@ class _VoiceCallPageState extends ConsumerState<VoiceCallPage> with WidgetsBindi
+@@ -329,6 +394,49 @@ class _VoiceCallPageState extends ConsumerState<VoiceCallPage> with WidgetsBindi
      super.dispose();
    }
  
@@ -88687,7 +88717,7 @@ index 2f99689..6b531c0 100644
    void _hangUp() {
      HapticFeedback.heavyImpact();
      _call.hangUp();
-@@ -645,6 +741,17 @@ class _VoiceCallPageState extends ConsumerState<VoiceCallPage> with WidgetsBindi
+@@ -645,6 +753,17 @@ class _VoiceCallPageState extends ConsumerState<VoiceCallPage> with WidgetsBindi
                          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                          crossAxisAlignment: CrossAxisAlignment.end,
                          children: [
@@ -88705,7 +88735,7 @@ index 2f99689..6b531c0 100644
                            _rise(
                              0.4,
                              CallKey(
-@@ -658,7 +765,7 @@ class _VoiceCallPageState extends ConsumerState<VoiceCallPage> with WidgetsBindi
+@@ -658,7 +777,7 @@ class _VoiceCallPageState extends ConsumerState<VoiceCallPage> with WidgetsBindi
                              distance: 28,
                            ),
                            _rise(
