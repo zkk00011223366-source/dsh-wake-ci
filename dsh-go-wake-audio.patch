@@ -1,7 +1,7 @@
-From 45023c058dbb4c2dd13a2c5144c9976ab96b2f27 Mon Sep 17 00:00:00 2001
+From fe4115736b27bd46b1871c426118fcea69e319a8 Mon Sep 17 00:00:00 2001
 From: wake-ci <ci@local>
-Date: Thu, 19 Nov 2026 17:41:11 +0800
-Subject: [PATCH] vscreen + wake greeting
+Date: Thu, 19 Nov 2026 17:42:21 +0800
+Subject: [PATCH] vscreen + wake greeting (fixed)
 
 ---
  .gitattributes                                |    3 +
@@ -33,7 +33,7 @@ Subject: [PATCH] vscreen + wake greeting
  .../phone/background/PrivilegedDisplayCore.kt |  204 +-
  .../phone/background/PrivilegedProtocol.kt    |   22 +-
  .../dsh_app/phone/vscreen/TaskMover.kt        |   43 +
- .../dsh_app/phone/vscreen/TransferBall.kt     |  384 ++
+ .../dsh_app/phone/vscreen/TransferBall.kt     |  385 ++
  .../phone/vscreen/VirtualScreenOverlay.kt     |  970 +++++
  .../phone/vscreen/VirtualScreenPlugin.kt      |   83 +
  .../dsh_app/shortcuts/EntryActivity.kt        |    3 +
@@ -92,7 +92,7 @@ Subject: [PATCH] vscreen + wake greeting
  docs/wake-word.md                             |  107 +
  dsh-go-wake.patch                             | 2065 +++++++++++
  tooling/build-wake-apk.sh                     |   68 +
- 88 files changed, 11583 insertions(+), 1902 deletions(-)
+ 88 files changed, 11584 insertions(+), 1902 deletions(-)
  create mode 100644 .github/workflows/wake-apk.yml
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallForegroundService.kt
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallOverlay.kt
@@ -2324,10 +2324,10 @@ index 0000000..8ddabc9
 +}
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/TransferBall.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/TransferBall.kt
 new file mode 100644
-index 0000000..f6fccd5
+index 0000000..8de22b6
 --- /dev/null
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/TransferBall.kt
-@@ -0,0 +1,384 @@
+@@ -0,0 +1,385 @@
 +package io.github.ccch1mneyyy.dsh_app.phone.vscreen
 +
 +import android.annotation.SuppressLint
@@ -2351,6 +2351,7 @@ index 0000000..f6fccd5
 +import io.github.ccch1mneyyy.dsh_app.pet.EdgeSnap
 +import io.github.ccch1mneyyy.dsh_app.pet.SafeArea
 +import io.github.ccch1mneyyy.dsh_app.pet.Side
++import io.github.ccch1mneyyy.dsh_app.pet.WindowPos
 +import kotlin.math.abs
 +import kotlin.math.roundToInt
 +
@@ -2470,7 +2471,7 @@ index 0000000..f6fccd5
 +        if (window != null) {
 +            val y = OverlaySpacing.apart(dock.side, at.x, at.y, w, h, area, margin,
 +                VirtualScreenOverlay.currentSide(), window)
-+            at = android.graphics.Point(at.x, y)
++            at = WindowPos(at.x, y)
 +        }
 +
 +        val holder = FrameLayout(app).apply { background = sliverBackground(px) }
@@ -88626,7 +88627,7 @@ index 9a236c7..0809e69 100644
                        const ForumLinkHost(),
                        // DS Bot: keeps its feed and notifications alive with the shell.
 diff --git a/app/lib/ui/shell/system_entry_host.dart b/app/lib/ui/shell/system_entry_host.dart
-index 172e773..620edd3 100644
+index 172e773..a1f9c8d 100644
 --- a/app/lib/ui/shell/system_entry_host.dart
 +++ b/app/lib/ui/shell/system_entry_host.dart
 @@ -37,9 +37,14 @@ import '../../state/compose_inbox.dart';
@@ -88635,7 +88636,7 @@ index 172e773..620edd3 100644
  import '../../state/sessions_state.dart';
 +import '../../state/chat_state.dart';
 +import '../../voice/wake_settings.dart';
-+import '../../voice/wake_word.dart' show callOnOpenProvider, diagWake;
++import '../../voice/wake_word.dart' show callOnOpenProvider, diagWake, wakeGreetingInstruction;
  import '../common/discard_guard.dart';
  import '../tavern/tavern_deepseek_import.dart';
  import '../tavern/tavern_intake.dart';
