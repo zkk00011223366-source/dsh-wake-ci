@@ -1,6 +1,6 @@
-From 490ae88c028f51f71520b0bd81a87477db28fff7 Mon Sep 17 00:00:00 2001
+From 7ff65cf83299a2afb9edaf45e03fd74b54c76245 Mon Sep 17 00:00:00 2001
 From: wake-ci <ci@local>
-Date: Thu, 19 Nov 2026 19:21:23 +0800
+Date: Thu, 19 Nov 2026 19:23:06 +0800
 Subject: [PATCH] private build: complete
 
 ---
@@ -1255,7 +1255,7 @@ index 612f94d..9cf58c1 100644
      @Volatile var overlayGate: UserGate? = null
      @Volatile var notificationGate: UserGate? = null
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneControl.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneControl.kt
-index 2fc7cd5..d293d98 100644
+index 2fc7cd5..e7a946e 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneControl.kt
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneControl.kt
 @@ -999,15 +999,43 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
@@ -1281,7 +1281,7 @@ index 2fc7cd5..d293d98 100644
 +        // 屏能建就在执行时按需建；建不出来由后面的错误提示说清楚，不静默降级。
 +        val value = runCatching {
 +            app.getSharedPreferences("FlutterSharedPreferences", Context.MODE_PRIVATE)
-+                .getString("flutter.virtual_screen_target", "virtual") != "main"
++                .getString("flutter.virtual_screen_target", "main") == "virtual"
 +        }.getOrDefault(true)
 +        prefersBackgroundValue = value
 +        prefersBackgroundAt = now
@@ -86927,7 +86927,7 @@ index c089d19..a15b64d 100644
  
 diff --git a/app/lib/state/virtual_screen_state.dart b/app/lib/state/virtual_screen_state.dart
 new file mode 100644
-index 0000000..bf631ba
+index 0000000..69b6bb3
 --- /dev/null
 +++ b/app/lib/state/virtual_screen_state.dart
 @@ -0,0 +1,250 @@
@@ -86945,7 +86945,7 @@ index 0000000..bf631ba
 +  const VirtualScreenSettings({
 +    this.fps = 6,
 +    this.quality = 80,
-+    this.target = VirtualScreenTarget.virtual,
++    this.target = VirtualScreenTarget.main,
 +    // 悬浮屏常开：后台任务一起来就摆出来，关了也记得住（下次不再自己弹）。
 +    this.window = true,
 +    // 允许手动操作：关着时画面只读（防误触打断 AI），开着时手指直接作用于虚拟屏。
