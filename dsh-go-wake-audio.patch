@@ -1,7 +1,7 @@
-From fe4115736b27bd46b1871c426118fcea69e319a8 Mon Sep 17 00:00:00 2001
+From 3cb3ddb96dff40ae905cace8421ac723ee0de134 Mon Sep 17 00:00:00 2001
 From: wake-ci <ci@local>
-Date: Thu, 19 Nov 2026 17:42:21 +0800
-Subject: [PATCH] vscreen + wake greeting (fixed)
+Date: Thu, 19 Nov 2026 17:43:25 +0800
+Subject: [PATCH] vscreen + wake greeting
 
 ---
  .gitattributes                                |    3 +
@@ -34,7 +34,7 @@ Subject: [PATCH] vscreen + wake greeting (fixed)
  .../phone/background/PrivilegedProtocol.kt    |   22 +-
  .../dsh_app/phone/vscreen/TaskMover.kt        |   43 +
  .../dsh_app/phone/vscreen/TransferBall.kt     |  385 ++
- .../phone/vscreen/VirtualScreenOverlay.kt     |  970 +++++
+ .../phone/vscreen/VirtualScreenOverlay.kt     |  971 +++++
  .../phone/vscreen/VirtualScreenPlugin.kt      |   83 +
  .../dsh_app/shortcuts/EntryActivity.kt        |    3 +
  .../dsh_app/shortcuts/ShortcutsPlugin.kt      |   13 +-
@@ -92,7 +92,7 @@ Subject: [PATCH] vscreen + wake greeting (fixed)
  docs/wake-word.md                             |  107 +
  dsh-go-wake.patch                             | 2065 +++++++++++
  tooling/build-wake-apk.sh                     |   68 +
- 88 files changed, 11584 insertions(+), 1902 deletions(-)
+ 88 files changed, 11585 insertions(+), 1902 deletions(-)
  create mode 100644 .github/workflows/wake-apk.yml
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallForegroundService.kt
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallOverlay.kt
@@ -2715,10 +2715,10 @@ index 0000000..8de22b6
 +}
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenOverlay.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenOverlay.kt
 new file mode 100644
-index 0000000..a076ac1
+index 0000000..0c0e767
 --- /dev/null
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenOverlay.kt
-@@ -0,0 +1,970 @@
+@@ -0,0 +1,971 @@
 +package io.github.ccch1mneyyy.dsh_app.phone.vscreen
 +
 +import android.annotation.SuppressLint
@@ -2784,7 +2784,8 @@ index 0000000..a076ac1
 +    private const val SLIVER_H = 56f
 +    private const val SMALL_W = 110f
 +    private const val SMALL_H = 196f
-+    private const val EXPAND_W = 180f
++    // 展开态放下 4 个 44dp 热区 + 8dp 间距（🔁 − ＋ ↻ = 200dp），不裁掉复位键。
++    private const val EXPAND_W = 200f
 +    private const val EXPAND_H = 320f
 +
 +    /** The zoom steps 第十二节 lists; the window remembers the last one. */
