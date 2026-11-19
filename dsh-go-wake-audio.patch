@@ -1,7 +1,7 @@
-From 2f2ec4875ccf06b55ab533376aa41f669059fb2d Mon Sep 17 00:00:00 2001
+From 376d0b96bf3ff009a730fb1bd3b63da2eeb34c50 Mon Sep 17 00:00:00 2001
 From: wake-ci <ci@local>
-Date: Thu, 19 Nov 2026 22:36:00 +0800
-Subject: [PATCH] private build: smooth 2
+Date: Thu, 19 Nov 2026 22:49:41 +0800
+Subject: [PATCH] private build: texture round
 
 ---
  .gitattributes                                |    3 +
@@ -37,7 +37,7 @@ Subject: [PATCH] private build: smooth 2
  .../dsh_app/phone/skills/PhoneSkillDraft.kt   |    2 +-
  .../dsh_app/phone/vscreen/TaskMover.kt        |   43 +
  .../dsh_app/phone/vscreen/TransferBall.kt     |  395 ++
- .../phone/vscreen/VirtualScreenOverlay.kt     | 1175 ++++++
+ .../phone/vscreen/VirtualScreenOverlay.kt     | 1170 ++++++
  .../phone/vscreen/VirtualScreenPlugin.kt      |   96 +
  .../ccch1mneyyy/dsh_app/runtime/GuestSetup.kt |   42 +-
  .../dsh_app/shortcuts/EntryActivity.kt        |    3 +
@@ -102,7 +102,7 @@ Subject: [PATCH] private build: smooth 2
  docs/wake-word.md                             |  107 +
  dsh-go-wake.patch                             | 2065 +++++++++++
  tooling/build-wake-apk.sh                     |   68 +
- 98 files changed, 12210 insertions(+), 2064 deletions(-)
+ 98 files changed, 12205 insertions(+), 2064 deletions(-)
  create mode 100644 .github/workflows/wake-apk.yml
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallForegroundService.kt
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallOverlay.kt
@@ -3400,10 +3400,10 @@ index 0000000..228b337
 +}
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenOverlay.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenOverlay.kt
 new file mode 100644
-index 0000000..676e255
+index 0000000..d1ceea2
 --- /dev/null
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenOverlay.kt
-@@ -0,0 +1,1175 @@
+@@ -0,0 +1,1170 @@
 +package io.github.ccch1mneyyy.dsh_app.phone.vscreen
 +
 +import android.annotation.SuppressLint
@@ -3424,8 +3424,10 @@ index 0000000..676e255
 +import android.view.Gravity
 +import android.view.MotionEvent
 +import android.view.Surface
++import android.view.ViewOutlineProvider
++import android.view.TextureView
++import android.graphics.Outline
 +import android.view.SurfaceHolder
-+import android.view.SurfaceView
 +import android.view.View
 +import android.view.WindowManager
 +import android.widget.FrameLayout
@@ -3596,7 +3598,16 @@ index 0000000..676e255
 +        box.addView(inner, FrameLayout.LayoutParams(-1, -1).apply {
 +            setMargins(inset, inset, inset, inset)
 +        })
-+        val surfaceView = SurfaceView(app)
++        // 用 TextureView 承载画面：它是普通 View，能按圆角裁剪（SurfaceView 是独立图层，
++        // 圆角裁剪管不到，只能靠底色盖四角 —— Mika 那种"画面本身是圆的"就要用这条）。
++        val surfaceView = TextureView(app)
++        surfaceView.clipToOutline = true
++        surfaceView.outlineProvider = object : ViewOutlineProvider() {
++            override fun getOutline(view: View, outline: Outline) {
++                val r = 13f * px
++                outline.setRoundRect(0, 0, view.width, view.height, r)
++            }
++        }
 +        inner.addView(surfaceView, FrameLayout.LayoutParams(-1, -1))
 +        val picture2 = ImageView(app).apply {
 +            scaleType = ImageView.ScaleType.FIT_CENTER
@@ -3612,8 +3623,7 @@ index 0000000..676e255
 +            textSize = 10f
 +        }
 +        inner.addView(waitingView, FrameLayout.LayoutParams(-1, -1))
-+        // 四角遮罩压在画面上方，只盖住方角（13dp 略小于 16dp 圆角，线条仍露出来）。
-+        inner.addView(CornerMask(app, 13f), FrameLayout.LayoutParams(-1, -1))
++        // 画面已经是 TextureView，圆角由 clipToOutline 真正裁掉，不再需要遮罩层。
 +
 +        buildChrome(app, box, px)
 +
@@ -3726,26 +3736,30 @@ index 0000000..676e255
 +     * The engine that owns the display composes into this view's surface. Detach on close, and
 +     * on the way back to JPEG: a VirtualDisplay has one output surface, so it can only be one.
 +     */
-+    private fun attachSurfaceHost(app: Context, view: SurfaceView) {
++    private fun attachSurfaceHost(app: Context, view: TextureView) {
 +        val gen = ++surfaceGen
-+        view.holder.addCallback(object : SurfaceHolder.Callback {
-+            override fun surfaceCreated(holder: SurfaceHolder) {
-+                WakeTrace.log("window: surfaceCreated ${holder.surfaceFrame.width}x${holder.surfaceFrame.height}")
-+                requestSurface(app, holder.surface, gen)
++        view.surfaceTextureListener = object : TextureView.SurfaceTextureListener {
++            override fun onSurfaceTextureAvailable(texture: android.graphics.SurfaceTexture, width: Int, height: Int) {
++                WakeTrace.log("window: texture available ${width}x$height")
++                requestSurface(app, Surface(texture), gen)
 +            }
 +
-+            override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) {
-+                WakeTrace.log("window: surfaceChanged ${width}x$height")
-+                requestSurface(app, holder.surface, gen)
++            override fun onSurfaceTextureSizeChanged(texture: android.graphics.SurfaceTexture, width: Int, height: Int) {
++                WakeTrace.log("window: texture resized ${width}x$height")
++                requestSurface(app, Surface(texture), gen)
 +            }
 +
-+            override fun surfaceDestroyed(holder: SurfaceHolder) {
-+                if (gen != surfaceGen) return
-+                liveSurface = false
-+                applyLive()
-+                requestSurface(app, null, gen)
++            override fun onSurfaceTextureDestroyed(texture: android.graphics.SurfaceTexture): Boolean {
++                if (gen == surfaceGen) {
++                    liveSurface = false
++                    main.post { applyLive() }
++                    requestSurface(app, null, gen)
++                }
++                return true
 +            }
-+        })
++
++            override fun onSurfaceTextureUpdated(texture: android.graphics.SurfaceTexture) = Unit
++        }
 +    }
 +
 +    private fun requestSurface(app: Context, surface: Surface?, gen: Int) {
@@ -4536,25 +4550,6 @@ index 0000000..676e255
 +
 +    private fun fmt(value: Double): String = String.format(java.util.Locale.US, "%.3f", value)
 +
-+
-+    /**
-+     * 四角遮罩：画面（SurfaceView / 缩略图）是方的，窗口外框是 16dp 圆角，方角会凸到圆角
-+     * 外面。这里用「整块矩形减去圆角矩形」的路径，把多出来的四角用外框底色盖住，
-+     * 视觉上画面就跟着圆角走了。SurfaceView 是独立图层，clipToOutline 对它无效，只能这么盖。
-+     */
-+    private class CornerMask(context: Context, private val radiusDp: Float) : View(context) {
-+        private val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.rgb(10, 14, 24) }
-+        private val path = Path()
-+
-+        override fun onDraw(canvas: Canvas) {
-+            val r = radiusDp * resources.displayMetrics.density
-+            path.reset()
-+            path.fillType = Path.FillType.EVEN_ODD
-+            path.addRect(0f, 0f, width.toFloat(), height.toFloat(), Path.Direction.CW)
-+            path.addRoundRect(r, r, width - r, height - r, r, r, Path.Direction.CW)
-+            canvas.drawPath(path, paint)
-+        }
-+    }
 +
 +    private fun cardBackground(px: Float) = GradientDrawable().apply {
 +        cornerRadius = 16 * px
