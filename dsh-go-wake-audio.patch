@@ -1,7 +1,8 @@
-From 354bdd1b9951d214d02eb4e29cc748ec53a9f58e Mon Sep 17 00:00:00 2001
-From: wake-ci <ci@local>
-Date: Thu, 19 Nov 2026 11:13:59 +0800
-Subject: [PATCH] private build: call fixes + virtual screen
+From b66dcc2ae1d91c85ba1d2c0b1d2a011d9c289ee2 Mon Sep 17 00:00:00 2001
+From: dsh-wake <wake@local>
+Date: Thu, 19 Nov 2026 11:44:23 +0800
+Subject: [PATCH] feat(vscreen): a finger on the preview, and a task that
+ changes screens
 
 ---
  .gitattributes                                |    3 +
@@ -14,8 +15,14 @@ Subject: [PATCH] private build: call fixes + virtual screen
  .../dsh_app/call/CallOverlayPlugin.kt         |   66 +
  .../dsh_app/phone/PhoneAndroidShell.kt        |   10 +-
  .../ccch1mneyyy/dsh_app/phone/PhoneControl.kt |    2 +
+ .../ccch1mneyyy/dsh_app/phone/PhonePlugin.kt  |   44 +
  .../ccch1mneyyy/dsh_app/phone/SafetyGate.kt   |    4 +-
+ .../phone/background/BackgroundControl.kt     |   34 +
+ .../phone/background/BackgroundCoordinates.kt |    2 +
+ .../phone/background/BackgroundDisplay.kt     |   40 +
  .../background/BackgroundProbeActivity.kt     |    4 +-
+ .../phone/background/PrivilegedDisplayCore.kt |   84 +
+ .../phone/background/PrivilegedProtocol.kt    |   10 +-
  .../dsh_app/phone/vscreen/TaskMover.kt        |   43 +
  .../phone/vscreen/VirtualScreenOverlay.kt     |  297 +++
  .../phone/vscreen/VirtualScreenPlugin.kt      |   60 +
@@ -44,6 +51,7 @@ Subject: [PATCH] private build: call fixes + virtual screen
  app/lib/l10n/parts/speech_en.arb              |   19 +-
  app/lib/l10n/parts/speech_zh.arb              |   19 +-
  app/lib/links/launcher_entries.dart           |    7 +-
+ app/lib/phone/phone_channel.dart              |   74 +
  app/lib/phone/virtual_screen_window.dart      |   99 +
  app/lib/state/app_info.dart                   |    5 +
  app/lib/state/update_state.dart               |    9 +
@@ -51,7 +59,8 @@ Subject: [PATCH] private build: call fixes + virtual screen
  app/lib/ui/chat/chat_screen.dart              |   89 +-
  app/lib/ui/chat/media/media_format.dart       |   16 +-
  app/lib/ui/phone/android_shell_page.dart      |   28 +
- app/lib/ui/phone/dnd_mode_page.dart           |   64 +
+ app/lib/ui/phone/background_preview.dart      |  167 +-
+ app/lib/ui/phone/dnd_mode_page.dart           |   76 +-
  app/lib/ui/settings/voice_settings_page.dart  |   89 +
  app/lib/ui/shell/system_entry_host.dart       |    7 +
  app/lib/ui/speech/voice_call_page.dart        |  111 +-
@@ -63,7 +72,7 @@ Subject: [PATCH] private build: call fixes + virtual screen
  docs/wake-word.md                             |  107 +
  dsh-go-wake.patch                             | 2065 +++++++++++++++++
  tooling/build-wake-apk.sh                     |   68 +
- 59 files changed, 5934 insertions(+), 29 deletions(-)
+ 67 files changed, 6390 insertions(+), 40 deletions(-)
  create mode 100644 .github/workflows/wake-apk.yml
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallForegroundService.kt
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallOverlay.kt
@@ -1032,6 +1041,61 @@ index 2fc7cd5..563f816 100644
          shell.execute(ownerId, command, timeoutMs, live, confirm)
      }
  
+diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhonePlugin.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhonePlugin.kt
+index 4a76535..ca9704c 100644
+--- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhonePlugin.kt
++++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhonePlugin.kt
+@@ -249,6 +249,50 @@ class PhonePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
+                 result.success(if (removed) mapOf("kind" to "discarded") else replayRejected("stale"))
+             }
+             "setBackgroundPreview" -> result.success(control.preview.setEnabled(call.argument<Boolean>("enabled") == true))
++            // 手动点滑: the person's finger on the enlarged preview. One observation and one
++            // gesture per call; the driver owns the coordinate credential.
++            "previewGesture" -> {
++                val args = call.arguments as? Map<*, *>
++                val taskId = (args?.get("taskId") as? Number)?.toLong()
++                val action = args?.get("action") as? String
++                // Fractions of the picture (0..1), not pixels: the preview is a scaled thumbnail.
++                val x = (args?.get("x") as? Number)?.toDouble()
++                val y = (args?.get("y") as? Number)?.toDouble()
++                val x2 = (args?.get("x2") as? Number)?.toDouble()
++                val y2 = (args?.get("y2") as? Number)?.toDouble()
++                val duration = (args?.get("durationMs") as? Number)?.toLong()
++                val swipe = action == "swipe"
++                fun unit(value: Double?) = value != null && value in 0.0..1.0
++                val valid = args != null && args.keys.all { it in setOf("taskId", "action", "x", "y", "x2", "y2", "durationMs") } &&
++                    taskId != null && taskId > 0 && action != null && action in setOf("tap", "long", "swipe") &&
++                    unit(x) && unit(y) &&
++                    (if (swipe) unit(x2) && unit(y2) else x2 == null && y2 == null)
++                val target = if (valid) control.background.previewTarget(taskId!!) else null
++                when {
++                    !valid -> result.success(mapOf("ok" to false, "message" to "这次手势的参数不对，没有发出。"))
++                    target == null -> result.success(mapOf("ok" to false, "message" to "这块后台屏已经不在预览里了。"))
++                    else -> async(result) {
++                        val gesture = target!!.driver.gesture(checkNotNull(x), checkNotNull(y), checkNotNull(action),
++                            x2, y2, (duration ?: 400L).coerceIn(100L, 2000L))
++                        mapOf("ok" to gesture.ok, "message" to gesture.message)
++                    }
++                }
++            }
++            // 任务迁移: the app on this virtual screen back to the phone, or the phone's own
++            // foreground app here. The privileged engine picks the task; this side passes none.
++            "handOverTask" -> {
++                val args = call.arguments as? Map<*, *>
++                val taskId = (args?.get("taskId") as? Number)?.toLong()
++                val toMain = args?.get("toMain") as? Boolean
++                val valid = args != null && args.keys.all { it in setOf("taskId", "toMain") } &&
++                    taskId != null && taskId > 0 && toMain != null
++                val target = if (valid) control.background.previewTarget(taskId!!) else null
++                when {
++                    !valid -> result.success(mapOf("ok" to false, "reason" to "invalidArguments"))
++                    target == null -> result.success(mapOf("ok" to false, "reason" to "noTarget"))
++                    else -> async(result) { control.background.handOverTask(target!!, toMain!!) }
++                }
++            }
+             "setBackgroundKeep" -> {
+                 val selected = call.argument<String>("mode").orEmpty()
+                 val enabled = call.argument<Boolean>("enabled") == true
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/SafetyGate.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/SafetyGate.kt
 index e50373c..5e1126b 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/SafetyGate.kt
@@ -1047,6 +1111,122 @@ index e50373c..5e1126b 100644
  
      /**
       * The word that makes tapping [label] sensitive, or null. Delegates to [SensitiveWords] (shared
+diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/BackgroundControl.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/BackgroundControl.kt
+index 79cae46..dbd3fd4 100644
+--- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/BackgroundControl.kt
++++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/BackgroundControl.kt
+@@ -149,6 +149,40 @@ class BackgroundControl private constructor(context: Context) {
+ 
+     fun previewTarget(taskId: Long): BackgroundPreviewTarget? = previewTargets[taskId]
+ 
++    /**
++     * 任务迁移: one hand-over for the enlarged preview, through that task's own privileged link.
++     * The engine picks the task from the display and refuses a missing API or a system denial
++     * with its own code; this side never invents a task id. Blocks on the channel, so call it
++     * off the main thread. A dead link is reported, not retried on another channel.
++     */
++    fun handOverTask(target: BackgroundPreviewTarget, toMain: Boolean): Map<String, Any?> {
++        if (!target.channel.alive()) return mapOf("ok" to false, "reason" to "deviceUnavailable")
++        val request = Bundle().apply {
++            putString(Proto.OP, Proto.OP_MOVE_TASK)
++            putString(Proto.OWNER, target.owner)
++            putString(Proto.TASK_DIRECTION, if (toMain) Proto.DIR_MAIN else Proto.DIR_VIRTUAL)
++        }
++        fun result(reply: Bundle): Map<String, Any?> = if (reply.getBoolean(Proto.OK)) {
++            mapOf("ok" to true, "reason" to null, "packageName" to reply.getString(Proto.TASK_PKG))
++        } else {
++            mapOf("ok" to false, "reason" to (reply.getString(Proto.ERROR) ?: "moveRejected"),
++                "packageName" to reply.getString(Proto.TASK_PKG))
++        }
++        // The owner-scope envelope routes this to the core instance that owns the display; a
++        // raw request would land on the untouched legacy core and find no screen. A preview
++        // poll can hold the same owner for a moment (scopeBusy, nothing dispatched): retry.
++        for (attempt in 0 until 3) {
++            val reply = try {
++                OwnerScopeProtocol.execute(target.channel, target.owner, request)
++            } catch (_: Exception) {
++                return mapOf("ok" to false, "reason" to "deviceUnavailable")
++            }
++            if (reply.getBoolean(Proto.OK) || reply.getString(Proto.ERROR) != "scopeBusy") return result(reply)
++            if (attempt < 2) Thread.sleep(120)
++        }
++        return mapOf("ok" to false, "reason" to "scopeBusy")
++    }
++
+     /** Memory publication only; callers notify after releasing controller locks. */
+     private fun replaceChannel(value: PrivilegedChannel?): Boolean = synchronized(previewGuard) {
+         if (channel === value) false else {
+diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/BackgroundCoordinates.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/BackgroundCoordinates.kt
+index f6b83a0..2eb59f3 100644
+--- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/BackgroundCoordinates.kt
++++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/BackgroundCoordinates.kt
+@@ -147,6 +147,8 @@ internal class BackgroundCoordinateImage {
+         screen = screenId; receipt = value; accepted = false; targets = eligible.toMap()
+     }
+     @Synchronized fun accept(screenId: String) { if (screen == screenId && receipt != null) accepted = true }
++    /** The current receipt without consuming it: a manual gesture converts its fractions first. */
++    @Synchronized fun peek(screenId: String): Receipt? = receipt.takeIf { accepted && screen == screenId }
+     @Synchronized fun take(screenId: String): Receipt? {
+         val result = receipt.takeIf { accepted && screen == screenId }
+         clear()
+diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/BackgroundDisplay.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/BackgroundDisplay.kt
+index bc1810a..6ba1b38 100644
+--- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/BackgroundDisplay.kt
++++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/BackgroundDisplay.kt
+@@ -22,6 +22,7 @@ import io.github.ccch1mneyyy.dsh_app.phone.a11y.LocalOcrResult
+ import io.github.ccch1mneyyy.dsh_app.phone.a11y.LocalOcrVisual
+ import io.github.ccch1mneyyy.dsh_app.phone.a11y.MlKitLocalOcr
+ import io.github.ccch1mneyyy.dsh_app.phone.VisualTarget
++import kotlin.math.roundToInt
+ 
+ /**
+  * BACKGROUND [PhoneDriver] (screen ids `b<n>`): reads and drives the trusted virtual display
+@@ -505,6 +506,45 @@ class BackgroundDisplay internal constructor(
+         return toResult(response, target, "已在后台屏执行", textAction = action is PhoneAction.Type, after = after)
+     }
+ 
++    /**
++     * 手动点滑: a gesture the person made on the enlarged preview. Their finger is the consent,
++     * so the model-side confirm card is skipped; a protected window and a missing coordinate
++     * credential still refuse. The coordinates are virtual-screen pixels, converted by the page.
++     * One fresh observation gives this gesture its own credential and the id the long press and
++     * swipe legs need; the frame the person is looking at stays the preview's own.
++     */
++    fun gesture(fx: Double, fy: Double, gesture: String, fx2: Double?, fy2: Double?, durationMs: Long): ActionResult = try {
++        val snap = observeFrame(detail = false, image = true, requestLocalText = false)
++        if (snap.secure) {
++            // l10n:keep agent screen protocol
++            ActionResult(false, "受保护页面（支付或密码）不能从预览操作，已交还用户。")
++        } else {
++            acceptVisualObservation(snap.id)
++            // The preview is a scaled thumbnail; fractions survive that scale, pixels do not.
++            val receipt = coordinateImage.peek(snap.id)
++            if (receipt == null) {
++                // l10n:keep agent screen protocol
++                ActionResult(false, "这次操作没有可用的后台坐标范围，请重新打开预览再试。")
++            } else {
++                fun px(value: Double, size: Int): Int = (value.coerceIn(0.0, 1.0) * (size - 1)).roundToInt()
++                val kind = when (gesture) {
++                    "long" -> PhoneAction.CoordinateGesture.LONG
++                    "swipe" -> PhoneAction.CoordinateGesture.SWIPE
++                    else -> PhoneAction.CoordinateGesture.TAP
++                }
++                perform(PhoneAction.TapXY(
++                    snap.id, px(fx, receipt.width), px(fy, receipt.height), kind,
++                    fx2?.let { px(it, receipt.width) }, fy2?.let { px(it, receipt.height) }, durationMs,
++                ))
++            }
++        }
++    } catch (e: InterruptedException) {
++        throw e
++    } catch (e: Exception) {
++        // l10n:keep agent screen protocol
++        ActionResult(false, "预览操作没有发出去：" + (e.message ?: e.javaClass.simpleName))
++    }
++
+     /**
+      * Input commits at its actual channel admission (client gate -> resource IO lock, as in [open]):
+      * a pause, stop or seal while it waits for capacity sends nothing. Null means not allowed.
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/BackgroundProbeActivity.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/BackgroundProbeActivity.kt
 index 6f0a450..58c6ea1 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/BackgroundProbeActivity.kt
@@ -1062,6 +1242,143 @@ index 6f0a450..58c6ea1 100644
      const val RECEIVER = "receiver"
      const val NONCE = "nonce"
      const val DISPLAY = "display"
+diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/PrivilegedDisplayCore.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/PrivilegedDisplayCore.kt
+index c7ed0f7..fe00e90 100644
+--- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/PrivilegedDisplayCore.kt
++++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/PrivilegedDisplayCore.kt
+@@ -121,6 +121,25 @@ class PrivilegedDisplayCore internal constructor(
+         Class.forName("android.app.IActivityTaskManager").getMethod("getAllRootTaskInfosOnDisplay", Int::class.javaPrimitiveType)
+     }
+     private val rootTaskInfoType by lazy { Class.forName("android.app.ActivityTaskManager\$RootTaskInfo") }
++    private val rootTaskTaskId by lazy { rootTaskInfoType.getField("taskId") }
++    private val rootTaskTop by lazy { rootTaskInfoType.getField("topActivity") }
++    private val rootTaskVisible by lazy { runCatching { rootTaskInfoType.getField("isVisible") }.getOrNull() }
++    // The launcher is a root task too; handing it to the virtual screen would be nonsense.
++    private val homePackages by lazy {
++        runCatching {
++            privileged.packageManager.queryIntentActivities(
++                Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME), 0,
++            ).mapNotNull { it.activityInfo?.packageName }.toSet()
++        }.getOrDefault(emptySet())
++    }
++    private val moveTaskMethod by lazy {
++        runCatching {
++            taskManager.javaClass.methods.firstOrNull {
++                it.name == "moveRootTaskToDisplay" && it.parameterTypes.size == 2 &&
++                    it.parameterTypes[0] == Int::class.javaPrimitiveType && it.parameterTypes[1] == Int::class.javaPrimitiveType
++            }
++        }.getOrNull()
++    }
+ 
+     private fun rootTaskInfos(displayId: Int): List<Any> {
+         val result = try {
+@@ -315,6 +334,13 @@ class PrivilegedDisplayCore internal constructor(
+         if (strictOwner && displayApiReleased) throw Fault("releasePending")
+         if (strictOwner && (readerAllocationUncertain || display == null && (displayCreationAttempted || reader != null || pendingReader != null))) throw Fault("releaseUnconfirmed")
+         if (keyguard?.isKeyguardLocked == true) throw Fault("locked")
++        // 双向任务迁移: no package, no tree and no display id from the caller. The engine picks
++        // the task from the display itself and moves it to the one other display in play.
++        if (op == Proto.OP_MOVE_TASK) {
++            requireDisplay()
++            moveTask(request, response)
++            return
++        }
+         val pkg = request.getString(Proto.PKG).orEmpty()
+         if (!PACKAGE.matches(pkg)) throw Fault("invalidArguments")
+         val opening = op == Proto.OP_CREATE || op == Proto.OP_LAUNCH
+@@ -729,6 +755,64 @@ class PrivilegedDisplayCore internal constructor(
+     private fun displayId(): Int = display?.display?.displayId ?: throw Fault("displayMissing")
+     private fun requireDisplay() { if (display == null) throw Fault("displayMissing") }
+ 
++    /** (taskId, package) of one root task row; null when the row cannot be read. */
++    private fun taskRow(info: Any): Pair<Int, String?>? = try {
++        val id = rootTaskTaskId.getInt(info)
++        val pkg = (rootTaskTop.get(info) as? ComponentName)?.packageName
++        if (id <= 0) null else id to pkg
++    } catch (_: Throwable) { null }
++
++    private fun visibleTask(info: Any): Boolean =
++        rootTaskVisible?.let { runCatching { it.getBoolean(info) }.getOrDefault(false) } ?: false
++
++    /** The visible task on [id]'s own display (else the first row), or null when it shows none. */
++    private fun topTask(id: Int): Pair<Int, String?>? {
++        val rows = rootTaskInfos(id).mapNotNull { info -> taskRow(info)?.let { it to visibleTask(info) } }
++        return (rows.firstOrNull { it.second } ?: rows.firstOrNull())?.first
++    }
++
++    /**
++     * The app on the phone's own screen worth handing over: not this app, not the launcher.
++     * A visible task wins over a task only sitting in recents; order otherwise follows the read.
++     */
++    private fun topMainTask(): Pair<Int, String?>? {
++        val candidates = rootTaskInfos(Display.DEFAULT_DISPLAY).mapNotNull { info ->
++            val row = taskRow(info) ?: return@mapNotNull null
++            row to visibleTask(info)
++        }.filter { (row, _) -> row.second != null && row.second != Proto.APP_PACKAGE && row.second !in homePackages }
++        return (candidates.firstOrNull { it.second } ?: candidates.firstOrNull())?.first
++    }
++
++    /**
++     * One hand-over for the enlarged preview: the app on the virtual screen goes back to the
++     * phone, or the phone's own foreground app comes to the virtual screen. The task id is read
++     * here from the display; the app never supplies it. A missing API, a refusal and a failed
++     * move are distinct codes so the page can say what happened.
++     */
++    private fun moveTask(request: Bundle, response: Bundle) {
++        val direction = request.getString(Proto.TASK_DIRECTION) ?: throw Fault("invalidArguments")
++        val here = displayId()
++        val (row, target) = when (direction) {
++            Proto.DIR_MAIN -> (topTask(here) ?: throw Fault("noTask")) to Display.DEFAULT_DISPLAY
++            Proto.DIR_VIRTUAL -> (topMainTask() ?: throw Fault("noTask")) to here
++            else -> throw Fault("invalidArguments")
++        }
++        val move = moveTaskMethod ?: throw Fault("noMoveApi")
++        val moved = try {
++            move.invoke(taskManager, row.first, target) as? Boolean ?: true
++        } catch (e: InvocationTargetException) {
++            throw when (e.cause) {
++                is SecurityException -> Fault("systemOperationDenied")
++                is IllegalArgumentException -> Fault("noTask")
++                else -> Fault("moveRejected")
++            }
++        }
++        if (!moved) throw Fault("moveRejected")
++        response.putInt(Proto.TASK_ID, row.first)
++        row.second?.let { response.putString(Proto.TASK_PKG, it) }
++        response.putInt(Proto.DISPLAY_ID, target)
++    }
++
+     private fun requestedViewport(request: Bundle): BackgroundPolicy.Viewport? {
+         if (!request.containsKey(Proto.VIEWPORT_PRESET)) return null
+         val preset = BackgroundPolicy.Viewport.parse(request.get(Proto.VIEWPORT_PRESET)) ?: throw Fault("invalidArguments")
+diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/PrivilegedProtocol.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/PrivilegedProtocol.kt
+index 4c327b1..374475e 100644
+--- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/PrivilegedProtocol.kt
++++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/PrivilegedProtocol.kt
+@@ -19,7 +19,7 @@ object Proto {
+     const val OP_REPLAY_NAVIGATION = "replayNavigation"
+     const val NAVIGATION = "navigation"
+     // A running service whose revision differs is refused at connect and replaced (see the starters).
+-    const val REVISION = "dsh-vdisplay-4"
++    const val REVISION = "dsh-vdisplay-5"
+ 
+     // request keys
+     const val OP = "op"
+@@ -125,6 +125,14 @@ object Proto {
+     const val OP_TEXT = "text"
+     const val RELEASE_RECEIPT = "releaseReceipt"
+     const val TASK_SCOPE_EMPTY = "taskScopeEmpty"
++    // Two-way task hand-over from the enlarged preview. The engine picks the task itself:
++    // the app never sends a task id or a display id.
++    const val OP_MOVE_TASK = "moveTask"
++    const val TASK_DIRECTION = "taskDirection"
++    const val DIR_MAIN = "main"
++    const val DIR_VIRTUAL = "virtual"
++    const val TASK_ID = "taskId"
++    const val TASK_PKG = "taskPkg"
+     const val OP_RELEASE = "release"
+     const val OP_DESTROY = "destroy"
+     const val OP_COLLECT_SYSTEM_IME = "collectSystemIme"
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/TaskMover.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/TaskMover.kt
 new file mode 100644
 index 0000000..8ddabc9
@@ -75226,6 +75543,98 @@ index d0e32a5..73484ed 100644
  
    final String text;
  
+diff --git a/app/lib/phone/phone_channel.dart b/app/lib/phone/phone_channel.dart
+index 61789e5..418a62e 100644
+--- a/app/lib/phone/phone_channel.dart
++++ b/app/lib/phone/phone_channel.dart
+@@ -847,6 +847,32 @@ class PhoneResult {
+   final bool pending;
+ }
+ 
++/// One 手动点滑 gesture on the enlarged preview: refused gestures carry native's sentence.
++class PhoneGestureResult {
++  const PhoneGestureResult(this.ok, [this.message]);
++
++  factory PhoneGestureResult.fromMap(Map<Object?, Object?> m) =>
++      PhoneGestureResult(_flag(m['ok']), _text(m['message']));
++
++  final bool ok;
++  final String? message;
++}
++
++/// One 任务迁移 hand-over: `reason` is native's fixed code (noMoveApi / noTask / …).
++class PhoneHandOverResult {
++  const PhoneHandOverResult(this.ok, [this.reason, this.packageName]);
++
++  factory PhoneHandOverResult.fromMap(Map<Object?, Object?> m) => PhoneHandOverResult(
++    _flag(m['ok']),
++    _text(m['reason']),
++    _text(m['packageName']),
++  );
++
++  final bool ok;
++  final String? reason;
++  final String? packageName;
++}
++
+ /// Reply of `testScreen`: the main screen read once.
+ class ScreenTestResult {
+   const ScreenTestResult({required this.ok, this.text, this.reason});
+@@ -1355,6 +1381,54 @@ class PhoneChannel {
+     return controller.stream.map(PhonePreviewFrame.parse);
+   }
+ 
++  /// 手动点滑: one gesture the person made on the enlarged preview. [x]/[y]/[x2]/[y2] are
++  /// fractions of the picture (0..1); native maps them onto the virtual screen's pixels, so
++  /// the preview's own scaled-down size never matters.
++  Future<PhoneGestureResult> previewGesture({
++    required int taskId,
++    required String action,
++    required double x,
++    required double y,
++    double? x2,
++    double? y2,
++    int durationMs = 400,
++  }) async {
++    try {
++      final map = await _methods.invokeMapMethod<Object?, Object?>('previewGesture', {
++        'taskId': taskId,
++        'action': action,
++        'x': x,
++        'y': y,
++        'x2': ?x2,
++        'y2': ?y2,
++        'durationMs': durationMs,
++      });
++      return map == null ? PhoneGestureResult(false, phoneNotReadyReason) : PhoneGestureResult.fromMap(map);
++    } on MissingPluginException {
++      return PhoneGestureResult(false, phoneNotReadyReason);
++    } on PlatformException catch (e) {
++      return PhoneGestureResult(false, e.message ?? e.code);
++    }
++  }
++
++  /// 任务迁移: [toMain] hands the app on this virtual screen back to the phone; otherwise the
++  /// phone's own foreground app moves onto this virtual screen. Native picks the task itself.
++  Future<PhoneHandOverResult> handOverTask({required int taskId, required bool toMain}) async {
++    try {
++      final map = await _methods.invokeMapMethod<Object?, Object?>('handOverTask', {
++        'taskId': taskId,
++        'toMain': toMain,
++      });
++      return map == null
++          ? const PhoneHandOverResult(false, 'deviceUnavailable')
++          : PhoneHandOverResult.fromMap(map);
++    } on MissingPluginException {
++      return const PhoneHandOverResult(false, 'deviceUnavailable');
++    } on PlatformException catch (e) {
++      return PhoneHandOverResult(false, e.code);
++    }
++  }
++
+   Future<bool> setSkillSavePrompt(bool enabled) => _bool('setSkillSavePrompt', {'enabled': enabled});
+ 
+   Future<PhoneSkillReply> openSkillDraft(PhoneSkillCandidate candidate, {required bool confirmed}) =>
 diff --git a/app/lib/phone/virtual_screen_window.dart b/app/lib/phone/virtual_screen_window.dart
 new file mode 100644
 index 0000000..b8da669
@@ -75680,8 +76089,207 @@ index 1214058..3ea9dc8 100644
              ListPageRow(
                title: l10n.androidShellStatus,
                subtitle: _loading
+diff --git a/app/lib/ui/phone/background_preview.dart b/app/lib/ui/phone/background_preview.dart
+index 173f148..4e388bb 100644
+--- a/app/lib/ui/phone/background_preview.dart
++++ b/app/lib/ui/phone/background_preview.dart
+@@ -1,4 +1,5 @@
+ import 'dart:async';
++import 'dart:math' as math;
+ import 'dart:ui' as ui;
+ 
+ import 'package:flutter/material.dart';
+@@ -34,6 +35,12 @@ class _PhoneBackgroundPreviewDialogState extends State<PhoneBackgroundPreviewDia
+   ui.Image? _image;
+   PhonePreviewFrame? _pending;
+   bool _decoding = false;
++  // 手动点滑: a drag's two ends, and one gesture in flight at a time.
++  Offset? _swipeFrom;
++  Offset? _swipeLast;
++  bool _gestureBusy = false;
++  bool _handOverBusy = false;
++  String? _actionError;
+ 
+   @override
+   void initState() {
+@@ -176,24 +183,166 @@ class _PhoneBackgroundPreviewDialogState extends State<PhoneBackgroundPreviewDia
+     super.dispose();
+   }
+ 
++  /// 手动点滑: where a touch landed, as a fraction of the picture (0..1). Native maps the
++  /// fraction onto the virtual screen, so the preview's scaled-down size never matters. The
++  /// letterbox around a letter-shaped screen is not a target, so a touch there is dropped.
++  Offset? _toPictureFraction(Offset local, Size box, {bool clamp = false}) {
++    final image = _image;
++    if (image == null || image.width <= 0 || image.height <= 0) return null;
++    final iw = image.width.toDouble(), ih = image.height.toDouble();
++    final scale = math.min(box.width / iw, box.height / ih);
++    if (!scale.isFinite || scale <= 0) return null;
++    final left = (box.width - iw * scale) / 2, top = (box.height - ih * scale) / 2;
++    final x = (local.dx - left) / scale / iw, y = (local.dy - top) / scale / ih;
++    if (clamp) return Offset(x.clamp(0.0, 1.0).toDouble(), y.clamp(0.0, 1.0).toDouble());
++    if (x < 0 || y < 0 || x >= 1 || y >= 1) return null;
++    return Offset(x, y);
++  }
++
++  /// One gesture on the enlarged picture: the finger is the consent, native takes a fresh
++  /// observation and injects it into the virtual screen.
++  Future<void> _gesture(String action, Offset from, Size box, {Offset? to}) async {
++    if (_gestureBusy || _handOverBusy) return;
++    final start = _toPictureFraction(from, box);
++    // A swipe that leaves the picture still ends at its edge, not nowhere.
++    final end = to == null ? null : _toPictureFraction(to, box, clamp: true);
++    if (start == null || action == 'swipe' && end == null) return;
++    setState(() => _gestureBusy = true);
++    final result = await widget.channel.previewGesture(
++      taskId: widget.taskId,
++      action: action,
++      x: start.dx,
++      y: start.dy,
++      x2: end?.dx,
++      y2: end?.dy,
++      durationMs: action == 'swipe' ? 300 : 400,
++    );
++    if (!mounted) return;
++    setState(() {
++      _gestureBusy = false;
++      _actionError = result.ok ? null : (result.message ?? '这次手势没有发出去。');
++    });
++  }
++
++  /// 任务迁移: hand the app on this virtual screen back to the phone, or hand the phone's own
++  /// foreground app to the assistant here. Closing the dialog tells the page to fold the
++  /// floating window and switch the operation target.
++  Future<void> _handOver({required bool toMain}) async {
++    if (_handOverBusy || _gestureBusy) return;
++    setState(() {
++      _handOverBusy = true;
++      _actionError = null;
++    });
++    final result = await widget.channel.handOverTask(taskId: widget.taskId, toMain: toMain);
++    if (!mounted) return;
++    setState(() => _handOverBusy = false);
++    if (!result.ok) {
++      setState(() => _actionError = _handOverMessage(result.reason));
++      return;
++    }
++    Navigator.of(context).pop(toMain ? PhonePreviewHandOver.toMain : PhonePreviewHandOver.toVirtual);
++  }
++
++  /// Native's fixed hand-over codes; anything else stays one plain sentence.
++  String _handOverMessage(String? code) => switch (code) {
++    'noMoveApi' => '这台系统没有提供任务迁移接口，应用还在原处。',
++    'noTask' => '要搬的那块屏上没有应用。',
++    'systemOperationDenied' => '系统拒绝了任务迁移（特权权限不足）。',
++    'moveRejected' => '系统没接受这次任务迁移，应用还在原处。',
++    'noTarget' => '这块后台屏已经不在预览里了。',
++    'locked' => '锁屏状态下不能迁移。',
++    'deviceUnavailable' || 'releasePending' => '后台屏通道已断开，先重新开不打扰模式。',
++    _ => '任务迁移没成功，应用还在原处。',
++  };
++
+   @override
+   Widget build(BuildContext context) {
+     final l10n = context.l10n;
++    final image = _image;
++    final pictureHeight = MediaQuery.sizeOf(context).height * 0.42;
+     return AlertDialog(
+       title: Text(l10n.phonePreviewTitle),
+       content: SizedBox(
+         width: 320,
+-        height: MediaQuery.sizeOf(context).height * 0.5,
+-        child: _image != null
+-            ? IgnorePointer(child: RawImage(image: _image, fit: BoxFit.contain, filterQuality: FilterQuality.low))
+-            : Center(child: Text(switch (_state) {
+-                'off' => l10n.phonePreviewOff,
+-                'inUse' => l10n.phonePreviewInUse,
+-                'unavailable' || 'protected' => l10n.phonePreviewUnavailable,
+-                _ => l10n.phonePreviewWaiting,
+-              }, textAlign: TextAlign.center)),
++        child: Column(
++          mainAxisSize: MainAxisSize.min,
++          crossAxisAlignment: CrossAxisAlignment.stretch,
++          children: [
++            SizedBox(
++              height: pictureHeight,
++              child: image != null
++                  ? LayoutBuilder(
++                      builder: (context, box) {
++                        final size = Size(box.maxWidth, box.maxHeight);
++                        return GestureDetector(
++                          behavior: HitTestBehavior.opaque,
++                          onTapUp: (d) => unawaited(_gesture('tap', d.localPosition, size)),
++                          onLongPressStart: (d) => unawaited(_gesture('long', d.localPosition, size)),
++                          onPanStart: (d) {
++                            _swipeFrom = d.localPosition;
++                            _swipeLast = d.localPosition;
++                          },
++                          onPanUpdate: (d) => _swipeLast = d.localPosition,
++                          onPanEnd: (_) {
++                            final from = _swipeFrom;
++                            final to = _swipeLast;
++                            _swipeFrom = null;
++                            _swipeLast = null;
++                            if (from != null && to != null) unawaited(_gesture('swipe', from, size, to: to));
++                          },
++                          child: RawImage(
++                            image: image,
++                            fit: BoxFit.contain,
++                            filterQuality: FilterQuality.low,
++                          ),
++                        );
++                      },
++                    )
++                  : Center(
++                      child: Text(switch (_state) {
++                        'off' => l10n.phonePreviewOff,
++                        'inUse' => l10n.phonePreviewInUse,
++                        'unavailable' || 'protected' => l10n.phonePreviewUnavailable,
++                        _ => l10n.phonePreviewWaiting,
++                      }, textAlign: TextAlign.center),
++                    ),
++            ),
++            const SizedBox(height: 6),
++            // 私版：两个新动作暂时只有中文文案（l10n 生成需要 Flutter 工具链）。
++            Text(
++              _actionError ?? '画面可以直接点、长按、滑动；改动的是后台屏上的应用。',
++              maxLines: 3,
++              style: Theme.of(context).textTheme.bodySmall?.copyWith(
++                color: _actionError == null
++                    ? Theme.of(context).colorScheme.onSurfaceVariant
++                    : Theme.of(context).colorScheme.error,
++              ),
++            ),
++            const SizedBox(height: 4),
++            Wrap(
++              spacing: 4,
++              alignment: WrapAlignment.end,
++              children: [
++                TextButton(
++                  key: const ValueKey('phone-preview-to-main'),
++                  onPressed: _handOverBusy || _gestureBusy ? null : () => unawaited(_handOver(toMain: true)),
++                  child: const Text('切到主屏'),
++                ),
++                TextButton(
++                  key: const ValueKey('phone-preview-to-virtual'),
++                  onPressed: _handOverBusy || _gestureBusy ? null : () => unawaited(_handOver(toMain: false)),
++                  child: const Text('交给 AI（虚拟屏）'),
++                ),
++              ],
++            ),
++          ],
++        ),
+       ),
+       actions: [TextButton(onPressed: () => Navigator.of(context).pop(), child: Text(l10n.commonClose))],
+     );
+   }
+ }
++
++/// What the enlarged preview did before it closed: the page folds the floating window and
++/// switches the operation target accordingly.
++enum PhonePreviewHandOver { toMain, toVirtual }
 diff --git a/app/lib/ui/phone/dnd_mode_page.dart b/app/lib/ui/phone/dnd_mode_page.dart
-index 3a23e52..50e7bb3 100644
+index 3a23e52..08eef06 100644
 --- a/app/lib/ui/phone/dnd_mode_page.dart
 +++ b/app/lib/ui/phone/dnd_mode_page.dart
 @@ -16,6 +16,8 @@ import '../common/row_marks.dart';
@@ -75726,7 +76334,33 @@ index 3a23e52..50e7bb3 100644
      _lifecycle.dispose();
      super.dispose();
    }
-@@ -290,6 +307,53 @@ class _PhoneDndPageState extends ConsumerState<PhoneDndPage> {
+@@ -203,7 +220,7 @@ class _PhoneDndPageState extends ConsumerState<PhoneDndPage> {
+     }
+     _previewOpen = true;
+     try {
+-      await showAppDialog<void>(
++      final moved = await showAppDialog<PhonePreviewHandOver>(
+         context: context,
+         builder: (_) => Consumer(
+           builder: (_, ref, _) => PhoneBackgroundPreviewDialog(
+@@ -213,6 +230,16 @@ class _PhoneDndPageState extends ConsumerState<PhoneDndPage> {
+           ),
+         ),
+       );
++      if (!mounted || moved == null) return;
++      // 任务迁移成功：收起悬浮窗，操作目标跟着应用走。
++      await _window.close();
++      if (!mounted) return;
++      setState(() => _virtualOpen = false);
++      final toMain = moved == PhonePreviewHandOver.toMain;
++      ref.read(virtualScreenSettingsProvider.notifier)
++          .setTarget(toMain ? VirtualScreenTarget.main : VirtualScreenTarget.virtual);
++      showBriefNotice(context, toMain ? '已切到主屏，操作目标改为主屏' : '已交给 AI（虚拟屏），操作目标改为虚拟屏');
++      unawaited(_phone.refreshStatus());
+     } finally {
+       _previewOpen = false;
+     }
+@@ -290,6 +317,53 @@ class _PhoneDndPageState extends ConsumerState<PhoneDndPage> {
                                unawaited(_run(() async => PhoneResult(await _phone.setBackgroundPreview(enabled)))),
                    ),
                  ),
@@ -75756,7 +76390,7 @@ index 3a23e52..50e7bb3 100644
 +                              return const PhoneResult(true);
 +                            })),
 +                  ),
-+                )
++                ),
 +                if (_virtualOpen) ...[
 +                  ListPageRow(
 +                    leading: const SizedBox(),
