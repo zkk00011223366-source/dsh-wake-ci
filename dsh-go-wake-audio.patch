@@ -1,7 +1,7 @@
-From f7ff3c8686f95f0bacf07fa8b00e53eb0285913a Mon Sep 17 00:00:00 2001
+From e70c3c408d91a52a6f09fbe8ffc59c790cde3569 Mon Sep 17 00:00:00 2001
 From: wake-ci <ci@local>
-Date: Fri, 20 Nov 2026 06:44:21 +0800
-Subject: [PATCH] private build: live surface
+Date: Fri, 20 Nov 2026 06:45:25 +0800
+Subject: [PATCH] private build: live surface + rounded fallback
 
 ---
  .gitattributes                                |    3 +
@@ -37,7 +37,7 @@ Subject: [PATCH] private build: live surface
  .../dsh_app/phone/skills/PhoneSkillDraft.kt   |    2 +-
  .../dsh_app/phone/vscreen/TaskMover.kt        |   43 +
  .../dsh_app/phone/vscreen/TransferBall.kt     |  395 ++
- .../phone/vscreen/VirtualScreenOverlay.kt     | 1174 ++++++
+ .../phone/vscreen/VirtualScreenOverlay.kt     | 1182 ++++++
  .../phone/vscreen/VirtualScreenPlugin.kt      |   96 +
  .../ccch1mneyyy/dsh_app/runtime/GuestSetup.kt |   42 +-
  .../dsh_app/shortcuts/EntryActivity.kt        |    3 +
@@ -102,7 +102,7 @@ Subject: [PATCH] private build: live surface
  docs/wake-word.md                             |  107 +
  dsh-go-wake.patch                             | 2065 +++++++++++
  tooling/build-wake-apk.sh                     |   68 +
- 98 files changed, 12215 insertions(+), 2066 deletions(-)
+ 98 files changed, 12223 insertions(+), 2066 deletions(-)
  create mode 100644 .github/workflows/wake-apk.yml
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallForegroundService.kt
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallOverlay.kt
@@ -3425,10 +3425,10 @@ index 0000000..228b337
 +}
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenOverlay.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenOverlay.kt
 new file mode 100644
-index 0000000..1ac7b60
+index 0000000..643c219
 --- /dev/null
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenOverlay.kt
-@@ -0,0 +1,1174 @@
+@@ -0,0 +1,1182 @@
 +package io.github.ccch1mneyyy.dsh_app.phone.vscreen
 +
 +import android.annotation.SuppressLint
@@ -3638,6 +3638,14 @@ index 0000000..1ac7b60
 +            scaleType = ImageView.ScaleType.FIT_CENTER
 +            setBackgroundColor(Color.rgb(8, 10, 18))
 +            visibility = View.GONE
++            // 抓帧这条兜底路径同样要圆角：它是普通 View，clipToOutline 直接生效。
++            // 之前只有 TextureView 做了圆角，所以一旦退回抓帧，画面就是方的。
++            clipToOutline = true
++            outlineProvider = object : ViewOutlineProvider() {
++                override fun getOutline(view: View, outline: Outline) {
++                    outline.setRoundRect(0, 0, view.width, view.height, 13f * px)
++                }
++            }
 +        }
 +        inner.addView(picture2, FrameLayout.LayoutParams(-1, -1))
 +        // 没有后台任务/还没拿到帧时，窗口说的是一句人话，而不是一块黑（第十一节 4）。
