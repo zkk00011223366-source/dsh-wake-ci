@@ -1,13 +1,7 @@
-From e63bbf64f5bbbb99abe67ebe0d76d8c897af6248 Mon Sep 17 00:00:00 2001
+From ab2c07ce353fb75276f193496da4253ed4e89546 Mon Sep 17 00:00:00 2001
 From: wake-ci <ci@local>
-Date: Thu, 19 Nov 2026 10:25:22 +0800
-Subject: [PATCH] =?UTF-8?q?DSH=20=E7=A7=81=E4=BA=BA=E7=89=88:=20=E5=94=A4?=
- =?UTF-8?q?=E9=86=92=E9=80=9A=E8=AF=9D=20+=20=E6=82=AC=E6=B5=AE=E7=AA=97?=
- =?UTF-8?q?=20+=20=E5=BF=AB=E6=8D=B7=E6=96=B9=E5=BC=8F=E4=B8=80=E6=AC=A1?=
- =?UTF-8?q?=E6=80=A7=E8=A1=A5=E4=B8=81?=
-MIME-Version: 1.0
-Content-Type: text/plain; charset=UTF-8
-Content-Transfer-Encoding: 8bit
+Date: Thu, 19 Nov 2026 11:11:46 +0800
+Subject: [PATCH] private build: wake call + sheet + shortcuts + trace
 
 ---
  .gitattributes                                |    3 +
@@ -42,24 +36,26 @@ Content-Transfer-Encoding: 8bit
  app/lib/l10n/app_zh.arb                       |   15 +
  app/lib/l10n/parts/android_shell_en.arb       |    3 +-
  app/lib/l10n/parts/android_shell_zh.arb       |    3 +-
- app/lib/l10n/parts/speech_en.arb              |   15 +
- app/lib/l10n/parts/speech_zh.arb              |   15 +
+ app/lib/l10n/parts/speech_en.arb              |   19 +-
+ app/lib/l10n/parts/speech_zh.arb              |   19 +-
  app/lib/links/launcher_entries.dart           |    7 +-
- app/lib/ui/chat/chat_screen.dart              |   85 +-
+ app/lib/state/app_info.dart                   |    5 +
+ app/lib/state/update_state.dart               |    9 +
+ app/lib/ui/chat/chat_screen.dart              |   89 +-
  app/lib/ui/chat/media/media_format.dart       |   16 +-
  app/lib/ui/phone/android_shell_page.dart      |   28 +
- app/lib/ui/settings/voice_settings_page.dart  |   80 +
+ app/lib/ui/settings/voice_settings_page.dart  |   89 +
  app/lib/ui/shell/system_entry_host.dart       |    7 +
  app/lib/ui/speech/voice_call_page.dart        |  111 +-
  app/lib/ui/theme/app_icons.dart               |    4 +
  app/lib/voice/wake_keywords.dart              |   50 +
  app/lib/voice/wake_settings.dart              |  106 +
- app/lib/voice/wake_word.dart                  |  825 +++++++
+ app/lib/voice/wake_word.dart                  |  829 +++++++
  app/pubspec.yaml                              |    4 +
  docs/wake-word.md                             |  107 +
  dsh-go-wake.patch                             | 2065 +++++++++++++++++
  tooling/build-wake-apk.sh                     |   68 +
- 49 files changed, 5241 insertions(+), 25 deletions(-)
+ 51 files changed, 5278 insertions(+), 27 deletions(-)
  create mode 100644 .github/workflows/wake-apk.yml
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallForegroundService.kt
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallOverlay.kt
@@ -74673,7 +74669,7 @@ index 104780b..a2b020d 100644
 +  "androidShellNoConfirm": "不再逐条确认（风险自负）"
  }
 diff --git a/app/lib/l10n/parts/speech_en.arb b/app/lib/l10n/parts/speech_en.arb
-index 1b20cf2..cd57405 100644
+index 1b20cf2..fd56dc1 100644
 --- a/app/lib/l10n/parts/speech_en.arb
 +++ b/app/lib/l10n/parts/speech_en.arb
 @@ -113,6 +113,7 @@
@@ -74684,10 +74680,11 @@ index 1b20cf2..cd57405 100644
    "speechCallPause": "Pause before she answers",
    "speechCallPauseQuick": "Short",
    "speechCallPauseNormal": "Medium",
-@@ -134,5 +135,19 @@
+@@ -134,5 +135,21 @@
    "speechCallVisualRing": "Ring",
    "speechCallVisualMono": "Line",
    "speechCallVisualGlass": "Orb",
+-  "speechInsecure": "That service's address isn't https; the key can't be sent that way"
 +  "speechWakeSection": "Voice wake word",
 +  "speechWakeFooter": "Always-on listening keeps the microphone, also with the screen off, and leaves a notification. Calls and dictation take the microphone first; listening comes back afterwards.",
 +  "speechWakeEnable": "Always-on listening",
@@ -74702,10 +74699,12 @@ index 1b20cf2..cd57405 100644
 +  "speechWakeStateModel": "Download the live-words model first",
 +  "speechWakeStateFailed": "Listening could not start",
 +  "speechWakeStateOff": "Off",
-   "speechInsecure": "That service's address isn't https; the key can't be sent that way"
++  "speechInsecure": "That service's address isn't https; the key can't be sent that way",
++  "speechWakeFreshChat": "Start a new chat on wake",
++  "speechWakeFreshChatHint": "Off: continue the last one; on: a fresh conversation every time (wake word and AI key alike)"
  }
 diff --git a/app/lib/l10n/parts/speech_zh.arb b/app/lib/l10n/parts/speech_zh.arb
-index 3822fa2..615fdd8 100644
+index 3822fa2..950cced 100644
 --- a/app/lib/l10n/parts/speech_zh.arb
 +++ b/app/lib/l10n/parts/speech_zh.arb
 @@ -113,6 +113,7 @@
@@ -74716,10 +74715,11 @@ index 3822fa2..615fdd8 100644
    "speechCallPause": "停顿多久算说完",
    "speechCallPauseQuick": "快",
    "speechCallPauseNormal": "适中",
-@@ -134,5 +135,19 @@
+@@ -134,5 +135,21 @@
    "speechCallVisualRing": "光环",
    "speechCallVisualMono": "细线",
    "speechCallVisualGlass": "光球",
+-  "speechInsecure": "这个云端服务的地址不是 https，Key 不能这样发出去"
 +  "speechWakeSection": "语音唤醒",
 +  "speechWakeFooter": "常驻监听会一直占用麦克风（息屏也在），通知栏留一条常驻通知。通话、听写开始时会自动让位，结束后自动恢复。",
 +  "speechWakeEnable": "常驻监听",
@@ -74734,7 +74734,9 @@ index 3822fa2..615fdd8 100644
 +  "speechWakeStateModel": "需先在实时字幕里下载模型",
 +  "speechWakeStateFailed": "监听没能启动",
 +  "speechWakeStateOff": "已关闭",
-   "speechInsecure": "这个云端服务的地址不是 https，Key 不能这样发出去"
++  "speechInsecure": "这个云端服务的地址不是 https，Key 不能这样发出去",
++  "speechWakeFreshChat": "唤醒后开新对话",
++  "speechWakeFreshChatHint": "关：接着上次那个对话；开：每次都新建一个（唤醒词和 AI 键共用）"
  }
 diff --git a/app/lib/links/launcher_entries.dart b/app/lib/links/launcher_entries.dart
 index d0e32a5..73484ed 100644
@@ -74761,8 +74763,44 @@ index d0e32a5..73484ed 100644
  
    final String text;
  
+diff --git a/app/lib/state/app_info.dart b/app/lib/state/app_info.dart
+index 18b01c2..f532b20 100644
+--- a/app/lib/state/app_info.dart
++++ b/app/lib/state/app_info.dart
+@@ -8,6 +8,11 @@ import '../l10n/l10n.dart';
+ abstract final class AppInfo {
+   static const version = String.fromEnvironment('DSH_APP_VERSION', defaultValue: '1.1.0+1');
+ 
++  /// 私人版 builds carry a suffix on the application id; the in-app updater only works for the
++  /// official one (its APK has the other id and signature, so it can never install here).
++  static const packageSuffix = String.fromEnvironment('DSH_PACKAGE_SUFFIX', defaultValue: '.private');
++  static bool get officialPackage => packageSuffix.isEmpty;
++
+   /// "1.0.0 (1)" for display.
+   static String get displayVersion {
+     final parts = version.split('+');
+diff --git a/app/lib/state/update_state.dart b/app/lib/state/update_state.dart
+index c089d19..a15b64d 100644
+--- a/app/lib/state/update_state.dart
++++ b/app/lib/state/update_state.dart
+@@ -359,6 +359,15 @@ class AppUpdateController extends Notifier<AppUpdateState> {
+         noticeOnly: true,
+       );
+     }
++    // 私人版 ships under its own application id, and the updater can only ever install a
++    // package with this id and this signature — the official APK fails both checks, which is
++    // what 「不是 DSH 的安装包」 was. Hidden here rather than left to fail on every check.
++    if (!AppInfo.officialPackage) {
++      return AppUpdateState(
++        current: AppVersion.tryParse(AppInfo.version) ?? const AppVersion(0, 0, 0),
++        installable: false,
++      );
++    }
+     return AppUpdateState(current: AppVersion.tryParse(AppInfo.version) ?? const AppVersion(0, 0, 0));
+   }
+ 
 diff --git a/app/lib/ui/chat/chat_screen.dart b/app/lib/ui/chat/chat_screen.dart
-index 46d2fd3..47cee06 100644
+index 46d2fd3..0d17a1b 100644
 --- a/app/lib/ui/chat/chat_screen.dart
 +++ b/app/lib/ui/chat/chat_screen.dart
 @@ -28,6 +28,8 @@ import '../../state/streaming_pcm_state.dart';
@@ -74774,7 +74812,7 @@ index 46d2fd3..47cee06 100644
  import '../../state/agents_state.dart' show subagentParentProvider;
  import '../../state/attachments.dart';
  import '../../state/balance_state.dart';
-@@ -366,6 +368,34 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
+@@ -366,6 +368,35 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
      WidgetsBinding.instance.addObserver(this);
      _scheduleInteraction();
      ref.listenManual(currentSessionProvider, (_, _) => _scheduleInteraction());
@@ -74792,6 +74830,7 @@ index 46d2fd3..47cee06 100644
 +      // The AI key says "open a call" the way a wake word does, so it also sends what a wake
 +      // would: the assistant is spoken to at once instead of the page opening in silence.
 +      if (ref.read(callOnOpenProvider.notifier).take()) {
++        diagWake('shortcut-call: mark taken, starting call');
 +        unawaited(_startCall(() => mounted, wakePhrase: ref.read(wakeSettingsProvider).keyword));
 +      }
 +    });
@@ -74809,12 +74848,13 @@ index 46d2fd3..47cee06 100644
      _voice = VoiceInputController(
        input: _input,
        bridge: ref.read(voiceBridgeProvider),
-@@ -1476,11 +1506,30 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
+@@ -1476,16 +1507,38 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
  
    /// 「语音通话」 with this conversation (a new chat gets its conversation
    /// with the first thing said); [ownsDraft]: still the conversation it was asked from.
 -  Future<void> _startCall(bool Function() ownsDraft) async {
 +  Future<void> _startCall(bool Function() ownsDraft, {String? wakePhrase}) async {
++    diagWake('startCall: enter (phrase=${wakePhrase ?? "-"})');
 +    // 语音唤醒 gives the microphone up before the call takes it (voice/wake_word.dart).
 +    final wake = ref.read(wakeWordProvider.notifier);
 +    await wake.suspend();
@@ -74822,6 +74862,7 @@ index 46d2fd3..47cee06 100644
      await _voice.cancel();
 -    if (!mounted || !ownsDraft()) return;
 +    if (!mounted || !ownsDraft()) {
++      diagWake('startCall: dropped (mounted=$mounted)');
 +      // No call after all: listening comes back, so a wake word that missed does not leave it off.
 +      unawaited(wake.resume());
 +      return;
@@ -74842,7 +74883,13 @@ index 46d2fd3..47cee06 100644
      final sessionId = ref.read(currentSessionProvider);
      final listed = sessionId == null ? null : ref.read(chatProvider(sessionId)).title;
      final title = listed != null && listed.trim().isNotEmpty ? chatTitleShown(listed.trim()) : appL10n.commonNewChat;
-@@ -1493,15 +1542,41 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
+     // The call stays with the conversation it began in, whatever is opened meanwhile.
+     var pinned = sessionId;
++    diagWake('startCall: opening the call page');
+     unawaited(
+       openChatCall(
+         context,
+@@ -1493,15 +1546,41 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
          session: () async {
            // Another host now: its conversation of the same id is not this call's.
            if (!mounted || ref.read(activeHostProvider) != host) return null;
@@ -74979,7 +75026,7 @@ index 1214058..3ea9dc8 100644
                title: l10n.androidShellStatus,
                subtitle: _loading
 diff --git a/app/lib/ui/settings/voice_settings_page.dart b/app/lib/ui/settings/voice_settings_page.dart
-index 38418e6..f6a8119 100644
+index 38418e6..185aa3f 100644
 --- a/app/lib/ui/settings/voice_settings_page.dart
 +++ b/app/lib/ui/settings/voice_settings_page.dart
 @@ -13,6 +13,8 @@ import '../../state/streaming_asr_state.dart' show SystemAsrReadiness, ohosStrea
@@ -75050,7 +75097,7 @@ index 38418e6..f6a8119 100644
      return AppPage.list(
        title: l10n.voiceSettingsTitle,
        children: [
-@@ -254,6 +301,39 @@ class _VoiceSettingsPageState extends ConsumerState<VoiceSettingsPage> {
+@@ -254,6 +301,48 @@ class _VoiceSettingsPageState extends ConsumerState<VoiceSettingsPage> {
              ),
            ],
          ),
@@ -75084,6 +75131,15 @@ index 38418e6..f6a8119 100644
 +              value: wake.vibrate,
 +              onChanged: (on) =>
 +                  unawaited(ref.read(wakeSettingsProvider.notifier).edit((saved) => saved.copyWith(vibrate: on))),
++            ),
++            // 唤醒后开新对话 or 接着上次：one switch, used by the wake word and the AI key alike.
++            SettingsSwitchTile(
++              key: const ValueKey('speech-wake-fresh-chat'),
++              title: l10n.speechWakeFreshChat,
++              subtitle: l10n.speechWakeFreshChatHint,
++              value: wake.freshChat,
++              onChanged: (on) =>
++                  unawaited(ref.read(wakeSettingsProvider.notifier).edit((saved) => saved.copyWith(freshChat: on))),
 +            ),
 +          ],
 +        ),
@@ -75465,10 +75521,10 @@ index 0000000..07c3f88
 +final wakeSettingsProvider = NotifierProvider<WakeSettingsController, WakeSettings>(WakeSettingsController.new);
 diff --git a/app/lib/voice/wake_word.dart b/app/lib/voice/wake_word.dart
 new file mode 100644
-index 0000000..d5fc3ab
+index 0000000..a31936c
 --- /dev/null
 +++ b/app/lib/voice/wake_word.dart
-@@ -0,0 +1,825 @@
+@@ -0,0 +1,829 @@
 +// 语音唤醒（常驻监听）: the switch, the recognizer and what a wake word does.
 +//
 +// Where each piece runs:
@@ -76267,6 +76323,10 @@ index 0000000..d5fc3ab
 +    return true;
 +  }
 +}
++
++/// A line into the wake trace (the file `.wake-log` switches on), for paths that are hard to
++/// see from outside: the AI key's mark, the call start, and what stopped it.
++void diagWake(String line) => _dbg(line);
 +
 +class WakeCallRequest extends Notifier<int> {
 +  /// 唤醒词 as the person set it: the call hands it to the assistant as the first thing
