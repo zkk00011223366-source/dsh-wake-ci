@@ -1,7 +1,7 @@
 == resources ==
 /dev/root        72G   52G   21G  72% /
                total        used        free      shared  buff/cache   available
-Mem:            7931        5368         239          20        2658        2563
+Mem:            7931        2776        2624          24        2868        5155
 == tail ==
 
 ==> 依赖: flutter pub get
@@ -104,3 +104,19 @@ Flutter assets will be downloaded from https://storage.googleapis.com. Make sure
 lib/ui/phone/dnd_mode_page.dart:337:17: Error: Expected ',' before this.
                 if (_virtualOpen) ...[
                 ^^
+Target kernel_snapshot_program failed: Exception
+
+
+FAILURE: Build failed with an exception.
+
+* What went wrong:
+Execution failed for task ':app:compileFlutterBuildArm64Release'.
+> Process 'command '/home/runner/dev/flutter/bin/flutter'' finished with non-zero exit value 1
+
+* Try:
+> Run with --stacktrace option to get the stack trace.
+> Run with --info or --debug option to get more log output.
+> Run with --scan to get full insights from a Build Scan (powered by Develocity).
+> Get more help at https://help.gradle.org.
+
+BUILD FAILED in 6m 43s
