@@ -1,7 +1,7 @@
 == resources ==
 /dev/root        72G   52G   21G  72% /
                total        used        free      shared  buff/cache   available
-Mem:            7930        4429         151          50        3713        3501
+Mem:            7930        5357         237          25        2674        2573
 == tail ==
 
 ==> 依赖: flutter pub get
@@ -102,3 +102,33 @@ Installing Android SDK Platform 34 in /home/runner/dev/android-sdk/platforms/and
 "Install Android SDK Platform 34 (revision 3)" complete.
 "Install Android SDK Platform 34 (revision 3)" finished.
 Flutter assets will be downloaded from https://storage.googleapis.com. Make sure you trust this source!
+lib/ui/phone/virtual_screen_host.dart:88:7: Error: The method 'diagWake' isn't defined for the type '_VirtualScreenHostState'.
+ - '_VirtualScreenHostState' is from 'package:dsh_app/ui/phone/virtual_screen_host.dart' ('lib/ui/phone/virtual_screen_host.dart').
+Try correcting the name to the name of an existing method, or defining a method named 'diagWake'.
+      diagWake('back: ignored (taskId=$taskId acting=$_acting)');
+      ^^^^^^^^
+lib/ui/phone/virtual_screen_host.dart:91:5: Error: The method 'diagWake' isn't defined for the type '_VirtualScreenHostState'.
+ - '_VirtualScreenHostState' is from 'package:dsh_app/ui/phone/virtual_screen_host.dart' ('lib/ui/phone/virtual_screen_host.dart').
+Try correcting the name to the name of an existing method, or defining a method named 'diagWake'.
+    diagWake('back: asking task $taskId');
+    ^^^^^^^^
+lib/ui/phone/virtual_screen_host.dart:106:5: Error: The method 'diagWake' isn't defined for the type '_VirtualScreenHostState'.
+ - '_VirtualScreenHostState' is from 'package:dsh_app/ui/phone/virtual_screen_host.dart' ('lib/ui/phone/virtual_screen_host.dart').
+Try correcting the name to the name of an existing method, or defining a method named 'diagWake'.
+    diagWake('manual: action=$action taskId=$taskId acting=$_acting');
+    ^^^^^^^^
+lib/ui/phone/virtual_screen_host.dart:124:7: Error: The method 'diagWake' isn't defined for the type '_VirtualScreenHostState'.
+ - '_VirtualScreenHostState' is from 'package:dsh_app/ui/phone/virtual_screen_host.dart' ('lib/ui/phone/virtual_screen_host.dart').
+Try correcting the name to the name of an existing method, or defining a method named 'diagWake'.
+      diagWake('manual: ok=${result.ok} msg=${result.message ?? ""}');
+      ^^^^^^^^
+lib/ui/phone/virtual_screen_host.dart:127:7: Error: The method 'diagWake' isn't defined for the type '_VirtualScreenHostState'.
+ - '_VirtualScreenHostState' is from 'package:dsh_app/ui/phone/virtual_screen_host.dart' ('lib/ui/phone/virtual_screen_host.dart').
+Try correcting the name to the name of an existing method, or defining a method named 'diagWake'.
+      diagWake('manual: threw $e');
+      ^^^^^^^^
+lib/ui/phone/virtual_screen_host.dart:137:5: Error: The method 'diagWake' isn't defined for the type '_VirtualScreenHostState'.
+ - '_VirtualScreenHostState' is from 'package:dsh_app/ui/phone/virtual_screen_host.dart' ('lib/ui/phone/virtual_screen_host.dart').
+Try correcting the name to the name of an existing method, or defining a method named 'diagWake'.
+    diagWake('transfer: toMain=$toMain requested');
+    ^^^^^^^^
