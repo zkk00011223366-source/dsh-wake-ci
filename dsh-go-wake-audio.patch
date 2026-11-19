@@ -1,8 +1,8 @@
-From f8960f8a563fd50f0084e8ab8a2623f0ffdc1118 Mon Sep 17 00:00:00 2001
+From d90eea2b4bb17da61f189bd445ef30ed55e73007 Mon Sep 17 00:00:00 2001
 From: wake-ci <ci@local>
-Date: Thu, 19 Nov 2026 17:37:06 +0800
+Date: Thu, 19 Nov 2026 17:38:48 +0800
 Subject: [PATCH] vscreen: first-open retry, pixel-only small window, wake
- greeting
+ greeting, waiting text
 
 ---
  .gitattributes                                |    3 +
@@ -35,7 +35,7 @@ Subject: [PATCH] vscreen: first-open retry, pixel-only small window, wake
  .../phone/background/PrivilegedProtocol.kt    |   22 +-
  .../dsh_app/phone/vscreen/TaskMover.kt        |   43 +
  .../dsh_app/phone/vscreen/TransferBall.kt     |  384 ++
- .../phone/vscreen/VirtualScreenOverlay.kt     |  957 +++++
+ .../phone/vscreen/VirtualScreenOverlay.kt     |  970 +++++
  .../phone/vscreen/VirtualScreenPlugin.kt      |   83 +
  .../dsh_app/shortcuts/EntryActivity.kt        |    3 +
  .../dsh_app/shortcuts/ShortcutsPlugin.kt      |   13 +-
@@ -93,7 +93,7 @@ Subject: [PATCH] vscreen: first-open retry, pixel-only small window, wake
  docs/wake-word.md                             |  107 +
  dsh-go-wake.patch                             | 2065 +++++++++++
  tooling/build-wake-apk.sh                     |   68 +
- 88 files changed, 11574 insertions(+), 1902 deletions(-)
+ 88 files changed, 11587 insertions(+), 1902 deletions(-)
  create mode 100644 .github/workflows/wake-apk.yml
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallForegroundService.kt
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallOverlay.kt
@@ -2715,10 +2715,10 @@ index 0000000..f6fccd5
 +}
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenOverlay.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenOverlay.kt
 new file mode 100644
-index 0000000..a4127d6
+index 0000000..a076ac1
 --- /dev/null
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenOverlay.kt
-@@ -0,0 +1,957 @@
+@@ -0,0 +1,970 @@
 +package io.github.ccch1mneyyy.dsh_app.phone.vscreen
 +
 +import android.annotation.SuppressLint
@@ -2819,6 +2819,7 @@ index 0000000..a4127d6
 +    private var topRight: FrameLayout? = null
 +    private var bottomRight: LinearLayout? = null
 +    private var hint: TextView? = null
++    private var waiting: TextView? = null
 +    private var volumeRow: LinearLayout? = null
 +    private var backKey: FrameLayout? = null
 +    private var volumeKey: FrameLayout? = null
@@ -2877,6 +2878,14 @@ index 0000000..a4127d6
 +            visibility = View.GONE
 +        }
 +        inner.addView(picture2, FrameLayout.LayoutParams(-1, -1))
++        // 没有后台任务/还没拿到帧时，窗口说的是一句人话，而不是一块黑（第十一节 4）。
++        val waitingView = TextView(app).apply {
++            text = "等待 AI 开始操作"
++            gravity = Gravity.CENTER
++            setTextColor(0x99FFFFFF.toInt())
++            textSize = 10f
++        }
++        inner.addView(waitingView, FrameLayout.LayoutParams(-1, -1))
 +
 +        buildChrome(app, box, px)
 +
@@ -2905,6 +2914,7 @@ index 0000000..a4127d6
 +        content = inner
 +        picture = surfaceView
 +        fallback = picture2
++        waiting = waitingView
 +        params = lp
 +        liveSurface = false
 +        eyeHidden = false
@@ -2922,6 +2932,7 @@ index 0000000..a4127d6
 +        content = null
 +        picture = null
 +        fallback = null
++        waiting = null
 +        params = null
 +        context = null
 +        shape = Shape.SLIVER
@@ -2954,6 +2965,7 @@ index 0000000..a4127d6
 +        lastBitmap = decoded
 +        target.setImageBitmap(decoded)
 +        target.visibility = if (eyeHidden || !screenOn) View.GONE else View.VISIBLE
++        waiting?.visibility = View.GONE
 +        old?.recycle()
 +        return true
 +    }
@@ -3063,7 +3075,8 @@ index 0000000..a4127d6
 +        val frames = fallback ?: return
 +        val showPicture = !eyeHidden && screenOn
 +        surface.visibility = if (liveSurface && showPicture) View.VISIBLE else View.INVISIBLE
-+        frames.visibility = if (!liveSurface && showPicture) View.VISIBLE else View.GONE
++        frames.visibility = if (!liveSurface && showPicture && lastBitmap != null) View.VISIBLE else View.GONE
++        waiting?.visibility = if (showPicture && !liveSurface && lastBitmap == null) View.VISIBLE else View.GONE
 +    }
 +
 +    private fun registerScreen(app: Context) {
@@ -3268,7 +3281,7 @@ index 0000000..a4127d6
 +
 +    private fun buildChrome(app: Context, box: FrameLayout, px: Float) {
 +        val key = (28 * px).roundToInt()
-+        val gap = (6 * px).roundToInt()
++        val gap = (8 * px).roundToInt()
 +        val edge = (8 * px).roundToInt()
 +        // 第十二节: a 28 dp key, but never a touch area under 44 dp.
 +        val touch = (44 * px).roundToInt()
