@@ -1,7 +1,7 @@
 == resources ==
-/dev/root        72G   52G   21G  72% /
+/dev/root        72G   48G   25G  66% /
                total        used        free      shared  buff/cache   available
-Mem:            7931        3402        1827          32        3047        4529
+Mem:            7931        1420        1193          50        5725        6511
 == tail ==
 
 ==> 依赖: flutter pub get
@@ -59,74 +59,3 @@ Downloading packages...
 Changed 1 dependency!
 47 packages have newer versions incompatible with dependency constraints.
 Try `flutter pub outdated` for more information.
-
-==> 文案: 合并 parts 并重新生成 L10n
-Flutter assets will be downloaded from https://storage.googleapis.com. Make sure you trust this source!
-Because l10n.yaml exists, the options defined there will be used instead.
-To use the command line arguments, delete the l10n.yaml file in the Flutter project.
-
-
-✓ 75 parts, 8350 keys
-✓ gen-l10n → lib/l10n/gen/
-
-==> 运行时: 已存在 runtime/out/arm64-v8a
-
-==> 打包: tooling/build-apk.sh -f arm64 --keep-daemon
-dsh-go 1.1.0 (11192228, 2026-11-19 22:28 UTC+8) · release · arm64
-runtime verified: arm64 (arm64-v8a), schema 1, 5 files
-tawcroot: /home/runner/work/dsh-wake-ci/dsh-wake-ci/runtime/out-tawcroot
-→ flutter build apk --release --flavor arm64 --target-platform android-arm64 --build-name 1.1.0 --build-number 11192228 --dart-define=DSH_APP_VERSION=1.1.0+11192228
-Flutter assets will be downloaded from https://storage.googleapis.com. Make sure you trust this source!
-Running Gradle task 'assembleArm64Release'...                   
-
-FAILURE: Build failed with an exception.
-
-* What went wrong:
-Could not resolve all artifacts for configuration 'classpath'.
-> Could not resolve org.jetbrains.kotlin:kotlin-stdlib-common:2.2.21.
-  Required by:
-      settings file 'settings.gradle.kts' > project :gradle > org.jetbrains.kotlinx:kotlinx-serialization-json:1.4.0 > org.jetbrains.kotlinx:kotlinx-serialization-json-jvm:1.4.0
-   > Repository maven is disabled due to earlier error below:
-      > Could not resolve org.apache.httpcomponents:httpclient:4.5.14.
-         > Could not get resource 'https://maven.aliyun.com/repository/google/org/apache/httpcomponents/httpclient/4.5.14/httpclient-4.5.14.pom'.
-            > Could not GET 'https://maven.aliyun.com/repository/google/org/apache/httpcomponents/httpclient/4.5.14/httpclient-4.5.14.pom'. Received status code 502 from server: Bad Gateway
-> There are 52 more failures with identical causes.
-
-* Try:
-> Run with --stacktrace option to get the stack trace.
-> Run with --info or --debug option to get more log output.
-> Run with --scan to get full insights from a Build Scan (powered by Develocity).
-> Get more help at https://help.gradle.org.
-
-BUILD FAILED in 2m 55s
-Running Gradle task 'assembleArm64Release'...                     176.1s
-[!] Gradle threw an error while downloading artifacts from the network.
-Retrying Gradle Build: #1, wait time: 100ms
-Running Gradle task 'assembleArm64Release'...                   
-WARNING: Your app uses the following plugins that apply Kotlin Gradle Plugin (KGP): flutter_webrtc
-Future versions of Flutter will fail to build if your app uses plugins that apply KGP.
-
-Please check the changelogs of these plugins and upgrade to a version that supports Built-in Kotlin.
-If no such version exists, report the issue to the plugin. If necessary, here is a guide on filing
-an issue against a plugin: https://docs.flutter.dev/release/breaking-changes/migrate-to-built-in-kotlin/for-app-developers#report-incompatible-kotlin-gradle-plugin-usage-to-plugin-authors
-
-If you are a plugin author, please migrate your plugin to Built-in Kotlin using this guide: https://docs.flutter.dev/release/breaking-changes/migrate-to-built-in-kotlin/for-plugin-authors
-Checking the license for package Android SDK Platform 35 in /home/runner/dev/android-sdk/licenses
-License for package Android SDK Platform 35 accepted.
-Preparing "Install Android SDK Platform 35 (revision 2)".
-"Install Android SDK Platform 35 (revision 2)" ready.
-Installing Android SDK Platform 35 in /home/runner/dev/android-sdk/platforms/android-35
-"Install Android SDK Platform 35 (revision 2)" complete.
-"Install Android SDK Platform 35 (revision 2)" finished.
-[=========                              ] 25%                                   
-Checking the license for package Android SDK Platform 34 in /home/runner/dev/android-sdk/licenses
-License for package Android SDK Platform 34 accepted.
-Preparing "Install Android SDK Platform 34 (revision 3)".
-"Install Android SDK Platform 34 (revision 3)" ready.
-Installing Android SDK Platform 34 in /home/runner/dev/android-sdk/platforms/android-34
-"Install Android SDK Platform 34 (revision 3)" complete.
-"Install Android SDK Platform 34 (revision 3)" finished.
-Flutter assets will be downloaded from https://storage.googleapis.com. Make sure you trust this source!
-[=========                              ] 25%                                   
-Font asset "DshIcons.ttf" was tree-shaken, reducing it from 53796 to 50204 bytes (6.7% reduction). Tree-shaking can be disabled by providing the --no-tree-shake-icons flag when building your app.
-Font asset "MaterialIcons-Regular.otf" was tree-shaken, reducing it from 1645184 to 4492 bytes (99.7% reduction). Tree-shaking can be disabled by providing the --no-tree-shake-icons flag when building your app.
