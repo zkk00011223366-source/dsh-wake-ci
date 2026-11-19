@@ -77,20 +77,10 @@ jobs:
           set -eu
           git config user.email "ci@local"
           git config user.name "wake-ci"
-          git am --3way .patchsrc/dsh-go-wake.patch
-          # Follow-ups found once the tree actually compiled.
-          if [ -f .patchsrc/dsh-go-wake-fixup.patch ]; then
-            git am --3way .patchsrc/dsh-go-wake-fixup.patch
-          fi
-          # The wake gate: a floor learned from silence kept it open, so the recognizer
-          # decoded a room into 呵呵 and the wake word never matched.
-          if [ -f .patchsrc/dsh-go-wake-gate.patch ]; then
-            git am --3way .patchsrc/dsh-go-wake-gate.patch
-          fi
-          # The audio the recognizer is handed, and a sample of it to listen to.
-          if [ -f .patchsrc/dsh-go-wake-audio.patch ]; then
-            git am --3way .patchsrc/dsh-go-wake-audio.patch
-          fi
+          # One patch, one commit: the whole private build against the upstream tree. The
+          # older follow-ups (wake, fixup, gate) are already inside it, and applying them
+          # first made this one conflict with its own contents.
+          git am --3way .patchsrc/dsh-go-wake-audio.patch
           git log --oneline -4
 
       # Keyed on the installer itself: when it changes, its downloads are rebuilt.
