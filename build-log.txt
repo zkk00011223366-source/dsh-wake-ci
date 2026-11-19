@@ -1,7 +1,7 @@
 == resources ==
 /dev/root        72G   54G   18G  76% /
                total        used        free      shared  buff/cache   available
-Mem:            7931        4847         275          31        3152        3083
+Mem:            7931        4954         253          31        3068        2977
 == tail ==
 
 ==> 依赖: flutter pub get
@@ -108,3 +108,5 @@ Note: Some input files use or override a deprecated API.
 Note: Recompile with -Xlint:deprecation for details.
 Note: Some input files use unchecked or unsafe operations.
 Note: Recompile with -Xlint:unchecked for details.
+e: file:///home/runner/work/dsh-wake-ci/dsh-wake-ci/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/SafetyGate.kt:118:61 Unresolved reference 'BuildConfig'.
+e: file:///home/runner/work/dsh-wake-ci/dsh-wake-ci/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/BackgroundProbeActivity.kt:143:57 Unresolved reference 'BuildConfig'.
