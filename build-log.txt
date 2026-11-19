@@ -1,7 +1,7 @@
 == resources ==
 /dev/root        72G   52G   21G  72% /
                total        used        free      shared  buff/cache   available
-Mem:            7931        5402         245          20        2649        2529
+Mem:            7931        2889        2524          24        2856        5042
 == tail ==
 
 ==> 依赖: flutter pub get
@@ -104,3 +104,5 @@ Flutter assets will be downloaded from https://storage.googleapis.com. Make sure
 lib/ui/phone/dnd_mode_page.dart:337:17: Error: Expected ',' before this.
                 if (_virtualOpen) ...[
                 ^^
+Target kernel_snapshot_program failed: Exception
+
