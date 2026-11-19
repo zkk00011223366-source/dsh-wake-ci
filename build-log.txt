@@ -1,7 +1,7 @@
 == resources ==
 /dev/root        72G   52G   21G  72% /
                total        used        free      shared  buff/cache   available
-Mem:            7931        3172        2283          27        2816        4758
+Mem:            7931        3756        1494          25        3019        4174
 == tail ==
 
 ==> 依赖: flutter pub get
@@ -102,32 +102,6 @@ Installing Android SDK Platform 34 in /home/runner/dev/android-sdk/platforms/and
 "Install Android SDK Platform 34 (revision 3)" complete.
 "Install Android SDK Platform 34 (revision 3)" finished.
 Flutter assets will be downloaded from https://storage.googleapis.com. Make sure you trust this source!
-lib/ui/shell/system_entry_host.dart:169:47: Error: The method 'chatProvider' isn't defined for the type '_SystemEntryHostState'.
- - '_SystemEntryHostState' is from 'package:dsh_app/ui/shell/system_entry_host.dart' ('lib/ui/shell/system_entry_host.dart').
-Try correcting the name to the name of an existing method, or defining a method named 'chatProvider'.
-        final title = chatTitleShown(ref.read(chatProvider(sessionId)).title.trim());
-                                              ^^^^^^^^^^^^
-lib/ui/shell/system_entry_host.dart:180:28: Error: The method 'chatProvider' isn't defined for the type '_SystemEntryHostState'.
- - '_SystemEntryHostState' is from 'package:dsh_app/ui/shell/system_entry_host.dart' ('lib/ui/shell/system_entry_host.dart').
-Try correcting the name to the name of an existing method, or defining a method named 'chatProvider'.
-            await ref.read(chatProvider(sessionId).notifier).send(phrase.trim());
-                           ^^^^^^^^^^^^
-Target kernel_snapshot_program failed: Exception
-
-
-FAILURE: Build failed with an exception.
-
-* What went wrong:
-Execution failed for task ':app:compileFlutterBuildArm64Release'.
-> Process 'command '/home/runner/dev/flutter/bin/flutter'' finished with non-zero exit value 1
-
-* Try:
-> Run with --stacktrace option to get the stack trace.
-> Run with --info or --debug option to get more log output.
-> Run with --scan to get full insights from a Build Scan (powered by Develocity).
-> Get more help at https://help.gradle.org.
-
-BUILD FAILED in 6m 2s
 [=========                              ] 25%                                   
-Running Gradle task 'assembleArm64Release'...                     365.1s
-Gradle task assembleArm64Release failed with exit code 1
+Font asset "DshIcons.ttf" was tree-shaken, reducing it from 53796 to 49988 bytes (7.1% reduction). Tree-shaking can be disabled by providing the --no-tree-shake-icons flag when building your app.
+Font asset "MaterialIcons-Regular.otf" was tree-shaken, reducing it from 1645184 to 3924 bytes (99.8% reduction). Tree-shaking can be disabled by providing the --no-tree-shake-icons flag when building your app.
