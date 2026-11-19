@@ -1,7 +1,7 @@
-From a314f86ae0f086f65952990d1bc18aad16131b1c Mon Sep 17 00:00:00 2001
+From 2f2ec4875ccf06b55ab533376aa41f669059fb2d Mon Sep 17 00:00:00 2001
 From: wake-ci <ci@local>
-Date: Thu, 19 Nov 2026 22:34:06 +0800
-Subject: [PATCH] private build: smooth
+Date: Thu, 19 Nov 2026 22:36:00 +0800
+Subject: [PATCH] private build: smooth 2
 
 ---
  .gitattributes                                |    3 +
@@ -37,7 +37,7 @@ Subject: [PATCH] private build: smooth
  .../dsh_app/phone/skills/PhoneSkillDraft.kt   |    2 +-
  .../dsh_app/phone/vscreen/TaskMover.kt        |   43 +
  .../dsh_app/phone/vscreen/TransferBall.kt     |  395 ++
- .../phone/vscreen/VirtualScreenOverlay.kt     | 1158 ++++++
+ .../phone/vscreen/VirtualScreenOverlay.kt     | 1175 ++++++
  .../phone/vscreen/VirtualScreenPlugin.kt      |   96 +
  .../ccch1mneyyy/dsh_app/runtime/GuestSetup.kt |   42 +-
  .../dsh_app/shortcuts/EntryActivity.kt        |    3 +
@@ -102,7 +102,7 @@ Subject: [PATCH] private build: smooth
  docs/wake-word.md                             |  107 +
  dsh-go-wake.patch                             | 2065 +++++++++++
  tooling/build-wake-apk.sh                     |   68 +
- 98 files changed, 12193 insertions(+), 2064 deletions(-)
+ 98 files changed, 12210 insertions(+), 2064 deletions(-)
  create mode 100644 .github/workflows/wake-apk.yml
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallForegroundService.kt
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallOverlay.kt
@@ -3400,10 +3400,10 @@ index 0000000..228b337
 +}
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenOverlay.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenOverlay.kt
 new file mode 100644
-index 0000000..2659b48
+index 0000000..676e255
 --- /dev/null
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenOverlay.kt
-@@ -0,0 +1,1158 @@
+@@ -0,0 +1,1175 @@
 +package io.github.ccch1mneyyy.dsh_app.phone.vscreen
 +
 +import android.annotation.SuppressLint
@@ -3480,7 +3480,9 @@ index 0000000..2659b48
 +    private const val EXPAND_W = 200f
 +
 +    /** 展开态的最低倍率：再小就放不下底部那一排 44dp 键（4×44 + 3×8 = 200dp）。 */
-+    private const val EXPAND_MIN_ZOOM = 1.0f
++    // 展开态也能缩小到 0.6×：之前下限写死 1.0，所以刚打开时按「−」完全没反应，
++    // 看起来就是"缩小键坏了"。
++    private const val EXPAND_MIN_ZOOM = 0.6f
 +
 +    /** The zoom steps 第十二节 lists; the window remembers the last one. */
 +    private val ZOOMS = floatArrayOf(0.6f, 0.8f, 1.0f, 1.25f, 1.5f, 2.0f)
@@ -3880,9 +3882,24 @@ index 0000000..2659b48
 +    // Shapes and sizes
 +
 +    /** 虚拟屏的宽高比（高/宽）；还不知道尺寸时用 110×196 的默认竖屏比例。 */
++    /**
++     * 窗口宽高比 = 虚拟屏的宽高比。虚拟屏是按手机屏幕比例建的（短边固定 720），
++     * 所以"标准"就是手机屏幕的比例：竖屏用 高/宽，横屏用 宽/高。
++     * 屏的真实尺寸还没拿到时用这个算，不再靠"上次的值"。
++     */
 +    private fun aspect(): Float =
-+        if (displayWidth > 0 && displayHeight > 0) displayHeight.toFloat() / displayWidth.toFloat()
-+        else savedAspect
++        if (displayWidth > 0 && displayHeight > 0) {
++            displayHeight.toFloat() / displayWidth.toFloat()
++        } else screenAspect()
++
++    /** 手机屏幕的比例（竖屏 高/宽）；横屏手机自然给出 宽/高。 */
++    private fun screenAspect(): Float = try {
++        val dm = context?.resources?.displayMetrics
++        if (dm == null || dm.widthPixels <= 0) 196f / 110f
++        else maxOf(dm.heightPixels, dm.widthPixels).toFloat() / minOf(dm.heightPixels, dm.widthPixels)
++    } catch (_: Throwable) {
++        196f / 110f
++    }
 +
 +    /** 窗口按虚拟屏宽高比生成（第二十四节 6），画面铺满不留黑边。 */
 +    private fun windowSize(shape: Shape, px: Float, area: SafeArea): Pair<Int, Int> {
