@@ -1,7 +1,7 @@
-From d0cc23bf07c99a2ba28a220544e0515d8084a679 Mon Sep 17 00:00:00 2001
+From 9a1f4aa46f59806d3a4962d7f56f1cb01fdcc95c Mon Sep 17 00:00:00 2001
 From: wake-ci <ci@local>
-Date: Thu, 19 Nov 2026 15:18:02 +0800
-Subject: [PATCH] private build: call speaks the wake phrase
+Date: Thu, 19 Nov 2026 16:23:07 +0800
+Subject: [PATCH] private build: label, quiet wake, current tree
 
 ---
  .gitattributes                                |    3 +
@@ -71,11 +71,11 @@ Subject: [PATCH] private build: call speaks the wake phrase
  app/lib/state/app_info.dart                   |    5 +
  app/lib/state/update_state.dart               |    9 +
  app/lib/state/virtual_screen_state.dart       |  230 ++
- app/lib/ui/chat/chat_screen.dart              |   90 +-
+ app/lib/ui/chat/chat_screen.dart              |   91 +-
  app/lib/ui/chat/media/media_format.dart       |   16 +-
  app/lib/ui/phone/android_shell_page.dart      |   28 +
  app/lib/ui/phone/background_preview.dart      |  264 +-
- app/lib/ui/phone/dnd_mode_page.dart           |  119 +-
+ app/lib/ui/phone/dnd_mode_page.dart           |  120 +-
  app/lib/ui/phone/phone_task_card.dart         |  410 ++
  app/lib/ui/phone/virtual_screen_host.dart     |  218 ++
  app/lib/ui/phone/virtual_screen_page.dart     |  115 +
@@ -92,7 +92,7 @@ Subject: [PATCH] private build: call speaks the wake phrase
  docs/wake-word.md                             |  107 +
  dsh-go-wake.patch                             | 2065 +++++++++++
  tooling/build-wake-apk.sh                     |   68 +
- 88 files changed, 11427 insertions(+), 1899 deletions(-)
+ 88 files changed, 11429 insertions(+), 1899 deletions(-)
  create mode 100644 .github/workflows/wake-apk.yml
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallForegroundService.kt
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallOverlay.kt
@@ -85945,7 +85945,7 @@ index 4d61a2d..e2bf782 100644
 +  "phoneVirtualFpsValue": "2–10 fps，越低越省电"
  }
 diff --git a/app/lib/l10n/parts/speech_en.arb b/app/lib/l10n/parts/speech_en.arb
-index 1b20cf2..fd56dc1 100644
+index 1b20cf2..ab05f7b 100644
 --- a/app/lib/l10n/parts/speech_en.arb
 +++ b/app/lib/l10n/parts/speech_en.arb
 @@ -113,6 +113,7 @@
@@ -85965,7 +85965,7 @@ index 1b20cf2..fd56dc1 100644
 +  "speechWakeFooter": "Always-on listening keeps the microphone, also with the screen off, and leaves a notification. Calls and dictation take the microphone first; listening comes back afterwards.",
 +  "speechWakeEnable": "Always-on listening",
 +  "speechWakeKeyword": "Wake word",
-+  "speechWakeKeywordHint": "Saying this opens a voice call; 「小安小安」 by default",
++  "speechWakeKeywordHint": "Saying this opens a voice call; 「小志小志」 by default",
 +  "speechWakeChime": "Chime",
 +  "speechWakeVibrate": "Vibrate",
 +  "speechWakeStateListening": "Listening",
@@ -85980,7 +85980,7 @@ index 1b20cf2..fd56dc1 100644
 +  "speechWakeFreshChatHint": "Off: continue the last one; on: a fresh conversation every time (wake word and AI key alike)"
  }
 diff --git a/app/lib/l10n/parts/speech_zh.arb b/app/lib/l10n/parts/speech_zh.arb
-index 3822fa2..950cced 100644
+index 3822fa2..c5435a9 100644
 --- a/app/lib/l10n/parts/speech_zh.arb
 +++ b/app/lib/l10n/parts/speech_zh.arb
 @@ -113,6 +113,7 @@
@@ -86000,7 +86000,7 @@ index 3822fa2..950cced 100644
 +  "speechWakeFooter": "常驻监听会一直占用麦克风（息屏也在），通知栏留一条常驻通知。通话、听写开始时会自动让位，结束后自动恢复。",
 +  "speechWakeEnable": "常驻监听",
 +  "speechWakeKeyword": "唤醒词",
-+  "speechWakeKeywordHint": "说出这句就进入语音通话，默认「小安小安」",
++  "speechWakeKeywordHint": "说出这句就进入语音通话，默认「小志小志」",
 +  "speechWakeChime": "唤醒提示音",
 +  "speechWakeVibrate": "唤醒震动",
 +  "speechWakeStateListening": "正在监听",
@@ -86556,7 +86556,7 @@ index 0000000..97aa324
 +  return null;
 +}
 diff --git a/app/lib/ui/chat/chat_screen.dart b/app/lib/ui/chat/chat_screen.dart
-index 46d2fd3..6485a80 100644
+index 46d2fd3..bcf5e3b 100644
 --- a/app/lib/ui/chat/chat_screen.dart
 +++ b/app/lib/ui/chat/chat_screen.dart
 @@ -28,6 +28,8 @@ import '../../state/streaming_pcm_state.dart';
@@ -86624,7 +86624,7 @@ index 46d2fd3..6485a80 100644
      _voice = VoiceInputController(
        input: _input,
        bridge: ref.read(voiceBridgeProvider),
-@@ -1474,33 +1511,73 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
+@@ -1474,33 +1511,74 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
      showUsageSheet(context, sessionId: sessionId, model: model);
    }
  
@@ -86678,8 +86678,9 @@ index 46d2fd3..6485a80 100644
        openChatCall(
          context,
          title: title,
-+        // 唤醒词交给通话页自己发：只有通话发的消息，回复才会被念出来。
-+        firstWords: wakePhrase,
++        // 唤醒词不自动发了：回复没被念出来时，它只是白白消耗 token 的一条文字。
++        // 通话打开后等人开口，说出来的话才是这通对话的第一句。
++        firstWords: null,
          session: () async {
            // Another host now: its conversation of the same id is not this call's.
            if (!mounted || ref.read(activeHostProvider) != host) return null;
@@ -86703,7 +86704,7 @@ index 46d2fd3..6485a80 100644
      );
    }
  
-@@ -2176,6 +2253,9 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
+@@ -2176,6 +2254,9 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
                                        strip: false,
                                      ),
                                    ),
@@ -87105,7 +87106,7 @@ index 173f148..b9863c1 100644
 +  _ => '任务迁移没成功，应用还在原处。',
 +};
 diff --git a/app/lib/ui/phone/dnd_mode_page.dart b/app/lib/ui/phone/dnd_mode_page.dart
-index 3a23e52..28f497e 100644
+index 3a23e52..f25b6e9 100644
 --- a/app/lib/ui/phone/dnd_mode_page.dart
 +++ b/app/lib/ui/phone/dnd_mode_page.dart
 @@ -16,8 +16,10 @@ import '../common/row_marks.dart';
@@ -87158,7 +87159,7 @@ index 3a23e52..28f497e 100644
      final waiting = using == PhonePrivilegedMode.root && bg.root.starting;
      final open = _open ?? (bg.effectiveReady ? PhonePrivilegedMode.off : using);
      final choices = <Widget>[
-@@ -290,6 +290,96 @@ class _PhoneDndPageState extends ConsumerState<PhoneDndPage> {
+@@ -290,6 +290,97 @@ class _PhoneDndPageState extends ConsumerState<PhoneDndPage> {
                                unawaited(_run(() async => PhoneResult(await _phone.setBackgroundPreview(enabled)))),
                    ),
                  ),
@@ -87204,8 +87205,9 @@ index 3a23e52..28f497e 100644
 +                  ),
 +                  ListPageRow(
 +                    leading: const SizedBox(),
-+                    title: appL10n.phoneVirtualFpsTitle,
-+                    subtitle: appL10n.phoneVirtualFpsValue,
++                    // 标题内联，避免这套文案没随翻译生成时空一行只剩一串数字。
++                    title: '画面帧率（fps）',
++                    subtitle: '当前 ${ref.watch(virtualScreenSettingsProvider).fps} fps · 2–10，越低越省电',
 +                    trailing: Row(mainAxisSize: MainAxisSize.min, children: [
 +                      for (final fps in const [2, 4, 6, 8, 10])
 +                        Padding(
@@ -87255,7 +87257,7 @@ index 3a23e52..28f497e 100644
                  if (bg.previewEnabled)
                    for (final candidate in previewTasks)
                      ListPageRow(
-@@ -377,9 +467,12 @@ class _PhoneDndPageState extends ConsumerState<PhoneDndPage> {
+@@ -377,9 +468,12 @@ class _PhoneDndPageState extends ConsumerState<PhoneDndPage> {
                        child: ListPageRow(
                          key: ValueKey('phone-viewport-${preset.name}'),
                          leading: Icon(viewport == preset ? AppIcons.radioOn : AppIcons.radioOff),
