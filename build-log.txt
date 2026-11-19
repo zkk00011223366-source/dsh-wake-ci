@@ -1,7 +1,7 @@
 == resources ==
 /dev/root        72G   51G   21G  72% /
                total        used        free      shared  buff/cache   available
-Mem:            7931        5412         255          20        2596        2518
+Mem:            7931        5311         235          25        2723        2620
 == tail ==
 
 ==> 依赖: flutter pub get
@@ -102,13 +102,3 @@ Installing Android SDK Platform 34 in /home/runner/dev/android-sdk/platforms/and
 "Install Android SDK Platform 34 (revision 3)" complete.
 "Install Android SDK Platform 34 (revision 3)" finished.
 Flutter assets will be downloaded from https://storage.googleapis.com. Make sure you trust this source!
-lib/ui/shell/system_entry_host.dart:169:47: Error: The method 'chatProvider' isn't defined for the type '_SystemEntryHostState'.
- - '_SystemEntryHostState' is from 'package:dsh_app/ui/shell/system_entry_host.dart' ('lib/ui/shell/system_entry_host.dart').
-Try correcting the name to the name of an existing method, or defining a method named 'chatProvider'.
-        final title = chatTitleShown(ref.read(chatProvider(sessionId)).title.trim());
-                                              ^^^^^^^^^^^^
-lib/ui/shell/system_entry_host.dart:180:28: Error: The method 'chatProvider' isn't defined for the type '_SystemEntryHostState'.
- - '_SystemEntryHostState' is from 'package:dsh_app/ui/shell/system_entry_host.dart' ('lib/ui/shell/system_entry_host.dart').
-Try correcting the name to the name of an existing method, or defining a method named 'chatProvider'.
-            await ref.read(chatProvider(sessionId).notifier).send(phrase.trim());
-                           ^^^^^^^^^^^^
