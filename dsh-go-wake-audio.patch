@@ -1,8 +1,8 @@
-From 2c74a8c065275d45f410d307d9ac23fd24fee8dc Mon Sep 17 00:00:00 2001
-From: dsh-wake <wake@local>
-Date: Thu, 19 Nov 2026 14:22:39 +0800
-Subject: [PATCH] private build: virtual screen realtime, three-state window,
- both transfers, back guard, task view
+From f99be36eeb4339826ea0e385ec15dc862f603ba0 Mon Sep 17 00:00:00 2001
+From: ci <ci@local>
+Date: Thu, 19 Nov 2026 14:51:58 +0800
+Subject: [PATCH] private build: virtual screen realtime + latest interaction
+ spec
 
 ---
  .gitattributes                                |    3 +
@@ -34,7 +34,7 @@ Subject: [PATCH] private build: virtual screen realtime, three-state window,
  .../phone/background/PrivilegedDisplayCore.kt |  189 +-
  .../phone/background/PrivilegedProtocol.kt    |   22 +-
  .../dsh_app/phone/vscreen/TaskMover.kt        |   43 +
- .../dsh_app/phone/vscreen/TransferBall.kt     |  264 ++
+ .../dsh_app/phone/vscreen/TransferBall.kt     |  270 ++
  .../phone/vscreen/VirtualScreenOverlay.kt     |  871 +++++
  .../phone/vscreen/VirtualScreenPlugin.kt      |   83 +
  .../dsh_app/shortcuts/EntryActivity.kt        |    3 +
@@ -93,7 +93,7 @@ Subject: [PATCH] private build: virtual screen realtime, three-state window,
  docs/wake-word.md                             |  107 +
  dsh-go-wake.patch                             | 2065 +++++++++++
  tooling/build-wake-apk.sh                     |   68 +
- 88 files changed, 11267 insertions(+), 1897 deletions(-)
+ 88 files changed, 11273 insertions(+), 1897 deletions(-)
  create mode 100644 .github/workflows/wake-apk.yml
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallForegroundService.kt
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallOverlay.kt
@@ -2303,10 +2303,10 @@ index 0000000..8ddabc9
 +}
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/TransferBall.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/TransferBall.kt
 new file mode 100644
-index 0000000..851ad97
+index 0000000..3b48fdc
 --- /dev/null
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/TransferBall.kt
-@@ -0,0 +1,264 @@
+@@ -0,0 +1,270 @@
 +package io.github.ccch1mneyyy.dsh_app.phone.vscreen
 +
 +import android.annotation.SuppressLint
@@ -2393,7 +2393,9 @@ index 0000000..851ad97
 +            overlayType(),
 +            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
 +                WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS or
-+                WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
++                WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
++                // 第十四节 4: 点球外也收回去，和等 3 秒一样。
++                WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH,
 +            PixelFormat.TRANSLUCENT,
 +        ).apply {
 +            gravity = Gravity.TOP or Gravity.START
@@ -2520,6 +2522,10 @@ index 0000000..851ad97
 +                    }
 +                    true
 +                }
++                MotionEvent.ACTION_OUTSIDE -> {
++                    setOpen(false)
++                    true
++                }
 +                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
 +                    if (dragging) {
 +                        dock = EdgeSnap.dockFor(lp.x, lp.y, lp.width, lp.height, area, margin, vx)
@@ -2573,7 +2579,7 @@ index 0000000..851ad97
 +}
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenOverlay.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenOverlay.kt
 new file mode 100644
-index 0000000..af07085
+index 0000000..3c6ef36
 --- /dev/null
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenOverlay.kt
 @@ -0,0 +1,871 @@
@@ -3241,8 +3247,8 @@ index 0000000..af07085
 +        var longPress: Runnable? = null
 +
 +        fun fraction(rawX: Float, rawY: Float): Pair<Double, Double> {
-+            val fx = ((rawX - lp.x) / lp.width.toFloat()).coerceIn(0.0, 1.0)
-+            val fy = ((rawY - lp.y) / lp.height.toFloat()).coerceIn(0.0, 1.0)
++            val fx = ((rawX - lp.x) / lp.width.toFloat()).coerceIn(0f, 1f).toDouble()
++            val fy = ((rawY - lp.y) / lp.height.toFloat()).coerceIn(0f, 1f).toDouble()
 +            return fx to fy
 +        }
 +
@@ -88324,7 +88330,7 @@ index 9a236c7..0809e69 100644
                        const ForumLinkHost(),
                        // DS Bot: keeps its feed and notifications alive with the shell.
 diff --git a/app/lib/ui/shell/system_entry_host.dart b/app/lib/ui/shell/system_entry_host.dart
-index 172e773..10a6690 100644
+index 172e773..2a77d60 100644
 --- a/app/lib/ui/shell/system_entry_host.dart
 +++ b/app/lib/ui/shell/system_entry_host.dart
 @@ -37,9 +37,14 @@ import '../../state/compose_inbox.dart';
@@ -88368,7 +88374,7 @@ index 172e773..10a6690 100644
 +          return;
 +        }
 +        final sessionId = id;
-+        final title = chatTitleShown(ref.read(chatProvider(sessionId)).title.trim());
++        final title = chatTitleShown(ref.read(chatProvider(sessionId)).title?.trim() ?? '');
 +        diagWake('shortcut-call: opening the call page (fresh=$freshCall)');
 +        await openChatCall(
 +          context,
