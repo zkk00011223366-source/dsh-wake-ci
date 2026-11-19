@@ -1,7 +1,7 @@
-From 6e8b60c83597c19b3eb6384f375e486995666beb Mon Sep 17 00:00:00 2001
+From a314f86ae0f086f65952990d1bc18aad16131b1c Mon Sep 17 00:00:00 2001
 From: wake-ci <ci@local>
-Date: Thu, 19 Nov 2026 22:23:20 +0800
-Subject: [PATCH] private build: continuity 2
+Date: Thu, 19 Nov 2026 22:34:06 +0800
+Subject: [PATCH] private build: smooth
 
 ---
  .gitattributes                                |    3 +
@@ -37,7 +37,7 @@ Subject: [PATCH] private build: continuity 2
  .../dsh_app/phone/skills/PhoneSkillDraft.kt   |    2 +-
  .../dsh_app/phone/vscreen/TaskMover.kt        |   43 +
  .../dsh_app/phone/vscreen/TransferBall.kt     |  395 ++
- .../phone/vscreen/VirtualScreenOverlay.kt     | 1138 ++++++
+ .../phone/vscreen/VirtualScreenOverlay.kt     | 1158 ++++++
  .../phone/vscreen/VirtualScreenPlugin.kt      |   96 +
  .../ccch1mneyyy/dsh_app/runtime/GuestSetup.kt |   42 +-
  .../dsh_app/shortcuts/EntryActivity.kt        |    3 +
@@ -102,7 +102,7 @@ Subject: [PATCH] private build: continuity 2
  docs/wake-word.md                             |  107 +
  dsh-go-wake.patch                             | 2065 +++++++++++
  tooling/build-wake-apk.sh                     |   68 +
- 98 files changed, 12173 insertions(+), 2064 deletions(-)
+ 98 files changed, 12193 insertions(+), 2064 deletions(-)
  create mode 100644 .github/workflows/wake-apk.yml
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallForegroundService.kt
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallOverlay.kt
@@ -3400,10 +3400,10 @@ index 0000000..228b337
 +}
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenOverlay.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenOverlay.kt
 new file mode 100644
-index 0000000..06eaee6
+index 0000000..2659b48
 --- /dev/null
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenOverlay.kt
-@@ -0,0 +1,1138 @@
+@@ -0,0 +1,1158 @@
 +package io.github.ccch1mneyyy.dsh_app.phone.vscreen
 +
 +import android.annotation.SuppressLint
@@ -3472,6 +3472,7 @@ index 0000000..06eaee6
 +    private const val KEY_SIDE = "side"
 +    private const val KEY_FRACTION = "fraction"
 +    private const val KEY_ZOOM = "zoom"
++    private const val KEY_ASPECT = "aspect"
 +
 +    private const val SLIVER_W = 12f
 +    private const val SLIVER_H = 56f
@@ -3515,6 +3516,7 @@ index 0000000..06eaee6
 +    private var shape = Shape.SMALL
 +    private var taskId = 0L
 +    private var zoom = 1.0f
++    private var savedAspect = 196f / 110f
 +    private var eyeHidden = false
 +
 +    /**
@@ -3569,6 +3571,9 @@ index 0000000..06eaee6
 +            // 第十节 4：小窗默认在左侧、高度 0.35；切换球在右侧 0.62，两者一开始就不打架。
 +            side = if (saved.getString(KEY_SIDE, "l") == "l") Side.LEFT else Side.RIGHT,
 +            yFraction = saved.getFloat(KEY_FRACTION, 0.35f),
++            // 上一次这块虚拟屏的宽高比：屏的真实尺寸要等 surface 接上才知道，
++            // 在那之前用上次的值，窗口不会一会儿大一会儿小、也不会和画面不匹配。
++            savedAspect = saved.getFloat(KEY_ASPECT, 196f / 110f),
 +        )
 +        zoom = saved.getFloat(KEY_ZOOM, 1.0f).coerceIn(ZOOMS.first(), ZOOMS.last())
 +        this.taskId = taskId
@@ -3752,13 +3757,18 @@ index 0000000..06eaee6
 +            }
 +            // The window is usually opened in the same breath as the task: give the engine a
 +            // moment to publish the target before falling back to preview frames.
++            // 虚拟屏只有一块：按 id 找不到就退回"当前活着的那块"。
++            // 之前只按 id 找，迁移后（id=0）或预览注册没发生时永远拿不到目标 →
++            // 画面退回 6fps 抓帧，看视频就像 PPT。
 +            var target = if (id > 0) control?.previewTarget(id) else null
++            target = target ?: control?.anyPreviewTarget()
 +            var wait = 0
 +            while (target == null && control != null && gen == surfaceGen && wait < 12) {
 +                Thread.sleep(150)
 +                wait++
-+                target = control.previewTarget(id)
++                target = control.previewTarget(id) ?: control.anyPreviewTarget()
 +            }
++            WakeTrace.log("window: surface target=${target?.taskId} id=$id")
 +            if (control == null || target == null) {
 +                if (surface != null) {
 +                    liveSurface = false
@@ -3772,6 +3782,7 @@ index 0000000..06eaee6
 +                mapOf("ok" to false, "reason" to "surfaceUnavailable")
 +            }
 +            val attached = reply["ok"] == true && reply["attached"] == true
++            WakeTrace.log("window: attach ok=$attached reply=$reply")
 +            if (gen != surfaceGen) {
 +                // The window changed its mind while this was on the wire: undo the attach.
 +                if (attached) runCatching { control.attachViewSurface(target, null) }
@@ -3871,7 +3882,7 @@ index 0000000..06eaee6
 +    /** 虚拟屏的宽高比（高/宽）；还不知道尺寸时用 110×196 的默认竖屏比例。 */
 +    private fun aspect(): Float =
 +        if (displayWidth > 0 && displayHeight > 0) displayHeight.toFloat() / displayWidth.toFloat()
-+        else 196f / 110f
++        else savedAspect
 +
 +    /** 窗口按虚拟屏宽高比生成（第二十四节 6），画面铺满不留黑边。 */
 +    private fun windowSize(shape: Shape, px: Float, area: SafeArea): Pair<Int, Int> {
@@ -3998,7 +4009,16 @@ index 0000000..06eaee6
 +    }
 +
 +    /** 画面尺寸刚知道（直显 attach 或第一帧预览）：窗口立刻按真实比例重排。 */
++    private fun rememberAspect(app: Context) {
++        if (displayWidth <= 0 || displayHeight <= 0) return
++        val a = displayHeight.toFloat() / displayWidth.toFloat()
++        if (abs(a - savedAspect) < 0.001f) return
++        savedAspect = a
++        app.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putFloat(KEY_ASPECT, a).apply()
++    }
++
 +    private fun applyAspect() {
++        context?.let { rememberAspect(it) }
 +        val box = root ?: return
 +        val manager = wm ?: return
 +        val app = context ?: return
@@ -87421,7 +87441,7 @@ index 61789e5..e92497f 100644
    Future<PhoneSkillReply> openSkillDraft(PhoneSkillCandidate candidate, {required bool confirmed}) =>
 diff --git a/app/lib/phone/virtual_screen_window.dart b/app/lib/phone/virtual_screen_window.dart
 new file mode 100644
-index 0000000..43cfcf5
+index 0000000..56040d3
 --- /dev/null
 +++ b/app/lib/phone/virtual_screen_window.dart
 @@ -0,0 +1,115 @@
@@ -87446,14 +87466,14 @@ index 0000000..43cfcf5
 +  Timer? _ticker;
 +  PhonePreviewFrame? _latest;
 +  int _taskId = 0;
-+  int _fps = 6;
++  int _fps = 15;
 +  bool _open = false;
 +
 +  /// 窗口是否已经在屏幕上。
 +  bool get isOpen => _open;
 +
 +  /// 开窗并开始推帧。[fps] 变了调用 [setFps]。
-+  Future<bool> open(int taskId, {int fps = 6}) async {
++  Future<bool> open(int taskId, {int fps = 15}) async {
 +    await close();
 +    _fps = fps.clamp(1, 15);
 +    final shown = await _native.invokeMethod<bool>('show', {'taskId': taskId}) ?? false;
@@ -87628,7 +87648,7 @@ index c089d19..a15b64d 100644
  
 diff --git a/app/lib/state/virtual_screen_state.dart b/app/lib/state/virtual_screen_state.dart
 new file mode 100644
-index 0000000..7be7b44
+index 0000000..b617175
 --- /dev/null
 +++ b/app/lib/state/virtual_screen_state.dart
 @@ -0,0 +1,242 @@
@@ -87644,7 +87664,7 @@ index 0000000..7be7b44
 +/// 虚拟屏 悬浮窗 的设置：画面刷新多快、画质多高、操作目标在哪块屏、悬浮窗开着没有。
 +class VirtualScreenSettings {
 +  const VirtualScreenSettings({
-+    this.fps = 6,
++    this.fps = 15,
 +    this.quality = 80,
 +    this.target = VirtualScreenTarget.main,
 +    // 悬浮屏常开：后台任务一起来就摆出来，关了也记得住（下次不再自己弹）。
