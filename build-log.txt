@@ -1,7 +1,7 @@
 == resources ==
-/dev/root        72G   54G   18G  76% /
+/dev/root        72G   55G   18G  76% /
                total        used        free      shared  buff/cache   available
-Mem:            7931        5253         245          31        2778        2678
+Mem:            7931        5302         231          37        2756        2629
 == tail ==
 
 ==> 依赖: flutter pub get
@@ -109,3 +109,24 @@ Note: Some input files use or override a deprecated API.
 Note: Recompile with -Xlint:deprecation for details.
 Note: Some input files use unchecked or unsafe operations.
 Note: Recompile with -Xlint:unchecked for details.
+e: file:///home/runner/work/dsh-wake-ci/dsh-wake-ci/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneCore.kt:134:49 Outer class 'class PhoneCore : Any' of non-inner class cannot be used as receiver.
+e: file:///home/runner/work/dsh-wake-ci/dsh-wake-ci/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenOverlay.kt:109:26 Unresolved reference 'SurfaceView'.
+e: file:///home/runner/work/dsh-wake-ci/dsh-wake-ci/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenOverlay.kt:174:13 No parameter with name 'savedAspect' found.
+e: file:///home/runner/work/dsh-wake-ci/dsh-wake-ci/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenOverlay.kt:433:17 Unresolved reference 'visibility'.
+
+FAILURE: Build failed with an exception.
+
+* What went wrong:
+Execution failed for task ':app:compileArm64ReleaseKotlin'.
+> A failure occurred while executing org.jetbrains.kotlin.compilerRunner.btapi.BuildToolsApiCompilationWork
+   > Compilation error. See log for more details
+
+* Try:
+> Run with --stacktrace option to get the stack trace.
+> Run with --info or --debug option to get more log output.
+> Run with --scan to get full insights from a Build Scan (powered by Develocity).
+> Get more help at https://help.gradle.org.
+
+BUILD FAILED in 13m 31s
+Running Gradle task 'assembleArm64Release'...                     812.9s
+Gradle task assembleArm64Release failed with exit code 1
