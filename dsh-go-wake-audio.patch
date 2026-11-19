@@ -1,7 +1,8 @@
-From 808291cb592785134f8d96c7bbc074bde1b06438 Mon Sep 17 00:00:00 2001
-From: wake-ci <ci@local>
-Date: Thu, 19 Nov 2026 12:56:47 +0800
-Subject: [PATCH] private build: all
+From 95beb57c920f689c5bd1d2b9f2d5bf1170e6e537 Mon Sep 17 00:00:00 2001
+From: dsh-wake <wake@local>
+Date: Thu, 19 Nov 2026 13:34:05 +0800
+Subject: [PATCH] private build: virtual screen realtime, three-state window,
+ both transfers, back guard, task view
 
 ---
  .gitattributes                                |    3 +
@@ -13,21 +14,27 @@ Subject: [PATCH] private build: all
  .../ccch1mneyyy/dsh_app/call/CallOverlay.kt   |  317 +++
  .../dsh_app/call/CallOverlayPlugin.kt         |   66 +
  .../dsh_app/phone/PhoneAndroidShell.kt        |   10 +-
+ .../dsh_app/phone/PhoneBackGuard.kt           |  147 ++
+ .../dsh_app/phone/PhoneContracts.kt           |    6 +
  .../ccch1mneyyy/dsh_app/phone/PhoneControl.kt |   26 +
  .../ccch1mneyyy/dsh_app/phone/PhoneCore.kt    |   50 +-
- .../ccch1mneyyy/dsh_app/phone/PhonePlugin.kt  |   44 +
+ .../ccch1mneyyy/dsh_app/phone/PhonePlugin.kt  |   60 +
  .../dsh_app/phone/PhoneTaskSessions.kt        |    2 +-
  .../dsh_app/phone/PhoneToolCatalog.kt         |    8 +-
  .../ccch1mneyyy/dsh_app/phone/SafetyGate.kt   |    4 +-
- .../phone/background/BackgroundControl.kt     |   36 +
+ .../dsh_app/phone/a11y/ControlOverlay.kt      |    9 +-
+ .../dsh_app/phone/a11y/PhoneA11yService.kt    |   20 +
+ .../phone/background/BackgroundControl.kt     |   75 +
  .../phone/background/BackgroundCoordinates.kt |    2 +
- .../phone/background/BackgroundDisplay.kt     |   40 +
+ .../phone/background/BackgroundDisplay.kt     |   60 +
  .../background/BackgroundProbeActivity.kt     |    4 +-
- .../phone/background/PrivilegedDisplayCore.kt |  134 ++
- .../phone/background/PrivilegedProtocol.kt    |   13 +-
+ .../phone/background/PrivilegedDisplayCore.kt |  189 +-
+ .../phone/background/PrivilegedProtocol.kt    |   22 +-
+ .../ccch1mneyyy/dsh_app/phone/target_prefs.kt |   29 +
  .../dsh_app/phone/vscreen/TaskMover.kt        |   43 +
- .../phone/vscreen/VirtualScreenOverlay.kt     |  297 +++
- .../phone/vscreen/VirtualScreenPlugin.kt      |   60 +
+ .../dsh_app/phone/vscreen/TransferBall.kt     |  264 +++
+ .../phone/vscreen/VirtualScreenOverlay.kt     |  748 ++++++
+ .../phone/vscreen/VirtualScreenPlugin.kt      |   77 +
  .../dsh_app/shortcuts/EntryActivity.kt        |    3 +
  .../dsh_app/shortcuts/ShortcutsPlugin.kt      |   13 +-
  .../dsh_app/wake/WakeBootReceiver.kt          |   29 +
@@ -37,6 +44,7 @@ Subject: [PATCH] private build: all
  .../dsh_app/wake/WakeWordService.kt           |  216 ++
  .../src/main/res/values-zh/i18n_strings.xml   |   10 +
  .../app/src/main/res/values/i18n_strings.xml  |   10 +
+ .../res/xml/phone_accessibility_service.xml   |    3 +-
  .../app/src/main/res/xml/shortcuts.xml        |   18 +-
  app/assets/kws/LICENSE.txt                    |   20 +
  app/assets/kws/NOTICE.txt                     |    4 +
@@ -54,22 +62,23 @@ Subject: [PATCH] private build: all
  app/lib/l10n/parts/speech_en.arb              |   19 +-
  app/lib/l10n/parts/speech_zh.arb              |   19 +-
  app/lib/links/launcher_entries.dart           |    7 +-
- app/lib/phone/phone_channel.dart              |   78 +
- app/lib/phone/virtual_screen_window.dart      |   99 +
+ app/lib/phone/phone_channel.dart              |   91 +
+ app/lib/phone/virtual_screen_window.dart      |  109 +
  app/lib/state/app_info.dart                   |    5 +
  app/lib/state/update_state.dart               |    9 +
- app/lib/state/virtual_screen_state.dart       |  207 ++
- app/lib/ui/chat/chat_screen.dart              |  104 +-
+ app/lib/state/virtual_screen_state.dart       |  230 ++
+ app/lib/ui/chat/chat_screen.dart              |  108 +-
  app/lib/ui/chat/media/media_format.dart       |   16 +-
  app/lib/ui/phone/android_shell_page.dart      |   28 +
  app/lib/ui/phone/background_preview.dart      |  264 +--
- app/lib/ui/phone/dnd_mode_page.dart           |   74 +-
- app/lib/ui/phone/virtual_screen_host.dart     |   69 +
+ app/lib/ui/phone/dnd_mode_page.dart           |   90 +-
+ app/lib/ui/phone/phone_task_card.dart         |  200 ++
+ app/lib/ui/phone/virtual_screen_host.dart     |  204 ++
  app/lib/ui/phone/virtual_screen_page.dart     |  115 +
  app/lib/ui/phone/virtual_screen_surface.dart  |  286 +++
  app/lib/ui/settings/voice_settings_page.dart  |   89 +
  app/lib/ui/shell/home_shell.dart              |    4 +
- app/lib/ui/shell/system_entry_host.dart       |   21 +
+ app/lib/ui/shell/system_entry_host.dart       |   42 +
  app/lib/ui/speech/voice_call_page.dart        |  111 +-
  app/lib/ui/theme/app_icons.dart               |    4 +
  app/lib/voice/wake_keywords.dart              |   50 +
@@ -79,12 +88,15 @@ Subject: [PATCH] private build: all
  docs/wake-word.md                             |  107 +
  dsh-go-wake.patch                             | 2065 +++++++++++++++++
  tooling/build-wake-apk.sh                     |   68 +
- 75 files changed, 7143 insertions(+), 218 deletions(-)
+ 83 files changed, 8647 insertions(+), 221 deletions(-)
  create mode 100644 .github/workflows/wake-apk.yml
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallForegroundService.kt
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallOverlay.kt
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallOverlayPlugin.kt
+ create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneBackGuard.kt
+ create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/target_prefs.kt
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/TaskMover.kt
+ create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/TransferBall.kt
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenOverlay.kt
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenPlugin.kt
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/wake/WakeBootReceiver.kt
@@ -100,6 +112,7 @@ Subject: [PATCH] private build: all
  create mode 100644 app/assets/kws/tokens.txt
  create mode 100644 app/lib/phone/virtual_screen_window.dart
  create mode 100644 app/lib/state/virtual_screen_state.dart
+ create mode 100644 app/lib/ui/phone/phone_task_card.dart
  create mode 100644 app/lib/ui/phone/virtual_screen_host.dart
  create mode 100644 app/lib/ui/phone/virtual_screen_page.dart
  create mode 100644 app/lib/ui/phone/virtual_screen_surface.dart
@@ -1061,6 +1074,176 @@ index bb9c803..aa39cdc 100644
              else {
                  val prompt = ConfirmRequest(
                      ui.get("phone_shell_confirm",
+diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneBackGuard.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneBackGuard.kt
+new file mode 100644
+index 0000000..a371b54
+--- /dev/null
++++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneBackGuard.kt
+@@ -0,0 +1,147 @@
++package io.github.ccch1mneyyy.dsh_app.phone
++
++import android.accessibilityservice.AccessibilityService
++import android.content.Context
++import android.graphics.Color
++import android.graphics.PixelFormat
++import android.graphics.drawable.GradientDrawable
++import android.os.Build
++import android.os.Handler
++import android.os.Looper
++import android.os.SystemClock
++import android.view.Gravity
++import android.view.View
++import android.view.WindowManager
++import android.widget.FrameLayout
++import android.widget.LinearLayout
++import android.widget.TextView
++import io.github.ccch1mneyyy.dsh_app.phone.background.BackgroundControl
++import java.util.concurrent.Executors
++import kotlin.math.roundToInt
++
++/**
++ * 返回键拦截（第十六节 A）: while the assistant drives the phone's own screen, the person's back key
++ * asks what to do instead of just going back.
++ *
++ *      AI 正在操作，要怎么继续？
++ *        [ 手动接管 ]   [ 转到虚拟屏继续 ]
++ *
++ * 手动接管 stops the task and lets the back go through. 转到虚拟屏继续 lets the back go through
++ * as well (the person gets the screen they wanted) and moves the task to the background display,
++ * where the floating window keeps showing it. When the assistant is idle, or works on the
++ * virtual screen, the key is not touched at all.
++ */
++object PhoneBackGuard {
++    private val main = Handler(Looper.getMainLooper())
++    private val worker = Executors.newSingleThreadExecutor { r -> Thread(r, "dsh-back-guard").apply { isDaemon = true } }
++
++    private var card: View? = null
++    private var service: AccessibilityService? = null
++    private var lastShownAt = 0L
++
++    /** The back key asks only while the assistant is driving this screen. */
++    fun armed(context: Context): Boolean =
++        PhoneRegistry.mainTaskActive && !PhoneTargetPrefs.virtualTarget(context)
++
++    /** Shows the question, or folds an already-open one: one card, never a stack. */
++    fun ask(service: AccessibilityService) {
++        if (card != null) return
++        val now = SystemClock.elapsedRealtime()
++        if (now - lastShownAt < 400) return
++        lastShownAt = now
++        this.service = service
++        val px = service.resources.displayMetrics.density
++        val manager = service.getSystemService(Context.WINDOW_SERVICE) as? WindowManager ?: return
++
++        val box = LinearLayout(service).apply {
++            orientation = LinearLayout.VERTICAL
++            background = GradientDrawable().apply {
++                cornerRadius = 16 * px
++                setColor(Color.rgb(16, 20, 30))
++                setStroke((2 * px).roundToInt(), 0xFF34D399.toInt())
++            }
++            setPadding((16 * px).roundToInt(), (14 * px).roundToInt(), (16 * px).roundToInt(), (10 * px).roundToInt())
++        }
++        val title = TextView(service).apply {
++            text = "AI 正在操作，要怎么继续？"
++            setTextColor(Color.WHITE)
++            textSize = 14f
++        }
++        box.addView(title)
++        val row = LinearLayout(service).apply {
++            orientation = LinearLayout.HORIZONTAL
++            gravity = Gravity.END
++        }
++        val takeOver = button(service, px, "手动接管") { takeOver(service) }
++        val toVirtual = button(service, px, "转到虚拟屏继续") { toVirtual(service) }
++        row.addView(takeOver)
++        row.addView(toVirtual, LinearLayout.LayoutParams(-2, -2).apply { leftMargin = (8 * px).roundToInt() })
++        box.addView(row, LinearLayout.LayoutParams(-2, -2).apply { topMargin = (12 * px).roundToInt() })
++
++        val lp = WindowManager.LayoutParams(
++            WindowManager.LayoutParams.WRAP_CONTENT,
++            WindowManager.LayoutParams.WRAP_CONTENT,
++            if (Build.VERSION.SDK_INT >= 30) WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY else
++                WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
++            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
++                WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
++            PixelFormat.TRANSLUCENT,
++        ).apply {
++            gravity = Gravity.CENTER
++        }
++        try {
++            manager.addView(box, lp)
++            card = box
++        } catch (_: Exception) {
++            card = null
++        }
++    }
++
++    fun dismiss() {
++        val view = card ?: return
++        card = null
++        try {
++            (service?.getSystemService(Context.WINDOW_SERVICE) as? WindowManager)?.removeView(view)
++        } catch (_: Exception) {
++        }
++    }
++
++    private fun button(service: AccessibilityService, px: Float, text: String, onTap: () -> Unit): TextView =
++        TextView(service).apply {
++            this.text = text
++            setTextColor(Color.WHITE)
++            textSize = 13f
++            val pad = (14 * px).roundToInt()
++            setPadding(pad, (10 * px).roundToInt(), pad, (10 * px).roundToInt())
++            background = GradientDrawable().apply {
++                cornerRadius = 10 * px
++                setColor(0x33FFFFFF)
++            }
++            isClickable = true
++            setOnClickListener { onTap() }
++        }
++
++    /** 手动接管: the task ends, and the back key does what it was going to do. */
++    private fun takeOver(service: AccessibilityService) {
++        dismiss()
++        val app = service.applicationContext
++        worker.execute {
++            runCatching { PhoneControl.get(app).stopTask("手动接管") }
++        }
++        main.post { runCatching { service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_BACK) } }
++    }
++
++    /** 转到虚拟屏继续: the back goes through, and the work moves to the background display. */
++    private fun toVirtual(service: AccessibilityService) {
++        dismiss()
++        val app = service.applicationContext
++        main.post { runCatching { service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_BACK) } }
++        worker.execute {
++            runCatching {
++                val control = BackgroundControl.get(app)
++                val target = control.anyPreviewTarget() ?: return@runCatching
++                control.handOverTask(target, toMain = false)
++            }
++        }
++    }
++}
+diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneContracts.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneContracts.kt
+index 612f94d..85f1f08 100644
+--- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneContracts.kt
++++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneContracts.kt
+@@ -353,6 +353,12 @@ interface ControlListener {
+ object PhoneRegistry {
+     @Volatile var mainDriver: PhoneDriver? = null
+ 
++    /**
++     * The assistant is driving the phone's own screen right now (the overlay shows its control).
++     * The back key reads this: while it is true, 返回 asks instead of just going back (第十六节 A).
++     */
++    @Volatile var mainTaskActive: Boolean = false
++
+     /** Overlay gate when the accessibility service runs, else the notification gate. */
+     @Volatile var overlayGate: UserGate? = null
+     @Volatile var notificationGate: UserGate? = null
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneControl.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneControl.kt
 index 2fc7cd5..e8d6110 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneControl.kt
@@ -1214,10 +1397,10 @@ index 6c70185..7a6d0c5 100644
          if (env.isLocked()) return locked(summary)
          lastScreen = which
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhonePlugin.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhonePlugin.kt
-index 4a76535..ca9704c 100644
+index 4a76535..3114ae5 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhonePlugin.kt
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhonePlugin.kt
-@@ -249,6 +249,50 @@ class PhonePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
+@@ -249,6 +249,66 @@ class PhonePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
                  result.success(if (removed) mapOf("kind" to "discarded") else replayRejected("stale"))
              }
              "setBackgroundPreview" -> result.success(control.preview.setEnabled(call.argument<Boolean>("enabled") == true))
@@ -1247,6 +1430,22 @@ index 4a76535..ca9704c 100644
 +                        val gesture = target!!.driver.gesture(checkNotNull(x), checkNotNull(y), checkNotNull(action),
 +                            x2, y2, (duration ?: 400L).coerceIn(100L, 2000L))
 +                        mapOf("ok" to gesture.ok, "message" to gesture.message)
++                    }
++                }
++            }
++            // 虚拟屏悬浮窗's 返回: the app on that screen steps back, the same way a finger there
++            // would move it. One observation grants this call its own screen id.
++            "previewBack" -> {
++                val args = call.arguments as? Map<*, *>
++                val taskId = (args?.get("taskId") as? Number)?.toLong()
++                val valid = args != null && args.keys.all { it == "taskId" } && taskId != null && taskId > 0
++                val target = if (valid) control.background.previewTarget(taskId!!) else null
++                when {
++                    !valid -> result.success(mapOf("ok" to false, "message" to "这次返回的参数不对，没有发出。"))
++                    target == null -> result.success(mapOf("ok" to false, "message" to "这块后台屏已经不在预览里了。"))
++                    else -> async(result) {
++                        val done = target!!.driver.back()
++                        mapOf("ok" to done.ok, "message" to done.message)
 +                    }
 +                }
 +            }
@@ -1334,14 +1533,85 @@ index e50373c..5e1126b 100644
  
      /**
       * The word that makes tapping [label] sensitive, or null. Delegates to [SensitiveWords] (shared
+diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/a11y/ControlOverlay.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/a11y/ControlOverlay.kt
+index 5c017e4..82c01e9 100644
+--- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/a11y/ControlOverlay.kt
++++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/a11y/ControlOverlay.kt
+@@ -654,7 +654,14 @@ internal class ControlOverlay(private val service: AccessibilityService) : UserG
+      * an injected stroke.
+      */
+     private fun syncBeam() {
+-        beam.set(on = pill != null && !stoppedNote && handoffCard == null, paused = paused)
++        // 第十三节: the beam belongs to the phone's own screen. While the assistant works on the
++        // background display the floating window's green border says so, and two borders at once
++        // are noise — so no beam, and no overlay window for it either.
++        val onMain = !io.github.ccch1mneyyy.dsh_app.phone.PhoneTargetPrefs.virtualTarget(service)
++        // 返回键拦截 reads this: a live task on the phone's own screen is the only case that asks.
++        io.github.ccch1mneyyy.dsh_app.phone.PhoneRegistry.mainTaskActive =
++            onMain && pill != null && !stoppedNote
++        beam.set(on = onMain && pill != null && !stoppedNote && handoffCard == null, paused = paused)
+         beam.setHidden(captureHidden || passThrough)
+     }
+ 
+diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/a11y/PhoneA11yService.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/a11y/PhoneA11yService.kt
+index 8aa204b..d01a0e1 100644
+--- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/a11y/PhoneA11yService.kt
++++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/a11y/PhoneA11yService.kt
+@@ -19,8 +19,10 @@ import android.os.Build
+ import android.provider.Settings
+ import android.util.Log
+ import android.view.Display
++import android.view.KeyEvent
+ import android.view.WindowManager
+ import android.view.accessibility.AccessibilityEvent
++import io.github.ccch1mneyyy.dsh_app.phone.PhoneBackGuard
+ import io.github.ccch1mneyyy.dsh_app.phone.PhoneRegistry
+ import io.github.ccch1mneyyy.dsh_app.phone.PhoneTasks
+ 
+@@ -128,6 +130,24 @@ class PhoneA11yService : AccessibilityService() {
+         Log.i(TAG, "accessibility feedback interrupted; phone task unchanged")
+     }
+ 
++    /**
++     * 返回键拦截 (第十六节 A): a back press while the assistant drives this screen asks
++     * 「手动接管 / 转到虚拟屏继续」 first. Both answers let the back through afterwards; the
++     * difference is whether the task ends or moves to the virtual screen. Any other time the key
++     * is not ours, and this returns false so the app keeps it.
++     */
++    override fun onKeyEvent(event: KeyEvent?): Boolean {
++        if (event == null) return false
++        if (event.keyCode != KeyEvent.KEYCODE_BACK) return false
++        if (!PhoneBackGuard.armed(this)) return false
++        if (event.action == KeyEvent.ACTION_DOWN) {
++            PhoneBackGuard.ask(this)
++            return true
++        }
++        // The up of a press we already answered: consume it too, or the app gets a lone UP.
++        return true
++    }
++
+     override fun onConfigurationChanged(newConfig: Configuration) {
+         super.onConfigurationChanged(newConfig)
+         overlay?.onConfigurationChanged()
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/BackgroundControl.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/BackgroundControl.kt
-index 79cae46..09aec33 100644
+index 79cae46..7199a0b 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/BackgroundControl.kt
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/BackgroundControl.kt
-@@ -149,6 +149,42 @@ class BackgroundControl private constructor(context: Context) {
+@@ -13,6 +13,7 @@ import android.net.Network
+ import android.net.NetworkCapabilities
+ import android.net.NetworkRequest
+ import android.provider.Settings
++import android.view.Surface
+ import io.github.ccch1mneyyy.dsh_app.phone.PhoneControl
+ import io.github.ccch1mneyyy.dsh_app.phone.PhoneAppIdentity
+ import io.github.ccch1mneyyy.dsh_app.phone.a11y.MlKitLocalOcr
+@@ -149,6 +150,80 @@ class BackgroundControl private constructor(context: Context) {
  
      fun previewTarget(taskId: Long): BackgroundPreviewTarget? = previewTargets[taskId]
  
++    /** Any live background screen: what 转到虚拟屏继续 needs when it only knows the app to send. */
++    fun anyPreviewTarget(): BackgroundPreviewTarget? = previewTargets.values.firstOrNull()
++
 +    /**
 +     * 任务迁移: one hand-over for the enlarged preview, through that task's own privileged link.
 +     * The engine picks the task from the display and refuses a missing API or a system denial
@@ -1378,6 +1648,41 @@ index 79cae46..09aec33 100644
 +        return mapOf("ok" to false, "reason" to "scopeBusy")
 +    }
 +
++    /**
++     * 虚拟屏直显: hands the floating window's Surface to the engine that owns the display, so the
++     * phone shows the display itself instead of decoded preview frames. Blocking, like
++     * [handOverTask]: call it off the main thread.
++     *
++     * A Surface only travels over the Shizuku binder. An adb stream carries Bundles as bytes and
++     * a binder handle would arrive dead, so that transport says so instead of showing a black
++     * window — the window keeps its preview frames.
++     */
++    fun attachViewSurface(target: BackgroundPreviewTarget, surface: Surface?): Map<String, Any?> {
++        if (!target.channel.alive()) return mapOf("ok" to false, "reason" to "deviceUnavailable")
++        if (target.channel !is ShizukuChannel) return mapOf("ok" to false, "reason" to "surfaceUnsupported")
++        val request = Bundle().apply {
++            putString(Proto.OP, Proto.OP_VIEW_SURFACE)
++            putString(Proto.OWNER, target.owner)
++            putInt(Proto.VIEW_SURFACE_VERSION, 1)
++            if (surface != null) putParcelable(Proto.VIEW_SURFACE, surface)
++        }
++        val reply = try {
++            OwnerScopeProtocol.execute(target.channel, target.owner, request)
++        } catch (_: Exception) {
++            return mapOf("ok" to false, "reason" to "deviceUnavailable")
++        }
++        return if (reply.getBoolean(Proto.OK)) {
++            mapOf(
++                "ok" to true, "reason" to null,
++                "attached" to reply.getBoolean(Proto.VIEW_SURFACE),
++                "width" to reply.getInt(Proto.VIEW_SURFACE_WIDTH),
++                "height" to reply.getInt(Proto.VIEW_SURFACE_HEIGHT),
++            )
++        } else {
++            mapOf("ok" to false, "reason" to (reply.getString(Proto.ERROR) ?: "surfaceFailed"))
++        }
++    }
++
      /** Memory publication only; callers notify after releasing controller locks. */
      private fun replaceChannel(value: PrivilegedChannel?): Boolean = synchronized(previewGuard) {
          if (channel === value) false else {
@@ -1395,7 +1700,7 @@ index f6b83a0..2eb59f3 100644
          val result = receipt.takeIf { accepted && screen == screenId }
          clear()
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/BackgroundDisplay.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/BackgroundDisplay.kt
-index bc1810a..6ba1b38 100644
+index bc1810a..6729365 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/BackgroundDisplay.kt
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/BackgroundDisplay.kt
 @@ -22,6 +22,7 @@ import io.github.ccch1mneyyy.dsh_app.phone.a11y.LocalOcrResult
@@ -1406,7 +1711,7 @@ index bc1810a..6ba1b38 100644
  
  /**
   * BACKGROUND [PhoneDriver] (screen ids `b<n>`): reads and drives the trusted virtual display
-@@ -505,6 +506,45 @@ class BackgroundDisplay internal constructor(
+@@ -505,6 +506,65 @@ class BackgroundDisplay internal constructor(
          return toResult(response, target, "已在后台屏执行", textAction = action is PhoneAction.Type, after = after)
      }
  
@@ -1449,6 +1754,26 @@ index bc1810a..6ba1b38 100644
 +        ActionResult(false, "预览操作没有发出去：" + (e.message ?: e.javaClass.simpleName))
 +    }
 +
++    /**
++     * 虚拟屏悬浮窗's 返回: the app on the background screen steps back one level. Same consent
++     * as [gesture] — the person pressed the key — and the same rule: the key needs the screen
++     * id of a fresh observation, so one is taken first.
++     */
++    fun back(): ActionResult = try {
++        val snap = observeFrame(detail = false, image = false, requestLocalText = false)
++        if (snap.secure) {
++            // l10n:keep agent screen protocol
++            ActionResult(false, "受保护页面（支付或密码）不能从悬浮窗操作，已交还用户。")
++        } else {
++            perform(PhoneAction.Key(snap.id, PhoneAction.GlobalKey.BACK))
++        }
++    } catch (e: InterruptedException) {
++        throw e
++    } catch (e: Exception) {
++        // l10n:keep agent screen protocol
++        ActionResult(false, "返回没有发出去：" + (e.message ?: e.javaClass.simpleName))
++    }
++
      /**
       * Input commits at its actual channel admission (client gate -> resource IO lock, as in [open]):
       * a pause, stop or seal while it waits for capacity sends nothing. Null means not allowed.
@@ -1468,10 +1793,28 @@ index 6f0a450..58c6ea1 100644
      const val NONCE = "nonce"
      const val DISPLAY = "display"
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/PrivilegedDisplayCore.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/PrivilegedDisplayCore.kt
-index c7ed0f7..5227f63 100644
+index c7ed0f7..ec16141 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/PrivilegedDisplayCore.kt
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/PrivilegedDisplayCore.kt
-@@ -121,6 +121,25 @@ class PrivilegedDisplayCore internal constructor(
+@@ -42,6 +42,7 @@ import android.view.InputEvent
+ import android.view.KeyCharacterMap
+ import android.view.KeyEvent
+ import android.view.MotionEvent
++import android.view.Surface
+ import android.view.ViewConfiguration
+ import android.view.accessibility.AccessibilityNodeInfo
+ import android.view.accessibility.AccessibilityWindowInfo
+@@ -97,6 +98,9 @@ class PrivilegedDisplayCore internal constructor(
+     @Volatile private var owner: String? = hosted?.owner
+     @Volatile private var display: VirtualDisplay? = null
+     @Volatile private var reader: ImageReader? = null
++    // 虚拟屏直显: while set, the display composites into the phone's SurfaceView instead of the
++    // reader, and every capture borrows the output back for one frame (capture()).
++    @Volatile private var viewSurface: Surface? = null
+     private var pendingReader: ImageReader? = null
+     private var readerAllocationUncertain = false
+     private var width = 0
+@@ -121,6 +125,25 @@ class PrivilegedDisplayCore internal constructor(
          Class.forName("android.app.IActivityTaskManager").getMethod("getAllRootTaskInfosOnDisplay", Int::class.javaPrimitiveType)
      }
      private val rootTaskInfoType by lazy { Class.forName("android.app.ActivityTaskManager\$RootTaskInfo") }
@@ -1497,7 +1840,7 @@ index c7ed0f7..5227f63 100644
  
      private fun rootTaskInfos(displayId: Int): List<Any> {
          val result = try {
-@@ -315,6 +334,13 @@ class PrivilegedDisplayCore internal constructor(
+@@ -315,6 +338,20 @@ class PrivilegedDisplayCore internal constructor(
          if (strictOwner && displayApiReleased) throw Fault("releasePending")
          if (strictOwner && (readerAllocationUncertain || display == null && (displayCreationAttempted || reader != null || pendingReader != null))) throw Fault("releaseUnconfirmed")
          if (keyguard?.isKeyguardLocked == true) throw Fault("locked")
@@ -1508,10 +1851,17 @@ index c7ed0f7..5227f63 100644
 +            moveTask(request, response)
 +            return
 +        }
++        // 虚拟屏直显: the phone's window hands over a Surface; the display renders into it until
++        // the window detaches. Nothing else about the screen changes.
++        if (op == Proto.OP_VIEW_SURFACE) {
++            requireDisplay()
++            attachViewSurface(request, response)
++            return
++        }
          val pkg = request.getString(Proto.PKG).orEmpty()
          if (!PACKAGE.matches(pkg)) throw Fault("invalidArguments")
          val opening = op == Proto.OP_CREATE || op == Proto.OP_LAUNCH
-@@ -729,6 +755,114 @@ class PrivilegedDisplayCore internal constructor(
+@@ -729,6 +766,147 @@ class PrivilegedDisplayCore internal constructor(
      private fun displayId(): Int = display?.display?.displayId ?: throw Fault("displayMissing")
      private fun requireDisplay() { if (display == null) throw Fault("displayMissing") }
  
@@ -1623,11 +1973,69 @@ index c7ed0f7..5227f63 100644
 +        throw Fault("launchUnconfirmed")
 +    }
 +
++    /**
++     * 虚拟屏直显: `viewSurface` in, or out when the window closed. The Surface comes from the
++     * phone's SurfaceView and belongs to the app process; a shell-owned VirtualDisplay composes
++     * into it across the binder, so the picture is the display itself, not a decoded frame.
++     * A missing Surface with the version present means the transport could not carry one (an adb
++     * stream): the caller is told, and keeps the JPEG preview it had.
++     */
++    private fun attachViewSurface(request: Bundle, response: Bundle) {
++        if (request.getInt(Proto.VIEW_SURFACE_VERSION, 0) != 1) throw Fault("invalidArguments")
++        val detached = !request.containsKey(Proto.VIEW_SURFACE)
++        val surface = if (detached) null
++            else runCatching { request.getParcelable<Surface>(Proto.VIEW_SURFACE) }.getOrNull()
++                ?: throw Fault("surfaceUnsupported")
++        val vd = display ?: throw Fault("displayMissing")
++        lock.withLock {
++            viewSurface = surface
++            runCatching { vd.surface = surface ?: reader?.surface }
++        }
++        response.putInt(Proto.VIEW_SURFACE_WIDTH, width)
++        response.putInt(Proto.VIEW_SURFACE_HEIGHT, height)
++        response.putBoolean(Proto.VIEW_SURFACE, surface != null)
++    }
++
++    /** Hands the display back to the window after a capture borrowed it, or to the reader. */
++    private fun restoreViewSurface() {
++        if (released.get()) return
++        lock.withLock {
++            val vd = display ?: return
++            val target = viewSurface ?: return
++            runCatching { vd.surface = target }
++        }
++    }
++
      private fun requestedViewport(request: Bundle): BackgroundPolicy.Viewport? {
          if (!request.containsKey(Proto.VIEWPORT_PRESET)) return null
          val preset = BackgroundPolicy.Viewport.parse(request.get(Proto.VIEWPORT_PRESET)) ?: throw Fault("invalidArguments")
+@@ -908,6 +1086,7 @@ class PrivilegedDisplayCore internal constructor(
+ 
+     private fun releasePhysical(): Boolean {
+         coordinateObservation = null
++        viewSurface = null
+         closeTreeConnection()
+         visualObservation = null
+         stopPreview()
+@@ -1166,7 +1345,15 @@ class PrivilegedDisplayCore internal constructor(
+     private class CaptureResult(val jpeg: ByteArray, val raw: BackgroundPreviewState.RawFrame?, val local: ImageObservation?, val targetMatched: Boolean? = null)
+ 
+     /** Null means only absent/black frames; other capture failures remain distinguishable. */
+-    private fun capture(localVisual: Boolean = false, targetFrame: TargetFrameCheck? = null): CaptureResult? {
++    private fun capture(localVisual: Boolean = false, targetFrame: TargetFrameCheck? = null): CaptureResult? = try {
++        captureFrame(localVisual, targetFrame)
++    } finally {
++        // 虚拟屏直显: the reader is only borrowed for this one frame. A live window gets the
++        // output back even when the capture failed, or its picture would stay black.
++        restoreViewSurface()
++    }
++
++    private fun captureFrame(localVisual: Boolean = false, targetFrame: TargetFrameCheck? = null): CaptureResult? {
+         val ir = lock.withLock {
+             if (pendingReader != null || readerAllocationUncertain) throw Fault("releasePending")
+             val vd = display ?: throw Fault("displayMissing")
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/PrivilegedProtocol.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/PrivilegedProtocol.kt
-index 4c327b1..3904159 100644
+index 4c327b1..dee5365 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/PrivilegedProtocol.kt
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/PrivilegedProtocol.kt
 @@ -19,7 +19,7 @@ object Proto {
@@ -1639,7 +2047,7 @@ index 4c327b1..3904159 100644
  
      // request keys
      const val OP = "op"
-@@ -125,6 +125,17 @@ object Proto {
+@@ -125,6 +125,26 @@ object Proto {
      const val OP_TEXT = "text"
      const val RELEASE_RECEIPT = "releaseReceipt"
      const val TASK_SCOPE_EMPTY = "taskScopeEmpty"
@@ -1654,9 +2062,53 @@ index 4c327b1..3904159 100644
 +
 +    /** The move API refused: the app was opened on the target display instead (no state carried). */
 +    const val TASK_FALLBACK = "taskFallback"
++    // 虚拟屏直显: the phone's own SurfaceView surface, handed over so the background display
++    // composites straight into it (no JPEG frames on the way). A VirtualDisplay has exactly one
++    // output surface, so this only replaces the ImageReader until it is detached again.
++    const val OP_VIEW_SURFACE = "viewSurface"
++    const val VIEW_SURFACE_VERSION = "viewSurfaceVersion"
++    /** The Surface itself (Parcelable). Absent with the version set means "detach". */
++    const val VIEW_SURFACE = "viewSurfaceHandle"
++    const val VIEW_SURFACE_WIDTH = "viewSurfaceWidth"
++    const val VIEW_SURFACE_HEIGHT = "viewSurfaceHeight"
      const val OP_RELEASE = "release"
      const val OP_DESTROY = "destroy"
      const val OP_COLLECT_SYSTEM_IME = "collectSystemIme"
+diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/target_prefs.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/target_prefs.kt
+new file mode 100644
+index 0000000..46d0f4d
+--- /dev/null
++++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/target_prefs.kt
+@@ -0,0 +1,29 @@
++package io.github.ccch1mneyyy.dsh_app.phone
++
++import android.content.Context
++
++/**
++ * 操作目标, read where the Flutter side writes it (设置 › 手机操控 › 虚拟屏).
++ *
++ * The edge beam marks the phone's own screen as the one being driven; when the assistant works on
++ * the background display instead, that beam is noise — the floating window already has its own
++ * green border (第十三节). Flutter stores this in the shared-preferences file Android provides for
++ * it, which is a plain file both sides can read.
++ */
++object PhoneTargetPrefs {
++    /** 虚拟屏 is the default target (第十二 / 用户追加第二条); the main screen is the exception. */
++    fun virtualTarget(context: Context): Boolean = try {
++        context.getSharedPreferences("FlutterSharedPreferences", Context.MODE_PRIVATE)
++            .getString("flutter.virtual_screen_target", "virtual") != "main"
++    } catch (_: Exception) {
++        true
++    }
++
++    /** 允许手动操作 on the floating window's picture. */
++    fun manualAllowed(context: Context): Boolean = try {
++        context.getSharedPreferences("FlutterSharedPreferences", Context.MODE_PRIVATE)
++            .getBoolean("flutter.virtual_screen_manual", false)
++    } catch (_: Exception) {
++        false
++    }
++}
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/TaskMover.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/TaskMover.kt
 new file mode 100644
 index 0000000..8ddabc9
@@ -1706,31 +2158,30 @@ index 0000000..8ddabc9
 +        (e.cause?.javaClass?.simpleName ?: e.javaClass.simpleName)
 +    }
 +}
-diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenOverlay.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenOverlay.kt
+diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/TransferBall.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/TransferBall.kt
 new file mode 100644
-index 0000000..71d30c5
+index 0000000..851ad97
 --- /dev/null
-+++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenOverlay.kt
-@@ -0,0 +1,297 @@
++++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/TransferBall.kt
+@@ -0,0 +1,264 @@
 +package io.github.ccch1mneyyy.dsh_app.phone.vscreen
 +
 +import android.annotation.SuppressLint
 +import android.content.Context
 +import android.content.Intent
-+import android.graphics.Bitmap
-+import android.graphics.BitmapFactory
 +import android.graphics.Color
 +import android.graphics.PixelFormat
 +import android.graphics.drawable.GradientDrawable
 +import android.os.Build
++import android.os.Handler
++import android.os.Looper
 +import android.os.SystemClock
 +import android.view.Gravity
 +import android.view.MotionEvent
 +import android.view.View
 +import android.view.WindowManager
 +import android.widget.FrameLayout
-+import android.widget.ImageView
-+import io.github.ccch1mneyyy.dsh_app.MainActivity
++import android.widget.TextView
 +import io.github.ccch1mneyyy.dsh_app.pet.Dock
 +import io.github.ccch1mneyyy.dsh_app.pet.EdgeSnap
 +import io.github.ccch1mneyyy.dsh_app.pet.SafeArea
@@ -1739,35 +2190,36 @@ index 0000000..71d30c5
 +import kotlin.math.roundToInt
 +
 +/**
-+ * 虚拟屏 in a window of its own: what the assistant is doing on the background display, visible
-+ * without covering the phone.
++ * 主屏上的「转」: the phone's own app goes to the virtual screen, and the assistant takes over.
 + *
-+ * The frames come from Dart (PhoneChannel.previewFrames → dsh/virtual-screen frame), so this
-+ * window only draws the latest JPEG. Same gestures as the call card on purpose: drag, park as a
-+ * sliver at an edge, a tap brings the app back.
++ * It rests as a 12×56 dp sliver against an edge (`第十二节 3`), so nothing is covered. A tap opens
++ * it into a 40 dp round key; a tap on the key converts. Doing nothing for three seconds, or
++ * touching outside, puts it back — never a drag it did not ask for. The app decides when it
++ * belongs on screen at all (there has to be something worth moving).
 + */
-+object VirtualScreenOverlay {
++object TransferBall {
 +    var onAction: ((String) -> Unit)? = null
 +
-+    private const val PREFS = "virtual_screen_overlay"
++    private const val PREFS = "transfer_ball"
 +    private const val KEY_SIDE = "side"
 +    private const val KEY_FRACTION = "fraction"
-+    private const val CARD_W = 110f
-+    private const val CARD_H = 196f
 +    private const val SLIVER_W = 12f
 +    private const val SLIVER_H = 56f
++    private const val BALL = 40f
++
++    /** §14: the ball folds back on its own after this long. */
++    private const val OPEN_MS = 3_000L
 +
 +    private var wm: WindowManager? = null
-+    private var card: View? = null
-+    private var frame: ImageView? = null
++    private var root: FrameLayout? = null
++    private var label: TextView? = null
 +    private var params: WindowManager.LayoutParams? = null
-+    private var context: Context? = null
-+    private var dock = Dock.DEFAULT
-+    private var collapsed = false
-+    private var lastFrameAt = 0L
-+    private var lastBitmap: Bitmap? = null
++    private var dock = Dock(side = Side.RIGHT, yFraction = 0.5f)
++    private var open = false
++    private val main = Handler(Looper.getMainLooper())
++    private val fold = Runnable { setOpen(false) }
 +
-+    val shown: Boolean get() = card != null
++    val shown: Boolean get() = root != null
 +
 +    fun show(context: Context): Boolean {
 +        hide()
@@ -1776,27 +2228,22 @@ index 0000000..71d30c5
 +        val saved = app.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
 +        dock = Dock(
 +            side = if (saved.getString(KEY_SIDE, "r") == "l") Side.LEFT else Side.RIGHT,
-+            yFraction = saved.getFloat(KEY_FRACTION, Dock.DEFAULT.yFraction),
++            yFraction = saved.getFloat(KEY_FRACTION, 0.5f),
 +        )
-+        val area = area(app, manager)
 +        val px = app.resources.displayMetrics.density
-+        val w = (CARD_W * px).roundToInt()
-+        val h = (CARD_H * px).roundToInt()
++        val area = area(app, manager)
++        val (w, h) = sizeOf(false, px)
 +        val at = EdgeSnap.position(dock, w, h, area, (10 * px).roundToInt())
 +
-+        val root = FrameLayout(app).apply {
-+            background = cardBackground(px)
-+            setOnClickListener { openApp(app) }
++        val holder = FrameLayout(app).apply { background = sliverBackground(px) }
++        val text = TextView(app).apply {
++            text = "🔁"
++            gravity = Gravity.CENTER
++            setTextColor(Color.WHITE)
++            textSize = 16f
++            visibility = View.GONE
 +        }
-+        val picture = ImageView(app).apply {
-+            scaleType = ImageView.ScaleType.FIT_CENTER
-+            setBackgroundColor(Color.rgb(8, 10, 18))
-+        }
-+        val inset = (4 * px).roundToInt()
-+        root.addView(picture, FrameLayout.LayoutParams(-1, -1).apply {
-+            setMargins(inset, inset, inset, inset)
-+        })
-+
++        holder.addView(text, FrameLayout.LayoutParams(-1, -1))
 +        val lp = WindowManager.LayoutParams(
 +            w,
 +            h,
@@ -1810,19 +2257,18 @@ index 0000000..71d30c5
 +            x = at.x
 +            y = at.y
 +        }
-+        attachTouch(app, root, manager, lp, area, px)
++        attachTouch(app, holder, manager, lp, area, px)
 +        return try {
-+            manager.addView(root, lp)
-+            this.context = app
++            manager.addView(holder, lp)
 +            wm = manager
-+            card = root
-+            frame = picture
++            root = holder
++            label = text
 +            params = lp
-+            collapsed = false
++            open = false
 +            true
 +        } catch (_: Exception) {
-+            card = null
-+            frame = null
++            root = null
++            label = null
 +            params = null
 +            wm = null
 +            false
@@ -1830,57 +2276,47 @@ index 0000000..71d30c5
 +    }
 +
 +    fun hide() {
-+        val view = card ?: return
-+        card = null
-+        frame = null
++        main.removeCallbacks(fold)
++        val view = root ?: return
++        root = null
++        label = null
 +        params = null
-+        collapsed = false
-+        lastBitmap?.recycle()
-+        lastBitmap = null
++        open = false
 +        val manager = wm
 +        wm = null
-+        context = null
 +        try {
 +            manager?.removeView(view)
 +        } catch (_: Exception) {
 +        }
 +    }
 +
-+    /** One frame from the background display, decoded here: the window is native. */
-+    fun pushFrame(bytes: ByteArray): Boolean {
-+        val target = frame ?: return false
-+        val now = SystemClock.elapsedRealtime()
-+        // Frames are throttled by the caller; this only refuses a storm.
-+        if (now - lastFrameAt < 40) return false
-+        lastFrameAt = now
-+        val decoded = try {
-+            BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
-+        } catch (_: Throwable) {
-+            null
-+        } ?: return false
-+        val old = lastBitmap
-+        lastBitmap = decoded
-+        target.setImageBitmap(decoded)
-+        old?.recycle()
-+        return true
-+    }
++    private fun sizeOf(expanded: Boolean, px: Float): Pair<Int, Int> =
++        if (expanded) (BALL * px).roundToInt() to (BALL * px).roundToInt()
++        else (SLIVER_W * px).roundToInt() to (SLIVER_H * px).roundToInt()
 +
-+    /** Whether frames are wanted at all: a parked sliver shows nothing. */
-+    fun wantsFrames(): Boolean = frame != null && !collapsed
-+
-+    @Suppress("DEPRECATION")
-+    private fun overlayType(): Int =
-+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
-+        else WindowManager.LayoutParams.TYPE_PHONE
-+
-+    private fun area(context: Context, manager: WindowManager): SafeArea =
-+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-+            val b = manager.currentWindowMetrics.bounds
-+            SafeArea(b.width(), b.height(), 0, 0, 0, 0)
-+        } else {
-+            val m = context.resources.displayMetrics
-+            SafeArea(m.widthPixels, m.heightPixels, 0, 0, 0, 0)
++    private fun setOpen(expanded: Boolean) {
++        val view = root ?: return
++        val manager = wm ?: return
++        val lp = params ?: return
++        if (open == expanded) return
++        open = expanded
++        main.removeCallbacks(fold)
++        val px = view.context.resources.displayMetrics.density
++        val area = area(view.context, manager)
++        val (w, h) = sizeOf(expanded, px)
++        val at = EdgeSnap.position(dock, w, h, area, (10 * px).roundToInt())
++        lp.width = w
++        lp.height = h
++        lp.x = at.x
++        lp.y = at.y
++        view.background = if (expanded) ballBackground(px) else sliverBackground(px)
++        label?.visibility = if (expanded) View.VISIBLE else View.GONE
++        try {
++            manager.updateViewLayout(view, lp)
++        } catch (_: Exception) {
 +        }
++        if (expanded) main.postDelayed(fold, OPEN_MS)
++    }
 +
 +    @SuppressLint("ClickableViewAccessibility")
 +    private fun attachTouch(
@@ -1892,10 +2328,6 @@ index 0000000..71d30c5
 +        px: Float,
 +    ) {
 +        val margin = (10 * px).roundToInt()
-+        val cardW = (CARD_W * px).roundToInt()
-+        val cardH = (CARD_H * px).roundToInt()
-+        val sliverW = (SLIVER_W * px).roundToInt()
-+        val sliverH = (SLIVER_H * px).roundToInt()
 +        var startX = 0f
 +        var startY = 0f
 +        var fromX = 0
@@ -1904,31 +2336,9 @@ index 0000000..71d30c5
 +        var lastAt = 0L
 +        var vx = 0f
 +        var dragging = false
-+
-+        fun applyShape(toCollapsed: Boolean) {
-+            collapsed = toCollapsed
-+            val w = if (toCollapsed) sliverW else cardW
-+            val h = if (toCollapsed) sliverH else cardH
-+            val at = EdgeSnap.position(dock, w, h, area, margin)
-+            lp.width = w
-+            lp.height = h
-+            lp.x = at.x
-+            lp.y = at.y
-+            try {
-+                manager.updateViewLayout(view, lp)
-+            } catch (_: Exception) {
-+            }
-+            (view as? FrameLayout)?.getChildAt(0)?.visibility =
-+                if (toCollapsed) View.INVISIBLE else View.VISIBLE
-+            view.background = if (toCollapsed) sliverBackground(px) else cardBackground(px)
-+        }
++        var downAt = 0L
 +
 +        view.setOnTouchListener { _, event ->
-+            if (collapsed) {
-+                // A tap on the sliver only brings the card back, never opens the app.
-+                if (event.actionMasked == MotionEvent.ACTION_UP) applyShape(false)
-+                return@setOnTouchListener true
-+            }
 +            when (event.actionMasked) {
 +                MotionEvent.ACTION_DOWN -> {
 +                    startX = event.rawX
@@ -1937,6 +2347,7 @@ index 0000000..71d30c5
 +                    fromY = lp.y
 +                    lastX = event.rawX
 +                    lastAt = SystemClock.elapsedRealtime()
++                    downAt = lastAt
 +                    vx = 0f
 +                    dragging = false
 +                    true
@@ -1950,6 +2361,7 @@ index 0000000..71d30c5
 +                        if (now > lastAt) vx = (event.rawX - lastX) * 1000f / (now - lastAt)
 +                        lastX = event.rawX
 +                        lastAt = now
++                        // A ball dragged up and down may leave the edge: it stays where it is.
 +                        lp.x = (fromX + dx).roundToInt().coerceIn(
 +                            EdgeSnap.minX(area, margin),
 +                            EdgeSnap.maxX(area, lp.width, margin),
@@ -1966,19 +2378,23 @@ index 0000000..71d30c5
 +                    true
 +                }
 +                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
-+                    if (!dragging) {
-+                        view.performClick()
++                    if (dragging) {
++                        dock = EdgeSnap.dockFor(lp.x, lp.y, lp.width, lp.height, area, margin, vx)
++                        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
++                            .putString(KEY_SIDE, if (dock.side == Side.LEFT) "l" else "r")
++                            .putFloat(KEY_FRACTION, dock.yFraction)
++                            .apply()
++                        setOpen(false)
 +                        return@setOnTouchListener true
 +                    }
-+                    dock = EdgeSnap.dockFor(lp.x, lp.y, lp.width, lp.height, area, margin, vx)
-+                    val flung = abs(vx) >= EdgeSnap.FLING_PX_PER_S
-+                    val nearEdge = lp.x <= EdgeSnap.minX(area, margin) + (12 * px).roundToInt() ||
-+                        lp.x >= EdgeSnap.maxX(area, lp.width, margin) - (12 * px).roundToInt()
-+                    context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
-+                        .putString(KEY_SIDE, if (dock.side == Side.LEFT) "l" else "r")
-+                        .putFloat(KEY_FRACTION, dock.yFraction)
-+                        .apply()
-+                    applyShape(flung || nearEdge)
++                    if (SystemClock.elapsedRealtime() - downAt > 400) return@setOnTouchListener true
++                    if (open) {
++                        // 执行转换: this screen's app goes to the virtual screen.
++                        onAction?.invoke("toVirtual")
++                        setOpen(false)
++                    } else {
++                        setOpen(true)
++                    }
 +                    true
 +                }
 +                else -> false
@@ -1986,19 +2402,776 @@ index 0000000..71d30c5
 +        }
 +    }
 +
++    @Suppress("DEPRECATION")
++    private fun overlayType(): Int =
++        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
++        else WindowManager.LayoutParams.TYPE_PHONE
++
++    private fun area(context: Context, manager: WindowManager): SafeArea =
++        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
++            val b = manager.currentWindowMetrics.bounds
++            SafeArea(b.width(), b.height(), 0, 0, 0, 0)
++        } else {
++            val m = context.resources.displayMetrics
++            SafeArea(m.widthPixels, m.heightPixels, 0, 0, 0, 0)
++        }
++
++    private fun sliverBackground(px: Float) = GradientDrawable().apply {
++        cornerRadius = 6 * px
++        setColor(0x6634D399)
++    }
++
++    /** §12 3: 40% while at rest, opaque under a finger. */
++    private fun ballBackground(px: Float) = GradientDrawable().apply {
++        shape = GradientDrawable.OVAL
++        setColor(0xCC34D399.toInt())
++        setStroke((2 * px).roundToInt(), 0xFFFFFFFF.toInt())
++    }
++}
+diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenOverlay.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenOverlay.kt
+new file mode 100644
+index 0000000..d9d068a
+--- /dev/null
++++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenOverlay.kt
+@@ -0,0 +1,748 @@
++package io.github.ccch1mneyyy.dsh_app.phone.vscreen
++
++import android.annotation.SuppressLint
++import android.content.BroadcastReceiver
++import android.content.Context
++import android.content.Intent
++import android.content.IntentFilter
++import android.graphics.Bitmap
++import android.graphics.BitmapFactory
++import android.graphics.Color
++import android.graphics.PixelFormat
++import android.graphics.Typeface
++import android.graphics.drawable.GradientDrawable
++import android.media.AudioManager
++import android.os.Build
++import android.os.SystemClock
++import android.view.Gravity
++import android.view.MotionEvent
++import android.view.Surface
++import android.view.SurfaceHolder
++import android.view.SurfaceView
++import android.view.View
++import android.view.WindowManager
++import android.widget.FrameLayout
++import android.widget.ImageView
++import android.widget.LinearLayout
++import android.widget.SeekBar
++import android.widget.TextView
++import io.github.ccch1mneyyy.dsh_app.MainActivity
++import io.github.ccch1mneyyy.dsh_app.phone.background.BackgroundControl
++import io.github.ccch1mneyyy.dsh_app.pet.Dock
++import io.github.ccch1mneyyy.dsh_app.pet.EdgeSnap
++import io.github.ccch1mneyyy.dsh_app.pet.SafeArea
++import io.github.ccch1mneyyy.dsh_app.pet.Side
++import java.util.concurrent.Executors
++import kotlin.math.abs
++import kotlin.math.roundToInt
++
++/**
++ * 虚拟屏 in a window of its own — the background display, live, without covering the phone.
++ *
++ * Three shapes, like the call card's two: a 12×56 dp sliver at an edge, a 110×196 dp window with
++ * the picture, and a 180×320 dp expanded window that adds every key (返 / 音 / 眼, ×,
++ * − ＋ ↺ 转). A drag that ends at an edge — or is flung at one — parks it as the sliver; a tap
++ * brings it back one shape; a tap on the picture opens the app's own page. A single tap on ×
++ * ends the task, and nothing else closes the window: a touch outside it doesn't.
++ *
++ * The picture is the display itself: the SurfaceView's surface is handed to the privileged engine
++ * that owns the VirtualDisplay (`setSurface`), so there is no JPEG on the way. When that is not
++ * available (an adb-stream transport cannot carry a Surface) the same window shows the preview
++ * frames it has always had, so nothing goes black.
++ */
++object VirtualScreenOverlay {
++    /** What the window asks the app for: open, stop, back, toMain, manual gesture. */
++    var onAction: ((String) -> Unit)? = null
++
++    private const val PREFS = "virtual_screen_overlay"
++    private const val KEY_SIDE = "side"
++    private const val KEY_FRACTION = "fraction"
++    private const val KEY_ZOOM = "zoom"
++
++    private const val SLIVER_W = 12f
++    private const val SLIVER_H = 56f
++    private const val SMALL_W = 110f
++    private const val SMALL_H = 196f
++    private const val EXPAND_W = 180f
++    private const val EXPAND_H = 320f
++
++    /** The zoom steps 第十二节 lists; the window remembers the last one. */
++    private val ZOOMS = floatArrayOf(0.6f, 0.8f, 1.0f, 1.25f, 1.5f, 2.0f)
++
++    private const val GREEN = 0xFF34D399.toInt()
++    private const val CHROME = 0x99000000.toInt()
++
++    private enum class Shape { SLIVER, SMALL, EXPAND }
++
++    private var wm: WindowManager? = null
++    private var root: FrameLayout? = null
++    private var content: FrameLayout? = null
++    private var picture: SurfaceView? = null
++    private var fallback: ImageView? = null
++    private var params: WindowManager.LayoutParams? = null
++    private var context: Context? = null
++    private var dock = Dock.DEFAULT
++    private var shape = Shape.SMALL
++    private var taskId = 0L
++    private var zoom = 1.0f
++    private var eyeHidden = false
++    private var screenOn = true
++
++    private var topLeft: LinearLayout? = null
++    private var topRight: FrameLayout? = null
++    private var bottomRight: LinearLayout? = null
++    private var hint: TextView? = null
++    private var volumeRow: LinearLayout? = null
++    private var backKey: FrameLayout? = null
++    private var volumeKey: FrameLayout? = null
++    private var eyeKey: FrameLayout? = null
++    private var closeKey: FrameLayout? = null
++    private var zoomOutKey: FrameLayout? = null
++    private var zoomInKey: FrameLayout? = null
++    private var zoomResetKey: FrameLayout? = null
++    private var transferKey: FrameLayout? = null
++
++    private var lastFrameAt = 0L
++    private var lastBitmap: Bitmap? = null
++    private var displayWidth = 0
++    private var displayHeight = 0
++
++    /** The display is really composing into [picture]; preview frames are not needed. */
++    private var liveSurface = false
++    private var surfaceGen = 0
++
++    private val worker = Executors.newSingleThreadExecutor { r -> Thread(r, "dsh-vscreen-surface").apply { isDaemon = true } }
++    private val main = android.os.Handler(android.os.Looper.getMainLooper())
++
++    private var screenReceiver: BroadcastReceiver? = null
++
++    val shown: Boolean get() = root != null
++
++    fun show(context: Context, taskId: Long = 0): Boolean {
++        hide()
++        val app = context.applicationContext
++        val manager = app.getSystemService(Context.WINDOW_SERVICE) as? WindowManager ?: return false
++        val saved = app.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
++        dock = Dock(
++            side = if (saved.getString(KEY_SIDE, "r") == "l") Side.LEFT else Side.RIGHT,
++            yFraction = saved.getFloat(KEY_FRACTION, Dock.DEFAULT.yFraction),
++        )
++        zoom = saved.getFloat(KEY_ZOOM, 1.0f).coerceIn(ZOOMS.first(), ZOOMS.last())
++        this.taskId = taskId
++        val px = app.resources.displayMetrics.density
++        val area = area(app, manager)
++        val w = (SMALL_W * px).roundToInt()
++        val h = (SMALL_H * px).roundToInt()
++        val at = EdgeSnap.position(dock, w, h, area, (10 * px).roundToInt())
++
++        val box = FrameLayout(app).apply { background = cardBackground(px) }
++        val inner = FrameLayout(app).apply { clipChildren = true }
++        val inset = (3 * px).roundToInt()
++        box.addView(inner, FrameLayout.LayoutParams(-1, -1).apply {
++            setMargins(inset, inset, inset, inset)
++        })
++        val surfaceView = SurfaceView(app)
++        inner.addView(surfaceView, FrameLayout.LayoutParams(-1, -1))
++        val picture2 = ImageView(app).apply {
++            scaleType = ImageView.ScaleType.FIT_CENTER
++            setBackgroundColor(Color.rgb(8, 10, 18))
++            visibility = View.GONE
++        }
++        inner.addView(picture2, FrameLayout.LayoutParams(-1, -1))
++
++        buildChrome(app, box, px)
++
++        val lp = WindowManager.LayoutParams(
++            w,
++            h,
++            overlayType(),
++            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
++                WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS or
++                WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
++            PixelFormat.TRANSLUCENT,
++        ).apply {
++            gravity = Gravity.TOP or Gravity.START
++            x = at.x
++            y = at.y
++        }
++        attachTouch(app, box, inner, manager, lp, area, px)
++        try {
++            manager.addView(box, lp)
++        } catch (_: Exception) {
++            return false
++        }
++        this.context = app
++        wm = manager
++        root = box
++        content = inner
++        picture = surfaceView
++        fallback = picture2
++        params = lp
++        liveSurface = false
++        eyeHidden = false
++        shape = Shape.SMALL
++        applyShape(Shape.SMALL, manager, lp, box, area, px)
++        attachSurfaceHost(app, surfaceView)
++        registerScreen(app)
++        return true
++    }
++
++    fun hide() {
++        val view = root ?: return
++        val app = context ?: view.context.applicationContext
++        root = null
++        content = null
++        picture = null
++        fallback = null
++        params = null
++        context = null
++        shape = Shape.SLIVER
++        unregisterScreen(app)
++        detachSurface(app)
++        lastBitmap?.recycle()
++        lastBitmap = null
++        val manager = wm
++        wm = null
++        try {
++            manager?.removeView(view)
++        } catch (_: Exception) {
++        }
++    }
++
++    /** One frame from the background display, for when the display cannot compose into the view. */
++    fun pushFrame(bytes: ByteArray): Boolean {
++        if (liveSurface) return false
++        val target = fallback ?: return false
++        val now = SystemClock.elapsedRealtime()
++        // Frames are throttled by the caller; this only refuses a storm.
++        if (now - lastFrameAt < 40) return false
++        lastFrameAt = now
++        val decoded = try {
++            BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
++        } catch (_: Throwable) {
++            null
++        } ?: return false
++        val old = lastBitmap
++        lastBitmap = decoded
++        target.setImageBitmap(decoded)
++        target.visibility = if (eyeHidden || !screenOn) View.GONE else View.VISIBLE
++        old?.recycle()
++        return true
++    }
++
++    /** Whether preview frames are wanted: a parked sliver shows nothing, a live surface needs none. */
++    fun wantsFrames(): Boolean = fallback != null && shape != Shape.SLIVER && !liveSurface && !eyeHidden && screenOn
++
++    /** 手动操作 setting (设置 › 手机操控 › 虚拟屏 › 允许手动操作), read where Flutter writes it. */
++    private fun manualAllowed(app: Context): Boolean = try {
++        app.getSharedPreferences("FlutterSharedPreferences", Context.MODE_PRIVATE)
++            .getBoolean("flutter.virtual_screen_manual", false)
++    } catch (_: Exception) {
++        false
++    }
++
++    /**
++     * The engine that owns the display composes into this view's surface. Detach on close, and
++     * on the way back to JPEG: a VirtualDisplay has one output surface, so it can only be one.
++     */
++    private fun attachSurfaceHost(app: Context, view: SurfaceView) {
++        val gen = ++surfaceGen
++        view.holder.addCallback(object : SurfaceHolder.Callback {
++            override fun surfaceCreated(holder: SurfaceHolder) {
++                requestSurface(app, holder.surface, gen)
++            }
++
++            override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) {
++                requestSurface(app, holder.surface, gen)
++            }
++
++            override fun surfaceDestroyed(holder: SurfaceHolder) {
++                if (gen != surfaceGen) return
++                liveSurface = false
++                applyLive()
++                requestSurface(app, null, gen)
++            }
++        })
++    }
++
++    private fun requestSurface(app: Context, surface: Surface?, gen: Int) {
++        if (gen != surfaceGen) return
++        val id = taskId
++        worker.execute {
++            val control = try {
++                BackgroundControl.get(app)
++            } catch (_: Throwable) {
++                null
++            }
++            // The window is usually opened in the same breath as the task: give the engine a
++            // moment to publish the target before falling back to preview frames.
++            var target = if (id > 0) control?.previewTarget(id) else null
++            var wait = 0
++            while (target == null && control != null && gen == surfaceGen && wait < 12) {
++                Thread.sleep(150)
++                wait++
++                target = control.previewTarget(id)
++            }
++            if (control == null || target == null) {
++                if (surface != null) {
++                    liveSurface = false
++                    main.post { applyLive() }
++                }
++                return@execute
++            }
++            val reply = try {
++                control.attachViewSurface(target, surface)
++            } catch (_: Throwable) {
++                mapOf("ok" to false, "reason" to "surfaceUnavailable")
++            }
++            val attached = reply["ok"] == true && reply["attached"] == true
++            if (gen != surfaceGen) {
++                // The window changed its mind while this was on the wire: undo the attach.
++                if (attached) runCatching { control.attachViewSurface(target, null) }
++                return@execute
++            }
++            displayWidth = (reply["width"] as? Int) ?: displayWidth
++            displayHeight = (reply["height"] as? Int) ?: displayHeight
++            liveSurface = attached
++            main.post { applyLive() }
++        }
++    }
++
++    private fun detachSurface(app: Context) {
++        surfaceGen++
++        if (!liveSurface) return
++        liveSurface = false
++        val id = taskId
++        worker.execute {
++            runCatching {
++                val control = BackgroundControl.get(app)
++                val target = if (id > 0) control.previewTarget(id) else null
++                if (target != null) control.attachViewSurface(target, null)
++            }
++        }
++    }
++
++    /** Shows the live surface or the preview frames, whichever this window has. */
++    private fun applyLive() {
++        val surface = picture ?: return
++        val frames = fallback ?: return
++        val showPicture = !eyeHidden && screenOn
++        surface.visibility = if (liveSurface && showPicture) View.VISIBLE else View.INVISIBLE
++        frames.visibility = if (!liveSurface && showPicture) View.VISIBLE else View.GONE
++    }
++
++    private fun registerScreen(app: Context) {
++        unregisterScreen(app)
++        val receiver = object : BroadcastReceiver() {
++            override fun onReceive(ctx: Context?, intent: Intent?) {
++                when (intent?.action) {
++                    Intent.ACTION_SCREEN_OFF -> {
++                        screenOn = false
++                        applyLive()
++                    }
++                    Intent.ACTION_SCREEN_ON, Intent.ACTION_USER_PRESENT -> {
++                        screenOn = true
++                        applyLive()
++                    }
++                }
++            }
++        }
++        screenReceiver = receiver
++        try {
++            val filter = IntentFilter().apply {
++                addAction(Intent.ACTION_SCREEN_OFF)
++                addAction(Intent.ACTION_SCREEN_ON)
++                addAction(Intent.ACTION_USER_PRESENT)
++            }
++            app.registerReceiver(receiver, filter)
++        } catch (_: Exception) {
++            screenReceiver = null
++        }
++    }
++
++    private fun unregisterScreen(app: Context) {
++        val receiver = screenReceiver ?: return
++        screenReceiver = null
++        try {
++            app.unregisterReceiver(receiver)
++        } catch (_: Exception) {
++        }
++    }
++
++    @Suppress("DEPRECATION")
++    private fun overlayType(): Int =
++        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
++        else WindowManager.LayoutParams.TYPE_PHONE
++
++    private fun area(context: Context, manager: WindowManager): SafeArea =
++        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
++            val b = manager.currentWindowMetrics.bounds
++            SafeArea(b.width(), b.height(), 0, 0, 0, 0)
++        } else {
++            val m = context.resources.displayMetrics
++            SafeArea(m.widthPixels, m.heightPixels, 0, 0, 0, 0)
++        }
++
++    // Shapes
++
++    private fun sizeOf(shape: Shape, px: Float): Pair<Int, Int> = when (shape) {
++        Shape.SLIVER -> (SLIVER_W * px).roundToInt() to (SLIVER_H * px).roundToInt()
++        Shape.SMALL -> (SMALL_W * px).roundToInt() to (SMALL_H * px).roundToInt()
++        Shape.EXPAND -> (EXPAND_W * px).roundToInt() to (EXPAND_H * px).roundToInt()
++    }
++
++    private fun applyShape(
++        next: Shape,
++        manager: WindowManager,
++        lp: WindowManager.LayoutParams,
++        view: View,
++        area: SafeArea,
++        px: Float,
++    ) {
++        shape = next
++        val (w, h) = sizeOf(next, px)
++        val at = EdgeSnap.position(dock, w, h, area, (10 * px).roundToInt())
++        lp.width = w
++        lp.height = h
++        lp.x = at.x
++        lp.y = at.y
++        try {
++            manager.updateViewLayout(view, lp)
++        } catch (_: Exception) {
++        }
++        view.background = if (next == Shape.SLIVER) sliverBackground(px) else cardBackground(px)
++        // INVISIBLE, not GONE: a GONE SurfaceView destroys its surface, and the display would
++        // have to be re-attached every time the window parks.
++        content?.visibility = if (next == Shape.SLIVER) View.INVISIBLE else View.VISIBLE
++        // 小窗 carries what a glance needs; 展开 adds the rest of 第十二节's keys.
++        backKey?.visibility = if (next == Shape.EXPAND) View.VISIBLE else View.GONE
++        volumeKey?.visibility = if (next == Shape.EXPAND) View.VISIBLE else View.GONE
++        eyeKey?.visibility = View.VISIBLE
++        closeKey?.visibility = View.VISIBLE
++        zoomOutKey?.visibility = if (next == Shape.EXPAND) View.VISIBLE else View.GONE
++        zoomInKey?.visibility = if (next == Shape.EXPAND) View.VISIBLE else View.GONE
++        zoomResetKey?.visibility = if (next == Shape.EXPAND) View.VISIBLE else View.GONE
++        transferKey?.visibility = View.VISIBLE
++        hint?.visibility = if (next == Shape.EXPAND) View.VISIBLE else View.GONE
++        if (volumeRow != null && next != Shape.EXPAND) volumeRow?.visibility = View.GONE
++        applyZoom()
++        applyLive()
++    }
++
++    private fun applyZoom() {
++        picture?.apply { scaleX = zoom; scaleY = zoom }
++        fallback?.apply { scaleX = zoom; scaleY = zoom }
++        zoomOutKey?.alpha = if (zoom <= ZOOMS.first()) 0.35f else 1f
++        zoomInKey?.alpha = if (zoom >= ZOOMS.last()) 0.35f else 1f
++        zoomResetKey?.alpha = if (abs(zoom - 1.0f) < 0.001f) 0.35f else 1f
++    }
++
++    private fun stepZoom(direction: Int) {
++        val index = ZOOMS.indexOfFirst { it >= zoom - 0.001f }.let { if (it < 0) ZOOMS.size - 1 else it }
++        val next = (index + direction).coerceIn(0, ZOOMS.size - 1)
++        if (ZOOMS[next] == zoom) return
++        zoom = ZOOMS[next]
++        applyZoom()
++        val app = context ?: return
++        app.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putFloat(KEY_ZOOM, zoom).apply()
++    }
++
++    private fun resetZoom() {
++        if (abs(zoom - 1.0f) < 0.001f) return
++        zoom = 1.0f
++        applyZoom()
++        context?.getSharedPreferences(PREFS, Context.MODE_PRIVATE)?.edit()?.putFloat(KEY_ZOOM, zoom)?.apply()
++    }
++
++    // Chrome
++
++    private fun roundKey(app: Context, glyph: String, px: Float, size: Float, onTap: () -> Unit): FrameLayout {
++        val touch = (44 * px).roundToInt()
++        val visible = (size * px).roundToInt()
++        val holder = FrameLayout(app).apply {
++            layoutParams = LinearLayout.LayoutParams(touch, touch)
++            isClickable = true
++            setOnClickListener { onTap() }
++        }
++        val circle = TextView(app).apply {
++            text = glyph
++            gravity = Gravity.CENTER
++            setTextColor(Color.WHITE)
++            textSize = 11f
++            typeface = Typeface.DEFAULT_BOLD
++            background = GradientDrawable().apply {
++                shape = GradientDrawable.OVAL
++                setColor(CHROME)
++                setStroke((1 * px).roundToInt(), 0x66FFFFFF)
++            }
++        }
++        holder.addView(circle, FrameLayout.LayoutParams(visible, visible, Gravity.CENTER))
++        return holder
++    }
++
++    private fun buildChrome(app: Context, box: FrameLayout, px: Float) {
++        val key = (28 * px).roundToInt()
++        val gap = (6 * px).roundToInt()
++        val edge = (8 * px).roundToInt()
++        // 第十二节: a 28 dp key, but never a touch area under 44 dp.
++        val touch = (44 * px).roundToInt()
++
++        val left = LinearLayout(app).apply { orientation = LinearLayout.HORIZONTAL }
++        val back = roundKey(app, "返", px, 28f) { requestBack() }
++        val volume = roundKey(app, "音", px, 28f) { toggleVolume() }
++        val eye = roundKey(app, "眼", px, 28f) { toggleEye() }
++        left.addView(back, LinearLayout.LayoutParams(touch, touch))
++        left.addView(volume, LinearLayout.LayoutParams(touch, touch).apply { leftMargin = gap })
++        left.addView(eye, LinearLayout.LayoutParams(touch, touch).apply { leftMargin = gap })
++        box.addView(left, FrameLayout.LayoutParams(-2, -2, Gravity.TOP or Gravity.START).apply {
++            setMargins(edge, edge, 0, 0)
++        })
++        backKey = back
++        volumeKey = volume
++        eyeKey = eye
++        topLeft = left
++
++        val close = roundKey(app, "×", px, 28f) { endTask() }
++        box.addView(close, FrameLayout.LayoutParams(-2, -2, Gravity.TOP or Gravity.END).apply {
++            setMargins(0, edge, edge, 0)
++        })
++        closeKey = close
++
++        val right = LinearLayout(app).apply { orientation = LinearLayout.HORIZONTAL }
++        val transfer = roundKey(app, "转", px, 28f) { transferToMain() }
++        val out = roundKey(app, "−", px, 28f) { stepZoom(-1) }
++        val into = roundKey(app, "＋", px, 28f) { stepZoom(1) }
++        val reset = roundKey(app, "↺", px, 28f) { resetZoom() }
++        right.addView(transfer, LinearLayout.LayoutParams(touch, touch))
++        right.addView(out, LinearLayout.LayoutParams(touch, touch).apply { leftMargin = gap })
++        right.addView(into, LinearLayout.LayoutParams(touch, touch).apply { leftMargin = gap })
++        right.addView(reset, LinearLayout.LayoutParams(touch, touch).apply { leftMargin = gap })
++        box.addView(right, FrameLayout.LayoutParams(-2, -2, Gravity.BOTTOM or Gravity.END).apply {
++            setMargins(0, 0, edge, edge)
++        })
++        transferKey = transfer
++        zoomOutKey = out
++        zoomInKey = into
++        zoomResetKey = reset
++        bottomRight = right
++
++        val caption = TextView(app).apply {
++            text = "在后台进行，可以继续用手机。点小画面可以放大看。"
++            setTextColor(0xB3FFFFFF.toInt())
++            textSize = 9f
++            maxLines = 2
++        }
++        box.addView(caption, FrameLayout.LayoutParams(-1, -2, Gravity.TOP).apply {
++            setMargins(edge, edge + key, edge, 0)
++        })
++        hint = caption
++
++        val row = LinearLayout(app).apply {
++            orientation = LinearLayout.HORIZONTAL
++            background = GradientDrawable().apply {
++                cornerRadius = 10 * px
++                setColor(CHROME)
++            }
++            visibility = View.GONE
++            setPadding(edge, 0, edge, 0)
++        }
++        val slider = SeekBar(app).apply {
++            max = 100
++            progress = currentVolumePercent(app)
++            layoutParams = LinearLayout.LayoutParams(0, -2, 1f)
++            setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
++                override fun onProgressChanged(bar: SeekBar, value: Int, fromUser: Boolean) {
++                    if (fromUser) setVolumePercent(app, value)
++                }
++
++                override fun onStartTrackingTouch(bar: SeekBar) {}
++
++                override fun onStopTrackingTouch(bar: SeekBar) {}
++            })
++        }
++        row.addView(slider)
++        box.addView(row, FrameLayout.LayoutParams((140 * px).roundToInt(), (44 * px).roundToInt(), Gravity.CENTER))
++        volumeRow = row
++    }
++
++    private fun currentVolumePercent(app: Context): Int = try {
++        val audio = app.getSystemService(Context.AUDIO_SERVICE) as? AudioManager
++        val max = audio?.getStreamMaxVolume(AudioManager.STREAM_MUSIC) ?: 0
++        val now = audio?.getStreamVolume(AudioManager.STREAM_MUSIC) ?: 0
++        if (max <= 0) 50 else (now * 100 / max).coerceIn(0, 100)
++    } catch (_: Exception) {
++        50
++    }
++
++    private fun setVolumePercent(app: Context, percent: Int) {
++        try {
++            val audio = app.getSystemService(Context.AUDIO_SERVICE) as? AudioManager ?: return
++            val max = audio.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
++            if (max <= 0) return
++            audio.setStreamVolume(AudioManager.STREAM_MUSIC, (percent * max / 100).coerceIn(0, max), 0)
++        } catch (_: Exception) {
++        }
++    }
++
++    private fun toggleVolume() {
++        val row = volumeRow ?: return
++        row.visibility = if (row.visibility == View.VISIBLE) View.GONE else View.VISIBLE
++    }
++
++    /** 眼睛: hide the picture, keep the display (and its task) running. */
++    private fun toggleEye() {
++        eyeHidden = !eyeHidden
++        applyLive()
++    }
++
++    /** 返: the app on the virtual screen steps back one level. */
++    private fun requestBack() {
++        onAction?.invoke("back")
++    }
++
++    /** 转: this screen's app goes to the phone itself, and the window steps aside. */
++    private fun transferToMain() {
++        onAction?.invoke("toMain")
++    }
++
++    /** ×: one tap ends the task, and the window goes with it (第十二 / 十七节). */
++    private fun endTask() {
++        onAction?.invoke("stop")
++        hide()
++    }
++
++    // Touch: dragging, parking, shapes, and the person's own fingers
++
++    @SuppressLint("ClickableViewAccessibility")
++    private fun attachTouch(
++        context: Context,
++        box: View,
++        inner: View,
++        manager: WindowManager,
++        lp: WindowManager.LayoutParams,
++        area: SafeArea,
++        px: Float,
++    ) {
++        val margin = (10 * px).roundToInt()
++        var startX = 0f
++        var startY = 0f
++        var fromX = 0
++        var fromY = 0
++        var lastX = 0f
++        var lastAt = 0L
++        var vx = 0f
++        var dragging = false
++        var downAt = 0L
++        var path = 0f
++
++        fun park() {
++            val flung = abs(vx) >= EdgeSnap.FLING_PX_PER_S
++            val nearEdge = lp.x <= EdgeSnap.minX(area, margin) + (12 * px).roundToInt() ||
++                lp.x >= EdgeSnap.maxX(area, lp.width, margin) - (12 * px).roundToInt()
++            if (!flung && !nearEdge) return
++            dock = EdgeSnap.dockFor(lp.x, lp.y, lp.width, lp.height, area, margin, vx)
++            context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
++                .putString(KEY_SIDE, if (dock.side == Side.LEFT) "l" else "r")
++                .putFloat(KEY_FRACTION, dock.yFraction)
++                .apply()
++            applyShape(Shape.SLIVER, manager, lp, box, area, px)
++        }
++
++        inner.setOnTouchListener { _, event ->
++            if (shape == Shape.SLIVER) {
++                // A tap on the sliver only brings the window back, never opens the app.
++                if (event.actionMasked == MotionEvent.ACTION_UP) {
++                    applyShape(Shape.SMALL, manager, lp, box, area, px)
++                }
++                return@setOnTouchListener true
++            }
++            when (event.actionMasked) {
++                MotionEvent.ACTION_DOWN -> {
++                    startX = event.rawX
++                    startY = event.rawY
++                    fromX = lp.x
++                    fromY = lp.y
++                    lastX = event.rawX
++                    lastAt = SystemClock.elapsedRealtime()
++                    downAt = lastAt
++                    path = 0f
++                    vx = 0f
++                    dragging = false
++                    true
++                }
++                MotionEvent.ACTION_MOVE -> {
++                    val dx = event.rawX - startX
++                    val dy = event.rawY - startY
++                    path += abs(event.rawX - lastX)
++                    if (!dragging && (abs(dx) > 6 * px || abs(dy) > 6 * px)) dragging = true
++                    if (dragging) {
++                        val now = SystemClock.elapsedRealtime()
++                        if (now > lastAt) vx = (event.rawX - lastX) * 1000f / (now - lastAt)
++                        lastX = event.rawX
++                        lastAt = now
++                        lp.x = (fromX + dx).roundToInt().coerceIn(
++                            EdgeSnap.minX(area, margin),
++                            EdgeSnap.maxX(area, lp.width, margin),
++                        )
++                        lp.y = (fromY + dy).roundToInt().coerceIn(
++                            EdgeSnap.minY(area, margin),
++                            EdgeSnap.maxY(area, lp.height, margin),
++                        )
++                        try {
++                            manager.updateViewLayout(box, lp)
++                        } catch (_: Exception) {
++                        }
++                    }
++                    true
++                }
++                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
++                    if (dragging) {
++                        park()
++                        return@setOnTouchListener true
++                    }
++                    val tapped = SystemClock.elapsedRealtime() - downAt < 400
++                    if (!tapped) return@setOnTouchListener true
++                    if (manualAllowed(context)) {
++                        // 允许手动操作: the finger acts on the virtual screen itself.
++                        val width = lp.width.toFloat()
++                        val height = lp.height.toFloat()
++                        val fx = ((event.rawX - lp.x) / width).coerceIn(0.0, 1.0)
++                        val fy = ((event.rawY - lp.y) / height).coerceIn(0.0, 1.0)
++                        onAction?.invoke("manual:${fmt(fx)},${fmt(fy)},tap")
++                    } else if (shape == Shape.SMALL) {
++                        applyShape(Shape.EXPAND, manager, lp, box, area, px)
++                    } else {
++                        openApp(context)
++                    }
++                    true
++                }
++                else -> false
++            }
++        }
++    }
++
++    private fun fmt(value: Double): String = String.format(java.util.Locale.US, "%.3f", value)
++
 +    private fun cardBackground(px: Float) = GradientDrawable().apply {
 +        cornerRadius = 16 * px
 +        setColor(Color.rgb(10, 14, 24))
-+        setStroke((1.5f * px).roundToInt(), Color.rgb(38, 46, 66))
++        setStroke((2 * px).roundToInt(), GREEN)
 +    }
 +
 +    private fun sliverBackground(px: Float) = GradientDrawable().apply {
 +        cornerRadius = 6 * px
-+        setColor(Color.argb(200, 60, 72, 100))
++        setColor(0xCC34D399.toInt())
 +    }
 +
++    /** The picture itself: the app's own page for this screen, not a dialog. */
 +    private fun openApp(context: Context) {
-+        hide()
 +        onAction?.invoke("open")
 +        try {
 +            context.startActivity(
@@ -2011,10 +3184,10 @@ index 0000000..71d30c5
 +}
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenPlugin.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenPlugin.kt
 new file mode 100644
-index 0000000..0bbe16d
+index 0000000..d8a4a84
 --- /dev/null
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenPlugin.kt
-@@ -0,0 +1,60 @@
+@@ -0,0 +1,77 @@
 +package io.github.ccch1mneyyy.dsh_app.phone.vscreen
 +
 +import android.content.Context
@@ -2025,8 +3198,11 @@ index 0000000..0bbe16d
 +/**
 + * 虚拟屏 悬浮窗 的通道。
 + *
-+ *   dsh/virtual-screen  show -> bool · hide · frame { bytes } -> bool
-+ *   dsh/virtual-screen  action "open"（点了窗口，回到 App）
++ *   dsh/virtual-screen  show { taskId } -> bool · hide · frame { bytes } -> bool
++ *   dsh/virtual-screen  wantsFrames -> bool
++ *   dsh/virtual-screen  action：窗口自己不动手的那几件事，交给 App 做
++ *                      open | stop | back | toMain | manual:<x>,<y>,tap
++ *   dsh/virtual-screen  ball { on } -> bool：主屏上的吸附式悬浮球（转进虚拟屏）
 + */
 +class VirtualScreenPlugin : FlutterPlugin, MethodChannel.MethodCallHandler {
 +    private var channel: MethodChannel? = null
@@ -2038,11 +3214,14 @@ index 0000000..0bbe16d
 +        ch.setMethodCallHandler(this)
 +        channel = ch
 +        VirtualScreenOverlay.onAction = { action -> ch.invokeMethod("action", action) }
++        TransferBall.onAction = { action -> ch.invokeMethod("action", action) }
 +    }
 +
 +    override fun onDetachedFromEngine(binding: FlutterPlugin.FlutterPluginBinding) {
 +        VirtualScreenOverlay.onAction = null
++        TransferBall.onAction = null
 +        VirtualScreenOverlay.hide()
++        TransferBall.hide()
 +        channel?.setMethodCallHandler(null)
 +        channel = null
 +        context = null
@@ -2056,7 +3235,8 @@ index 0000000..0bbe16d
 +                    result.success(false)
 +                    return
 +                }
-+                result.success(VirtualScreenOverlay.show(app))
++                val taskId = (call.argument<Number>("taskId"))?.toLong() ?: 0L
++                result.success(VirtualScreenOverlay.show(app, taskId))
 +            }
 +            "hide" -> {
 +                VirtualScreenOverlay.hide()
@@ -2067,6 +3247,16 @@ index 0000000..0bbe16d
 +                result.success(bytes != null && VirtualScreenOverlay.pushFrame(bytes))
 +            }
 +            "wantsFrames" -> result.success(VirtualScreenOverlay.wantsFrames())
++            "ball" -> {
++                if (app == null) {
++                    result.success(false)
++                    return
++                }
++                result.success(if (call.argument<Boolean>("on") == true) TransferBall.show(app) else {
++                    TransferBall.hide()
++                    true
++                })
++            }
 +            else -> result.notImplemented()
 +        }
 +    }
@@ -2793,6 +3983,22 @@ index f4c452d..66c0db1 100644
      <string name="pet_window_title">DSH pet</string>
      <string name="pet_label">Pet</string>
      <string name="pet_open_channel">Open from pet</string>
+diff --git a/app/android/app/src/main/res/xml/phone_accessibility_service.xml b/app/android/app/src/main/res/xml/phone_accessibility_service.xml
+index 1617f97..72f31ad 100644
+--- a/app/android/app/src/main/res/xml/phone_accessibility_service.xml
++++ b/app/android/app/src/main/res/xml/phone_accessibility_service.xml
+@@ -8,9 +8,10 @@
+ <accessibility-service xmlns:android="http://schemas.android.com/apk/res/android"
+     android:accessibilityEventTypes="typeWindowStateChanged|typeWindowContentChanged|typeWindowsChanged|typeViewTextChanged|typeViewScrolled"
+     android:accessibilityFeedbackType="feedbackGeneric"
+-    android:accessibilityFlags="flagReportViewIds|flagRetrieveInteractiveWindows|flagIncludeNotImportantViews"
++    android:accessibilityFlags="flagReportViewIds|flagRetrieveInteractiveWindows|flagIncludeNotImportantViews|flagRequestFilterKeyEvents"
+     android:canRetrieveWindowContent="true"
+     android:canPerformGestures="true"
++    android:canRequestFilterKeyEvents="true"
+     android:canTakeScreenshot="true"
+     android:notificationTimeout="100"
+     android:description="@string/phone_a11y_description"
 diff --git a/app/android/app/src/main/res/xml/shortcuts.xml b/app/android/app/src/main/res/xml/shortcuts.xml
 index 3540cb2..8a4282e 100644
 --- a/app/android/app/src/main/res/xml/shortcuts.xml
@@ -75884,7 +77090,7 @@ index d0e32a5..73484ed 100644
    final String text;
  
 diff --git a/app/lib/phone/phone_channel.dart b/app/lib/phone/phone_channel.dart
-index 61789e5..1efa53b 100644
+index 61789e5..fc79da8 100644
 --- a/app/lib/phone/phone_channel.dart
 +++ b/app/lib/phone/phone_channel.dart
 @@ -847,6 +847,36 @@ class PhoneResult {
@@ -75924,7 +77130,7 @@ index 61789e5..1efa53b 100644
  /// Reply of `testScreen`: the main screen read once.
  class ScreenTestResult {
    const ScreenTestResult({required this.ok, this.text, this.reason});
-@@ -1355,6 +1385,54 @@ class PhoneChannel {
+@@ -1355,6 +1385,67 @@ class PhoneChannel {
      return controller.stream.map(PhonePreviewFrame.parse);
    }
  
@@ -75958,6 +77164,19 @@ index 61789e5..1efa53b 100644
 +    }
 +  }
 +
++  /// 虚拟屏悬浮窗's 返回: the app on that screen steps back one level. Native takes the
++  /// observation the key needs; nothing about the gesture is invented here.
++  Future<PhoneGestureResult> previewBack({required int taskId}) async {
++    try {
++      final map = await _methods.invokeMapMethod<Object?, Object?>('previewBack', {'taskId': taskId});
++      return map == null ? PhoneGestureResult(false, phoneNotReadyReason) : PhoneGestureResult.fromMap(map);
++    } on MissingPluginException {
++      return PhoneGestureResult(false, phoneNotReadyReason);
++    } on PlatformException catch (e) {
++      return PhoneGestureResult(false, e.message ?? e.code);
++    }
++  }
++
 +  /// 任务迁移: [toMain] hands the app on this virtual screen back to the phone; otherwise the
 +  /// phone's own foreground app moves onto this virtual screen. Native picks the task itself.
 +  Future<PhoneHandOverResult> handOverTask({required int taskId, required bool toMain}) async {
@@ -75981,10 +77200,10 @@ index 61789e5..1efa53b 100644
    Future<PhoneSkillReply> openSkillDraft(PhoneSkillCandidate candidate, {required bool confirmed}) =>
 diff --git a/app/lib/phone/virtual_screen_window.dart b/app/lib/phone/virtual_screen_window.dart
 new file mode 100644
-index 0000000..b8da669
+index 0000000..107a45d
 --- /dev/null
 +++ b/app/lib/phone/virtual_screen_window.dart
-@@ -0,0 +1,99 @@
+@@ -0,0 +1,109 @@
 +import 'dart:async';
 +
 +import 'package:flutter/services.dart';
@@ -76016,7 +77235,7 @@ index 0000000..b8da669
 +  Future<bool> open(int taskId, {int fps = 6}) async {
 +    await close();
 +    _fps = fps.clamp(1, 15);
-+    final shown = await _native.invokeMethod<bool>('show') ?? false;
++    final shown = await _native.invokeMethod<bool>('show', {'taskId': taskId}) ?? false;
 +    if (!shown) return false;
 +    _open = true;
 +    _taskId = taskId;
@@ -76037,6 +77256,16 @@ index 0000000..b8da669
 +      await _native.invokeMethod<void>('hide');
 +    } on Object {
 +      // 窗口可能已经不在了（点了它，回到 App）。
++    }
++  }
++
++  /// 主屏上的吸附式悬浮球（把主屏当前应用转进虚拟屏）。窗口与球互不依赖：球在 App 退到
++  /// 后台、且这块屏上有东西可转的时候出现。
++  Future<bool> setBall(bool on) async {
++    try {
++      return await _native.invokeMethod<bool>('ball', {'on': on}) ?? false;
++    } on Object {
++      return false;
 +    }
 +  }
 +
@@ -76122,10 +77351,10 @@ index c089d19..a15b64d 100644
  
 diff --git a/app/lib/state/virtual_screen_state.dart b/app/lib/state/virtual_screen_state.dart
 new file mode 100644
-index 0000000..02c78ab
+index 0000000..97aa324
 --- /dev/null
 +++ b/app/lib/state/virtual_screen_state.dart
-@@ -0,0 +1,207 @@
+@@ -0,0 +1,230 @@
 +import 'dart:async';
 +
 +import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -76143,6 +77372,8 @@ index 0000000..02c78ab
 +    this.target = VirtualScreenTarget.virtual,
 +    // 悬浮屏常开：后台任务一起来就摆出来，关了也记得住（下次不再自己弹）。
 +    this.window = true,
++    // 允许手动操作：关着时画面只读（防误触打断 AI），开着时手指直接作用于虚拟屏。
++    this.manual = false,
 +  });
 +
 +  final int fps;
@@ -76155,13 +77386,22 @@ index 0000000..02c78ab
 +  /// 悬浮屏开关：开着就记住，重开 App 自动恢复；后台任务起来时也会自己弹出来。
 +  final bool window;
 +
-+  VirtualScreenSettings copyWith({int? fps, int? quality, VirtualScreenTarget? target, bool? window}) =>
-+      VirtualScreenSettings(
-+        fps: fps ?? this.fps,
-+        quality: quality ?? this.quality,
-+        target: target ?? this.target,
-+        window: window ?? this.window,
-+      );
++  /// 允许手动操作（默认关）：关 = 画面只读，开 = 点/长按/滑动直接落到虚拟屏里的应用上。
++  final bool manual;
++
++  VirtualScreenSettings copyWith({
++    int? fps,
++    int? quality,
++    VirtualScreenTarget? target,
++    bool? window,
++    bool? manual,
++  }) => VirtualScreenSettings(
++    fps: fps ?? this.fps,
++    quality: quality ?? this.quality,
++    target: target ?? this.target,
++    window: window ?? this.window,
++    manual: manual ?? this.manual,
++  );
 +}
 +
 +/// 助手动手的地方：虚拟屏（默认），还是人眼前的这块（特例）。
@@ -76175,6 +77415,7 @@ index 0000000..02c78ab
 +  static const _qualityKey = 'virtual_screen_quality';
 +  static const _targetKey = 'virtual_screen_target';
 +  static const _windowKey = 'virtual_screen_window';
++  static const _manualKey = 'virtual_screen_manual';
 +
 +  @override
 +  VirtualScreenSettings build() {
@@ -76194,6 +77435,7 @@ index 0000000..02c78ab
 +        quality: quality == null ? state.quality : quality.clamp(40, 100),
 +        target: VirtualScreenTarget.values.asNameMap()[target] ?? state.target,
 +        window: prefs.getBool(_windowKey) ?? state.window,
++        manual: prefs.getBool(_manualKey) ?? state.manual,
 +      );
 +    } catch (_) {}
 +  }
@@ -76224,6 +77466,13 @@ index 0000000..02c78ab
 +    if (on == state.window) return;
 +    state = state.copyWith(window: on);
 +    unawaited(_save(_windowKey, on));
++  }
++
++  /// 允许手动操作：悬浮窗（原生）直接读这条偏好，不用再过一遍通道。
++  void setManual(bool on) {
++    if (on == state.manual) return;
++    state = state.copyWith(manual: on);
++    unawaited(_save(_manualKey, on));
 +  }
 +
 +  Future<void> _save(String key, Object value) async {
@@ -76310,6 +77559,9 @@ index 0000000..02c78ab
 +    }
 +  }
 +
++  /// 主屏上的吸附式悬浮球：窗口在、App 不在前台时出现。
++  Future<bool> setBall(bool on) => _frames.setBall(on);
++
 +  Future<void> close() async {
 +    if (!state.open) return;
 +    state = const VirtualWindowState();
@@ -76334,7 +77586,7 @@ index 0000000..02c78ab
 +  return null;
 +}
 diff --git a/app/lib/ui/chat/chat_screen.dart b/app/lib/ui/chat/chat_screen.dart
-index 46d2fd3..7c21f3d 100644
+index 46d2fd3..2ae0785 100644
 --- a/app/lib/ui/chat/chat_screen.dart
 +++ b/app/lib/ui/chat/chat_screen.dart
 @@ -28,6 +28,8 @@ import '../../state/streaming_pcm_state.dart';
@@ -76346,7 +77598,15 @@ index 46d2fd3..7c21f3d 100644
  import '../../state/agents_state.dart' show subagentParentProvider;
  import '../../state/attachments.dart';
  import '../../state/balance_state.dart';
-@@ -178,6 +180,14 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
+@@ -74,6 +76,7 @@ import '../pets/pet_perch.dart';
+ import '../pets/pet_stage.dart';
+ import '../plugins/native/composer_strip.dart' show ComposerStripSlot;
+ import '../plugins/native/native_composer_bar.dart';
++import '../phone/phone_task_card.dart';
+ import '../plugins/native/native_taps.dart' show NativeComposerHost, NativeComposerScope, runNativeAction;
+ import '../plugins/seats/plugin_overlay_layer.dart';
+ import '../safe_mode/engine_failure_card.dart';
+@@ -178,6 +181,14 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
  
    @override
    void didChangeAppLifecycleState(AppLifecycleState state) {
@@ -76361,7 +77621,7 @@ index 46d2fd3..7c21f3d 100644
      if (state == AppLifecycleState.resumed) _scheduleInteraction();
    }
  
-@@ -366,6 +376,32 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
+@@ -366,6 +377,32 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
      WidgetsBinding.instance.addObserver(this);
      _scheduleInteraction();
      ref.listenManual(currentSessionProvider, (_, _) => _scheduleInteraction());
@@ -76394,7 +77654,7 @@ index 46d2fd3..7c21f3d 100644
      _voice = VoiceInputController(
        input: _input,
        bridge: ref.read(voiceBridgeProvider),
-@@ -1474,18 +1510,50 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
+@@ -1474,18 +1511,50 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
      showUsageSheet(context, sessionId: sessionId, model: model);
    }
  
@@ -76447,7 +77707,7 @@ index 46d2fd3..7c21f3d 100644
      unawaited(
        openChatCall(
          context,
-@@ -1493,15 +1561,41 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
+@@ -1493,15 +1562,41 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
          session: () async {
            // Another host now: its conversation of the same id is not this call's.
            if (!mounted || ref.read(activeHostProvider) != host) return null;
@@ -76492,6 +77752,16 @@ index 46d2fd3..7c21f3d 100644
    }
  
    /// The stop key; what waits in the inbox goes right away (see
+@@ -2176,6 +2271,9 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
+                                       strip: false,
+                                     ),
+                                   ),
++                                // 任务视图 + 操作进度（第十节 8、9）: what the phone task is doing,
++                                // right in the conversation. Hidden when no task is live.
++                                if (!readOnly) const PhoneTaskCard(),
+                                 if (_preparedPhoneSkill case final prepared?)
+                                   Card(
+                                     child: Padding(
 diff --git a/app/lib/ui/chat/media/media_format.dart b/app/lib/ui/chat/media/media_format.dart
 index 2a34ba3..f146fdc 100644
 --- a/app/lib/ui/chat/media/media_format.dart
@@ -76884,7 +78154,7 @@ index 173f148..b9863c1 100644
 +  _ => '任务迁移没成功，应用还在原处。',
 +};
 diff --git a/app/lib/ui/phone/dnd_mode_page.dart b/app/lib/ui/phone/dnd_mode_page.dart
-index 3a23e52..7da91f2 100644
+index 3a23e52..dfda27b 100644
 --- a/app/lib/ui/phone/dnd_mode_page.dart
 +++ b/app/lib/ui/phone/dnd_mode_page.dart
 @@ -16,8 +16,10 @@ import '../common/row_marks.dart';
@@ -76927,16 +78197,17 @@ index 3a23e52..7da91f2 100644
      } finally {
        _previewOpen = false;
      }
-@@ -226,6 +223,8 @@ class _PhoneDndPageState extends ConsumerState<PhoneDndPage> {
+@@ -226,6 +223,9 @@ class _PhoneDndPageState extends ConsumerState<PhoneDndPage> {
      final hasSlotMetadata = _hasSlotMetadata(status);
      final previewTasks = _previewTasks(status);
      final using = bg.effectiveMode;
 +    final windowOn = ref.watch(virtualScreenSettingsProvider.select((s) => s.window));
 +    final target = ref.watch(virtualScreenSettingsProvider.select((s) => s.target));
++    final manualOn = ref.watch(virtualScreenSettingsProvider.select((s) => s.manual));
      final waiting = using == PhonePrivilegedMode.root && bg.root.starting;
      final open = _open ?? (bg.effectiveReady ? PhonePrivilegedMode.off : using);
      final choices = <Widget>[
-@@ -290,6 +289,61 @@ class _PhoneDndPageState extends ConsumerState<PhoneDndPage> {
+@@ -290,6 +290,76 @@ class _PhoneDndPageState extends ConsumerState<PhoneDndPage> {
                                unawaited(_run(() async => PhoneResult(await _phone.setBackgroundPreview(enabled)))),
                    ),
                  ),
@@ -76965,6 +78236,21 @@ index 3a23e52..7da91f2 100644
 +                  ),
 +                ),
 +                if (windowOn) ...[
++                  // 允许手动操作: an independent switch, not implicit behaviour (第九节 1).
++                  // 关（默认）：画面只读，手指不生效，免得误触打断 AI；开：画面上点/长按/滑动
++                  // 直接作用于虚拟屏里的应用，不是先开预览弹窗再点。
++                  ListPageRow(
++                    key: const ValueKey('phone-virtual-manual'),
++                    leading: Icon(manualOn ? AppIcons.phoneControl : AppIcons.radioOff),
++                    title: '允许手动操作',
++                    subtitle: '关：画面只读（防误触）；开：在悬浮窗画面上点、长按、滑动直接作用于虚拟屏里的应用',
++                    subtitleMaxLines: 3,
++                    trailing: Switch(
++                      value: manualOn,
++                      onChanged: (on) =>
++                          ref.read(virtualScreenSettingsProvider.notifier).setManual(on),
++                    ),
++                  ),
 +                  ListPageRow(
 +                    leading: const SizedBox(),
 +                    title: appL10n.phoneVirtualFpsTitle,
@@ -76998,12 +78284,220 @@ index 3a23e52..7da91f2 100644
                  if (bg.previewEnabled)
                    for (final candidate in previewTasks)
                      ListPageRow(
+diff --git a/app/lib/ui/phone/phone_task_card.dart b/app/lib/ui/phone/phone_task_card.dart
+new file mode 100644
+index 0000000..ea37963
+--- /dev/null
++++ b/app/lib/ui/phone/phone_task_card.dart
+@@ -0,0 +1,200 @@
++import 'dart:async';
++
++import 'package:flutter/material.dart';
++import 'package:flutter_riverpod/flutter_riverpod.dart';
++
++import '../../phone/phone_channel.dart';
++import '../../state/phone_state.dart';
++
++/// 任务视图 + 操作进度（第十节 8、9）: one 「帮我做某事」 is a task, and the conversation says so.
++///
++/// The card shows what the task is about (目标), what it is doing right now (当前步骤, from the
++/// same action journal the phone control writes), and how long it has run (耗时). It can be
++/// paused, taken over (the task ends and the phone is the person's again) or ended. The steps
++/// come back into the chat as progress lines, with failures shown as failures.
++///
++/// 它读的就是手机操控自己的状态：悬浮窗、聊天、任务卡同一个来源，不另做一套。
++class PhoneTaskCard extends ConsumerStatefulWidget {
++  const PhoneTaskCard({super.key});
++
++  @override
++  ConsumerState<PhoneTaskCard> createState() => _PhoneTaskCardState();
++}
++
++class _PhoneTaskCardState extends ConsumerState<PhoneTaskCard> {
++  Timer? _ticker;
++  Timer? _poll;
++  DateTime? _startedAt;
++  bool _busy = false;
++
++  @override
++  void initState() {
++    super.initState();
++    _ticker = Timer.periodic(const Duration(seconds: 1), (_) {
++      if (mounted) setState(() {});
++    });
++    _poll = Timer.periodic(const Duration(seconds: 4), (_) {
++      if (!mounted) return;
++      if (ref.read(phoneProvider).status.task.active) {
++        unawaited(ref.read(phoneProvider.notifier).refreshLog());
++      }
++    });
++  }
++
++  @override
++  void dispose() {
++    _ticker?.cancel();
++    _poll?.cancel();
++    super.dispose();
++  }
++
++  Future<void> _run(Future<bool> Function() action) async {
++    if (_busy) return;
++    setState(() => _busy = true);
++    try {
++      await action();
++    } finally {
++      if (mounted) setState(() => _busy = false);
++    }
++  }
++
++  void _showTrace(List<PhoneLogEntry> log) {
++    showModalBottomSheet<void>(
++      context: context,
++      showDragHandle: true,
++      builder: (context) => SafeArea(
++        child: ListView(
++          padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
++          children: [
++            Text('完整过程', style: Theme.of(context).textTheme.titleMedium),
++            const SizedBox(height: 8),
++            if (log.isEmpty) const Text('还没有记录到步骤。'),
++            for (final entry in log.reversed)
++              Padding(
++                padding: const EdgeInsets.symmetric(vertical: 6),
++                child: Row(
++                  crossAxisAlignment: CrossAxisAlignment.start,
++                  children: [
++                    Text(_clock(entry.time), style: Theme.of(context).textTheme.bodySmall),
++                    const SizedBox(width: 10),
++                    Expanded(child: Text(_line(entry))),
++                  ],
++                ),
++              ),
++          ],
++        ),
++      ),
++    );
++  }
++
++  @override
++  Widget build(BuildContext context) {
++    final state = ref.watch(phoneProvider);
++    final task = state.status.task;
++    if (!task.active) {
++      _startedAt = null;
++      return const SizedBox.shrink();
++    }
++    _startedAt ??= DateTime.now();
++    final elapsed = DateTime.now().difference(_startedAt!);
++    final steps = state.log.take(3).toList();
++    final theme = Theme.of(context);
++    final current = steps.isEmpty ? '正在准备…' : _line(steps.first);
++    return Card(
++      key: const ValueKey('phone-task-card'),
++      margin: const EdgeInsets.fromLTRB(12, 6, 12, 6),
++      child: Padding(
++        padding: const EdgeInsets.fromLTRB(12, 10, 12, 8),
++        child: Column(
++          crossAxisAlignment: CrossAxisAlignment.start,
++          mainAxisSize: MainAxisSize.min,
++          children: [
++            Row(
++              children: [
++                Icon(Icons.touch_app_outlined, size: 16, color: theme.colorScheme.primary),
++                const SizedBox(width: 6),
++                Expanded(
++                  child: Text(
++                    task.app == null || task.app!.isEmpty ? '手机操控任务' : '正在操作 ${task.app}',
++                    style: theme.textTheme.titleSmall,
++                    maxLines: 1,
++                    overflow: TextOverflow.ellipsis,
++                  ),
++                ),
++                Text(_duration(elapsed), style: theme.textTheme.bodySmall),
++                if (task.paused) ...[
++                  const SizedBox(width: 6),
++                  Text('已暂停', style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.tertiary)),
++                ],
++              ],
++            ),
++            const SizedBox(height: 6),
++            Text('当前：$current', maxLines: 2, overflow: TextOverflow.ellipsis, style: theme.textTheme.bodyMedium),
++            if (steps.length > 1)
++              for (final entry in steps.skip(1))
++                Padding(
++                  padding: const EdgeInsets.only(top: 2),
++                  child: Text(
++                    '· ${_line(entry)}',
++                    maxLines: 1,
++                    overflow: TextOverflow.ellipsis,
++                    style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant),
++                  ),
++                ),
++            const SizedBox(height: 4),
++            Row(
++              children: [
++                TextButton(
++                  key: const ValueKey('phone-task-trace'),
++                  onPressed: () => _showTrace(state.log),
++                  child: const Text('查看过程'),
++                ),
++                const Spacer(),
++                TextButton(
++                  key: const ValueKey('phone-task-pause'),
++                  onPressed: _busy
++                      ? null
++                      : () => _run(() async {
++                            final id = task.id;
++                            if (id == null) return false;
++                            final ok = await ref.read(phoneProvider.notifier).pauseTask(id, !task.paused);
++                            return ok;
++                          }),
++                  child: Text(task.paused ? '继续' : '暂停'),
++                ),
++                TextButton(
++                  key: const ValueKey('phone-task-takeover'),
++                  onPressed: _busy ? null : () => _run(() => ref.read(phoneProvider.notifier).stopTask()),
++                  child: const Text('接管'),
++                ),
++                TextButton(
++                  key: const ValueKey('phone-task-end'),
++                  onPressed: _busy ? null : () => _run(() => ref.read(phoneProvider.notifier).stopTask()),
++                  child: const Text('结束'),
++                ),
++              ],
++            ),
++          ],
++        ),
++      ),
++    );
++  }
++
++  /// One journal entry as the conversation would say it.
++  String _line(PhoneLogEntry entry) {
++    final summary = entry.summary.trim();
++    if (summary.isNotEmpty) return summary;
++    final tool = entry.tool.trim();
++    if (tool.isEmpty) return '操作了一步';
++    return tool;
++  }
++
++  static String _clock(DateTime? time) => time == null
++      ? ''
++      : '${time.hour.toString().padLeft(2, '0')}:${time.minute.toString().padLeft(2, '0')}';
++
++  static String _duration(Duration d) {
++    if (d.inSeconds < 60) return '${d.inSeconds} 秒';
++    return '${d.inMinutes} 分 ${d.inSeconds % 60} 秒';
++  }
++}
 diff --git a/app/lib/ui/phone/virtual_screen_host.dart b/app/lib/ui/phone/virtual_screen_host.dart
 new file mode 100644
-index 0000000..e0690b5
+index 0000000..97937d5
 --- /dev/null
 +++ b/app/lib/ui/phone/virtual_screen_host.dart
-@@ -0,0 +1,69 @@
+@@ -0,0 +1,204 @@
++import 'dart:async';
++
 +import 'package:flutter/material.dart';
 +import 'package:flutter/services.dart';
 +import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -77011,12 +78505,16 @@ index 0000000..e0690b5
 +import '../../state/phone_state.dart';
 +import '../../state/virtual_screen_state.dart';
 +import '../common/brief_notice.dart';
-+import 'background_preview.dart' show handOverNotice;
++import 'background_preview.dart' show PhoneHandOverDone, handOverNotice, phoneHandOverMessage;
 +import 'virtual_screen_page.dart';
 +
 +/// 悬浮窗按下之后回到 App：直接开可操作的虚拟屏整页（不是预览弹窗），手指点哪里就是哪里。
 +/// 也把 [virtualWindowProvider] 挂在界面上——它不在 home shell 里就没人恢复「悬浮屏」开关，
 +/// 也没人在后台任务起来时把窗口摆出来。画面上不占位置。
++///
++/// 窗口自己只画，需要通道的事都回来问：返（虚拟屏里退一层）、× （终止任务）、转（这块屏上的
++/// 应用搬到手机），以及「允许手动操作」打开后的点按。主屏上的那个吸附式悬浮球也由这里管：
++/// App 不在前台、而且虚拟屏上确实有东西可转的时候才出现。
 +class VirtualScreenHost extends ConsumerStatefulWidget {
 +  const VirtualScreenHost({super.key});
 +
@@ -77027,28 +78525,144 @@ index 0000000..e0690b5
 +class _VirtualScreenHostState extends ConsumerState<VirtualScreenHost> {
 +  static const MethodChannel _channel = MethodChannel('dsh/virtual-screen');
 +  bool _opening = false;
++  bool _acting = false;
++  bool _foreground = true;
++  AppLifecycleListener? _lifecycle;
++  String? _lastBall;
 +
 +  @override
 +  void initState() {
 +    super.initState();
-+    _channel.setMethodCallHandler(_onCall);
++    _foreground = WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed;
++    _lifecycle = AppLifecycleListener(onStateChange: (state) {
++      _foreground = state == AppLifecycleState.resumed;
++      _syncBall();
++    });
 +  }
 +
 +  @override
 +  void dispose() {
-+    _channel.setMethodCallHandler(null);
++    _lifecycle?.dispose();
 +    super.dispose();
 +  }
 +
++  @override
++  void didChangeDependencies() {
++    super.didChangeDependencies();
++    _channel.setMethodCallHandler(_onCall);
++  }
++
 +  Future<void> _onCall(MethodCall call) async {
-+    if (call.method != 'action' || call.arguments != 'open' || !mounted) return;
-+    await _openPage();
++    if (call.method != 'action' || call.arguments is! String || !mounted) return;
++    final action = call.arguments as String;
++    if (action == 'manual' || action.startsWith('manual:')) {
++      await _manual(action);
++      return;
++    }
++    if (action == 'open') {
++      await _openPage();
++    } else if (action == 'stop') {
++      // 单点 × = 直接终止任务（窗口一起收起，原生那边已经收了）。
++      await ref.read(phoneProvider.notifier).stopTask();
++      await ref.read(virtualWindowProvider.notifier).close();
++    } else if (action == 'back') {
++      await _back();
++    } else if (action == 'toMain') {
++      await _transfer(toMain: true);
++    } else if (action == 'toVirtual') {
++      // 主屏上的悬浮球：把主屏当前应用交给 AI。
++      await _transfer(toMain: false);
++    }
++  }
++
++  int? get _taskId =>
++      ref.read(virtualWindowProvider).taskId ?? firstBackgroundTaskId(ref.read(phoneProvider).status);
++
++  /// 返：虚拟屏里的应用后退一层。
++  Future<void> _back() async {
++    final taskId = _taskId;
++    if (taskId == null || _acting) return;
++    _acting = true;
++    try {
++      final result = await ref.read(phoneChannelProvider).previewBack(taskId: taskId);
++      if (mounted && !result.ok && result.message != null) {
++        showBriefNotice(context, result.message!);
++      }
++    } finally {
++      _acting = false;
++    }
++  }
++
++  /// 允许手动操作打开时，画面上的手指直接落到虚拟屏里（坐标是画面上的比例）。
++  Future<void> _manual(String action) async {
++    final taskId = _taskId;
++    if (taskId == null || _acting) return;
++    final parts = action.split(':');
++    if (parts.length != 2) return;
++    final values = parts[1].split(',');
++    if (values.length < 3) return;
++    final x = double.tryParse(values[0]);
++    final y = double.tryParse(values[1]);
++    if (x == null || y == null) return;
++    _acting = true;
++    try {
++      await ref.read(phoneChannelProvider).previewGesture(
++        taskId: taskId,
++        action: values[2],
++        x: x,
++        y: y,
++        durationMs: 400,
++      );
++    } finally {
++      _acting = false;
++    }
++  }
++
++  /// 转（两个方向同一个入口）：[toMain] 把虚拟屏上的应用搬到手机；否则把手机的应用交给 AI。
++  /// 迁完自动切换操作目标，并把视线放回该看的地方（转进虚拟屏 → 对话页 + 悬浮窗）。
++  Future<void> _transfer({required bool toMain}) async {
++    final taskId = _taskId;
++    if (taskId == null || _acting) return;
++    _acting = true;
++    try {
++      final result = await ref.read(phoneChannelProvider).handOverTask(taskId: taskId, toMain: toMain);
++      if (!mounted) return;
++      if (!result.ok) {
++        showBriefNotice(context, phoneHandOverMessage(result.reason));
++        return;
++      }
++      final window = ref.read(virtualWindowProvider.notifier);
++      if (toMain) {
++        await window.close();
++        ref.read(virtualScreenSettingsProvider.notifier).setTarget(VirtualScreenTarget.main);
++      } else {
++        ref.read(virtualScreenSettingsProvider.notifier).setTarget(VirtualScreenTarget.virtual);
++      }
++      unawaited(ref.read(phoneProvider.notifier).refreshStatus());
++      showBriefNotice(context, handOverNotice(PhoneHandOverDone(toMain: toMain, fallback: result.fallback)));
++      if (!toMain) {
++        // 主屏回到对话页，悬浮窗自己弹出来（第十五节）。
++        _bringAppForward();
++        final next = firstBackgroundTaskId(ref.read(phoneProvider).status);
++        if (next != null) await window.open(next);
++      }
++    } finally {
++      _acting = false;
++    }
++  }
++
++  void _bringAppForward() {
++    try {
++      const MethodChannel('dsh/app').invokeMethod<void>('bringToFront');
++    } on Object {
++      // 没有这个通道（测试或别的宿主）就当已经在前面了。
++    }
 +  }
 +
 +  Future<void> _openPage() async {
 +    if (_opening || !mounted) return;
 +    final window = ref.read(virtualWindowProvider.notifier);
-+    final taskId = ref.read(virtualWindowProvider).taskId ?? firstBackgroundTaskId(ref.read(phoneProvider).status);
++    final taskId = _taskId;
 +    if (taskId == null) return;
 +    _opening = true;
 +    // 点了窗口，原生那边已经把它收起来；这里的状态跟着归零，页面关掉后再摆回去。
@@ -77067,9 +78681,22 @@ index 0000000..e0690b5
 +    }
 +  }
 +
++  /// 主屏的「转」：有可迁移应用（这块后台屏上确实开着东西）而且 App 不在前台时才出现。
++  void _syncBall() {
++    final open = ref.read(virtualWindowProvider).open;
++    final want = open && !_foreground;
++    final key = want ? 'on' : 'off';
++    if (_lastBall == key) return;
++    _lastBall = key;
++    unawaited(ref.read(virtualWindowProvider.notifier).setBall(want));
++  }
++
 +  @override
 +  Widget build(BuildContext context) {
 +    ref.watch(virtualWindowProvider);
++    WidgetsBinding.instance.addPostFrameCallback((_) {
++      if (mounted) _syncBall();
++    });
 +    return const SizedBox.shrink();
 +  }
 +}
@@ -77630,10 +79257,10 @@ index 9a236c7..0809e69 100644
                        const ForumLinkHost(),
                        // DS Bot: keeps its feed and notifications alive with the shell.
 diff --git a/app/lib/ui/shell/system_entry_host.dart b/app/lib/ui/shell/system_entry_host.dart
-index 172e773..ef2657a 100644
+index 172e773..c3885a6 100644
 --- a/app/lib/ui/shell/system_entry_host.dart
 +++ b/app/lib/ui/shell/system_entry_host.dart
-@@ -37,6 +37,8 @@ import '../../state/compose_inbox.dart';
+@@ -37,9 +37,13 @@ import '../../state/compose_inbox.dart';
  import '../../state/draft_store.dart';
  import '../../state/hosts_state.dart';
  import '../../state/sessions_state.dart';
@@ -77642,29 +79269,53 @@ index 172e773..ef2657a 100644
  import '../common/discard_guard.dart';
  import '../tavern/tavern_deepseek_import.dart';
  import '../tavern/tavern_intake.dart';
-@@ -140,6 +142,25 @@ class _SystemEntryHostState extends ConsumerState<SystemEntryHost> {
++import '../speech/voice_call_page.dart';
++import '../chat/media/media_format.dart';
+ 
+ /// Draws nothing. Put it once in the home shell's stack, next to [LinkHost].
+ class SystemEntryHost extends ConsumerStatefulWidget {
+@@ -140,6 +144,44 @@ class _SystemEntryHostState extends ConsumerState<SystemEntryHost> {
  
    Future<void> _onEntry(LauncherEntry entry) async {
      switch (entry) {
 +      case NewChatEntry(call: true):
-+        // 语音通话 from the AI key: the conversation is opened, then marked. The conversation
-+        // itself takes the mark and starts the call — asking from here could be answered by
-+        // whatever screen happened to be up, or by none (a chat, no call).
++        // 语音通话 from the AI key: the call page is the first thing shown — no chat page
++        // underneath, no flash of one. The session is resolved here (current one, or a fresh
++        // one when 开新对话 is set) and the phrase is said once the page is up.
 +        diagWake('shortcut-call: entry reached Dart');
-+        // The conversation page has to be up *before* the mark is set: taking it opens the call
-+        // on whatever is on top, and the pop back to the chat that follows would then pop the
-+        // call too. So: show the chat, then mark. On a cold start that same pop is what puts a
-+        // conversation page there at all — without it the mark had nobody to take it.
-+        if (!await _showChat() || !mounted) {
-+          diagWake('shortcut-call: stayed, no call');
++        await _untilResumed();
++        if (!mounted) return;
++        final freshCall = ref.read(wakeSettingsProvider).freshChat;
++        String? id = ref.read(currentSessionProvider);
++        if (freshCall || id == null) {
++          try {
++            id = await ref.read(sessionsProvider.notifier).create();
++            ref.read(currentSessionProvider.notifier).select(id);
++          } on Object {
++            id = ref.read(currentSessionProvider);
++          }
++        }
++        if (!mounted || id == null) {
++          diagWake('shortcut-call: no session, stayed');
 +          return;
 +        }
-+        // 接着上次 vs 开新对话, the same switch the wake word obeys: opening a new chat here
-+        // made 「接着上次」 pointless for the AI key — it always landed on a fresh one.
-+        final fresh = ref.read(wakeSettingsProvider).freshChat;
-+        if (fresh) ref.read(composeInboxProvider.notifier).push(const ComposeRequest());
-+        ref.read(callOnOpenProvider.notifier).mark();
-+        diagWake('shortcut-call: chat shown (fresh=$fresh), marked');
++        final sessionId = id;
++        final title = chatTitleShown(ref.read(chatProvider(sessionId)).title.trim());
++        diagWake('shortcut-call: opening the call page (fresh=$freshCall)');
++        await openChatCall(
++          context,
++          title: title.isEmpty ? appL10n.commonNewChat : title,
++          session: () async => sessionId,
++        );
++        // Said after the page is up: the call must open whatever the send does.
++        final phrase = ref.read(wakeSettingsProvider).keyword;
++        if (phrase.trim().isNotEmpty) {
++          try {
++            await ref.read(chatProvider(sessionId).notifier).send(phrase.trim());
++          } on Object {
++            // The call is already open; the person can speak.
++          }
++        }
        case NewChatEntry(:final voice, :final text):
          // The microphone opens only for an app on screen; the shortcut's
          // intent can arrive a beat before Flutter hears it is resumed.
@@ -77906,7 +79557,7 @@ index 0000000..8a88271
 +}
 diff --git a/app/lib/voice/wake_settings.dart b/app/lib/voice/wake_settings.dart
 new file mode 100644
-index 0000000..07c3f88
+index 0000000..1ef92b1
 --- /dev/null
 +++ b/app/lib/voice/wake_settings.dart
 @@ -0,0 +1,106 @@
@@ -77929,8 +79580,8 @@ index 0000000..07c3f88
 +    this.freshChat = false,
 +  });
 +
-+  /// 小安小安: what the phone answers to until the person types another phrase.
-+  static const defaultKeyword = '小安小安';
++  /// 小志小志: what the phone answers to until the person types another phrase.
++  static const defaultKeyword = '小志小志';
 +
 +  /// 常驻监听：the microphone foreground service runs with the screen off.
 +  final bool enabled;
