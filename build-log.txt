@@ -1,7 +1,7 @@
 == resources ==
 /dev/root        72G   55G   18G  76% /
                total        used        free      shared  buff/cache   available
-Mem:            7931        6621         272          31        1382        1309
+Mem:            7931        5664         480          39        2139        2267
 == tail ==
 
 ==> 依赖: flutter pub get
@@ -72,10 +72,10 @@ To use the command line arguments, delete the l10n.yaml file in the Flutter proj
 ==> 运行时: 已存在 runtime/out/arm64-v8a
 
 ==> 打包: tooling/build-apk.sh -f arm64 --keep-daemon
-dsh-go 1.1.0 (11191428, 2026-11-19 14:28 UTC+8) · release · arm64
+dsh-go 1.1.0 (11191434, 2026-11-19 14:34 UTC+8) · release · arm64
 runtime verified: arm64 (arm64-v8a), schema 1, 5 files
 tawcroot: /home/runner/work/dsh-wake-ci/dsh-wake-ci/runtime/out-tawcroot
-→ flutter build apk --release --flavor arm64 --target-platform android-arm64 --build-name 1.1.0 --build-number 11191428 --dart-define=DSH_APP_VERSION=1.1.0+11191428
+→ flutter build apk --release --flavor arm64 --target-platform android-arm64 --build-name 1.1.0 --build-number 11191434 --dart-define=DSH_APP_VERSION=1.1.0+11191434
 Flutter assets will be downloaded from https://storage.googleapis.com. Make sure you trust this source!
 Running Gradle task 'assembleArm64Release'...                   
 WARNING: Your app uses the following plugins that apply Kotlin Gradle Plugin (KGP): flutter_webrtc
@@ -104,8 +104,30 @@ Installing Android SDK Platform 34 in /home/runner/dev/android-sdk/platforms/and
 Flutter assets will be downloaded from https://storage.googleapis.com. Make sure you trust this source!
 [=========                              ] 25%                                   
 Font asset "DshIcons.ttf" was tree-shaken, reducing it from 53796 to 49988 bytes (7.1% reduction). Tree-shaking can be disabled by providing the --no-tree-shake-icons flag when building your app.
-Font asset "MaterialIcons-Regular.otf" was tree-shaken, reducing it from 1645184 to 3924 bytes (99.8% reduction). Tree-shaking can be disabled by providing the --no-tree-shake-icons flag when building your app.
+Font asset "MaterialIcons-Regular.otf" was tree-shaken, reducing it from 1645184 to 4388 bytes (99.7% reduction). Tree-shaking can be disabled by providing the --no-tree-shake-icons flag when building your app.
 Note: Some input files use or override a deprecated API.
 Note: Recompile with -Xlint:deprecation for details.
 Note: Some input files use unchecked or unsafe operations.
 Note: Recompile with -Xlint:unchecked for details.
+e: file:///home/runner/work/dsh-wake-ci/dsh-wake-ci/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenOverlay.kt:665:68 Argument type mismatch: actual type is 'Double', but 'Float' was expected.
+e: file:///home/runner/work/dsh-wake-ci/dsh-wake-ci/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenOverlay.kt:665:73 Argument type mismatch: actual type is 'Double', but 'Float' was expected.
+e: file:///home/runner/work/dsh-wake-ci/dsh-wake-ci/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenOverlay.kt:666:69 Argument type mismatch: actual type is 'Double', but 'Float' was expected.
+e: file:///home/runner/work/dsh-wake-ci/dsh-wake-ci/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenOverlay.kt:666:74 Argument type mismatch: actual type is 'Double', but 'Float' was expected.
+e: file:///home/runner/work/dsh-wake-ci/dsh-wake-ci/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenOverlay.kt:667:20 Return type mismatch: expected 'Pair<Double, Double>', actual 'Pair<Float, Float>'.
+
+FAILURE: Build failed with an exception.
+
+* What went wrong:
+Execution failed for task ':app:compileArm64ReleaseKotlin'.
+> A failure occurred while executing org.jetbrains.kotlin.compilerRunner.btapi.BuildToolsApiCompilationWork
+   > Compilation error. See log for more details
+
+* Try:
+> Run with --stacktrace option to get the stack trace.
+> Run with --info or --debug option to get more log output.
+> Run with --scan to get full insights from a Build Scan (powered by Develocity).
+> Get more help at https://help.gradle.org.
+
+BUILD FAILED in 13m 5s
+Running Gradle task 'assembleArm64Release'...                     786.5s
+Gradle task assembleArm64Release failed with exit code 1
