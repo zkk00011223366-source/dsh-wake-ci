@@ -1,7 +1,7 @@
-From 5c60387fe33dc91d25b4dd5dc55f66d93304b0ab Mon Sep 17 00:00:00 2001
+From 28071b8dff25c302f38dfc6917889479a47ca6c6 Mon Sep 17 00:00:00 2001
 From: wake-ci <ci@local>
-Date: Thu, 19 Nov 2026 22:55:59 +0800
-Subject: [PATCH] private build: texture round final
+Date: Thu, 19 Nov 2026 23:28:37 +0800
+Subject: [PATCH] private build: texture round fixed
 
 ---
  .gitattributes                                |    3 +
@@ -16,7 +16,7 @@ Subject: [PATCH] private build: texture round final
  .../dsh_app/phone/PhoneBackGuard.kt           |  146 +
  .../dsh_app/phone/PhoneContracts.kt           |   21 +
  .../ccch1mneyyy/dsh_app/phone/PhoneControl.kt |   34 +-
- .../ccch1mneyyy/dsh_app/phone/PhoneCore.kt    |  134 +-
+ .../ccch1mneyyy/dsh_app/phone/PhoneCore.kt    |  139 +-
  .../ccch1mneyyy/dsh_app/phone/PhonePlugin.kt  |   93 +
  .../dsh_app/phone/PhoneTaskSessions.kt        |   11 +-
  .../ccch1mneyyy/dsh_app/phone/PhoneTasks.kt   |   11 +
@@ -102,7 +102,7 @@ Subject: [PATCH] private build: texture round final
  docs/wake-word.md                             |  107 +
  dsh-go-wake.patch                             | 2065 +++++++++++
  tooling/build-wake-apk.sh                     |   68 +
- 98 files changed, 12205 insertions(+), 2064 deletions(-)
+ 98 files changed, 12209 insertions(+), 2065 deletions(-)
  create mode 100644 .github/workflows/wake-apk.yml
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallForegroundService.kt
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallOverlay.kt
@@ -1340,7 +1340,7 @@ index 2fc7cd5..c6515a2 100644
      }
  
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneCore.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneCore.kt
-index 6c70185..0612726 100644
+index 6c70185..5784258 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneCore.kt
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneCore.kt
 @@ -1,5 +1,7 @@
@@ -1392,7 +1392,14 @@ index 6c70185..0612726 100644
  
      /**
       * The task's last hard refusal (密码框, 系统设置, 不碰名单), for the `handoff` that usually
-@@ -102,10 +124,19 @@ class PhoneCore(
+@@ -97,15 +119,26 @@ class PhoneCore(
+         internal val replayOutcomes: PhoneSkillOutcomes? = null,
+         internal val replayDriver: PhoneDriver? = null,
+         private val replayApp: PhoneAppIdentity? = null,
++        // 设置里的「AI 默认操作虚拟屏」开关：非内部类拿不到外层 env，只能由创建处传进来。
++        private val defaultBackground: Boolean = false,
+     ) {
+         // Only Sessions reads/writes acquisition under its registry lock; never a Core-wide grant.
          internal var borrowedMainForBackgroundOpen = false
          @Volatile internal var backgroundOpenConfirmed = false
          val knownApp: PhoneAppIdentity? get() = (launch?.target as? SystemTarget.Known)?.app?.identity ?: replayApp
@@ -1403,7 +1410,7 @@ index 6c70185..0612726 100644
 +        val opensInBackground: Boolean
 +            // 开关说了算：设置关着就留在主屏。只有"开关打开 + 目标应用身份确定"才进虚拟屏
 +            // （虚拟屏只迁得动一个确定的 app；身份读不出来时留主屏）。
-+            get() = args.bool("background") ?: (env.prefersBackground() && launch?.target is SystemTarget.Known)
++            get() = args.bool("background") ?: (defaultBackground && launch?.target is SystemTarget.Known)
 +
          // A MAIN observation has no trustworthy window UID. BG open only queries the
          // selected package on MAIN before moving it; its actual target is checked by T1a.
@@ -1413,7 +1420,7 @@ index 6c70185..0612726 100644
      }
  
      /** Only a first claimed native Selection reaches this path; public args never construct it. */
-@@ -119,7 +150,7 @@ class PhoneCore(
+@@ -119,7 +152,7 @@ class PhoneCore(
          val app = PhoneAppIdentity(selection.app.packageName, selection.app.uid)
          val originalDriver = if (screen == PhoneScreen.BACKGROUND) {
              env.existingReplayDriver(owner, app)?.takeIf { it.screen == PhoneScreen.BACKGROUND }
@@ -1422,7 +1429,7 @@ index 6c70185..0612726 100644
          } else null
          val key = PhoneSkillOutcomes.Key(selection.request.name, selection.request.revision, selection.bundle.routeSha256)
          if (outcomes.begin(selection.invocation, key) !in setOf(PhoneSkillOutcomes.Result.SAVED, PhoneSkillOutcomes.Result.UNCHANGED))
-@@ -140,7 +171,7 @@ class PhoneCore(
+@@ -140,7 +173,7 @@ class PhoneCore(
          if (!live()) return stop("原任务或路线已不可继续。") // l10n:keep replay result
          val screen = call.screens.single()
          val driver = if (screen == PhoneScreen.BACKGROUND) {
@@ -1431,7 +1438,7 @@ index 6c70185..0612726 100644
          } else when (val result = driverFor(screen, owner)) {
              is Either.Left -> return stop(result.value)
              is Either.Right -> result.value
-@@ -361,7 +392,7 @@ class PhoneCore(
+@@ -361,7 +394,7 @@ class PhoneCore(
              // MAIN already excludes other app holders. Resolve again after waiting for it,
              // keeping the originally selected package if its label or launcher has changed.
              val refreshMain = name == PhoneToolCatalog.INTENT ||
@@ -1440,7 +1447,7 @@ index 6c70185..0612726 100644
              val call = if (prepared != null && !refreshMain) prepared else when (
                  val result = prepare(name, a, owner, prepared?.requestedApp)
              ) {
-@@ -468,7 +499,7 @@ class PhoneCore(
+@@ -468,7 +501,7 @@ class PhoneCore(
                  if (env.isLocked()) return Either.Left(locked("open"))
                  if (url != null) {
                      // l10n:keep agent tool result
@@ -1449,7 +1456,16 @@ index 6c70185..0612726 100644
                      UrlPolicy.check(url)?.let {
                          return Either.Left(Out(it, error = true, summary = ui.get("phone_log_open_url", "打开链接"), decision = "refused:url")) // l10n:keep test default
                      }
-@@ -523,7 +554,12 @@ class PhoneCore(
+@@ -516,14 +549,20 @@ class PhoneCore(
+             }
+         }
+         if (!current(owner)) return Either.Left(stoppedOut(name))
+-        return Either.Right(PreparedCall(name, a, owner, screens, launch, requestedApp))
++        return Either.Right(PreparedCall(name, a, owner, screens, launch, requestedApp,
++            defaultBackground = env.prefersBackground()))
+     }
+ 
+     private fun open(call: PreparedCall, scope: SerialWorker.Scope, owner: PhoneTasks.Owner): Out {
          if (!current(owner)) return stoppedOut("open")
          val a = call.args
          val url = a.str("url")
@@ -1463,7 +1479,7 @@ index 6c70185..0612726 100644
          if (env.isLocked()) return locked("open")
          val plan = checkNotNull(call.launch)
          if (url != null) {
-@@ -543,6 +579,8 @@ class PhoneCore(
+@@ -543,6 +582,8 @@ class PhoneCore(
          // An explicit package is still subject to app rules even when its handler UID is unknown.
          val app = (plan.target as? SystemTarget.Known)?.app
              ?: checkNotNull(call.requestedApp)
@@ -1472,7 +1488,7 @@ index 6c70185..0612726 100644
          safety.checkOpen(app.packageName, app.label)?.let {
              return Out(it.message, error = true, app = app.label, summary = ui.get("phone_log_open_app", "打开 %1\$s", app.packageName), decision = "refused:${it.rule}") // l10n:keep test default
          }
-@@ -558,26 +596,29 @@ class PhoneCore(
+@@ -558,26 +599,29 @@ class PhoneCore(
              } catch (e: Throwable) { skillTrace.fail(ticket); throw e }
              return afterSystem(owner, scope, result, summary)
          }
@@ -1509,7 +1525,7 @@ index 6c70185..0612726 100644
          }
          val openRefusal = AtomicReference<SafetyGate.Verdict.Refuse?>(null)
          val ticket = skillTrace.beginOpen(owner, PhoneScreen.BACKGROUND)
-@@ -592,14 +633,14 @@ class PhoneCore(
+@@ -592,14 +636,14 @@ class PhoneCore(
          openRefusal.get()?.let { refused ->
              if (!current(owner)) return stoppedOut("open")
              return Out(refused.message, error = true, app = app.label,
@@ -1526,7 +1542,7 @@ index 6c70185..0612726 100644
      }
  
      /** The handler is a dispatch fact. Only the following read describes the actual foreground UI. */
-@@ -816,8 +857,45 @@ class PhoneCore(
+@@ -816,8 +860,45 @@ class PhoneCore(
          return Either.Right(d)
      }
  
@@ -1572,7 +1588,7 @@ index 6c70185..0612726 100644
      /** Admission uses the same argument coercion and routing as the actual tool body. */
      fun requiredScreens(name: String, args: Map<String, Any?>): Either<String, List<PhoneScreen>> {
          return requiredScreens(name, Args(args))
-@@ -826,9 +904,9 @@ class PhoneCore(
+@@ -826,9 +907,9 @@ class PhoneCore(
      private fun requiredScreens(name: String, a: Args): Either<String, List<PhoneScreen>> {
          return when (name) {
              PhoneToolCatalog.APPS, PhoneToolCatalog.NOTIFY, PhoneToolCatalog.CLIPBOARD -> Either.Right(emptyList())
@@ -1584,7 +1600,7 @@ index 6c70185..0612726 100644
              // Arbitrary system commands take the main/global unknown-app lease, without reading a screen.
              PhoneToolCatalog.INTENT, PhoneToolCatalog.ANDROID_SHELL -> Either.Right(listOf(PhoneScreen.MAIN))
              PhoneToolCatalog.HANDOFF -> Either.Right(if (lastScreen == PhoneScreen.BACKGROUND)
-@@ -852,7 +930,7 @@ class PhoneCore(
+@@ -852,7 +933,7 @@ class PhoneCore(
          if (id == null) return Either.Left("缺少 $parameterName（屏幕号，如 s7）。先调用 screen 拿到屏幕号。")
          return PhoneScreen.ofScreenId(id)?.let { Either.Right(it) }
              // l10n:keep agent tool result
@@ -1593,7 +1609,7 @@ index 6c70185..0612726 100644
      }
  
      private fun locked(summary: String) =
-@@ -871,21 +949,23 @@ class PhoneCore(
+@@ -871,21 +952,23 @@ class PhoneCore(
  
      private fun screen(a: Args, owner: PhoneTasks.Owner): Out {
          if (!current(owner)) return stoppedOut("screen")
@@ -1623,7 +1639,7 @@ index 6c70185..0612726 100644
          return Out(
              // l10n:keep agent tool result
              if (refused) "没有读取这个屏幕的内容。" else "",
-@@ -1362,6 +1442,7 @@ class PhoneCore(
+@@ -1362,6 +1445,7 @@ class PhoneCore(
          summary = summary, decision = "stopped")
  
      companion object {
@@ -1631,7 +1647,7 @@ index 6c70185..0612726 100644
          internal const val REPLAY = "replay"
          internal const val FOCUS_TEXT = "focus_text"
  
-@@ -1370,6 +1451,9 @@ class PhoneCore(
+@@ -1370,6 +1454,9 @@ class PhoneCore(
          const val PAUSE_WAIT_MS = 600_000L
          const val HANDOFF_MS = 600_000L
  
@@ -3400,7 +3416,7 @@ index 0000000..228b337
 +}
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenOverlay.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenOverlay.kt
 new file mode 100644
-index 0000000..d1ceea2
+index 0000000..eefc1b8
 --- /dev/null
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenOverlay.kt
 @@ -0,0 +1,1170 @@
@@ -3512,7 +3528,7 @@ index 0000000..d1ceea2
 +    private var wm: WindowManager? = null
 +    private var root: FrameLayout? = null
 +    private var content: FrameLayout? = null
-+    private var picture: SurfaceView? = null
++    private var picture: TextureView? = null
 +    private var fallback: ImageView? = null
 +    private var params: WindowManager.LayoutParams? = null
 +    private var context: Context? = null
@@ -3575,10 +3591,10 @@ index 0000000..d1ceea2
 +            // 第十节 4：小窗默认在左侧、高度 0.35；切换球在右侧 0.62，两者一开始就不打架。
 +            side = if (saved.getString(KEY_SIDE, "l") == "l") Side.LEFT else Side.RIGHT,
 +            yFraction = saved.getFloat(KEY_FRACTION, 0.35f),
-+            // 上一次这块虚拟屏的宽高比：屏的真实尺寸要等 surface 接上才知道，
-+            // 在那之前用上次的值，窗口不会一会儿大一会儿小、也不会和画面不匹配。
-+            savedAspect = saved.getFloat(KEY_ASPECT, 196f / 110f),
 +        )
++        // 上一次这块虚拟屏的宽高比：屏的真实尺寸要等 surface 接上才知道，
++        // 在那之前先用它，窗口不会一会儿大一会儿小。
++        savedAspect = saved.getFloat(KEY_ASPECT, 196f / 110f)
 +        zoom = saved.getFloat(KEY_ZOOM, 1.0f).coerceIn(ZOOMS.first(), ZOOMS.last())
 +        this.taskId = taskId
 +        iconFont = loadIconFont(app)
