@@ -1,7 +1,7 @@
-From ebcf13a7adf6eb3948712cd6d6e92017d298f668 Mon Sep 17 00:00:00 2001
-From: wake-ci <ci@local>
-Date: Thu, 19 Nov 2026 14:58:08 +0800
-Subject: [PATCH] private build: all current work
+From 18519f7879de44bfe78808aa859ae09a2d4ac1e2 Mon Sep 17 00:00:00 2001
+From: dsh private <private@local>
+Date: Thu, 19 Nov 2026 15:08:26 +0800
+Subject: [PATCH] private build: mika parity
 
 ---
  .gitattributes                                |    3 +
@@ -33,9 +33,9 @@ Subject: [PATCH] private build: all current work
  .../phone/background/PrivilegedDisplayCore.kt |  189 +-
  .../phone/background/PrivilegedProtocol.kt    |   22 +-
  .../dsh_app/phone/vscreen/TaskMover.kt        |   43 +
- .../dsh_app/phone/vscreen/TransferBall.kt     |  270 ++
- .../phone/vscreen/VirtualScreenOverlay.kt     |  871 +++++
- .../phone/vscreen/VirtualScreenPlugin.kt      |   83 +
+ .../dsh_app/phone/vscreen/TransferBall.kt     |  339 ++
+ .../phone/vscreen/VirtualScreenOverlay.kt     |  899 +++++
+ .../phone/vscreen/VirtualScreenPlugin.kt      |   82 +
  .../dsh_app/shortcuts/EntryActivity.kt        |    3 +
  .../dsh_app/shortcuts/ShortcutsPlugin.kt      |   13 +-
  .../dsh_app/wake/WakeBootReceiver.kt          |   29 +
@@ -75,8 +75,8 @@ Subject: [PATCH] private build: all current work
  app/lib/ui/chat/media/media_format.dart       |   16 +-
  app/lib/ui/phone/android_shell_page.dart      |   28 +
  app/lib/ui/phone/background_preview.dart      |  264 +-
- app/lib/ui/phone/dnd_mode_page.dart           |   99 +-
- app/lib/ui/phone/phone_task_card.dart         |  369 ++
+ app/lib/ui/phone/dnd_mode_page.dart           |  119 +-
+ app/lib/ui/phone/phone_task_card.dart         |  410 ++
  app/lib/ui/phone/virtual_screen_host.dart     |  218 ++
  app/lib/ui/phone/virtual_screen_page.dart     |  115 +
  app/lib/ui/phone/virtual_screen_surface.dart  |  286 ++
@@ -92,7 +92,7 @@ Subject: [PATCH] private build: all current work
  docs/wake-word.md                             |  107 +
  dsh-go-wake.patch                             | 2065 +++++++++++
  tooling/build-wake-apk.sh                     |   68 +
- 88 files changed, 11273 insertions(+), 1897 deletions(-)
+ 88 files changed, 11430 insertions(+), 1897 deletions(-)
  create mode 100644 .github/workflows/wake-apk.yml
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallForegroundService.kt
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallOverlay.kt
@@ -2302,15 +2302,16 @@ index 0000000..8ddabc9
 +}
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/TransferBall.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/TransferBall.kt
 new file mode 100644
-index 0000000..3b48fdc
+index 0000000..5fcf359
 --- /dev/null
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/TransferBall.kt
-@@ -0,0 +1,270 @@
+@@ -0,0 +1,339 @@
 +package io.github.ccch1mneyyy.dsh_app.phone.vscreen
 +
 +import android.annotation.SuppressLint
 +import android.content.Context
 +import android.content.Intent
++import android.content.pm.PackageManager
 +import android.graphics.Color
 +import android.graphics.PixelFormat
 +import android.graphics.drawable.GradientDrawable
@@ -2336,8 +2337,11 @@ index 0000000..3b48fdc
 + *
 + * It rests as a 12×56 dp sliver against an edge (`第十二节 3`), so nothing is covered. A tap opens
 + * it into a 40 dp round key; a tap on the key converts. Doing nothing for three seconds, or
-+ * touching outside, puts it back — never a drag it did not ask for. The app decides when it
-+ * belongs on screen at all (there has to be something worth moving).
++ * touching outside, puts it back — never a drag it did not ask for.
++ *
++ * 只在真的“有可迁移应用”时才出现（第十节 10）：桌面、本 App 自己在前面、或者真拿不到前台应用
++ * 时它不露头。问的是主屏无障碍那份前台包名——读不到（无障碍没连）就照常出现，让那一下点击自己
++ * 报出原因，而不是把功能藏起来。
 + */
 +object TransferBall {
 +    var onAction: ((String) -> Unit)? = null
@@ -2352,19 +2356,80 @@ index 0000000..3b48fdc
 +    /** §14: the ball folds back on its own after this long. */
 +    private const val OPEN_MS = 3_000L
 +
++    /** How often the ball re-checks that there is still something to hand over. */
++    private const val WATCH_MS = 2_000L
++
++    /** §12 3: 40% at rest, opaque under a finger. */
++    private const val REST_ALPHA = 0.4f
++
 +    private var wm: WindowManager? = null
 +    private var root: FrameLayout? = null
 +    private var label: TextView? = null
 +    private var params: WindowManager.LayoutParams? = null
 +    private var dock = Dock(side = Side.RIGHT, yFraction = 0.5f)
 +    private var open = false
++
++    /** The app asked for the ball; it stays off screen whenever nothing is handable. */
++    private var wanted = false
 +    private val main = Handler(Looper.getMainLooper())
 +    private val fold = Runnable { setOpen(false) }
++    private val watch = object : Runnable {
++        override fun run() {
++            if (!wanted) return
++            val context = appContext ?: return
++            val can = hasSomethingToMove(context)
++            if (can && root == null) {
++                if (!show(context)) {
++                    main.postDelayed(this, WATCH_MS)
++                    return
++                }
++            } else if (!can && root != null) {
++                hide()
++            }
++            main.postDelayed(this, WATCH_MS)
++        }
++    }
++
++    private var appContext: Context? = null
 +
 +    val shown: Boolean get() = root != null
 +
++    /**
++     * 主屏上有没有值得搬的东西：桌面、本 App 自己在前面时没有。读不到前台应用（无障碍没连）就
++     * 当作有——让那一下点击自己报出原因，比把功能藏起来好。
++     */
++    private fun hasSomethingToMove(context: Context): Boolean {
++        val pkg = mainForegroundPackage()?.takeIf { it.isNotEmpty() } ?: return true
++        if (pkg == context.packageName) return false
++        val home = runCatching {
++            context.packageManager.resolveActivity(
++                Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME),
++                PackageManager.MATCH_DEFAULT_ONLY,
++            )?.activityInfo?.packageName
++        }.getOrNull()
++        return pkg != home
++    }
++
++    /** The main screen's foreground package through the accessibility driver; null when unreadable. */
++    private fun mainForegroundPackage(): String? = runCatching {
++        io.github.ccch1mneyyy.dsh_app.phone.PhoneRegistry.mainDriver?.foregroundPackage()
++    }.getOrNull()
++
++    /** 想不想要: the app says yes or no; the ball decides on its own whether right now is a moment. */
++    fun setWanted(on: Boolean, context: Context? = null) {
++        if (context != null) appContext = context.applicationContext
++        wanted = on
++        main.removeCallbacks(watch)
++        if (!on) {
++            hide()
++            return
++        }
++        main.post(watch)
++    }
++
 +    fun show(context: Context): Boolean {
 +        hide()
++        appContext = context.applicationContext
 +        val app = context.applicationContext
 +        val manager = app.getSystemService(Context.WINDOW_SERVICE) as? WindowManager ?: return false
 +        val saved = app.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
@@ -2454,6 +2519,8 @@ index 0000000..3b48fdc
 +        lp.x = at.x
 +        lp.y = at.y
 +        view.background = if (expanded) ballBackground(px) else sliverBackground(px)
++        // 第十节 10：半透明，不挡内容；手指按住时变实，免得按错方向。
++        view.alpha = if (expanded) REST_ALPHA else 1f
 +        label?.visibility = if (expanded) View.VISIBLE else View.GONE
 +        try {
 +            manager.updateViewLayout(view, lp)
@@ -2494,6 +2561,8 @@ index 0000000..3b48fdc
 +                    downAt = lastAt
 +                    vx = 0f
 +                    dragging = false
++                    // 按住就实：40% 只是歇着时的样子。
++                    view.alpha = 1f
 +                    true
 +                }
 +                MotionEvent.ACTION_MOVE -> {
@@ -2578,10 +2647,10 @@ index 0000000..3b48fdc
 +}
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenOverlay.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenOverlay.kt
 new file mode 100644
-index 0000000..3c6ef36
+index 0000000..1cb2db4
 --- /dev/null
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenOverlay.kt
-@@ -0,0 +1,871 @@
+@@ -0,0 +1,899 @@
 +package io.github.ccch1mneyyy.dsh_app.phone.vscreen
 +
 +import android.annotation.SuppressLint
@@ -3029,9 +3098,32 @@ index 0000000..3c6ef36
 +        applyLive()
 +    }
 +
++    /**
++     * 缩放改的是**显示区域**，不是把画面拉伸（第十节 1：不重采样，始终清晰）。
++     *
++     * The picture takes [zoom] times the window's area and the window clips what sticks out, so
++     * 2× shows the middle of the screen at its own pixels instead of a stretched (soft) copy of
++     * the same pixels. 0.6× is the same rule the other way: a smaller region, whole picture, no
++     * stretching. The SurfaceView's buffer follows its size, so the virtual display really
++     * composes at that size — the source resolution never changes.
++     */
 +    private fun applyZoom() {
-+        picture?.apply { scaleX = zoom; scaleY = zoom }
-+        fallback?.apply { scaleX = zoom; scaleY = zoom }
++        val app = context ?: return
++        val px = app.resources.displayMetrics.density
++        val (w, h) = sizeOf(shape, px)
++        // 画面装在描边里面那圈（inner 的边距），1× 时正好一整块。
++        val border = (3 * px).roundToInt() * 2
++        val vw = ((w - border) * zoom).roundToInt().coerceAtLeast(1)
++        val vh = ((h - border) * zoom).roundToInt().coerceAtLeast(1)
++        fun resize(view: View?) {
++            val view2 = view ?: return
++            val lp = view2.layoutParams as? FrameLayout.LayoutParams
++            if (lp != null && lp.width == vw && lp.height == vh) return
++            view2.layoutParams = FrameLayout.LayoutParams(vw, vh, Gravity.CENTER)
++            view2.requestLayout()
++        }
++        resize(picture)
++        resize(fallback)
 +        zoomOutKey?.alpha = if (zoom <= ZOOMS.first()) 0.35f else 1f
 +        zoomInKey?.alpha = if (zoom >= ZOOMS.last()) 0.35f else 1f
 +        zoomResetKey?.alpha = if (abs(zoom - 1.0f) < 0.001f) 0.35f else 1f
@@ -3040,7 +3132,11 @@ index 0000000..3c6ef36
 +    /** 到位置灰（第十二节 2）：没有前台应用时「返」「转」不可用，与缩放键到边界时同一套表现。 */
 +    private fun applyValidity() {
 +        backKey?.alpha = if (hasApp) 1f else 0.35f
-+        transferKey?.alpha = if (hasApp) 1f else 0.35f
++        // 转（虚拟屏 → 主屏）：只在真有应用可搬时出现，平时半透明，不抢画面的视线（第十节 10）。
++        transferKey?.let { key ->
++            key.visibility = if (shape != Shape.SLIVER && hasApp) View.VISIBLE else View.GONE
++            key.alpha = if (hasApp) 0.6f else 0.35f
++        }
 +    }
 +
 +    private fun stepZoom(direction: Int) {
@@ -3115,7 +3211,8 @@ index 0000000..3c6ef36
 +        closeKey = close
 +
 +        val right = LinearLayout(app).apply { orientation = LinearLayout.HORIZONTAL }
-+        val transfer = roundKey(app, "转", px, 28f) { transferToMain() }
++        // 第十节 8：半透明 🔁，摆在 −/＋/↻ 左边，点一下把这块屏上的应用转到主屏。
++        val transfer = roundKey(app, "🔁", px, 28f) { transferToMain() }
 +        val out = roundKey(app, "−", px, 28f) { stepZoom(-1) }
 +        val into = roundKey(app, "＋", px, 28f) { stepZoom(1) }
 +        val reset = roundKey(app, "↺", px, 28f) { resetZoom() }
@@ -3455,10 +3552,10 @@ index 0000000..3c6ef36
 +}
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenPlugin.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenPlugin.kt
 new file mode 100644
-index 0000000..2ab1e59
+index 0000000..c974763
 --- /dev/null
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenPlugin.kt
-@@ -0,0 +1,83 @@
+@@ -0,0 +1,82 @@
 +package io.github.ccch1mneyyy.dsh_app.phone.vscreen
 +
 +import android.content.Context
@@ -3529,10 +3626,9 @@ index 0000000..2ab1e59
 +                    result.success(false)
 +                    return
 +                }
-+                result.success(if (call.argument<Boolean>("on") == true) TransferBall.show(app) else {
-+                    TransferBall.hide()
-+                    true
-+                })
++                // 第十节 10: 只在主屏上真有可迁移应用时才露头（桌面、本 App 自己在前面时不出现）。
++                TransferBall.setWanted(call.argument<Boolean>("on") == true, app)
++                result.success(true)
 +            }
 +            else -> result.notImplemented()
 +        }
@@ -87027,7 +87123,7 @@ index 173f148..b9863c1 100644
 +  _ => '任务迁移没成功，应用还在原处。',
 +};
 diff --git a/app/lib/ui/phone/dnd_mode_page.dart b/app/lib/ui/phone/dnd_mode_page.dart
-index 3a23e52..504609c 100644
+index 3a23e52..28f497e 100644
 --- a/app/lib/ui/phone/dnd_mode_page.dart
 +++ b/app/lib/ui/phone/dnd_mode_page.dart
 @@ -16,8 +16,10 @@ import '../common/row_marks.dart';
@@ -87080,7 +87176,7 @@ index 3a23e52..504609c 100644
      final waiting = using == PhonePrivilegedMode.root && bg.root.starting;
      final open = _open ?? (bg.effectiveReady ? PhonePrivilegedMode.off : using);
      final choices = <Widget>[
-@@ -290,6 +290,76 @@ class _PhoneDndPageState extends ConsumerState<PhoneDndPage> {
+@@ -290,6 +290,96 @@ class _PhoneDndPageState extends ConsumerState<PhoneDndPage> {
                                unawaited(_run(() async => PhoneResult(await _phone.setBackgroundPreview(enabled)))),
                    ),
                  ),
@@ -87153,11 +87249,31 @@ index 3a23e52..504609c 100644
 +                          .setTarget(on ? VirtualScreenTarget.virtual : VirtualScreenTarget.main),
 +                    ),
 +                  ),
++                  // 横屏 / 竖屏 / 跟随主屏（第九节 2）：视频类应用要横屏，聊天、信息流要竖屏。
++                  // 建屏那一刻按这一条决定虚拟显示宽高，不是事后旋转。
++                  if (bg.viewport case final viewport?)
++                    for (final preset in PhoneBackgroundViewport.values)
++                      ListPageRow(
++                        key: ValueKey('phone-virtual-orientation-${preset.name}'),
++                        leading: Icon(viewport == preset ? AppIcons.radioOn : AppIcons.radioOff),
++                        title: switch (preset) {
++                          PhoneBackgroundViewport.portrait => '竖屏',
++                          PhoneBackgroundViewport.landscape => '横屏',
++                          PhoneBackgroundViewport.follow => '跟随主屏',
++                        },
++                        subtitle: preset == PhoneBackgroundViewport.values.first
++                            ? '虚拟屏的画面方向：视频类用横屏，聊天、信息流用竖屏'
++                            : null,
++                        subtitleMaxLines: 2,
++                        onTap: !_ready || _busy || viewport == preset
++                            ? null
++                            : () => unawaited(_run(() => _phone.setBackgroundViewport(preset))),
++                      ),
 +                ],
                  if (bg.previewEnabled)
                    for (final candidate in previewTasks)
                      ListPageRow(
-@@ -377,9 +447,12 @@ class _PhoneDndPageState extends ConsumerState<PhoneDndPage> {
+@@ -377,9 +467,12 @@ class _PhoneDndPageState extends ConsumerState<PhoneDndPage> {
                        child: ListPageRow(
                          key: ValueKey('phone-viewport-${preset.name}'),
                          leading: Icon(viewport == preset ? AppIcons.radioOn : AppIcons.radioOff),
@@ -87175,10 +87291,10 @@ index 3a23e52..504609c 100644
                              : () => unawaited(_run(() => _phone.setBackgroundViewport(preset))),
 diff --git a/app/lib/ui/phone/phone_task_card.dart b/app/lib/ui/phone/phone_task_card.dart
 new file mode 100644
-index 0000000..fe3849c
+index 0000000..0f105d5
 --- /dev/null
 +++ b/app/lib/ui/phone/phone_task_card.dart
-@@ -0,0 +1,369 @@
+@@ -0,0 +1,410 @@
 +import 'dart:async';
 +
 +import 'package:flutter/material.dart';
@@ -87350,6 +87466,13 @@ index 0000000..fe3849c
 +                      style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.tertiary),
 +                    ),
 +                  ],
++                  if (task.interrupted == true) ...[
++                    const SizedBox(width: 6),
++                    Text(
++                      '被中断',
++                      style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.error),
++                    ),
++                  ],
 +                ],
 +              ),
 +              const SizedBox(height: 6),
@@ -87410,11 +87533,19 @@ index 0000000..fe3849c
 +                  padding: const EdgeInsets.only(top: 6),
 +                  child: Row(
 +                    children: [
-+                      Icon(Icons.check_circle_outline, size: 14, color: theme.colorScheme.primary),
++                      Icon(
++                        (record.reason ?? '').contains('中断')
++                            ? Icons.error_outline
++                            : Icons.check_circle_outline,
++                        size: 14,
++                        color: (record.reason ?? '').contains('中断')
++                            ? theme.colorScheme.error
++                            : theme.colorScheme.primary,
++                      ),
 +                      const SizedBox(width: 6),
 +                      Expanded(
 +                        child: Text(
-+                          '${record.app ?? '手机任务'} · 已完成',
++                          '${record.app ?? '手机任务'} · ${record.reason ?? '已完成'}',
 +                          maxLines: 1,
 +                          overflow: TextOverflow.ellipsis,
 +                          style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant),
@@ -87483,14 +87614,34 @@ index 0000000..fe3849c
 +  }
 +}
 +
-+/// 一件做完的活，留在卡上一会儿（第二十二节 A：显示完成）。
++/// 一件做完的活，留在卡上一会儿（第二十二节 A：显示完成）。[reason] 是它为什么停：接管、熄屏
++/// 中断这些，失败也要说清楚（第十节 8）。
 +class PhoneTaskRecord {
-+  const PhoneTaskRecord({required this.id, required this.app, required this.startedAt, required this.endedAt});
++  const PhoneTaskRecord({
++    required this.id,
++    required this.app,
++    required this.startedAt,
++    required this.endedAt,
++    this.reason,
++  });
 +
 +  final int id;
 +  final String? app;
 +  final DateTime startedAt;
 +  final DateTime endedAt;
++  final String? reason;
++}
++
++/// 任务为什么停：状态里的 stopSource 翻成一句人话。
++String? phoneTaskStopReason(PhoneTaskStatus task) {
++  if (task.active) return null;
++  if (task.interrupted == true) return '被中断';
++  return switch (task.stopSource) {
++    'SCREEN_OFF' => '熄屏中断',
++    'ENVIRONMENT' => '环境中断',
++    'USER' => '已结束',
++    _ => null,
++  };
 +}
 +
 +/// 任务的开始/结束只在这里记：手机操控的状态是唯一来源，卡片和悬浮窗不各记一份。
@@ -87528,7 +87679,13 @@ index 0000000..fe3849c
 +    _app = null;
 +    // A task that never named an app still ran: the record keeps it, without inventing a name.
 +    state = [
-+      PhoneTaskRecord(id: id, app: app, startedAt: startedAt, endedAt: DateTime.now()),
++      PhoneTaskRecord(
++        id: id,
++        app: app,
++        startedAt: startedAt,
++        endedAt: DateTime.now(),
++        reason: phoneTaskStopReason(task),
++      ),
 +      ...state,
 +    ].take(4).toList(growable: false);
 +  }
