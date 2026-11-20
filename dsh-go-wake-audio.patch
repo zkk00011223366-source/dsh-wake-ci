@@ -1,7 +1,7 @@
-From 6bc5bc3214c39d4721594ea56b1f008a42d5e586 Mon Sep 17 00:00:00 2001
+From b7182ecfbafbc0584566ae0b00d5e75f8f22c4dd Mon Sep 17 00:00:00 2001
 From: wake-ci <ci@local>
-Date: Sat, 21 Nov 2026 07:47:40 +0800
-Subject: [PATCH] pb: shell inject
+Date: Sat, 21 Nov 2026 07:53:47 +0800
+Subject: [PATCH] pb: move-task
 
 ---
  .gitattributes                                |    3 +
@@ -16,7 +16,7 @@ Subject: [PATCH] pb: shell inject
  .../dsh_app/phone/PhoneAndroidShell.kt        |   10 +-
  .../dsh_app/phone/PhoneBackGuard.kt           |  146 ++
  .../dsh_app/phone/PhoneContracts.kt           |   27 +
- .../ccch1mneyyy/dsh_app/phone/PhoneControl.kt |   65 +-
+ .../ccch1mneyyy/dsh_app/phone/PhoneControl.kt |   66 +-
  .../ccch1mneyyy/dsh_app/phone/PhoneCore.kt    |  232 +-
  .../ccch1mneyyy/dsh_app/phone/PhonePlugin.kt  |  106 +
  .../dsh_app/phone/PhoneTaskSessions.kt        |   22 +-
@@ -38,8 +38,8 @@ Subject: [PATCH] pb: shell inject
  .../dsh_app/phone/skills/PhoneSkillDraft.kt   |    2 +-
  .../dsh_app/phone/vscreen/TaskMover.kt        |   43 +
  .../dsh_app/phone/vscreen/TransferBall.kt     |  405 ++++
- .../phone/vscreen/VirtualScreenOverlay.kt     | 1606 +++++++++++++
- .../phone/vscreen/VirtualScreenPlugin.kt      |  104 +
+ .../phone/vscreen/VirtualScreenOverlay.kt     | 1609 +++++++++++++
+ .../phone/vscreen/VirtualScreenPlugin.kt      |  118 +
  .../ccch1mneyyy/dsh_app/runtime/GuestSetup.kt |   47 +-
  .../dsh_app/shortcuts/EntryActivity.kt        |    3 +
  .../dsh_app/shortcuts/ShortcutsPlugin.kt      |   13 +-
@@ -76,7 +76,7 @@ Subject: [PATCH] pb: shell inject
  app/lib/l10n/parts/speech_zh.arb              |   21 +-
  app/lib/links/launcher_entries.dart           |    7 +-
  app/lib/phone/phone_channel.dart              |  123 +-
- app/lib/phone/virtual_screen_window.dart      |  127 +
+ app/lib/phone/virtual_screen_window.dart      |  136 ++
  app/lib/speech/call/active_call.dart          |  110 +
  app/lib/speech/call/chat_call.dart            |    3 +
  app/lib/speech/call/voice_call.dart           |   57 +-
@@ -92,7 +92,7 @@ Subject: [PATCH] pb: shell inject
  app/lib/ui/phone/dnd_mode_page.dart           |  182 +-
  app/lib/ui/phone/phone_control_screen.dart    |    1 +
  app/lib/ui/phone/phone_task_card.dart         |  430 ++++
- app/lib/ui/phone/virtual_screen_host.dart     |  302 +++
+ app/lib/ui/phone/virtual_screen_host.dart     |  323 +++
  app/lib/ui/phone/virtual_screen_page.dart     |  114 +
  app/lib/ui/phone/virtual_screen_surface.dart  |  286 +++
  app/lib/ui/settings/voice_settings_page.dart  |  126 +
@@ -109,7 +109,7 @@ Subject: [PATCH] pb: shell inject
  docs/wake-word.md                             |  107 +
  dsh-go-wake.patch                             | 2065 +++++++++++++++++
  tooling/build-wake-apk.sh                     |   68 +
- 105 files changed, 11645 insertions(+), 524 deletions(-)
+ 105 files changed, 11693 insertions(+), 524 deletions(-)
  create mode 100644 .github/workflows/wake-apk.yml
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallForegroundService.kt
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallOverlay.kt
@@ -1321,7 +1321,7 @@ index 612f94d..6541fdd 100644
      @Volatile var overlayGate: UserGate? = null
      @Volatile var notificationGate: UserGate? = null
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneControl.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneControl.kt
-index 2fc7cd5..badab58 100644
+index 2fc7cd5..f5da912 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneControl.kt
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneControl.kt
 @@ -201,6 +201,8 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
@@ -1386,7 +1386,7 @@ index 2fc7cd5..badab58 100644
      }
  
      override fun a11yState(): A11yState = when {
-@@ -999,15 +1011,58 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
+@@ -999,15 +1011,59 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
          else -> A11yState.DISABLED
      }
  
@@ -1431,7 +1431,8 @@ index 2fc7cd5..badab58 100644
 +     */
 +    private fun installDisplayInputHook() {
 +        PhoneRegistry.injectDisplayInput = { command ->
-+            if (!command.startsWith("input -d ")) false else {
++            val allowed = command.startsWith("input -d ") || command.startsWith("am task move-task ")
++            if (!allowed) false else {
 +                val ex = androidShell()
 +                runCatching {
 +                    ex.execute(0L, command, 4_000L, { true }) { _, _ -> Decision.ALLOW_ONCE }
@@ -3773,10 +3774,10 @@ index 0000000..1174ba0
 +}
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenOverlay.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenOverlay.kt
 new file mode 100644
-index 0000000..e93089d
+index 0000000..071d489
 --- /dev/null
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenOverlay.kt
-@@ -0,0 +1,1606 @@
+@@ -0,0 +1,1609 @@
 +package io.github.ccch1mneyyy.dsh_app.phone.vscreen
 +
 +import android.annotation.SuppressLint
@@ -4129,6 +4130,9 @@ index 0000000..e93089d
 +
 +    /** 虚拟屏上有没有前台应用：没有就把「返」「转」置灰。 */
 +    /** Dart 同步过来的任务号（迁移后会变）；窗口的动作都带它，避免拿空 id 去注入。 */
++    /** 当前窗口绑定的虚拟屏 displayId（0 = 还没建/没接上）。 */
++    fun currentDisplayId(): Int = displayId
++
 +    fun setTaskId(value: Long) {
 +        if (value > 0) taskId = value
 +    }
@@ -5385,10 +5389,10 @@ index 0000000..e93089d
 +}
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenPlugin.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenPlugin.kt
 new file mode 100644
-index 0000000..b45dec7
+index 0000000..4e777e5
 --- /dev/null
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenPlugin.kt
-@@ -0,0 +1,104 @@
+@@ -0,0 +1,118 @@
 +package io.github.ccch1mneyyy.dsh_app.phone.vscreen
 +
 +import android.content.Context
@@ -5445,6 +5449,20 @@ index 0000000..b45dec7
 +                // 窗口一开就占住这块屏（A 方案），任务收尾也不会把屏销毁。
 +                if (shown) PhoneRegistry.holdDisplayForWindow?.invoke(true)
 +                result.success(shown)
++            }
++            "moveTask" -> {
++                // am task move-task <id> <displayId|0>：系统命令直接搬任务，比引擎 handOver 稳。
++                val taskId = (call.argument<Number>("taskId"))?.toLong() ?: 0L
++                val toMain = call.argument<Boolean>("toMain") == true
++                val target = if (toMain) 0 else VirtualScreenOverlay.currentDisplayId()
++                if (taskId <= 0 || (!toMain && target <= 0)) {
++                    result.success(false)
++                    return
++                }
++                val cmd = "am task move-task $taskId $target"
++                val ok = io.github.ccch1mneyyy.dsh_app.phone.PhoneRegistry.injectDisplayInput?.invoke(cmd) == true
++                io.github.ccch1mneyyy.dsh_app.wake.WakeTrace.log("window: move-task $cmd ok=$ok")
++                result.success(ok)
 +            }
 +            "retask" -> {
 +                // 窗口已经开着，只是任务换了（迁移）：别重建窗口，换个任务号即可。
@@ -80605,10 +80623,10 @@ index 61789e5..ed59b04 100644
    Future<PhoneSkillReply> openSkillDraft(PhoneSkillCandidate candidate, {required bool confirmed}) =>
 diff --git a/app/lib/phone/virtual_screen_window.dart b/app/lib/phone/virtual_screen_window.dart
 new file mode 100644
-index 0000000..bc807e1
+index 0000000..2c62246
 --- /dev/null
 +++ b/app/lib/phone/virtual_screen_window.dart
-@@ -0,0 +1,127 @@
+@@ -0,0 +1,136 @@
 +import 'dart:async';
 +
 +import 'package:flutter/services.dart';
@@ -80659,6 +80677,15 @@ index 0000000..bc807e1
 +    _listen();
 +    _startTicker();
 +    return true;
++  }
++
++  /// 用系统命令把任务搬到虚拟屏/主屏（`am task move-task`），比引擎 handOver 稳。
++  Future<bool> moveTask(int taskId, {required bool toMain}) async {
++    try {
++      return await _native.invokeMethod<bool>('moveTask', {'taskId': taskId, 'toMain': toMain}) ?? false;
++    } on Object {
++      return false;
++    }
 +  }
 +
 +  Future<void> close() async {
@@ -82725,10 +82752,10 @@ index 0000000..26e0742
 +final phoneTaskClockProvider = NotifierProvider<PhoneTaskClock, DateTime>(PhoneTaskClock.new);
 diff --git a/app/lib/ui/phone/virtual_screen_host.dart b/app/lib/ui/phone/virtual_screen_host.dart
 new file mode 100644
-index 0000000..80d5d7e
+index 0000000..d7252a4
 --- /dev/null
 +++ b/app/lib/ui/phone/virtual_screen_host.dart
-@@ -0,0 +1,302 @@
+@@ -0,0 +1,323 @@
 +import 'dart:async';
 +
 +import 'package:flutter/material.dart';
@@ -82914,6 +82941,27 @@ index 0000000..80d5d7e
 +    }
 +    _acting = true;
 +    try {
++      // 先试系统命令（am task move-task）：与 Mika 依赖系统能力同路，最稳。
++      if (resolved != null) {
++        const windowChannel = MethodChannel('dsh/virtual-screen');
++        final moved = await windowChannel
++                .invokeMethod<bool>('moveTask', {'taskId': resolved, 'toMain': toMain}) ??
++            false;
++        diagWake('transfer: move-task toMain=$toMain ok=$moved');
++        if (moved) {
++          if (!mounted) return;
++          final window = ref.read(virtualWindowProvider.notifier);
++          if (toMain) {
++            await window.close(suppressTask: resolved);
++          } else {
++            window.holdOpen();
++            await window.open(resolved);
++          }
++          unawaited(ref.read(phoneProvider.notifier).refreshStatus());
++          _syncBall();
++          return;
++        }
++      }
 +      final result = resolved == null
 +          ? await ref.read(phoneChannelProvider).handOverFromMain()
 +          : await ref.read(phoneChannelProvider).handOverTask(taskId: resolved, toMain: toMain);
