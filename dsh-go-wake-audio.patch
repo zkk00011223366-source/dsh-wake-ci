@@ -1,7 +1,7 @@
-From 16f8ee46c1550b7e2ff11dc7206fbc8f0550188b Mon Sep 17 00:00:00 2001
+From c03f894f4d12f7b30b61575e60c4f1a419c99ff5 Mon Sep 17 00:00:00 2001
 From: wake-ci <ci@local>
-Date: Fri, 20 Nov 2026 22:44:32 +0800
-Subject: [PATCH] pb: polish
+Date: Fri, 20 Nov 2026 22:48:32 +0800
+Subject: [PATCH] pb: all
 
 ---
  .gitattributes                                |    3 +
@@ -11,7 +11,8 @@ Subject: [PATCH] pb: polish
  .../ccch1mneyyy/dsh_app/MainActivity.kt       |   85 +-
  .../dsh_app/call/CallForegroundService.kt     |   94 +
  .../ccch1mneyyy/dsh_app/call/CallOverlay.kt   |  318 +++
- .../dsh_app/call/CallOverlayPlugin.kt         |   66 +
+ .../dsh_app/call/CallOverlayPlugin.kt         |   70 +
+ .../dsh_app/notify/NotifyPlugin.kt            |    5 +-
  .../dsh_app/phone/PhoneAndroidShell.kt        |   10 +-
  .../dsh_app/phone/PhoneBackGuard.kt           |  146 ++
  .../dsh_app/phone/PhoneContracts.kt           |   21 +
@@ -108,7 +109,7 @@ Subject: [PATCH] pb: polish
  docs/wake-word.md                             |  107 +
  dsh-go-wake.patch                             | 2065 +++++++++++++++++
  tooling/build-wake-apk.sh                     |   68 +
- 104 files changed, 11501 insertions(+), 517 deletions(-)
+ 105 files changed, 11509 insertions(+), 518 deletions(-)
  create mode 100644 .github/workflows/wake-apk.yml
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallForegroundService.kt
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallOverlay.kt
@@ -1009,10 +1010,10 @@ index 0000000..ab3a5fb
 +}
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallOverlayPlugin.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallOverlayPlugin.kt
 new file mode 100644
-index 0000000..fe7f5f7
+index 0000000..0a7a277
 --- /dev/null
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallOverlayPlugin.kt
-@@ -0,0 +1,66 @@
+@@ -0,0 +1,70 @@
 +package io.github.ccch1mneyyy.dsh_app.call
 +
 +import android.content.Context
@@ -1075,10 +1076,30 @@ index 0000000..fe7f5f7
 +        }
 +    }
 +
-+    private companion object {
-+        const val CHANNEL = "dsh/call-overlay"
++    companion object {
++        private const val CHANNEL = "dsh/call-overlay"
++
++        /** 通话是否进行中（由 Dart 的 keepAlive 维护）。 */
++        @Volatile
++        internal var callActive = false
 +    }
 +}
+diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/notify/NotifyPlugin.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/notify/NotifyPlugin.kt
+index 12b600d..63d16e0 100644
+--- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/notify/NotifyPlugin.kt
++++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/notify/NotifyPlugin.kt
+@@ -70,7 +70,10 @@ class NotifyPlugin :
+     override fun onAttachedToActivity(binding: ActivityPluginBinding) {
+         activity = binding
+         binding.addOnNewIntentListener(this)
+-        notifier.takeTap(binding.activity.intent)?.let(::deliver)
++        // 通话进行中不路由通知点击：否则会打断通话、把用户切回聊天页（22:46 要求）。
++        if (!io.github.ccch1mneyyy.dsh_app.call.CallOverlayPlugin.callActive) {
++            notifier.takeTap(binding.activity.intent)?.let(::deliver)
++        }
+     }
+ 
+     override fun onDetachedFromActivityForConfigChanges() = onDetachedFromActivity()
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneAndroidShell.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneAndroidShell.kt
 index bb9c803..aa39cdc 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneAndroidShell.kt
