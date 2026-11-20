@@ -1,7 +1,7 @@
-From 415e2cf81aae304c60121adf5883bb6d330dc3ca Mon Sep 17 00:00:00 2001
+From c6dda1a1adbbbd4cd8ee1249f37c82450f0b55b2 Mon Sep 17 00:00:00 2001
 From: wake-ci <ci@local>
-Date: Fri, 20 Nov 2026 17:16:48 +0800
-Subject: [PATCH] private build: wake reply + hangup tool
+Date: Fri, 20 Nov 2026 17:58:36 +0800
+Subject: [PATCH] private build: kotlin import fix
 
 ---
  .gitattributes                                |    3 +
@@ -37,7 +37,7 @@ Subject: [PATCH] private build: wake reply + hangup tool
  .../dsh_app/phone/skills/PhoneSkillDraft.kt   |    2 +-
  .../dsh_app/phone/vscreen/TaskMover.kt        |   43 +
  .../dsh_app/phone/vscreen/TransferBall.kt     |  403 ++++
- .../phone/vscreen/VirtualScreenOverlay.kt     | 1314 +++++++++++
+ .../phone/vscreen/VirtualScreenOverlay.kt     | 1316 +++++++++++
  .../phone/vscreen/VirtualScreenPlugin.kt      |   96 +
  .../ccch1mneyyy/dsh_app/runtime/GuestSetup.kt |   47 +-
  .../dsh_app/shortcuts/EntryActivity.kt        |    3 +
@@ -107,7 +107,7 @@ Subject: [PATCH] private build: wake reply + hangup tool
  docs/wake-word.md                             |  107 +
  dsh-go-wake.patch                             | 2065 +++++++++++++++++
  tooling/build-wake-apk.sh                     |   68 +
- 103 files changed, 11010 insertions(+), 489 deletions(-)
+ 103 files changed, 11012 insertions(+), 489 deletions(-)
  create mode 100644 .github/workflows/wake-apk.yml
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallForegroundService.kt
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallOverlay.kt
@@ -3563,10 +3563,10 @@ index 0000000..a605ddd
 +}
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenOverlay.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenOverlay.kt
 new file mode 100644
-index 0000000..effe4e9
+index 0000000..4ddbc9c
 --- /dev/null
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenOverlay.kt
-@@ -0,0 +1,1314 @@
+@@ -0,0 +1,1316 @@
 +package io.github.ccch1mneyyy.dsh_app.phone.vscreen
 +
 +import android.annotation.SuppressLint
@@ -3575,6 +3575,8 @@ index 0000000..effe4e9
 +import android.content.Intent
 +import android.content.IntentFilter
 +import android.graphics.Bitmap
++import android.graphics.Canvas
++import android.graphics.Paint
 +import android.graphics.BitmapFactory
 +import android.graphics.Color
 +import android.graphics.PixelFormat
