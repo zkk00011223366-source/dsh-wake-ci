@@ -1,7 +1,7 @@
-From 12d0028b11d1a8a145cad2a4380bf31bd7afb3bd Mon Sep 17 00:00:00 2001
+From 415e2cf81aae304c60121adf5883bb6d330dc3ca Mon Sep 17 00:00:00 2001
 From: wake-ci <ci@local>
-Date: Fri, 20 Nov 2026 17:10:56 +0800
-Subject: [PATCH] private build: wake reply + call trace
+Date: Fri, 20 Nov 2026 17:16:48 +0800
+Subject: [PATCH] private build: wake reply + hangup tool
 
 ---
  .gitattributes                                |    3 +
@@ -16,11 +16,11 @@ Subject: [PATCH] private build: wake reply + call trace
  .../dsh_app/phone/PhoneBackGuard.kt           |  146 ++
  .../dsh_app/phone/PhoneContracts.kt           |   21 +
  .../ccch1mneyyy/dsh_app/phone/PhoneControl.kt |   39 +-
- .../ccch1mneyyy/dsh_app/phone/PhoneCore.kt    |  147 +-
+ .../ccch1mneyyy/dsh_app/phone/PhoneCore.kt    |  165 +-
  .../ccch1mneyyy/dsh_app/phone/PhonePlugin.kt  |  106 +
  .../dsh_app/phone/PhoneTaskSessions.kt        |   22 +-
  .../ccch1mneyyy/dsh_app/phone/PhoneTasks.kt   |   11 +
- .../dsh_app/phone/PhoneToolCatalog.kt         |   17 +-
+ .../dsh_app/phone/PhoneToolCatalog.kt         |   28 +-
  .../ccch1mneyyy/dsh_app/phone/SafetyGate.kt   |    4 +-
  .../dsh_app/phone/SingleInstanceApps.kt       |   27 +
  .../dsh_app/phone/a11y/ControlOverlay.kt      |   11 +-
@@ -107,7 +107,7 @@ Subject: [PATCH] private build: wake reply + call trace
  docs/wake-word.md                             |  107 +
  dsh-go-wake.patch                             | 2065 +++++++++++++++++
  tooling/build-wake-apk.sh                     |   68 +
- 103 files changed, 10982 insertions(+), 488 deletions(-)
+ 103 files changed, 11010 insertions(+), 489 deletions(-)
  create mode 100644 .github/workflows/wake-apk.yml
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallForegroundService.kt
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallOverlay.kt
@@ -1368,7 +1368,7 @@ index 2fc7cd5..04c75e2 100644
      }
  
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneCore.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneCore.kt
-index 6c70185..74351b6 100644
+index 6c70185..55f25a3 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneCore.kt
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneCore.kt
 @@ -1,5 +1,7 @@
@@ -1484,7 +1484,36 @@ index 6c70185..74351b6 100644
              val call = if (prepared != null && !refreshMain) prepared else when (
                  val result = prepare(name, a, owner, prepared?.requestedApp)
              ) {
-@@ -468,7 +502,7 @@ class PhoneCore(
+@@ -383,6 +417,7 @@ class PhoneCore(
+                 PhoneToolCatalog.TAP, PhoneToolCatalog.TYPE, PhoneToolCatalog.SCROLL, PhoneToolCatalog.TAP_XY -> act(name, a, scope, owner)
+                 PhoneToolCatalog.KEY -> key(a, owner)
+                 PhoneToolCatalog.HANDOFF -> handoff(a, scope, owner)
++                PhoneToolCatalog.HANG_UP -> hangUpCall(a)
+                 // l10n:keep agent tool result
+                 else -> Out("没有这个手机工具：$name", error = true)
+             }
+@@ -391,6 +426,20 @@ class PhoneCore(
+         }
+     }
+ 
++    /** 模型自己判断该结束了：把挂断动作交给 App 的通话层（同一个入口，和通话卡上的挂断键）。 */
++    private fun hangUpCall(a: Args): Out {
++        val reason = a.str("reason").orEmpty().trim()
++        val invoked = try {
++            io.github.ccch1mneyyy.dsh_app.call.CallOverlay.onAction?.invoke("hangUp")
++            true
++        } catch (_: Throwable) {
++            false
++        }
++        if (!invoked) return Out("当前没有可以挂断的语音通话。", error = true)
++        // l10n:keep agent tool result
++        return Out(if (reason.isEmpty()) "已挂断这段语音通话。" else "已挂断这段语音通话：$reason")
++    }
++
+     private fun current(owner: PhoneTasks.Owner): Boolean =
+         tasks.isCurrent(owner) && !Thread.currentThread().isInterrupted
+ 
+@@ -468,7 +517,7 @@ class PhoneCore(
                  if (env.isLocked()) return Either.Left(locked("open"))
                  if (url != null) {
                      // l10n:keep agent tool result
@@ -1493,7 +1522,7 @@ index 6c70185..74351b6 100644
                      UrlPolicy.check(url)?.let {
                          return Either.Left(Out(it, error = true, summary = ui.get("phone_log_open_url", "打开链接"), decision = "refused:url")) // l10n:keep test default
                      }
-@@ -516,14 +550,20 @@ class PhoneCore(
+@@ -516,14 +565,20 @@ class PhoneCore(
              }
          }
          if (!current(owner)) return Either.Left(stoppedOut(name))
@@ -1516,7 +1545,7 @@ index 6c70185..74351b6 100644
          if (env.isLocked()) return locked("open")
          val plan = checkNotNull(call.launch)
          if (url != null) {
-@@ -543,6 +583,8 @@ class PhoneCore(
+@@ -543,6 +598,8 @@ class PhoneCore(
          // An explicit package is still subject to app rules even when its handler UID is unknown.
          val app = (plan.target as? SystemTarget.Known)?.app
              ?: checkNotNull(call.requestedApp)
@@ -1525,7 +1554,7 @@ index 6c70185..74351b6 100644
          safety.checkOpen(app.packageName, app.label)?.let {
              return Out(it.message, error = true, app = app.label, summary = ui.get("phone_log_open_app", "打开 %1\$s", app.packageName), decision = "refused:${it.rule}") // l10n:keep test default
          }
-@@ -558,26 +600,32 @@ class PhoneCore(
+@@ -558,26 +615,32 @@ class PhoneCore(
              } catch (e: Throwable) { skillTrace.fail(ticket); throw e }
              return afterSystem(owner, scope, result, summary)
          }
@@ -1565,7 +1594,7 @@ index 6c70185..74351b6 100644
          }
          val openRefusal = AtomicReference<SafetyGate.Verdict.Refuse?>(null)
          val ticket = skillTrace.beginOpen(owner, PhoneScreen.BACKGROUND)
-@@ -592,14 +640,16 @@ class PhoneCore(
+@@ -592,14 +655,16 @@ class PhoneCore(
          openRefusal.get()?.let { refused ->
              if (!current(owner)) return stoppedOut("open")
              return Out(refused.message, error = true, app = app.label,
@@ -1584,7 +1613,7 @@ index 6c70185..74351b6 100644
      }
  
      /** The handler is a dispatch fact. Only the following read describes the actual foreground UI. */
-@@ -816,8 +866,45 @@ class PhoneCore(
+@@ -816,8 +881,45 @@ class PhoneCore(
          return Either.Right(d)
      }
  
@@ -1630,11 +1659,14 @@ index 6c70185..74351b6 100644
      /** Admission uses the same argument coercion and routing as the actual tool body. */
      fun requiredScreens(name: String, args: Map<String, Any?>): Either<String, List<PhoneScreen>> {
          return requiredScreens(name, Args(args))
-@@ -826,9 +913,9 @@ class PhoneCore(
+@@ -825,10 +927,11 @@ class PhoneCore(
+ 
      private fun requiredScreens(name: String, a: Args): Either<String, List<PhoneScreen>> {
          return when (name) {
-             PhoneToolCatalog.APPS, PhoneToolCatalog.NOTIFY, PhoneToolCatalog.CLIPBOARD -> Either.Right(emptyList())
+-            PhoneToolCatalog.APPS, PhoneToolCatalog.NOTIFY, PhoneToolCatalog.CLIPBOARD -> Either.Right(emptyList())
 -            PhoneToolCatalog.OPEN -> Either.Right(if (a.bool("background") == true)
++            PhoneToolCatalog.APPS, PhoneToolCatalog.NOTIFY, PhoneToolCatalog.CLIPBOARD,
++            PhoneToolCatalog.HANG_UP -> Either.Right(emptyList())
 +            PhoneToolCatalog.OPEN -> Either.Right(if (backgroundTarget(a))
                  listOf(PhoneScreen.MAIN, PhoneScreen.BACKGROUND) else listOf(PhoneScreen.MAIN))
 -            PhoneToolCatalog.SCREEN -> Either.Right(listOf(if (a.bool("background") == true) PhoneScreen.BACKGROUND else PhoneScreen.MAIN))
@@ -1642,7 +1674,7 @@ index 6c70185..74351b6 100644
              // Arbitrary system commands take the main/global unknown-app lease, without reading a screen.
              PhoneToolCatalog.INTENT, PhoneToolCatalog.ANDROID_SHELL -> Either.Right(listOf(PhoneScreen.MAIN))
              PhoneToolCatalog.HANDOFF -> Either.Right(if (lastScreen == PhoneScreen.BACKGROUND)
-@@ -852,7 +939,7 @@ class PhoneCore(
+@@ -852,7 +955,7 @@ class PhoneCore(
          if (id == null) return Either.Left("缺少 $parameterName（屏幕号，如 s7）。先调用 screen 拿到屏幕号。")
          return PhoneScreen.ofScreenId(id)?.let { Either.Right(it) }
              // l10n:keep agent tool result
@@ -1651,7 +1683,7 @@ index 6c70185..74351b6 100644
      }
  
      private fun locked(summary: String) =
-@@ -871,21 +958,23 @@ class PhoneCore(
+@@ -871,21 +974,23 @@ class PhoneCore(
  
      private fun screen(a: Args, owner: PhoneTasks.Owner): Out {
          if (!current(owner)) return stoppedOut("screen")
@@ -1681,7 +1713,7 @@ index 6c70185..74351b6 100644
          return Out(
              // l10n:keep agent tool result
              if (refused) "没有读取这个屏幕的内容。" else "",
-@@ -1362,6 +1451,7 @@ class PhoneCore(
+@@ -1362,6 +1467,7 @@ class PhoneCore(
          summary = summary, decision = "stopped")
  
      companion object {
@@ -1689,7 +1721,7 @@ index 6c70185..74351b6 100644
          internal const val REPLAY = "replay"
          internal const val FOCUS_TEXT = "focus_text"
  
-@@ -1370,6 +1460,9 @@ class PhoneCore(
+@@ -1370,6 +1476,9 @@ class PhoneCore(
          const val PAUSE_WAIT_MS = 600_000L
          const val HANDOFF_MS = 600_000L
  
@@ -1933,10 +1965,18 @@ index a09015e..9e6c9a9 100644
          grants.clear()
          visualScopes.clear(); visualGrants.clear(); visualLifecycle = lifecycle
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneToolCatalog.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneToolCatalog.kt
-index cbfb0de..79b1891 100644
+index cbfb0de..1d9ac4e 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneToolCatalog.kt
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneToolCatalog.kt
-@@ -53,7 +53,7 @@ object PhoneToolCatalog {
+@@ -24,6 +24,7 @@ object PhoneToolCatalog {
+     const val HANDOFF = "handoff"
+     const val ANDROID_SHELL = "android_shell"
+     const val DIAGNOSTICS = DiagnosticsTool.NAME
++    const val HANG_UP = "hang_up_call"
+ 
+     class Tool(val name: String, val description: String, val properties: Map<String, Any?>, val required: List<String>) {
+         fun toJson(): Map<String, Any?> = linkedMapOf(
+@@ -53,7 +54,7 @@ object PhoneToolCatalog {
          linkedMapOf<String, Any?>("type" to "string", "enum" to values, "description" to description)
  
      // l10n:keep agent tool catalog
@@ -1945,7 +1985,7 @@ index cbfb0de..79b1891 100644
  
      val tools: List<Tool> = listOf(
          Tool(
-@@ -79,14 +79,16 @@ object PhoneToolCatalog {
+@@ -79,14 +80,16 @@ object PhoneToolCatalog {
          Tool(
              OPEN,
              // l10n:keep agent tool catalog
@@ -1964,7 +2004,7 @@ index cbfb0de..79b1891 100644
              ),
              emptyList(),
          ),
-@@ -167,14 +169,15 @@ object PhoneToolCatalog {
+@@ -167,14 +170,15 @@ object PhoneToolCatalog {
          Tool(
              SCREEN,
              // l10n:keep agent tool catalog
@@ -1982,7 +2022,7 @@ index cbfb0de..79b1891 100644
              ),
              emptyList(),
          ),
-@@ -240,10 +243,10 @@ object PhoneToolCatalog {
+@@ -240,10 +244,10 @@ object PhoneToolCatalog {
          Tool(
              TAP_XY,
              // l10n:keep agent tool catalog
@@ -1995,6 +2035,23 @@ index cbfb0de..79b1891 100644
                  // l10n:keep agent tool catalog
                  "x" to int("横坐标（像素，从 0 开始）"),
                  // l10n:keep agent tool catalog
+@@ -267,6 +271,16 @@ object PhoneToolCatalog {
+             linkedMapOf("reason" to str("要用户做什么，一句话")),
+             listOf("reason"),
+         ),
++        Tool(
++            HANG_UP,
++            // l10n:keep agent tool catalog
++            "挂断当前正在进行的语音通话。是否在任务做完后挂断、还是保持通话等用户继续说话，由你自己判断：用户说了要挂、或者说的事情已经办完且对方没有再问，就调用它结束通话；通话中还会继续对话就不要调用。",
++            linkedMapOf(
++                // l10n:keep agent tool catalog
++                "reason" to str("一句话说明为什么结束这次通话（会给用户看）"),
++            ),
++            emptyList(),
++        ),
+         Tool(
+             DIAGNOSTICS,
+             // l10n:keep agent tool catalog
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/SafetyGate.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/SafetyGate.kt
 index e50373c..5e1126b 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/SafetyGate.kt
