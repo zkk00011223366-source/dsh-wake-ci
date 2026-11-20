@@ -1,7 +1,7 @@
-From 10c24bb7c2864ea8cdec121081f6c35bb14531c4 Mon Sep 17 00:00:00 2001
+From 0d5f13d9bc69369b4d1af96bdfc7e1734de30158 Mon Sep 17 00:00:00 2001
 From: wake-ci <ci@local>
-Date: Fri, 20 Nov 2026 10:21:29 +0800
-Subject: [PATCH] private build: no task card
+Date: Fri, 20 Nov 2026 10:42:07 +0800
+Subject: [PATCH] private build: ball scoped
 
 ---
  .gitattributes                                |    3 +
@@ -86,7 +86,7 @@ Subject: [PATCH] private build: no task card
  app/lib/ui/phone/background_preview.dart      |  264 +-
  app/lib/ui/phone/dnd_mode_page.dart           |  174 +-
  app/lib/ui/phone/phone_task_card.dart         |  430 +++
- app/lib/ui/phone/virtual_screen_host.dart     |  247 ++
+ app/lib/ui/phone/virtual_screen_host.dart     |  257 ++
  app/lib/ui/phone/virtual_screen_page.dart     |  115 +
  app/lib/ui/phone/virtual_screen_surface.dart  |  286 ++
  app/lib/ui/settings/voice_settings_page.dart  |   89 +
@@ -102,7 +102,7 @@ Subject: [PATCH] private build: no task card
  docs/wake-word.md                             |  107 +
  dsh-go-wake.patch                             | 2065 +++++++++++
  tooling/build-wake-apk.sh                     |   68 +
- 98 files changed, 12264 insertions(+), 2084 deletions(-)
+ 98 files changed, 12274 insertions(+), 2084 deletions(-)
  create mode 100644 .github/workflows/wake-apk.yml
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallForegroundService.kt
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallOverlay.kt
@@ -89242,10 +89242,10 @@ index 0000000..26e0742
 +final phoneTaskClockProvider = NotifierProvider<PhoneTaskClock, DateTime>(PhoneTaskClock.new);
 diff --git a/app/lib/ui/phone/virtual_screen_host.dart b/app/lib/ui/phone/virtual_screen_host.dart
 new file mode 100644
-index 0000000..ffcd089
+index 0000000..f04df4d
 --- /dev/null
 +++ b/app/lib/ui/phone/virtual_screen_host.dart
-@@ -0,0 +1,247 @@
+@@ -0,0 +1,257 @@
 +import 'dart:async';
 +
 +import 'package:flutter/material.dart';
@@ -89278,6 +89278,8 @@ index 0000000..ffcd089
 +  bool _opening = false;
 +  bool _acting = false;
 +  bool _foreground = true;
++  /// 刚转过「虚拟屏 → 主屏」：球该出现；任务一结束就收起（用户 10:36：球不能跟着应用乱弹）。
++  bool _justTransferredToMain = false;
 +  AppLifecycleListener? _lifecycle;
 +  String? _lastBall;
 +  String? _lastApp;
@@ -89401,6 +89403,7 @@ index 0000000..ffcd089
 +      if (toMain) {
 +        // 切到主屏后：虚拟屏窗口消失（这个任务还活着也别弹回来）、目标切回主屏；
 +        // 主屏上的 🔁 切换球接棒（第十四节 1）。
++        _justTransferredToMain = true;
 +        await window.close(suppressTask: taskId);
 +        unawaited(ref.read(virtualScreenSettingsProvider.notifier).setTarget(VirtualScreenTarget.main));
 +      } else {
@@ -89471,10 +89474,11 @@ index 0000000..ffcd089
 +  void _syncBall() {
 +    final status = ref.read(phoneProvider).status;
 +    final open = ref.read(virtualWindowProvider).open;
-+    // 只在「主屏操作 + 有活的手机任务/虚拟屏窗口」时显示。之前用 channelReady 当条件，
-+    // 通道永远就绪 → 任务结束了球也一直挂着（用户 09:56 反馈）。
++    // 只在「主屏操作 + 刚转过主屏（或虚拟屏窗口开着）」时显示。
++    // 之前用 task.active / channelReady 当条件：只要有个任务在跑，打开任何应用球都弹出来，
++    // 用户 10:36 反馈「球跟随一些应用出现」。现在没有转场或窗口就不弹。
 +    final onMain = ref.read(virtualScreenSettingsProvider).target == VirtualScreenTarget.main;
-+    final want = !_foreground && onMain && (open || status.task.active);
++    final want = !_foreground && onMain && (_justTransferredToMain || open);
 +    final key = want ? 'on' : 'off';
 +    if (_lastBall == key) return;
 +    _lastBall = key;
@@ -89484,6 +89488,12 @@ index 0000000..ffcd089
 +  @override
 +  Widget build(BuildContext context) {
 +    ref.watch(virtualWindowProvider);
++    final taskActive = ref.watch(phoneProvider.select((s) => s.status.task.active));
++    WidgetsBinding.instance.addPostFrameCallback((_) {
++      if (!mounted) return;
++      if (!taskActive) _justTransferredToMain = false;
++      _syncBall();
++    });
 +    ref.watch(phoneProvider.select((s) => s.status.task.app));
 +    WidgetsBinding.instance.addPostFrameCallback((_) {
 +      if (!mounted) return;
