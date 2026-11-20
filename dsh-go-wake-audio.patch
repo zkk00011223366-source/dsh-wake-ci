@@ -1,7 +1,7 @@
-From 2561c59826074e2cf0f8f88a4732ff1f3afc9cee Mon Sep 17 00:00:00 2001
+From 4553b23e3de70cdf800bcc910ec5f25fb9a940e1 Mon Sep 17 00:00:00 2001
 From: wake-ci <ci@local>
-Date: Fri, 20 Nov 2026 19:25:06 +0800
-Subject: [PATCH] private build: vscreen final batch
+Date: Fri, 20 Nov 2026 20:40:55 +0800
+Subject: [PATCH] private build: vscreen restructure
 
 ---
  .gitattributes                                |    3 +
@@ -16,7 +16,7 @@ Subject: [PATCH] private build: vscreen final batch
  .../dsh_app/phone/PhoneBackGuard.kt           |  146 ++
  .../dsh_app/phone/PhoneContracts.kt           |   21 +
  .../ccch1mneyyy/dsh_app/phone/PhoneControl.kt |   39 +-
- .../ccch1mneyyy/dsh_app/phone/PhoneCore.kt    |  176 +-
+ .../ccch1mneyyy/dsh_app/phone/PhoneCore.kt    |  204 +-
  .../ccch1mneyyy/dsh_app/phone/PhonePlugin.kt  |  106 +
  .../dsh_app/phone/PhoneTaskSessions.kt        |   22 +-
  .../ccch1mneyyy/dsh_app/phone/PhoneTasks.kt   |   11 +
@@ -37,8 +37,8 @@ Subject: [PATCH] private build: vscreen final batch
  .../dsh_app/phone/skills/PhoneSkillDraft.kt   |    2 +-
  .../dsh_app/phone/vscreen/TaskMover.kt        |   43 +
  .../dsh_app/phone/vscreen/TransferBall.kt     |  403 ++++
- .../phone/vscreen/VirtualScreenOverlay.kt     | 1378 +++++++++++
- .../phone/vscreen/VirtualScreenPlugin.kt      |   96 +
+ .../phone/vscreen/VirtualScreenOverlay.kt     | 1472 ++++++++++++
+ .../phone/vscreen/VirtualScreenPlugin.kt      |  104 +
  .../ccch1mneyyy/dsh_app/runtime/GuestSetup.kt |   47 +-
  .../dsh_app/shortcuts/EntryActivity.kt        |    3 +
  .../dsh_app/shortcuts/ShortcutsPlugin.kt      |   13 +-
@@ -75,14 +75,14 @@ Subject: [PATCH] private build: vscreen final batch
  app/lib/l10n/parts/speech_zh.arb              |   21 +-
  app/lib/links/launcher_entries.dart           |    7 +-
  app/lib/phone/phone_channel.dart              |  123 +-
- app/lib/phone/virtual_screen_window.dart      |  115 +
+ app/lib/phone/virtual_screen_window.dart      |  127 +
  app/lib/speech/call/active_call.dart          |  110 +
  app/lib/speech/call/chat_call.dart            |    3 +
- app/lib/speech/call/voice_call.dart           |   46 +-
+ app/lib/speech/call/voice_call.dart           |   57 +-
  app/lib/speech/wake_reply.dart                |  119 +
  app/lib/state/app_info.dart                   |    5 +
  app/lib/state/update_state.dart               |    9 +
- app/lib/state/virtual_screen_state.dart       |  261 +++
+ app/lib/state/virtual_screen_state.dart       |  262 +++
  app/lib/ui/chat/chat_rows.dart                |    2 +
  app/lib/ui/chat/chat_screen.dart              |  106 +-
  app/lib/ui/chat/media/media_format.dart       |   16 +-
@@ -90,7 +90,7 @@ Subject: [PATCH] private build: vscreen final batch
  app/lib/ui/phone/background_preview.dart      |  264 +--
  app/lib/ui/phone/dnd_mode_page.dart           |  182 +-
  app/lib/ui/phone/phone_task_card.dart         |  430 ++++
- app/lib/ui/phone/virtual_screen_host.dart     |  281 +++
+ app/lib/ui/phone/virtual_screen_host.dart     |  302 +++
  app/lib/ui/phone/virtual_screen_page.dart     |  114 +
  app/lib/ui/phone/virtual_screen_surface.dart  |  286 +++
  app/lib/ui/settings/voice_settings_page.dart  |  126 +
@@ -107,7 +107,7 @@ Subject: [PATCH] private build: vscreen final batch
  docs/wake-word.md                             |  107 +
  dsh-go-wake.patch                             | 2065 +++++++++++++++++
  tooling/build-wake-apk.sh                     |   68 +
- 103 files changed, 11141 insertions(+), 502 deletions(-)
+ 103 files changed, 11313 insertions(+), 505 deletions(-)
  create mode 100644 .github/workflows/wake-apk.yml
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallForegroundService.kt
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallOverlay.kt
@@ -1368,7 +1368,7 @@ index 2fc7cd5..04c75e2 100644
      }
  
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneCore.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneCore.kt
-index 6c70185..75f49a8 100644
+index 6c70185..1c43600 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneCore.kt
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneCore.kt
 @@ -1,5 +1,7 @@
@@ -1479,7 +1479,18 @@ index 6c70185..75f49a8 100644
          } else when (val result = driverFor(screen, owner)) {
              is Either.Left -> return stop(result.value)
              is Either.Right -> result.value
-@@ -361,7 +399,7 @@ class PhoneCore(
+@@ -255,7 +293,9 @@ class PhoneCore(
+             // l10n:keep agent tool result
+             return ToolOutput("没有这个手机工具：$name。可用：${PhoneToolCatalog.names.joinToString("、")}", isError = true)
+         }
+-        if (!env.enabled()) {
++        // 挂断电话是 App 自己的功能，不该被「手机操控」开关挡住（用户 19:25：这必须是
++        // 指令层的技能，不是识屏点界面）。其余工具仍然受开关约束。
++        if (!env.enabled() && name != PhoneToolCatalog.HANG_UP) {
+             // l10n:keep agent tool result
+             return ToolOutput("手机操控已在 DSH 设置里关闭。请用户在 设置 → 手机操控 里打开后重启引擎。", isError = true)
+         }
+@@ -361,7 +401,7 @@ class PhoneCore(
              // MAIN already excludes other app holders. Resolve again after waiting for it,
              // keeping the originally selected package if its label or launcher has changed.
              val refreshMain = name == PhoneToolCatalog.INTENT ||
@@ -1488,7 +1499,7 @@ index 6c70185..75f49a8 100644
              val call = if (prepared != null && !refreshMain) prepared else when (
                  val result = prepare(name, a, owner, prepared?.requestedApp)
              ) {
-@@ -383,6 +421,7 @@ class PhoneCore(
+@@ -383,6 +423,7 @@ class PhoneCore(
                  PhoneToolCatalog.TAP, PhoneToolCatalog.TYPE, PhoneToolCatalog.SCROLL, PhoneToolCatalog.TAP_XY -> act(name, a, scope, owner)
                  PhoneToolCatalog.KEY -> key(a, owner)
                  PhoneToolCatalog.HANDOFF -> handoff(a, scope, owner)
@@ -1496,7 +1507,7 @@ index 6c70185..75f49a8 100644
                  // l10n:keep agent tool result
                  else -> Out("没有这个手机工具：$name", error = true)
              }
-@@ -391,6 +430,18 @@ class PhoneCore(
+@@ -391,6 +432,18 @@ class PhoneCore(
          }
      }
  
@@ -1515,7 +1526,7 @@ index 6c70185..75f49a8 100644
      private fun current(owner: PhoneTasks.Owner): Boolean =
          tasks.isCurrent(owner) && !Thread.currentThread().isInterrupted
  
-@@ -468,7 +519,7 @@ class PhoneCore(
+@@ -468,7 +521,7 @@ class PhoneCore(
                  if (env.isLocked()) return Either.Left(locked("open"))
                  if (url != null) {
                      // l10n:keep agent tool result
@@ -1524,7 +1535,7 @@ index 6c70185..75f49a8 100644
                      UrlPolicy.check(url)?.let {
                          return Either.Left(Out(it, error = true, summary = ui.get("phone_log_open_url", "打开链接"), decision = "refused:url")) // l10n:keep test default
                      }
-@@ -516,14 +567,20 @@ class PhoneCore(
+@@ -516,14 +569,23 @@ class PhoneCore(
              }
          }
          if (!current(owner)) return Either.Left(stoppedOut(name))
@@ -1536,6 +1547,9 @@ index 6c70185..75f49a8 100644
      private fun open(call: PreparedCall, scope: SerialWorker.Scope, owner: PhoneTasks.Owner): Out {
          if (!current(owner)) return stoppedOut("open")
          val a = call.args
++        // 抓现行：模型到底传了什么、设置开关是什么、最后走哪块屏。
++        io.github.ccch1mneyyy.dsh_app.wake.WakeTrace.log(
++            "open: param=${a.str("background")} switch=${env.prefersBackground()} resolved=${backgroundTarget(a)}")
          val url = a.str("url")
 -        val background = a.bool("background") == true
 +        // 虚拟屏 is the default target; a link, or an app whose launch identity could not be
@@ -1547,7 +1561,7 @@ index 6c70185..75f49a8 100644
          if (env.isLocked()) return locked("open")
          val plan = checkNotNull(call.launch)
          if (url != null) {
-@@ -543,6 +600,8 @@ class PhoneCore(
+@@ -543,6 +605,8 @@ class PhoneCore(
          // An explicit package is still subject to app rules even when its handler UID is unknown.
          val app = (plan.target as? SystemTarget.Known)?.app
              ?: checkNotNull(call.requestedApp)
@@ -1556,7 +1570,7 @@ index 6c70185..75f49a8 100644
          safety.checkOpen(app.packageName, app.label)?.let {
              return Out(it.message, error = true, app = app.label, summary = ui.get("phone_log_open_app", "打开 %1\$s", app.packageName), decision = "refused:${it.rule}") // l10n:keep test default
          }
-@@ -558,26 +617,32 @@ class PhoneCore(
+@@ -558,30 +622,40 @@ class PhoneCore(
              } catch (e: Throwable) { skillTrace.fail(ticket); throw e }
              return afterSystem(owner, scope, result, summary)
          }
@@ -1596,7 +1610,34 @@ index 6c70185..75f49a8 100644
          }
          val openRefusal = AtomicReference<SafetyGate.Verdict.Refuse?>(null)
          val ticket = skillTrace.beginOpen(owner, PhoneScreen.BACKGROUND)
-@@ -592,14 +657,16 @@ class PhoneCore(
+-        val res = traceResult(ticket) {
++        // 首次打开虚拟屏时服务常常还没就绪：launch 返回 deviceUnavailable
++        // （日志 20:15:24：第一次 ok=false，1 秒后重试就成功了）。
++        // 这种瞬时失败自动重试两轮，别把"服务刚起来"当成真正的错误抛给模型。
++        var attempt = 0
++        var res = traceResult(ticket) {
+             driver.open(app.identity) {
+                 if (!current(owner) || openRefusal.get() != null) false else {
+                     safety.checkOpen(app.packageName, app.label)?.let { openRefusal.compareAndSet(null, it) }
+@@ -589,17 +663,34 @@ class PhoneCore(
+                 }
+             }
+         }
++        while (!res.ok && attempt < 2 && current(owner) &&
++            (res.message.contains("不可用") || res.message.contains("deviceUnavailable"))) {
++            attempt++
++            io.github.ccch1mneyyy.dsh_app.wake.WakeTrace.log("open: retry #$attempt after deviceUnavailable")
++            Thread.sleep(900)
++            if (!current(owner)) return stoppedOut("open")
++            res = traceResult(ticket) {
++                driver.open(app.identity) {
++                    if (!current(owner) || openRefusal.get() != null) false else {
++                        safety.checkOpen(app.packageName, app.label)?.let { openRefusal.compareAndSet(null, it) }
++                        openRefusal.get() == null
++                    }
++                }
++            }
++        }
          openRefusal.get()?.let { refused ->
              if (!current(owner)) return stoppedOut("open")
              return Out(refused.message, error = true, app = app.label,
@@ -1615,7 +1656,7 @@ index 6c70185..75f49a8 100644
      }
  
      /** The handler is a dispatch fact. Only the following read describes the actual foreground UI. */
-@@ -816,8 +883,54 @@ class PhoneCore(
+@@ -816,8 +907,54 @@ class PhoneCore(
          return Either.Right(d)
      }
  
@@ -1670,7 +1711,7 @@ index 6c70185..75f49a8 100644
      /** Admission uses the same argument coercion and routing as the actual tool body. */
      fun requiredScreens(name: String, args: Map<String, Any?>): Either<String, List<PhoneScreen>> {
          return requiredScreens(name, Args(args))
-@@ -825,10 +938,11 @@ class PhoneCore(
+@@ -825,10 +962,11 @@ class PhoneCore(
  
      private fun requiredScreens(name: String, a: Args): Either<String, List<PhoneScreen>> {
          return when (name) {
@@ -1685,7 +1726,7 @@ index 6c70185..75f49a8 100644
              // Arbitrary system commands take the main/global unknown-app lease, without reading a screen.
              PhoneToolCatalog.INTENT, PhoneToolCatalog.ANDROID_SHELL -> Either.Right(listOf(PhoneScreen.MAIN))
              PhoneToolCatalog.HANDOFF -> Either.Right(if (lastScreen == PhoneScreen.BACKGROUND)
-@@ -852,7 +966,7 @@ class PhoneCore(
+@@ -852,7 +990,7 @@ class PhoneCore(
          if (id == null) return Either.Left("缺少 $parameterName（屏幕号，如 s7）。先调用 screen 拿到屏幕号。")
          return PhoneScreen.ofScreenId(id)?.let { Either.Right(it) }
              // l10n:keep agent tool result
@@ -1694,7 +1735,7 @@ index 6c70185..75f49a8 100644
      }
  
      private fun locked(summary: String) =
-@@ -871,21 +985,23 @@ class PhoneCore(
+@@ -871,21 +1009,23 @@ class PhoneCore(
  
      private fun screen(a: Args, owner: PhoneTasks.Owner): Out {
          if (!current(owner)) return stoppedOut("screen")
@@ -1724,7 +1765,7 @@ index 6c70185..75f49a8 100644
          return Out(
              // l10n:keep agent tool result
              if (refused) "没有读取这个屏幕的内容。" else "",
-@@ -1362,6 +1478,7 @@ class PhoneCore(
+@@ -1362,6 +1502,7 @@ class PhoneCore(
          summary = summary, decision = "stopped")
  
      companion object {
@@ -1732,7 +1773,7 @@ index 6c70185..75f49a8 100644
          internal const val REPLAY = "replay"
          internal const val FOCUS_TEXT = "focus_text"
  
-@@ -1370,6 +1487,9 @@ class PhoneCore(
+@@ -1370,6 +1511,9 @@ class PhoneCore(
          const val PAUSE_WAIT_MS = 600_000L
          const val HANDOFF_MS = 600_000L
  
@@ -3576,10 +3617,10 @@ index 0000000..a605ddd
 +}
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenOverlay.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenOverlay.kt
 new file mode 100644
-index 0000000..ec3bc5a
+index 0000000..4223cb9
 --- /dev/null
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenOverlay.kt
-@@ -0,0 +1,1378 @@
+@@ -0,0 +1,1472 @@
 +package io.github.ccch1mneyyy.dsh_app.phone.vscreen
 +
 +import android.annotation.SuppressLint
@@ -3701,6 +3742,8 @@ index 0000000..ec3bc5a
 +    private var dock = Dock.DEFAULT
 +    private var shape = Shape.SMALL
 +    private var taskId = 0L
++    /** attach 成功时预览目标的任务号：转主屏/手动操作都用它兜底。 */
++    private var previewTaskId = 0L
 +    private var zoom = 1.0f
 +    private var savedAspect = 196f / 110f
 +    private var eyeHidden = false
@@ -3715,7 +3758,6 @@ index 0000000..ec3bc5a
 +    private var topLeft: LinearLayout? = null
 +    private var bottomRight: LinearLayout? = null
 +    private var hint: TextView? = null
-+    private var cardBg: View? = null
 +    private var grip: View? = null
 +    private var waiting: TextView? = null
 +    private var volumeRow: LinearLayout? = null
@@ -3769,25 +3811,20 @@ index 0000000..ec3bc5a
 +        val (w, h) = windowSize(Shape.SMALL, px, area)
 +        val at = EdgeSnap.position(dock, w, h, area, (10 * px).roundToInt())
 +
-+        // 卡片背景单独一层：窗口比卡片高出一个「把手突出」的高度，把手压在底边上，
-+        // 一半在卡片内、一半露在外面（用户选的方案 A）。
++        // 结构（20:30 重构）：窗口就等于画面，只有一层，0 内缩。
++        // 之前是"卡片层 + 3dp 内缩 + 画面层"三层，任何一层没同步就露缝/裁切/比例错。
++        // 卡片的角色彻底删除；圆角由画面自己裁（clipToOutline）。
 +        val box = FrameLayout(app)
-+        val card = View(app).apply { background = cardBackground(px) }
-+        box.addView(card, FrameLayout.LayoutParams(-1, h))
-+        cardBg = card
 +        val inner = FrameLayout(app).apply { clipChildren = true }
 +        content = inner
-+        val inset = (3 * px).roundToInt()
-+        box.addView(inner, FrameLayout.LayoutParams(-1, -1).apply {
-+            setMargins(inset, inset, inset, inset)
-+        })
++        box.addView(inner, FrameLayout.LayoutParams(-1, -1))
 +        // 用 TextureView 承载画面：它是普通 View，能按圆角裁剪（SurfaceView 是独立图层，
 +        // 圆角裁剪管不到，只能靠底色盖四角 —— Mika 那种"画面本身是圆的"就要用这条）。
 +        val surfaceView = TextureView(app)
 +        surfaceView.clipToOutline = true
 +        surfaceView.outlineProvider = object : ViewOutlineProvider() {
 +            override fun getOutline(view: View, outline: Outline) {
-+                val r = 13f * px
++                val r = 16f * px
 +                outline.setRoundRect(0, 0, view.width, view.height, r)
 +            }
 +        }
@@ -3805,7 +3842,7 @@ index 0000000..ec3bc5a
 +            clipToOutline = true
 +            outlineProvider = object : ViewOutlineProvider() {
 +                override fun getOutline(view: View, outline: Outline) {
-+                    outline.setRoundRect(0, 0, view.width, view.height, 13f * px)
++                    outline.setRoundRect(0, 0, view.width, view.height, 16f * px)
 +                }
 +            }
 +        }
@@ -3863,6 +3900,11 @@ index 0000000..ec3bc5a
 +    }
 +
 +    fun hide() {
++        // 把手是独立窗口：主窗收起时必须一起移除，否则屏幕上会留下一条绿条。
++        gripWin?.let { v -> wm?.let { m -> runCatching { m.removeView(v) } } }
++        gripWin = null
++        gripParams = null
++        revealed = false
 +        val view = root ?: return
 +        val app = context ?: view.context.applicationContext
 +        root = null
@@ -3915,6 +3957,11 @@ index 0000000..ec3bc5a
 +    }
 +
 +    /** 虚拟屏上有没有前台应用：没有就把「返」「转」置灰。 */
++    /** Dart 同步过来的任务号（迁移后会变）；窗口的动作都带它，避免拿空 id 去注入。 */
++    fun setTaskId(value: Long) {
++        if (value > 0) taskId = value
++    }
++
 +    fun setHasApp(value: Boolean) {
 +        if (hasApp == value) return
 +        hasApp = value
@@ -4018,8 +4065,11 @@ index 0000000..ec3bc5a
 +            displayHeight = (reply["height"] as? Int) ?: displayHeight
 +            liveSurface = attached
 +            if (attached) {
++                previewTaskId = target.taskId
 +                surfaceRetries = 0
-+                main.post { reveal(root) }
++                // 表面接上 ≠ 应用画好了：立刻显示会看到黑屏（20:19 日志）。
++                // 给应用 0.9 秒画第一帧；期间窗口保持透明。
++                main.postDelayed({ reveal(root) }, 900)
 +            }
 +            else if (surface != null) scheduleSurfaceRetry(app, gen)
 +            main.post {
@@ -4153,9 +4203,6 @@ index 0000000..ec3bc5a
 +    /** 底边把手：14dp 高，完全落在卡片外面（不遮挡画面）。 */
 +    private fun gripHeight(px: Float): Int = (14 * px).roundToInt()
 +
-+    /** 窗口比卡片多出来的高度：把手 14dp + 上下各 3dp 空隙。 */
-+    private fun overhangOf(px: Float): Int = gripHeight(px) + (6 * px).roundToInt()
-+
 +    private fun aspect(): Float =
 +        if (displayWidth > 0 && displayHeight > 0) {
 +            displayHeight.toFloat() / displayWidth.toFloat()
@@ -4176,9 +4223,8 @@ index 0000000..ec3bc5a
 +        if (shape == Shape.EXPAND && fullscreen) {
 +            // 全屏 = 跟手机屏幕一样大（用户 16:16）：扣掉状态栏/导航栏和边距，
 +            // 位置钉在左上角（applyShape 里处理）。
-+            val overhangPx = overhangOf(px)
 +            val w = area.screenW - area.left - area.right - margin * 2
-+            val h = area.screenH - area.top - area.bottom - margin * 2 - overhangPx
++            val h = area.screenH - area.top - area.bottom - margin * 2
 +            return w.coerceAtLeast(1) to h.coerceAtLeast(1)
 +        }
 +        val z = effectiveZoom(shape)
@@ -4203,10 +4249,7 @@ index 0000000..ec3bc5a
 +        }
 +        // 不超出屏幕（留出贴边距离）。
 +        val maxW = area.screenW - margin * 2
-+        // 窗口比卡片高一个 overhang（给底边把手）；可用高度要把它扣掉，
-+        // 否则窗口底边会被挤出屏幕——"边框显示不完整"（用户 15:10）。
-+        val overhangPx = if (shape == Shape.SLIVER) 0 else overhangOf(px)
-+        val maxHPx = area.screenH - margin * 2 - overhangPx
++        val maxHPx = area.screenH - margin * 2
 +        if (w * px > maxW) {
 +            w = maxW / px
 +            h = w * a
@@ -4237,61 +4280,32 @@ index 0000000..ec3bc5a
 +        main.postDelayed({
 +            val b = root
 +            WakeTrace.log(
-+                "window: size-check box=${b?.width}x${b?.height} card=${cardBg?.width}x${cardBg?.height} " +
++                "window: size-check box=${b?.width}x${b?.height} " +
 +                    "content=${content?.width}x${content?.height} lp=${params?.width}x${params?.height}")
 +        }, 120)
 +        val margin = (10 * px).roundToInt()
-+        // 把手在底边中间突出：窗口比卡片高一个 overhang，边条压在卡片底边上。
-+        // 全屏不要拖拽条，也就不要给把手留空间（否则底部多一条空白）。
-+        val overhang = if (next == Shape.SLIVER || (next == Shape.EXPAND && fullscreen)) 0 else overhangOf(px)
-+        // 定位用整窗高度（h + overhang），不然底边会超出安全区。
++        // 窗口 = 画面：高度不再给把手留空间（把手是独立窗口）。
 +        // 全屏不按贴边位置摆：钉在安全区左上角。
 +        val at = if (next == Shape.EXPAND && fullscreen) {
 +            WindowPos(EdgeSnap.minX(area, margin), EdgeSnap.minY(area, margin))
 +        } else {
-+            EdgeSnap.position(dock, w, h + overhang, area, margin)
++            EdgeSnap.position(dock, w, h, area, margin)
 +        }
 +        lp.width = w
-+        lp.height = h + overhang
-+        // 窗口一变，卡片和画面必须同一步跟着变：之前只改了窗口和卡片，
-+        // 画面容器还是 match_parent，结果放大后画面只占左边一条（18:41 截图）。
-+        val insetPx = (3 * px).roundToInt()
-+        cardBg?.layoutParams = (cardBg?.layoutParams as? FrameLayout.LayoutParams ?: FrameLayout.LayoutParams(-1, h)).also {
-+            it.height = h
-+            it.width = w
-+        }
-+        content?.layoutParams = (content?.layoutParams as? FrameLayout.LayoutParams ?: FrameLayout.LayoutParams(-1, -1)).also {
-+            it.width = (w - insetPx * 2).coerceAtLeast(1)
-+            it.height = (h - insetPx * 2).coerceAtLeast(1)
-+            it.setMargins(insetPx, insetPx, insetPx, insetPx)
-+        }
-+        cardBg?.requestLayout()
-+        content?.requestLayout()
-+        grip?.let { g ->
-+            val gh = gripHeight(px)
-+            val glp = FrameLayout.LayoutParams((56 * px).roundToInt(), gh, Gravity.TOP or Gravity.CENTER_HORIZONTAL)
-+            // 完全在卡片下面，画面一点不被压到（用户 18:47）。
-+            glp.topMargin = h + (3 * px).roundToInt()
-+            g.layoutParams = glp
-+            // 拖动条只在展开态显示（验收单 #9）：小窗整块能拖，不需要条。
-+            // 只有"展开"才有拖拽条：小窗、全屏都没有（用户 19:20）。
-+            g.visibility = if (next == Shape.EXPAND && !fullscreen) View.VISIBLE else View.GONE
-+            g.requestLayout()
-+        }
-+        cardBg?.requestLayout()
++        lp.height = h
 +        lp.x = at.x
 +        // 与主屏的切换球同侧时自动错开（第十节 4）。
 +        val ball = TransferBall.currentRect()
 +        lp.y = if (ball == null) at.y else OverlaySpacing.apart(
-+            dock.side, at.x, at.y, w, h + overhang, area, margin, TransferBall.currentSide(), ball,
++            dock.side, at.x, at.y, w, h, area, margin, TransferBall.currentSide(), ball,
 +        )
 +        try {
 +            manager.updateViewLayout(view, lp)
 +        } catch (_: Exception) {
 +        }
-+        // 卡片背景已经由独立的 card 视图画（它比窗口矮 overhang，给底边把手让位）。
-+        // 这里再给 box 画一次 cardBackground → 两个绿色圆角框错开 10dp，看起来"下边多了一条边"
-+        // （用户 14:59 反馈）。非 SLIVER 时 box 保持透明。
++        // 位置定了再摆把手：它与主窗底边对齐，全屏态不显示（用户 19:20）。
++        syncGripWindow(view.context, manager, lp.x, lp.y, w, h, next == Shape.EXPAND && !fullscreen)
++        // 非 SLIVER 时 box 完全透明（画面自己带圆角），窗口边缘就是画面边缘。
 +        view.background = if (next == Shape.SLIVER) sliverBackground(px) else null
 +        // INVISIBLE, not GONE: a GONE SurfaceView destroys its surface, and the display would
 +        // have to be re-attached every time the window parks.
@@ -4323,17 +4337,17 @@ index 0000000..ec3bc5a
 +        // 不是同一个对象，拿旧的去 updateViewLayout 会静默失败（点 ＋/− 没反应就是这个）。
 +        val lp = (view.layoutParams as? WindowManager.LayoutParams) ?: params ?: return
 +        val margin = (10 * px).roundToInt()
-+        val overhang = if (shape == Shape.SLIVER) 0 else overhangOf(px)
 +        lp.width = w
-+        lp.height = h + overhang
++        lp.height = h
 +        lp.x = lp.x.coerceIn(EdgeSnap.minX(area, margin), EdgeSnap.maxX(area, w, margin))
-+        lp.y = lp.y.coerceIn(EdgeSnap.minY(area, margin), EdgeSnap.maxY(area, h + overhang, margin))
++        lp.y = lp.y.coerceIn(EdgeSnap.minY(area, margin), EdgeSnap.maxY(area, h, margin))
 +        try {
 +            manager.updateViewLayout(view, lp)
 +        } catch (e: Exception) {
 +            WakeTrace.log("window: zoom apply failed ${e.javaClass.simpleName}: ${e.message}")
 +        }
 +        WakeTrace.log("window: zoom=${zoom} size=${w}x$h at=${lp.x},${lp.y}")
++        syncGripWindow(view.context, manager, lp.x, lp.y, w, h, shape == Shape.EXPAND && !fullscreen)
 +        applyValidity()
 +        applyLive()
 +    }
@@ -4345,6 +4359,100 @@ index 0000000..ec3bc5a
 +        if (abs(a - savedAspect) < 0.001f) return
 +        savedAspect = a
 +        app.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putFloat(KEY_ASPECT, a).apply()
++    }
++
++    private var gripWin: View? = null
++    private var gripParams: WindowManager.LayoutParams? = null
++
++    /**
++     * 展开态的拖拽条：**独立的第二个窗口**，贴在主窗底边外面。
++     * 结构重构（20:30）：把手不再画在主窗里，主窗尺寸就等于画面，永远不压内容。
++     * 拖它 → 拖动主窗。
++     */
++    private fun syncGripWindow(
++        app: Context, manager: WindowManager,
++        x: Int, y: Int, w: Int, h: Int, show: Boolean,
++    ) {
++        val px = app.resources.displayMetrics.density
++        val gw = (56 * px).roundToInt()
++        val gh = gripHeight(px)
++        val gap = (3 * px).roundToInt()
++        if (!show) {
++            gripWin?.let { runCatching { manager.removeView(it) } }
++            gripWin = null
++            gripParams = null
++            return
++        }
++        val view = gripWin ?: View(app).apply {
++            background = GradientDrawable().apply {
++                cornerRadius = gh / 2f
++                setColor(GREEN)
++            }
++            val touch = object : View.OnTouchListener {
++                var startY = 0f
++                var fromY = 0
++                override fun onTouch(v: View, e: MotionEvent): Boolean {
++                    val lp = params ?: return false
++                    when (e.actionMasked) {
++                        MotionEvent.ACTION_DOWN -> {
++                            startY = e.rawY
++                            fromY = lp.y
++                            v.alpha = 1f
++                        }
++                        MotionEvent.ACTION_MOVE -> {
++                            val box = root ?: return true
++                            lp.y = (fromY + (e.rawY - startY)).toInt()
++                            runCatching { manager.updateViewLayout(box, lp) }
++                            syncGripWindow(app, manager, lp.x, lp.y, lp.width, lp.height, true)
++                        }
++                        MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
++                            v.alpha = 0.85f
++                            parkFromWindow()
++                        }
++                    }
++                    return true
++                }
++            }
++            setOnTouchListener(touch)
++        }
++        gripWin = view
++        val lp = gripParams ?: WindowManager.LayoutParams(
++            gw, gh, overlayType(),
++            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
++                WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS or
++                WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
++            PixelFormat.TRANSLUCENT,
++        ).apply { gravity = Gravity.TOP or Gravity.START }
++        lp.x = x + (w - gw) / 2
++        lp.y = y + h + gap
++        lp.width = gw
++        lp.height = gh
++        try {
++            if (gripParams == null) manager.addView(view, lp) else manager.updateViewLayout(view, lp)
++        } catch (_: Exception) {
++        }
++        gripParams = lp
++    }
++
++    /** 松手后按主窗当前位置吸边（把手拖动结束时调用）。 */
++    private fun parkFromWindow() {
++        val app = context ?: return
++        val manager = wm ?: return
++        val box = root ?: return
++        val lp = (box.layoutParams as? WindowManager.LayoutParams) ?: params ?: return
++        val px = app.resources.displayMetrics.density
++        val area = area(app, manager)
++        // 按松手位置算贴哪边、纵向比例（不依赖 PetFrames 的 FramePx）。
++        val margin = (10 * px).roundToInt()
++        val cx = lp.x + lp.width / 2
++        val side = if (cx < area.screenW / 2) Side.LEFT else Side.RIGHT
++        val lo = EdgeSnap.minY(area, margin)
++        val hi = EdgeSnap.maxY(area, lp.height, margin)
++        val fraction = if (hi > lo) ((lp.y - lo).toFloat() / (hi - lo)).coerceIn(0f, 1f) else dock.yFraction
++        dock = Dock(side, fraction)
++        applyShape(shape, manager, lp, box, area, px)
++        val sp = app.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
++        sp.putString(KEY_SIDE, if (dock.side == Side.LEFT) "l" else "r").putFloat(KEY_FRACTION, dock.yFraction).apply()
 +    }
 +
 +    private fun applyAspect() {
@@ -4583,20 +4691,8 @@ index 0000000..ec3bc5a
 +        hint = caption
 +
 +
-+        // 拖窗把手（效果图那一条）：56×14dp 的小长条，跨在卡片底边正中，一半在外。
-+        // 上一版做成"多一条边"是因为它和卡片描边叠在一起、且窗口下方留了透明缝；
-+        // 这次：条子在卡片之后加入（盖住那一段描边），底色用卡片色描边、不透明填充。
-+        val gripW = (56 * px).roundToInt()
-+        val gripH = (16 * px).roundToInt()
-+        val gripView = View(app).apply {
-+            background = GradientDrawable().apply {
-+                cornerRadius = gripH / 2f
-+                setColor(0xFF34D399.toInt())
-+                setStroke((1.5f * px).roundToInt(), Color.rgb(10, 14, 24))
-+            }
-+        }
-+        box.addView(gripView, FrameLayout.LayoutParams(gripW, gripH, Gravity.TOP or Gravity.CENTER_HORIZONTAL))
-+        grip = gripView
++        // 拖拽条已改成独立小窗（syncGripWindow），这里不再往主窗里放任何东西。
++
 +
 +        val row = LinearLayout(app).apply {
 +            orientation = LinearLayout.HORIZONTAL
@@ -4677,7 +4773,10 @@ index 0000000..ec3bc5a
 +    /** 转: this screen's app goes to the phone itself, and the window steps aside. */
 +    private fun transferToMain() {
 +        if (!hasApp) return
-+        onAction?.invoke("toMain")
++        // 带上窗口实际绑定的任务号：Dart 那边的状态可能是旧的/空的，
++        // 之前就出现 handOverTask(taskId:0) → noTask（20:23 日志）。
++        val id = taskId.takeIf { it > 0 } ?: previewTaskId
++        onAction?.invoke(if (id != null && id > 0) "toMain:$id" else "toMain")
 +    }
 +
 +    /** ×：关窗 + 结束任务（用户 19:32 选定）。 */
@@ -4717,11 +4816,9 @@ index 0000000..ec3bc5a
 +        var longPress: Runnable? = null
 +
 +        fun fraction(rawX: Float, rawY: Float): Pair<Double, Double> {
-+            // 用「卡片」的尺寸算比例，不用窗口尺寸：窗口底部多出 10dp 给把手突出，
-+            // 用窗口高会让所有点击都偏上；缩放时卡片尺寸跟着变，比例仍然对得上。
-+            val cardH = cardBg?.height?.takeIf { it > 0 } ?: lp.height
++            // 窗口 = 画面，比例直接按窗口算（不再有卡片层与底部多出的高度）。
 +            val fx = ((rawX - lp.x) / lp.width.toFloat()).coerceIn(0f, 1f).toDouble()
-+            val fy = ((rawY - lp.y) / cardH.toFloat()).coerceIn(0f, 1f).toDouble()
++            val fy = ((rawY - lp.y) / lp.height.toFloat()).coerceIn(0f, 1f).toDouble()
 +            return fx to fy
 +        }
 +
@@ -4731,7 +4828,11 @@ index 0000000..ec3bc5a
 +                val (tx, ty) = fraction(to.x, to.y)
 +                "," + fmt(tx) + "," + fmt(ty)
 +            }
-+            onAction?.invoke("manual:" + fmt(fx) + "," + fmt(fy) + "," + kind + tail)
++            // 带上窗口实际绑定的任务号：Dart 侧状态可能是旧的，之前点按因此报
++            // "原观察不再可用"（20:19 截图里的红叉）。
++            val id = taskId.takeIf { it > 0 } ?: previewTaskId
++            val head = if (id > 0) "manual:$id:" else "manual:"
++            onAction?.invoke(head + fmt(fx) + "," + fmt(fy) + "," + kind + tail)
 +        }
 +
 +        fun hit(view: View?, rawX: Float, rawY: Float): Boolean {
@@ -4746,8 +4847,7 @@ index 0000000..ec3bc5a
 +        fun onChrome(rawX: Float, rawY: Float): Boolean =
 +            hit(backKey, rawX, rawY) || hit(volumeKey, rawX, rawY) || hit(eyeKey, rawX, rawY) ||
 +                hit(closeKey, rawX, rawY) || hit(transferKey, rawX, rawY) ||
-+                hit(fullscreenKey, rawX, rawY) || hit(volumeRow, rawX, rawY) || hit(hint, rawX, rawY) ||
-+                hit(grip, rawX, rawY)
++                hit(fullscreenKey, rawX, rawY) || hit(volumeRow, rawX, rawY) || hit(hint, rawX, rawY)
 +
 +        fun dragTo(event: MotionEvent, dx: Int, dy: Int) {
 +            val now = SystemClock.elapsedRealtime()
@@ -4784,7 +4884,7 @@ index 0000000..ec3bc5a
 +        // 先透明：等第一帧（抓帧或直显）再显示，别让用户看到黑框。
 +        box.alpha = 0f
 +        revealed = false
-+        main.postDelayed({ reveal(box) }, 2500)
++        main.postDelayed({ reveal(box) }, 3500)
 +        box.setOnTouchListener { _, event ->
 +            when (event.actionMasked) {
 +                MotionEvent.ACTION_DOWN -> {
@@ -4878,53 +4978,94 @@ index 0000000..ec3bc5a
 +                else -> false
 +            }
 +        }
-+        // 手动操作打开时，画面上的拖动是滑动注入；窗口靠这条提示条挪动、贴边（第十二节 4 的
-+        // 单指拖动窗口仍然在，只是换了个把手）。所有形态下它也是拖窗把手。
-+        grip?.setOnTouchListener { _, event ->
++        box.setOnTouchListener { _, event ->
 +            when (event.actionMasked) {
 +                MotionEvent.ACTION_DOWN -> {
-+                    startX = event.rawX; startY = event.rawY
-+                    fromX = lp.x; fromY = lp.y
-+                    lastX = event.rawX; lastAt = SystemClock.elapsedRealtime()
-+                    vx = 0f; dragging = false
-+                    true
-+                }
-+                MotionEvent.ACTION_MOVE -> {
-+                    val dx = event.rawX - startX
-+                    val dy = event.rawY - startY
-+                    if (!dragging && (abs(dx) > 6 * px || abs(dy) > 6 * px)) dragging = true
-+                    if (dragging) dragTo(event, dx.roundToInt(), dy.roundToInt())
-+                    true
-+                }
-+                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
-+                    if (dragging) park()
-+                    true
-+                }
-+                else -> false
-+            }
-+        }
-+        hint?.setOnTouchListener { _, event ->
-+            when (event.actionMasked) {
-+                MotionEvent.ACTION_DOWN -> {
++                    WakeTrace.log("window: down shape=$shape at=${event.rawX.toInt()},${event.rawY.toInt()} manual=${manualAllowed(context)}")
++                    if (shape != Shape.SLIVER && onChrome(event.rawX, event.rawY)) {
++                        // 键已经处理过的不会走到这里（子 View 先拿到事件）；走到这里说明
++                        // 点在键缝/提示条上——必须吞掉，返回 false 会让触摸"漏"给下层窗口
++                        // （主屏幕），用户 15:28 反馈的就是这个漏。
++                        return@setOnTouchListener true
++                    }
 +                    startX = event.rawX
 +                    startY = event.rawY
 +                    fromX = lp.x
 +                    fromY = lp.y
 +                    lastX = event.rawX
 +                    lastAt = SystemClock.elapsedRealtime()
++                    downAt = lastAt
++                    moved = 0f
 +                    vx = 0f
 +                    dragging = false
++                    longFired = false
++                    // 交互分工（验收单 #4/#5/#9）：展开态只有底部的拖动条能挪窗口，
++                    // 画面永远留给操作应用；小窗没有条，整块都能拖。
++                    val manualNow = manualAllowed(context) && shape == Shape.EXPAND
++                    windowGrab = shape == Shape.SMALL
++                    // 手动操作只在展开态生效：小窗是“看一眼”的形态（第十节 1–3）。
++                    if (manualNow && !windowGrab) {
++                        val where = android.graphics.PointF(event.rawX, event.rawY)
++                        val press = Runnable {
++                            if (dragging || longFired) return@Runnable
++                            longFired = true
++                            inject("long", where)
++                        }
++                        longPress = press
++                        main.postDelayed(press, 500)
++                    }
 +                    true
 +                }
 +                MotionEvent.ACTION_MOVE -> {
 +                    val dx = event.rawX - startX
 +                    val dy = event.rawY - startY
-+                    if (!dragging && (abs(dx) > 6 * px || abs(dy) > 6 * px)) dragging = true
-+                    if (dragging) dragTo(event, dx.roundToInt(), dy.roundToInt())
++                    moved = if (abs(dx) > abs(dy)) abs(dx) else abs(dy)
++                    if (windowGrab) {
++                        if (!dragging && moved > 6 * px) {
++                            dragging = true
++                            longPress?.let { main.removeCallbacks(it) }
++                            longPress = null
++                        }
++                        if (dragging) dragTo(event, dx.roundToInt(), dy.roundToInt())
++                    } else if (moved > 8 * px && !longFired) {
++                        // 画面里滑动：取消长按，松手时按滑动注入。
++                        longPress?.let { main.removeCallbacks(it) }
++                        longPress = null
++                    }
 +                    true
 +                }
 +                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
-+                    if (dragging) park() else applyShape(Shape.SMALL, manager, lp, box, area, px)
++                    longPress?.let { main.removeCallbacks(it) }
++                    longPress = null
++                    if (shape == Shape.SLIVER) {
++                        if (dragging) {
++                            park()
++                        } else {
++                            applyShape(Shape.SMALL, manager, lp, box, area, px)
++                        }
++                        return@setOnTouchListener true
++                    }
++                    val manual = manualAllowed(context) && shape == Shape.EXPAND
++                    if (dragging && windowGrab) {
++                        park()
++                        return@setOnTouchListener true
++                    }
++                    if (!manual) {
++                        if (moved > 8 * px) return@setOnTouchListener true
++                        if (SystemClock.elapsedRealtime() - downAt > 400) return@setOnTouchListener true
++                        // 点小窗 → 放大（出全部按键）；再点画面 → 收回小窗（第十节 3）。
++                        applyShape(if (shape == Shape.SMALL) Shape.EXPAND else Shape.SMALL, manager, lp, box, area, px)
++                        return@setOnTouchListener true
++                    }
++                    // 允许手动操作: 点、长按、滑动都直接落到虚拟屏里的应用上。
++                    if (longFired) return@setOnTouchListener true
++                    val from = android.graphics.PointF(startX, startY)
++                    val to = android.graphics.PointF(event.rawX, event.rawY)
++                    if (moved > 8 * px) {
++                        inject("swipe", from, to)
++                    } else if (SystemClock.elapsedRealtime() - downAt < 400) {
++                        inject("tap", to)
++                    }
 +                    true
 +                }
 +                else -> false
@@ -4934,12 +5075,6 @@ index 0000000..ec3bc5a
 +
 +    private fun fmt(value: Double): String = String.format(java.util.Locale.US, "%.3f", value)
 +
-+
-+    private fun cardBackground(px: Float) = GradientDrawable().apply {
-+        cornerRadius = 16 * px
-+        setColor(Color.rgb(10, 14, 24))
-+        // 绿边取消（用户 15:05）：窗口只留圆角深色底，不再画绿色描边。
-+    }
 +
 +    private fun sliverBackground(px: Float) = GradientDrawable().apply {
 +        cornerRadius = 6 * px
@@ -4960,10 +5095,10 @@ index 0000000..ec3bc5a
 +}
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenPlugin.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenPlugin.kt
 new file mode 100644
-index 0000000..557bd13
+index 0000000..b45dec7
 --- /dev/null
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenPlugin.kt
-@@ -0,0 +1,96 @@
+@@ -0,0 +1,104 @@
 +package io.github.ccch1mneyyy.dsh_app.phone.vscreen
 +
 +import android.content.Context
@@ -4977,7 +5112,8 @@ index 0000000..557bd13
 + *
 + *   dsh/virtual-screen  show { taskId } -> bool · hide · frame { bytes } -> bool
 + *   dsh/virtual-screen  wantsFrames -> bool
-+ *   dsh/virtual-screen  state { hasApp }：「返」「转」的有效性
++ *   dsh/virtual-screen  state { hasApp, taskId? }：「返」「转」的有效性 + 任务号
++ *   dsh/virtual-screen  retask { taskId }：窗口不重建，只换任务号
 + *   dsh/virtual-screen  action：窗口自己不动手的那几件事，交给 App 做
 + *                      open | stop | back | toMain | manual:<x>,<y>,tap
 + *   dsh/virtual-screen  ball { on } -> bool：主屏上的吸附式悬浮球（转进虚拟屏）
@@ -5020,6 +5156,11 @@ index 0000000..557bd13
 +                if (shown) PhoneRegistry.holdDisplayForWindow?.invoke(true)
 +                result.success(shown)
 +            }
++            "retask" -> {
++                // 窗口已经开着，只是任务换了（迁移）：别重建窗口，换个任务号即可。
++                (call.argument<Number>("taskId"))?.toLong()?.let { VirtualScreenOverlay.setTaskId(it) }
++                result.success(true)
++            }
 +            "hide" -> {
 +                VirtualScreenOverlay.hide()
 +                // 关窗时先把屏里的应用搬回手机（内容不丢失、不被杀），再放开占屏。
@@ -5041,6 +5182,8 @@ index 0000000..557bd13
 +            // 虚拟屏上有没有前台应用：没有时窗口里的「返」「转」置灰（第十二节 2）。
 +            "state" -> {
 +                VirtualScreenOverlay.setHasApp(call.argument<Boolean>("hasApp") ?: true)
++                // 任务号也可能变（迁移后）：Dart 一侧知道最新的，同步给窗口。
++                (call.argument<Number>("taskId"))?.toLong()?.let { VirtualScreenOverlay.setTaskId(it) }
 +                result.success(null)
 +            }
 +            "ball" -> {
@@ -80075,10 +80218,10 @@ index 61789e5..ed59b04 100644
    Future<PhoneSkillReply> openSkillDraft(PhoneSkillCandidate candidate, {required bool confirmed}) =>
 diff --git a/app/lib/phone/virtual_screen_window.dart b/app/lib/phone/virtual_screen_window.dart
 new file mode 100644
-index 0000000..56040d3
+index 0000000..bc807e1
 --- /dev/null
 +++ b/app/lib/phone/virtual_screen_window.dart
-@@ -0,0 +1,115 @@
+@@ -0,0 +1,127 @@
 +import 'dart:async';
 +
 +import 'package:flutter/services.dart';
@@ -80108,6 +80251,18 @@ index 0000000..56040d3
 +
 +  /// 开窗并开始推帧。[fps] 变了调用 [setFps]。
 +  Future<bool> open(int taskId, {int fps = 15}) async {
++    // 已经开着、且这次给的是"当前那块虚拟屏"（0）或同一个任务：保持原窗口不动。
++    if (_open && taskId <= 0) return true;
++    // 已经开着、只是任务号变了（迁移）：只换任务号，不重建窗口（否则画面闪一下）。
++    if (_open && taskId > 0 && taskId != _taskId) {
++      try {
++        await _native.invokeMethod<void>('retask', {'taskId': taskId});
++        _taskId = taskId;
++        return true;
++      } on Object {
++        // 换号失败就走重建。
++      }
++    }
 +    await close();
 +    _fps = fps.clamp(1, 15);
 +    final shown = await _native.invokeMethod<bool>('show', {'taskId': taskId}) ?? false;
@@ -80339,7 +80494,7 @@ index b9b8ffa..0c4f229 100644
      _idle?.cancel();
      if (!_replies.isClosed) _replies.add(CallReply(_last, done: true));
 diff --git a/app/lib/speech/call/voice_call.dart b/app/lib/speech/call/voice_call.dart
-index d97ef1a..95fe04f 100644
+index d97ef1a..fd2c6b6 100644
 --- a/app/lib/speech/call/voice_call.dart
 +++ b/app/lib/speech/call/voice_call.dart
 @@ -20,6 +20,7 @@ import 'dart:async';
@@ -80391,7 +80546,7 @@ index d97ef1a..95fe04f 100644
      _turns.add(CallTurn(_heard));
      _reply = '';
      _said = '';
-@@ -432,13 +447,36 @@ class VoiceCallController extends ChangeNotifier {
+@@ -432,13 +447,45 @@ class VoiceCallController extends ChangeNotifier {
      }
    }
  
@@ -80414,12 +80569,22 @@ index d97ef1a..95fe04f 100644
      final text = reply.text;
      if (text.length > _spoken) {
 -      if (_spoken == 0) unawaited(const DiagnosticsChannel().recordVoiceStage('reply_received'));
+-      final out = _out ??= _newVoice();
+-      out.add(text.substring(_spoken));
 +      if (_spoken == 0) {
 +        unawaited(const DiagnosticsChannel().recordVoiceStage('reply_received'));
 +        diagWake('call#$id: reply arrived (${text.length} chars), spoken=$_spoken');
 +      }
-       final out = _out ??= _newVoice();
--      out.add(text.substring(_spoken));
++      SpeechOut out;
++      try {
++        out = _out ??= _newVoice();
++      } catch (e, st) {
++        // 收起成球后这一句会抛异常（页面已 dispose，闭包里还有页面级对象）。
++        // 以前异常被流吞掉，表现就是"只有文字、没有声音"（20:14 日志）。
++        diagWake('call#$id: voice create failed: $e');
++        diagWake('call#$id: stack: ${st.toString().split('\n').take(4).join(' | ')}');
++        return;
++      }
 +      try {
 +        out.add(text.substring(_spoken));
 +        diagWake('call#$id: handed ${text.length - _spoken} chars to ${out.runtimeType}');
@@ -80430,7 +80595,7 @@ index d97ef1a..95fe04f 100644
        _spoken = text.length;
        _reply = text;
        if (_turns.isNotEmpty) _turns.last = CallTurn(_turns.last.you, her: text);
-@@ -496,8 +534,11 @@ class VoiceCallController extends ChangeNotifier {
+@@ -496,8 +543,11 @@ class VoiceCallController extends ChangeNotifier {
      unawaited(thinkingCue?.call());
    }
  
@@ -80442,7 +80607,7 @@ index d97ef1a..95fe04f 100644
      final turn = _turn;
      _outSub = out.events.listen((event) {
        if (!identical(_out, out) || _phase == CallPhase.ended) return;
-@@ -505,6 +546,7 @@ class VoiceCallController extends ChangeNotifier {
+@@ -505,6 +555,7 @@ class VoiceCallController extends ChangeNotifier {
          case SpeechOutStarted():
            _voiced = true;
            _cueTimer?.cancel();
@@ -80613,10 +80778,10 @@ index c089d19..a15b64d 100644
  
 diff --git a/app/lib/state/virtual_screen_state.dart b/app/lib/state/virtual_screen_state.dart
 new file mode 100644
-index 0000000..54bfbfe
+index 0000000..fc55459
 --- /dev/null
 +++ b/app/lib/state/virtual_screen_state.dart
-@@ -0,0 +1,261 @@
+@@ -0,0 +1,262 @@
 +import 'dart:async';
 +
 +import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -80810,8 +80975,9 @@ index 0000000..54bfbfe
 +    // 窗口跟随"实际在用哪块屏"（用户 15:47）：AI 明确在主屏操作时窗口不出现；
 +    // 只有真的在虚拟屏上干活（或刚转进来）才显示。设置开关只是默认值。
 +    final onVirtual = status.lastScreen == 'background';
++    // 宽限期内一直算"该显示"，到期自然失效（不能读一次就清掉，否则第二次 sync 又关了）。
 +    final holding = _holdOpenUntil != null && DateTime.now().isBefore(_holdOpenUntil!);
-+    if (holding) _holdOpenUntil = null;
++    if (!holding) _holdOpenUntil = null;
 +    if (!onVirtual && !holding) {
 +      if (state.open) unawaited(close());
 +      return;
@@ -82120,10 +82286,10 @@ index 0000000..26e0742
 +final phoneTaskClockProvider = NotifierProvider<PhoneTaskClock, DateTime>(PhoneTaskClock.new);
 diff --git a/app/lib/ui/phone/virtual_screen_host.dart b/app/lib/ui/phone/virtual_screen_host.dart
 new file mode 100644
-index 0000000..89f4fcf
+index 0000000..80d5d7e
 --- /dev/null
 +++ b/app/lib/ui/phone/virtual_screen_host.dart
-@@ -0,0 +1,281 @@
+@@ -0,0 +1,302 @@
 +import 'dart:async';
 +
 +import 'package:flutter/material.dart';
@@ -82204,8 +82370,10 @@ index 0000000..89f4fcf
 +      await ref.read(virtualWindowProvider.notifier).close();
 +    } else if (action == 'back') {
 +      await _back();
-+    } else if (action == 'toMain') {
-+      await _transfer(toMain: true);
++    } else if (action == 'toMain' || action.startsWith('toMain:')) {
++      // 原生会把窗口实际绑定的任务号带过来（toMain:7），避免拿空 id 去迁移。
++      final id = action.contains(':') ? int.tryParse(action.split(':').last) : null;
++      await _transfer(toMain: true, taskId: id);
 +    } else if (action == 'toVirtual') {
 +      // 主屏上的悬浮球：把主屏当前应用交给 AI。
 +      await _transfer(toMain: false);
@@ -82245,9 +82413,19 @@ index 0000000..89f4fcf
 +    final taskId = _taskId;
 +    diagWake('manual: action=$action taskId=$taskId acting=$_acting');
 +    if (taskId == null || _acting) return;
++    // 格式两种都认：manual:x,y,kind（旧）和 manual:<taskId>:x,y,kind（原生带任务号）。
 +    final parts = action.split(':');
-+    if (parts.length != 2) return;
-+    final values = parts[1].split(',');
++    if (parts.length < 2) return;
++    int? nativeId;
++    String payload;
++    if (parts.length >= 3) {
++      nativeId = int.tryParse(parts[1]);
++      payload = parts.sublist(2).join(':');
++    } else {
++      payload = parts[1];
++    }
++    final id = (nativeId != null && nativeId > 0) ? nativeId : taskId;
++    final values = payload.split(',');
 +    if (values.length < 3) return;
 +    final x = double.tryParse(values[0]);
 +    final y = double.tryParse(values[1]);
@@ -82266,7 +82444,7 @@ index 0000000..89f4fcf
 +    if (gated) _acting = true;
 +    try {
 +      final result = await ref.read(phoneChannelProvider).previewGesture(
-+        taskId: taskId,
++        taskId: id,
 +        action: values[2],
 +        x: x,
 +        y: y,
@@ -82286,16 +82464,20 @@ index 0000000..89f4fcf
 +  /// 转（两个方向同一个入口）：[toMain] 把虚拟屏上的应用搬到手机；否则把手机的应用交给 AI。
 +  /// 迁完自动切换操作目标，并把视线放回该看的地方（转进虚拟屏 → 对话页 + 悬浮窗）。
 +  /// 主屏 → 虚拟屏允许没有现成任务：引擎按需建屏（第二十三节 3）。
-+  Future<void> _transfer({required bool toMain}) async {
-+    diagWake('transfer: toMain=$toMain requested');
++  Future<void> _transfer({required bool toMain, int? taskId}) async {
++    diagWake('transfer: toMain=$toMain requested id=${taskId ?? '-'}');
 +    if (_acting) return;
-+    final taskId = _taskId;
-+    if (toMain && taskId == null) return;
++    // 原生带来的 id 优先；没有才退回状态里的任务。
++    final resolved = taskId ?? _taskId;
++    if (toMain && resolved == null) {
++      if (mounted) showBriefNotice(context, '还没拿到虚拟屏的任务号，稍等一下再试。');
++      return;
++    }
 +    _acting = true;
 +    try {
-+      final result = taskId == null
++      final result = resolved == null
 +          ? await ref.read(phoneChannelProvider).handOverFromMain()
-+          : await ref.read(phoneChannelProvider).handOverTask(taskId: taskId, toMain: toMain);
++          : await ref.read(phoneChannelProvider).handOverTask(taskId: resolved, toMain: toMain);
 +      diagWake('transfer: done toMain=$toMain ok=${result.ok} reason=${result.reason}');
 +      if (!mounted) return;
 +      if (!result.ok) {
@@ -82323,6 +82505,8 @@ index 0000000..89f4fcf
 +        // 主屏回到对话页，悬浮窗自己弹出来（第十五节）。
 +        _bringAppForward();
 +        // 迁移这条路不建任务记录，状态里可能是空的；窗口照样要开——传 0 表示"当前那块虚拟屏"。
++        // 同时给 3 秒宽限：迁移刚完成时状态里"当前操作屏"可能还写着主屏，别让 sync 把窗口关掉。
++        window.holdOpen();
 +        final next = firstBackgroundTaskId(ref.read(phoneProvider).status);
 +        await window.open(next ?? 0);
 +      }
@@ -82369,7 +82553,10 @@ index 0000000..89f4fcf
 +    final key = hasApp ? 'app' : 'none';
 +    if (_lastApp == key) return;
 +    _lastApp = key;
-+    unawaited(_channel.invokeMethod<void>('state', {'hasApp': hasApp}));
++    unawaited(_channel.invokeMethod<void>(
++      'state',
++      {'hasApp': hasApp, 'taskId': firstBackgroundTaskId(ref.read(phoneProvider).status) ?? 0},
++    ));
 +  }
 +
 +  /// 主屏的「转」：App 不在前台时出现——有虚拟屏任务在跑（窗口在），或虚拟屏通道可用（随时
