@@ -1,7 +1,7 @@
-From ef65b3a21704d2160b329f7be7de9ea148d82c6a Mon Sep 17 00:00:00 2001
+From cea9d8203816c747b316006b8d101425e0fbd89f Mon Sep 17 00:00:00 2001
 From: wake-ci <ci@local>
-Date: Fri, 20 Nov 2026 09:35:52 +0800
-Subject: [PATCH] private build: acceptance round
+Date: Fri, 20 Nov 2026 09:44:47 +0800
+Subject: [PATCH] private build: deep-reviewed
 
 ---
  .gitattributes                                |    3 +
@@ -37,9 +37,9 @@ Subject: [PATCH] private build: acceptance round
  .../dsh_app/phone/skills/PhoneSkillDraft.kt   |    2 +-
  .../dsh_app/phone/vscreen/TaskMover.kt        |   43 +
  .../dsh_app/phone/vscreen/TransferBall.kt     |  395 ++
- .../phone/vscreen/VirtualScreenOverlay.kt     | 1186 ++++++
+ .../phone/vscreen/VirtualScreenOverlay.kt     | 1187 ++++++
  .../phone/vscreen/VirtualScreenPlugin.kt      |   96 +
- .../ccch1mneyyy/dsh_app/runtime/GuestSetup.kt |   60 +-
+ .../ccch1mneyyy/dsh_app/runtime/GuestSetup.kt |   47 +-
  .../dsh_app/shortcuts/EntryActivity.kt        |    3 +
  .../dsh_app/shortcuts/ShortcutsPlugin.kt      |   13 +-
  .../dsh_app/wake/WakeBootReceiver.kt          |   29 +
@@ -92,7 +92,7 @@ Subject: [PATCH] private build: acceptance round
  app/lib/ui/settings/voice_settings_page.dart  |   89 +
  app/lib/ui/shell/home_shell.dart              |    4 +
  app/lib/ui/shell/system_entry_host.dart       |   36 +
- app/lib/ui/speech/voice_call_page.dart        |  173 +-
+ app/lib/ui/speech/voice_call_page.dart        |  174 +-
  app/lib/ui/theme/app_icons.dart               |    4 +
  app/lib/ui/update/update_tiles.dart           |    5 +-
  app/lib/voice/wake_keywords.dart              |   50 +
@@ -102,7 +102,7 @@ Subject: [PATCH] private build: acceptance round
  docs/wake-word.md                             |  107 +
  dsh-go-wake.patch                             | 2065 +++++++++++
  tooling/build-wake-apk.sh                     |   68 +
- 98 files changed, 12267 insertions(+), 2084 deletions(-)
+ 98 files changed, 12256 insertions(+), 2084 deletions(-)
  create mode 100644 .github/workflows/wake-apk.yml
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallForegroundService.kt
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallOverlay.kt
@@ -3463,10 +3463,10 @@ index 0000000..228b337
 +}
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenOverlay.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenOverlay.kt
 new file mode 100644
-index 0000000..bfa31df
+index 0000000..49475f9
 --- /dev/null
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenOverlay.kt
-@@ -0,0 +1,1186 @@
+@@ -0,0 +1,1187 @@
 +package io.github.ccch1mneyyy.dsh_app.phone.vscreen
 +
 +import android.annotation.SuppressLint
@@ -4056,7 +4056,8 @@ index 0000000..bfa31df
 +            val glp = FrameLayout.LayoutParams((56 * px).roundToInt(), gh, Gravity.TOP or Gravity.CENTER_HORIZONTAL)
 +            glp.topMargin = h - gh / 2
 +            g.layoutParams = glp
-+            g.visibility = if (next == Shape.SLIVER) View.GONE else View.VISIBLE
++            // 拖动条只在展开态显示（验收单 #9）：小窗整块能拖，不需要条。
++            g.visibility = if (next == Shape.EXPAND) View.VISIBLE else View.GONE
 +            g.requestLayout()
 +        }
 +        cardBg?.requestLayout()
@@ -4756,7 +4757,7 @@ index 0000000..557bd13
 +    }
 +}
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/runtime/GuestSetup.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/runtime/GuestSetup.kt
-index 3e902fe..5483fd2 100644
+index 3e902fe..b0e3eb6 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/runtime/GuestSetup.kt
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/runtime/GuestSetup.kt
 @@ -9,6 +9,7 @@ import android.content.Context
@@ -4767,7 +4768,7 @@ index 3e902fe..5483fd2 100644
  import io.github.ccch1mneyyy.dsh_app.files.GuestFiles
  import io.github.ccch1mneyyy.dsh_app.phone.PhoneGuest
  import java.io.File
-@@ -160,6 +161,59 @@ object GuestSetup {
+@@ -160,6 +161,46 @@ object GuestSetup {
          return file
      }
  
@@ -4811,23 +4812,10 @@ index 3e902fe..5483fd2 100644
 +        }
 +    }
 +
-+    /** 写不被 App 覆盖的授权段；缺了就补，已存在就尊重用户的选择。 */
-+    private fun writeOwnerOverride(rootfs: File) {
-+        if (!io.github.ccch1mneyyy.dsh_app.BuildConfig.APPLICATION_ID.endsWith(".private")) return
-+        try {
-+            val dir = File(rootfs, "root/.agents")
-+            val file = File(dir, "AGENTS.md")
-+            if (file.isFile) return
-+            dir.mkdirs()
-+            file.writeText(OWNER_OVERRIDE)
-+        } catch (_: Throwable) {
-+        }
-+    }
-+
      /** Global DSH instructions ($DSH_HOME/AGENTS.md); left alone once the user removes the marker. */
      fun writeAgentsMd(
          rootfs: File,
-@@ -169,6 +223,7 @@ object GuestSetup {
+@@ -169,6 +210,7 @@ object GuestSetup {
          directEngine: Boolean = false,
          nativeLocale: String = "zh-CN",
      ) {
@@ -4835,7 +4823,7 @@ index 3e902fe..5483fd2 100644
          try {
              val file = File(rootfs, "root/.dsh/AGENTS.md")
              val source = file.takeIf { it.isFile } ?: GuestFiles.resolve(
-@@ -215,8 +270,11 @@ object GuestSetup {
+@@ -215,8 +257,11 @@ object GuestSetup {
                  else "\$DSH_HOME/dsh-app/diagnostics.md",
              )
              file.parentFile?.mkdirs()
@@ -90113,7 +90101,7 @@ index 172e773..a1f9c8d 100644
          // The microphone opens only for an app on screen; the shortcut's
          // intent can arrive a beat before Flutter hears it is resumed.
 diff --git a/app/lib/ui/speech/voice_call_page.dart b/app/lib/ui/speech/voice_call_page.dart
-index 2f99689..bbcd2b3 100644
+index 2f99689..f42b708 100644
 --- a/app/lib/ui/speech/voice_call_page.dart
 +++ b/app/lib/ui/speech/voice_call_page.dart
 @@ -12,11 +12,14 @@ import 'dart:io';
@@ -90197,12 +90185,15 @@ index 2f99689..bbcd2b3 100644
      final callSettings = ref.read(callSettingsProvider.notifier);
      final voices = ref.read(speechVoiceSettingsProvider.notifier);
      // The chosen voice, as soon as the settings have been read (the first reply comes later).
-@@ -209,11 +231,60 @@ class _VoiceCallPageState extends ConsumerState<VoiceCallPage> with WidgetsBindi
+@@ -209,11 +231,61 @@ class _VoiceCallPageState extends ConsumerState<VoiceCallPage> with WidgetsBindi
  
    int _settling = 0;
  
 +  /// 唤醒招呼的回应用「朗读」通道念一次（只念这一条，不重复）。
 +  Future<void> _speakReplyAloud() async {
++    // 布防时刻：从这一刻开始算"新回复"，必须在等会话 id 之前记录，
++    // 不然 id 解析慢时回复会落在基准之前、被误当成旧消息。
++    final startAt = DateTime.now();
 +    final conv = widget.conversation;
 +    // 会话是懒解析的：刚发出招呼那一刻 sessionId 可能还是 null，直接返回就等于"没有声音"。
 +    // 等它出现（最多 8 秒），拿到再开始盯回复。
@@ -90217,15 +90208,13 @@ index 2f99689..bbcd2b3 100644
 +      return;
 +    }
 +    diagWake('call: read-aloud watching session $sid');
-+    // 用时间过滤，不用条数基准：只念布防之后出现的回复。
-+    final startAt = DateTime.now();
 +    var spoken = false;
 +    late final ProviderSubscription<ChatState> sub;
 +    void check() {
 +      if (spoken || !mounted) return;
 +      final replies = ref.read(chatProvider(sid)).items.whereType<AssistantChatItem>().toList();
-+      final reply = replies.lastOrNull;
-+      if (reply == null) return;
++      if (replies.isEmpty) return;
++      final reply = replies.last;
 +      if (reply.time == null || !reply.time!.isAfter(startAt)) return;
 +      if (reply.streaming || reply.text.trim().isEmpty) return;
 +      spoken = true;
@@ -90258,7 +90247,7 @@ index 2f99689..bbcd2b3 100644
      try {
        final chosen = await found;
        if (chosen == null || !mounted || _call.phase == CallPhase.ended) return;
-@@ -313,11 +384,51 @@ class _VoiceCallPageState extends ConsumerState<VoiceCallPage> with WidgetsBindi
+@@ -313,11 +385,51 @@ class _VoiceCallPageState extends ConsumerState<VoiceCallPage> with WidgetsBindi
  
    @override
    void didChangeAppLifecycleState(AppLifecycleState state) {
@@ -90311,7 +90300,7 @@ index 2f99689..bbcd2b3 100644
      WidgetsBinding.instance.removeObserver(this);
      unawaited(_live?.stop());
      _leave?.cancel();
-@@ -329,6 +440,49 @@ class _VoiceCallPageState extends ConsumerState<VoiceCallPage> with WidgetsBindi
+@@ -329,6 +441,49 @@ class _VoiceCallPageState extends ConsumerState<VoiceCallPage> with WidgetsBindi
      super.dispose();
    }
  
@@ -90361,7 +90350,7 @@ index 2f99689..bbcd2b3 100644
    void _hangUp() {
      HapticFeedback.heavyImpact();
      _call.hangUp();
-@@ -645,6 +799,17 @@ class _VoiceCallPageState extends ConsumerState<VoiceCallPage> with WidgetsBindi
+@@ -645,6 +800,17 @@ class _VoiceCallPageState extends ConsumerState<VoiceCallPage> with WidgetsBindi
                          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                          crossAxisAlignment: CrossAxisAlignment.end,
                          children: [
@@ -90379,7 +90368,7 @@ index 2f99689..bbcd2b3 100644
                            _rise(
                              0.4,
                              CallKey(
-@@ -658,7 +823,7 @@ class _VoiceCallPageState extends ConsumerState<VoiceCallPage> with WidgetsBindi
+@@ -658,7 +824,7 @@ class _VoiceCallPageState extends ConsumerState<VoiceCallPage> with WidgetsBindi
                              distance: 28,
                            ),
                            _rise(
