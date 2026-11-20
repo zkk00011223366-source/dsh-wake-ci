@@ -1,7 +1,7 @@
-From c6dda1a1adbbbd4cd8ee1249f37c82450f0b55b2 Mon Sep 17 00:00:00 2001
+From b5208463b57cd2ac2b1ef64c6e913b49fd739dcf Mon Sep 17 00:00:00 2001
 From: wake-ci <ci@local>
-Date: Fri, 20 Nov 2026 17:58:36 +0800
-Subject: [PATCH] private build: kotlin import fix
+Date: Fri, 20 Nov 2026 18:51:54 +0800
+Subject: [PATCH] private build: vscreen sync + grip outside
 
 ---
  .gitattributes                                |    3 +
@@ -37,7 +37,7 @@ Subject: [PATCH] private build: kotlin import fix
  .../dsh_app/phone/skills/PhoneSkillDraft.kt   |    2 +-
  .../dsh_app/phone/vscreen/TaskMover.kt        |   43 +
  .../dsh_app/phone/vscreen/TransferBall.kt     |  403 ++++
- .../phone/vscreen/VirtualScreenOverlay.kt     | 1316 +++++++++++
+ .../phone/vscreen/VirtualScreenOverlay.kt     | 1344 +++++++++++
  .../phone/vscreen/VirtualScreenPlugin.kt      |   96 +
  .../ccch1mneyyy/dsh_app/runtime/GuestSetup.kt |   47 +-
  .../dsh_app/shortcuts/EntryActivity.kt        |    3 +
@@ -78,7 +78,7 @@ Subject: [PATCH] private build: kotlin import fix
  app/lib/phone/virtual_screen_window.dart      |  115 +
  app/lib/speech/call/active_call.dart          |  110 +
  app/lib/speech/call/chat_call.dart            |    3 +
- app/lib/speech/call/voice_call.dart           |   35 +-
+ app/lib/speech/call/voice_call.dart           |   46 +-
  app/lib/speech/wake_reply.dart                |  119 +
  app/lib/state/app_info.dart                   |    5 +
  app/lib/state/update_state.dart               |    9 +
@@ -107,7 +107,7 @@ Subject: [PATCH] private build: kotlin import fix
  docs/wake-word.md                             |  107 +
  dsh-go-wake.patch                             | 2065 +++++++++++++++++
  tooling/build-wake-apk.sh                     |   68 +
- 103 files changed, 11012 insertions(+), 489 deletions(-)
+ 103 files changed, 11050 insertions(+), 490 deletions(-)
  create mode 100644 .github/workflows/wake-apk.yml
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallForegroundService.kt
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallOverlay.kt
@@ -3563,10 +3563,10 @@ index 0000000..a605ddd
 +}
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenOverlay.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenOverlay.kt
 new file mode 100644
-index 0000000..4ddbc9c
+index 0000000..508203b
 --- /dev/null
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenOverlay.kt
-@@ -0,0 +1,1316 @@
+@@ -0,0 +1,1344 @@
 +package io.github.ccch1mneyyy.dsh_app.phone.vscreen
 +
 +import android.annotation.SuppressLint
@@ -3679,6 +3679,7 @@ index 0000000..4ddbc9c
 +
 +    private var wm: WindowManager? = null
 +    private var root: FrameLayout? = null
++    /** 画面容器（卡片内缩 3dp 的那一层）。 */
 +    private var content: FrameLayout? = null
 +    private var picture: TextureView? = null
 +    private var fallback: ImageView? = null
@@ -3762,6 +3763,7 @@ index 0000000..4ddbc9c
 +        box.addView(card, FrameLayout.LayoutParams(-1, h))
 +        cardBg = card
 +        val inner = FrameLayout(app).apply { clipChildren = true }
++        content = inner
 +        val inset = (3 * px).roundToInt()
 +        box.addView(inner, FrameLayout.LayoutParams(-1, -1).apply {
 +            setMargins(inset, inset, inset, inset)
@@ -4118,6 +4120,12 @@ index 0000000..4ddbc9c
 +     * 所以"标准"就是手机屏幕的比例：竖屏用 高/宽，横屏用 宽/高。
 +     * 屏的真实尺寸还没拿到时用这个算，不再靠"上次的值"。
 +     */
++    /** 底边把手：14dp 高，完全落在卡片外面（不遮挡画面）。 */
++    private fun gripHeight(px: Float): Int = (14 * px).roundToInt()
++
++    /** 窗口比卡片多出来的高度：把手 14dp + 上下各 3dp 空隙。 */
++    private fun overhangOf(px: Float): Int = gripHeight(px) + (6 * px).roundToInt()
++
 +    private fun aspect(): Float =
 +        if (displayWidth > 0 && displayHeight > 0) {
 +            displayHeight.toFloat() / displayWidth.toFloat()
@@ -4138,7 +4146,7 @@ index 0000000..4ddbc9c
 +        if (shape == Shape.EXPAND && fullscreen) {
 +            // 全屏 = 跟手机屏幕一样大（用户 16:16）：扣掉状态栏/导航栏和边距，
 +            // 位置钉在左上角（applyShape 里处理）。
-+            val overhangPx = (10 * px).roundToInt()
++            val overhangPx = overhangOf(px)
 +            val w = area.screenW - area.left - area.right - margin * 2
 +            val h = area.screenH - area.top - area.bottom - margin * 2 - overhangPx
 +            return w.coerceAtLeast(1) to h.coerceAtLeast(1)
@@ -4167,7 +4175,7 @@ index 0000000..4ddbc9c
 +        val maxW = area.screenW - margin * 2
 +        // 窗口比卡片高一个 overhang（给底边把手）；可用高度要把它扣掉，
 +        // 否则窗口底边会被挤出屏幕——"边框显示不完整"（用户 15:10）。
-+        val overhangPx = if (shape == Shape.SLIVER) 0 else (10 * px).roundToInt()
++        val overhangPx = if (shape == Shape.SLIVER) 0 else overhangOf(px)
 +        val maxHPx = area.screenH - margin * 2 - overhangPx
 +        if (w * px > maxW) {
 +            w = maxW / px
@@ -4196,9 +4204,15 @@ index 0000000..4ddbc9c
 +        shape = next
 +        val (w, h) = windowSize(next, px, area)
 +        WakeTrace.log("window: shape=$next size=${w}x$h live=$liveSurface")
++        main.postDelayed({
++            val b = root
++            WakeTrace.log(
++                "window: size-check box=${b?.width}x${b?.height} card=${cardBg?.width}x${cardBg?.height} " +
++                    "content=${content?.width}x${content?.height} lp=${params?.width}x${params?.height}")
++        }, 120)
 +        val margin = (10 * px).roundToInt()
 +        // 把手在底边中间突出：窗口比卡片高一个 overhang，边条压在卡片底边上。
-+        val overhang = if (next == Shape.SLIVER) 0 else (10 * px).roundToInt()
++        val overhang = if (next == Shape.SLIVER) 0 else overhangOf(px)
 +        // 定位用整窗高度（h + overhang），不然底边会超出安全区。
 +        // 全屏不按贴边位置摆：钉在安全区左上角。
 +        val at = if (next == Shape.EXPAND && fullscreen) {
@@ -4208,11 +4222,25 @@ index 0000000..4ddbc9c
 +        }
 +        lp.width = w
 +        lp.height = h + overhang
-+        cardBg?.layoutParams = (cardBg?.layoutParams as? FrameLayout.LayoutParams ?: FrameLayout.LayoutParams(-1, h)).also { it.height = h; it.width = w }
++        // 窗口一变，卡片和画面必须同一步跟着变：之前只改了窗口和卡片，
++        // 画面容器还是 match_parent，结果放大后画面只占左边一条（18:41 截图）。
++        val insetPx = (3 * px).roundToInt()
++        cardBg?.layoutParams = (cardBg?.layoutParams as? FrameLayout.LayoutParams ?: FrameLayout.LayoutParams(-1, h)).also {
++            it.height = h
++            it.width = w
++        }
++        content?.layoutParams = (content?.layoutParams as? FrameLayout.LayoutParams ?: FrameLayout.LayoutParams(-1, -1)).also {
++            it.width = (w - insetPx * 2).coerceAtLeast(1)
++            it.height = (h - insetPx * 2).coerceAtLeast(1)
++            it.setMargins(insetPx, insetPx, insetPx, insetPx)
++        }
++        cardBg?.requestLayout()
++        content?.requestLayout()
 +        grip?.let { g ->
-+            val gh = (16 * px).roundToInt()
++            val gh = gripHeight(px)
 +            val glp = FrameLayout.LayoutParams((56 * px).roundToInt(), gh, Gravity.TOP or Gravity.CENTER_HORIZONTAL)
-+            glp.topMargin = h - gh / 2
++            // 完全在卡片下面，画面一点不被压到（用户 18:47）。
++            glp.topMargin = h + (3 * px).roundToInt()
 +            g.layoutParams = glp
 +            // 拖动条只在展开态显示（验收单 #9）：小窗整块能拖，不需要条。
 +            g.visibility = if (next == Shape.EXPAND) View.VISIBLE else View.GONE
@@ -4261,7 +4289,7 @@ index 0000000..4ddbc9c
 +        // 不是同一个对象，拿旧的去 updateViewLayout 会静默失败（点 ＋/− 没反应就是这个）。
 +        val lp = (view.layoutParams as? WindowManager.LayoutParams) ?: params ?: return
 +        val margin = (10 * px).roundToInt()
-+        val overhang = if (shape == Shape.SLIVER) 0 else (10 * px).roundToInt()
++        val overhang = if (shape == Shape.SLIVER) 0 else overhangOf(px)
 +        lp.width = w
 +        lp.height = h + overhang
 +        lp.x = lp.x.coerceIn(EdgeSnap.minX(area, margin), EdgeSnap.maxX(area, w, margin))
@@ -80171,7 +80199,7 @@ index b9b8ffa..0c4f229 100644
      _idle?.cancel();
      if (!_replies.isClosed) _replies.add(CallReply(_last, done: true));
 diff --git a/app/lib/speech/call/voice_call.dart b/app/lib/speech/call/voice_call.dart
-index d97ef1a..8841acc 100644
+index d97ef1a..95fe04f 100644
 --- a/app/lib/speech/call/voice_call.dart
 +++ b/app/lib/speech/call/voice_call.dart
 @@ -20,6 +20,7 @@ import 'dart:async';
@@ -80182,7 +80210,16 @@ index d97ef1a..8841acc 100644
  import '../speech_audio.dart';
  import '../speech_out.dart';
  import '../voice_cloud.dart';
-@@ -96,6 +97,9 @@ class VoiceCallController extends ChangeNotifier {
+@@ -90,12 +91,18 @@ class CallTurn {
+ }
+ 
+ class VoiceCallController extends ChangeNotifier {
++  /// 每通电话一个编号：日志里区分"同一通"和"两通电话"。
++  static int _seq = 0;
++  final int id = ++_seq;
+   VoiceCallController({
+     required this.audio,
+     required this.conversation,
      required this.recognizer,
      required this.voice,
      required this.choices,
@@ -80192,7 +80229,7 @@ index d97ef1a..8841acc 100644
      this.permission,
      this.cutNote,
      this.thinkingCue,
-@@ -119,6 +123,9 @@ class VoiceCallController extends ChangeNotifier {
+@@ -119,6 +126,9 @@ class VoiceCallController extends ChangeNotifier {
    final SpeechAudio audio;
    final CallConversation conversation;
  
@@ -80202,7 +80239,7 @@ index d97ef1a..8841acc 100644
    /// The recognizer for this call; null when none can be had (the call ends).
    final Future<VoiceCloud?> Function() recognizer;
  
-@@ -400,6 +407,11 @@ class VoiceCallController extends ChangeNotifier {
+@@ -400,6 +410,11 @@ class VoiceCallController extends ChangeNotifier {
        return;
      }
      _heard = text.trim();
@@ -80214,7 +80251,7 @@ index d97ef1a..8841acc 100644
      _turns.add(CallTurn(_heard));
      _reply = '';
      _said = '';
-@@ -432,12 +444,30 @@ class VoiceCallController extends ChangeNotifier {
+@@ -432,13 +447,36 @@ class VoiceCallController extends ChangeNotifier {
      }
    }
  
@@ -80239,14 +80276,21 @@ index d97ef1a..8841acc 100644
 -      if (_spoken == 0) unawaited(const DiagnosticsChannel().recordVoiceStage('reply_received'));
 +      if (_spoken == 0) {
 +        unawaited(const DiagnosticsChannel().recordVoiceStage('reply_received'));
-+        diagWake('call: reply arrived (${text.length} chars), hand it to TTS');
++        diagWake('call#$id: reply arrived (${text.length} chars), spoken=$_spoken');
 +      }
        final out = _out ??= _newVoice();
-+      diagWake('call: speaking reply chunk (${text.length - _spoken} chars)');
-       out.add(text.substring(_spoken));
+-      out.add(text.substring(_spoken));
++      try {
++        out.add(text.substring(_spoken));
++        diagWake('call#$id: handed ${text.length - _spoken} chars to ${out.runtimeType}');
++      } catch (e) {
++        diagWake('call#$id: TTS add failed: $e');
++        return;
++      }
        _spoken = text.length;
        _reply = text;
-@@ -496,6 +526,8 @@ class VoiceCallController extends ChangeNotifier {
+       if (_turns.isNotEmpty) _turns.last = CallTurn(_turns.last.you, her: text);
+@@ -496,8 +534,11 @@ class VoiceCallController extends ChangeNotifier {
      unawaited(thinkingCue?.call());
    }
  
@@ -80254,12 +80298,15 @@ index d97ef1a..8841acc 100644
 +
    SpeechOut _newVoice() {
      final out = voice();
++    diagWake('call#$id: voice out=${out.runtimeType}');
      final turn = _turn;
-@@ -505,6 +537,7 @@ class VoiceCallController extends ChangeNotifier {
+     _outSub = out.events.listen((event) {
+       if (!identical(_out, out) || _phase == CallPhase.ended) return;
+@@ -505,6 +546,7 @@ class VoiceCallController extends ChangeNotifier {
          case SpeechOutStarted():
            _voiced = true;
            _cueTimer?.cancel();
-+          diagWake('call: TTS started playing');
++          diagWake('call#$id: TTS started playing');
            if (_phase == CallPhase.thinking || _phase == CallPhase.listening) _set(CallPhase.speaking);
          case SpeechOutLevel(:final value):
            _voiceLevel = value;
