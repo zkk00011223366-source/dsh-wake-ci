@@ -1,7 +1,7 @@
-From 6f0b986874768b5c89819fd2b17db509235a558f Mon Sep 17 00:00:00 2001
+From 4b816ee1bb020f1212c300d7fad59fa29d09cbfa Mon Sep 17 00:00:00 2001
 From: wake-ci <ci@local>
-Date: Sat, 21 Nov 2026 00:35:20 +0800
-Subject: [PATCH] pb: corners
+Date: Sat, 21 Nov 2026 07:18:31 +0800
+Subject: [PATCH] pb: voice source
 
 ---
  .gitattributes                                |    3 +
@@ -80,7 +80,7 @@ Subject: [PATCH] pb: corners
  app/lib/speech/call/active_call.dart          |  110 +
  app/lib/speech/call/chat_call.dart            |    3 +
  app/lib/speech/call/voice_call.dart           |   57 +-
- app/lib/speech/wake_reply.dart                |  123 +
+ app/lib/speech/wake_reply.dart                |  149 ++
  app/lib/state/app_info.dart                   |    5 +
  app/lib/state/update_state.dart               |    9 +
  app/lib/state/virtual_screen_state.dart       |  266 +++
@@ -109,7 +109,7 @@ Subject: [PATCH] pb: corners
  docs/wake-word.md                             |  107 +
  dsh-go-wake.patch                             | 2065 +++++++++++++++++
  tooling/build-wake-apk.sh                     |   68 +
- 105 files changed, 11562 insertions(+), 524 deletions(-)
+ 105 files changed, 11588 insertions(+), 524 deletions(-)
  create mode 100644 .github/workflows/wake-apk.yml
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallForegroundService.kt
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallOverlay.kt
@@ -80940,10 +80940,10 @@ index d97ef1a..fd2c6b6 100644
            _voiceLevel = value;
 diff --git a/app/lib/speech/wake_reply.dart b/app/lib/speech/wake_reply.dart
 new file mode 100644
-index 0000000..b3e7af1
+index 0000000..7ea0816
 --- /dev/null
 +++ b/app/lib/speech/wake_reply.dart
-@@ -0,0 +1,123 @@
+@@ -0,0 +1,149 @@
 +// 唤醒回应「我在」：预合成缓存 + 本地播放（用户 16:53）。
 +//
 +// 需求：喊完**立刻**有声音，而且这句话用户可以在设置里自定义。
@@ -80965,7 +80965,9 @@ index 0000000..b3e7af1
 +import 'speech_settings.dart';
 +import '../voice/wake_word.dart' show diagWake;
 +import 'deepseek_speech.dart';
++import '../companion/companion_voice.dart';
 +import 'speech_audio.dart';
++import 'speech_out.dart';
 +
 +/// FNV-1a：文本 → 稳定的短哈希（同一条文本每次启动都一样，才能复用缓存）。
 +int _fnv(String text) {
@@ -80978,11 +80980,18 @@ index 0000000..b3e7af1
 +}
 +
 +class WakeReplyVoice {
-+  WakeReplyVoice(this._audio, this._speech, {String voice = 'stella'}) : _voice = voice;
++  WakeReplyVoice(this._audio, this._speech, this._speaker, this._settings)
++      : _voice = _settings?.deepseekVoice ?? 'stella';
 +
 +  final SpeechAudio _audio;
 +  final DeepSeekSpeechResolver _speech;
++  final CompanionSpeaker _speaker;
++  final CompanionVoiceSettings? _settings;
 +  final String _voice;
++
++  /// 是否跟随"海星（DeepSeek）"来源：只有它才预合成、走缓存；
++  /// 系统音色直接交给系统 TTS，不用登录、不用网络（00:52 讨论）。
++  bool get _deepseek => _settings?.source == CompanionVoiceSource.deepseek;
 +
 +  Future<File> _clip(String text) async {
 +    final base = await getApplicationSupportDirectory();
@@ -81002,6 +81011,23 @@ index 0000000..b3e7af1
 +    final trimmed = text.trim();
 +    if (trimmed.isEmpty) return false;
 +    final id = 'wake-reply-${DateTime.now().microsecondsSinceEpoch}';
++    if (!_deepseek) {
++      // 系统音色：直接用统一出口说，不缓存。
++      try {
++        final out = speechOutFor(
++          _settings ?? const CompanionVoiceSettings(follow: true),
++          deepseek: _speech,
++          audio: _audio,
++          speaker: _speaker,
++          call: true,
++        );
++        out.add(trimmed);
++        out.finish();
++        return true;
++      } on Object {
++        return false;
++      }
++    }
 +    try {
 +      final file = await _clip(trimmed);
 +      if (await file.exists()) {
@@ -81062,9 +81088,9 @@ index 0000000..b3e7af1
 +  return WakeReplyVoice(
 +    ref.watch(speechAudioProvider),
 +    ref.watch(deepSeekSpeechProvider),
-+    // 和通话用同一个音色来源（speechVoiceSettingsProvider），否则唤醒第一声
-+    // 和通话的声音不一样（22:26 反馈）。
-+    voice: ref.watch(speechVoiceSettingsProvider)?.deepseekVoice ?? 'stella',
++    ref.watch(speechSpeakerProvider),
++    // 和通话用同一个音色来源与音色名，跟随"海星 / 系统"（00:52）。
++    ref.watch(speechVoiceSettingsProvider),
 +  );
 +});
 diff --git a/app/lib/state/app_info.dart b/app/lib/state/app_info.dart
