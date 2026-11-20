@@ -1,7 +1,7 @@
-From c03f894f4d12f7b30b61575e60c4f1a419c99ff5 Mon Sep 17 00:00:00 2001
+From 22d0a1998cb56caf825b55fc8cc601a70efb8c7c Mon Sep 17 00:00:00 2001
 From: wake-ci <ci@local>
-Date: Fri, 20 Nov 2026 22:48:32 +0800
-Subject: [PATCH] pb: all
+Date: Fri, 20 Nov 2026 22:52:45 +0800
+Subject: [PATCH] pb: logs
 
 ---
  .gitattributes                                |    3 +
@@ -83,7 +83,7 @@ Subject: [PATCH] pb: all
  app/lib/speech/wake_reply.dart                |  122 +
  app/lib/state/app_info.dart                   |    5 +
  app/lib/state/update_state.dart               |    9 +
- app/lib/state/virtual_screen_state.dart       |  262 +++
+ app/lib/state/virtual_screen_state.dart       |  266 +++
  app/lib/ui/chat/chat_rows.dart                |    2 +
  app/lib/ui/chat/chat_screen.dart              |  106 +-
  app/lib/ui/chat/media/media_format.dart       |   16 +-
@@ -109,7 +109,7 @@ Subject: [PATCH] pb: all
  docs/wake-word.md                             |  107 +
  dsh-go-wake.patch                             | 2065 +++++++++++++++++
  tooling/build-wake-apk.sh                     |   68 +
- 105 files changed, 11509 insertions(+), 518 deletions(-)
+ 105 files changed, 11513 insertions(+), 518 deletions(-)
  create mode 100644 .github/workflows/wake-apk.yml
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallForegroundService.kt
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallOverlay.kt
@@ -81028,13 +81028,15 @@ index c089d19..a15b64d 100644
  
 diff --git a/app/lib/state/virtual_screen_state.dart b/app/lib/state/virtual_screen_state.dart
 new file mode 100644
-index 0000000..fc55459
+index 0000000..e6c193b
 --- /dev/null
 +++ b/app/lib/state/virtual_screen_state.dart
-@@ -0,0 +1,262 @@
+@@ -0,0 +1,266 @@
 +import 'dart:async';
 +
 +import 'package:flutter_riverpod/flutter_riverpod.dart';
++
++import '../voice/wake_word.dart' show diagWake;
 +import 'package:shared_preferences/shared_preferences.dart';
 +
 +import '../phone/virtual_screen_window.dart';
@@ -81226,6 +81228,8 @@ index 0000000..fc55459
 +    // 只有真的在虚拟屏上干活（或刚转进来）才显示。设置开关只是默认值。
 +    final onVirtual = status.lastScreen == 'background';
 +    // 宽限期内一直算"该显示"，到期自然失效（不能读一次就清掉，否则第二次 sync 又关了）。
++    // 窗口为什么开/为什么关：迁移、"明确主屏却弹窗"这类问题只靠这行日志能定案。
++    diagWake('vsync: lastScreen=${status.lastScreen} task=${firstBackgroundTaskId(status)} open=${state.open} hold=${_holdOpenUntil != null}');
 +    final holding = _holdOpenUntil != null && DateTime.now().isBefore(_holdOpenUntil!);
 +    if (!holding) _holdOpenUntil = null;
 +    if (!onVirtual && !holding) {
