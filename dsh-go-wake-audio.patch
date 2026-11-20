@@ -1,7 +1,7 @@
-From 0d5f13d9bc69369b4d1af96bdfc7e1734de30158 Mon Sep 17 00:00:00 2001
+From da432a6f0bf85de6c204e92ceea40528c95d8819 Mon Sep 17 00:00:00 2001
 From: wake-ci <ci@local>
-Date: Fri, 20 Nov 2026 10:42:07 +0800
-Subject: [PATCH] private build: ball scoped
+Date: Fri, 20 Nov 2026 11:01:22 +0800
+Subject: [PATCH] private build: ball alive-gated
 
 ---
  .gitattributes                                |    3 +
@@ -36,7 +36,7 @@ Subject: [PATCH] private build: ball scoped
  .../phone/background/PrivilegedProtocol.kt    |   70 +-
  .../dsh_app/phone/skills/PhoneSkillDraft.kt   |    2 +-
  .../dsh_app/phone/vscreen/TaskMover.kt        |   43 +
- .../dsh_app/phone/vscreen/TransferBall.kt     |  395 ++
+ .../dsh_app/phone/vscreen/TransferBall.kt     |  403 ++
  .../phone/vscreen/VirtualScreenOverlay.kt     | 1187 ++++++
  .../phone/vscreen/VirtualScreenPlugin.kt      |   96 +
  .../ccch1mneyyy/dsh_app/runtime/GuestSetup.kt |   47 +-
@@ -102,7 +102,7 @@ Subject: [PATCH] private build: ball scoped
  docs/wake-word.md                             |  107 +
  dsh-go-wake.patch                             | 2065 +++++++++++
  tooling/build-wake-apk.sh                     |   68 +
- 98 files changed, 12274 insertions(+), 2084 deletions(-)
+ 98 files changed, 12282 insertions(+), 2084 deletions(-)
  create mode 100644 .github/workflows/wake-apk.yml
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallForegroundService.kt
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallOverlay.kt
@@ -3062,10 +3062,10 @@ index 0000000..8ddabc9
 +}
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/TransferBall.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/TransferBall.kt
 new file mode 100644
-index 0000000..228b337
+index 0000000..a605ddd
 --- /dev/null
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/TransferBall.kt
-@@ -0,0 +1,395 @@
+@@ -0,0 +1,403 @@
 +package io.github.ccch1mneyyy.dsh_app.phone.vscreen
 +
 +import android.annotation.SuppressLint
@@ -3141,7 +3141,15 @@ index 0000000..228b337
 +        override fun run() {
 +            if (!wanted) return
 +            val context = appContext ?: return
-+            val can = hasSomethingToMove(context)
++            // 附加硬条件（10:58 用户反馈）：虚拟屏真有东西才显示。
++            // 之前只看"前台是普通应用"，于是引擎都关了球还跟着应用乱弹。
++            val alive = VirtualScreenOverlay.shown ||
++                io.github.ccch1mneyyy.dsh_app.phone.PhoneRegistry.mainTaskActive ||
++                runCatching {
++                    io.github.ccch1mneyyy.dsh_app.phone.background.BackgroundControl.get(context)
++                        .anyPreviewTarget() != null
++                }.getOrDefault(false)
++            val can = alive && hasSomethingToMove(context)
 +            if (can && root == null) {
 +                if (!show(context)) {
 +                    main.postDelayed(this, WATCH_MS)
