@@ -1,7 +1,8 @@
-From b881b18e730093463c6414fd5ac9884aaf5c30c8 Mon Sep 17 00:00:00 2001
+From 24bbdc821b57dbbc00847c47922e1bf9eb3a09d8 Mon Sep 17 00:00:00 2001
 From: wake-ci <ci@local>
-Date: Fri, 20 Nov 2026 20:45:01 +0800
-Subject: [PATCH] private build: call deps container-scoped
+Date: Fri, 20 Nov 2026 21:01:59 +0800
+Subject: [PATCH] private build: mute switch + no-prompt + screen-off +
+ pre-grant
 
 ---
  .gitattributes                                |    3 +
@@ -15,8 +16,8 @@ Subject: [PATCH] private build: call deps container-scoped
  .../dsh_app/phone/PhoneAndroidShell.kt        |   10 +-
  .../dsh_app/phone/PhoneBackGuard.kt           |  146 ++
  .../dsh_app/phone/PhoneContracts.kt           |   21 +
- .../ccch1mneyyy/dsh_app/phone/PhoneControl.kt |   39 +-
- .../ccch1mneyyy/dsh_app/phone/PhoneCore.kt    |  204 +-
+ .../ccch1mneyyy/dsh_app/phone/PhoneControl.kt |   48 +-
+ .../ccch1mneyyy/dsh_app/phone/PhoneCore.kt    |  232 +-
  .../ccch1mneyyy/dsh_app/phone/PhonePlugin.kt  |  106 +
  .../dsh_app/phone/PhoneTaskSessions.kt        |   22 +-
  .../ccch1mneyyy/dsh_app/phone/PhoneTasks.kt   |   11 +
@@ -37,7 +38,7 @@ Subject: [PATCH] private build: call deps container-scoped
  .../dsh_app/phone/skills/PhoneSkillDraft.kt   |    2 +-
  .../dsh_app/phone/vscreen/TaskMover.kt        |   43 +
  .../dsh_app/phone/vscreen/TransferBall.kt     |  403 ++++
- .../phone/vscreen/VirtualScreenOverlay.kt     | 1472 ++++++++++++
+ .../phone/vscreen/VirtualScreenOverlay.kt     | 1493 ++++++++++++
  .../phone/vscreen/VirtualScreenPlugin.kt      |  104 +
  .../ccch1mneyyy/dsh_app/runtime/GuestSetup.kt |   47 +-
  .../dsh_app/shortcuts/EntryActivity.kt        |    3 +
@@ -64,13 +65,13 @@ Subject: [PATCH] private build: call deps container-scoped
  app/lib/app_navigator.dart                    |    4 +
  app/lib/l10n/app_en.arb                       |   24 +
  app/lib/l10n/app_zh.arb                       |   48 +-
- app/lib/l10n/gen/app_localizations.dart       |  168 +-
- app/lib/l10n/gen/app_localizations_en.dart    |   75 +
- app/lib/l10n/gen/app_localizations_zh.dart    |   96 +-
+ app/lib/l10n/gen/app_localizations.dart       |  186 +-
+ app/lib/l10n/gen/app_localizations_en.dart    |   84 +
+ app/lib/l10n/gen/app_localizations_zh.dart    |  105 +-
  app/lib/l10n/parts/android_shell_en.arb       |    3 +-
  app/lib/l10n/parts/android_shell_zh.arb       |    3 +-
- app/lib/l10n/parts/phone_en.arb               |    6 +-
- app/lib/l10n/parts/phone_zh.arb               |   30 +-
+ app/lib/l10n/parts/phone_en.arb               |    9 +-
+ app/lib/l10n/parts/phone_zh.arb               |   33 +-
  app/lib/l10n/parts/speech_en.arb              |   21 +-
  app/lib/l10n/parts/speech_zh.arb              |   21 +-
  app/lib/links/launcher_entries.dart           |    7 +-
@@ -86,9 +87,10 @@ Subject: [PATCH] private build: call deps container-scoped
  app/lib/ui/chat/chat_rows.dart                |    2 +
  app/lib/ui/chat/chat_screen.dart              |  106 +-
  app/lib/ui/chat/media/media_format.dart       |   16 +-
- app/lib/ui/phone/android_shell_page.dart      |   28 +
+ app/lib/ui/phone/android_shell_page.dart      |   33 +
  app/lib/ui/phone/background_preview.dart      |  264 +--
  app/lib/ui/phone/dnd_mode_page.dart           |  182 +-
+ app/lib/ui/phone/phone_control_screen.dart    |    1 +
  app/lib/ui/phone/phone_task_card.dart         |  430 ++++
  app/lib/ui/phone/virtual_screen_host.dart     |  302 +++
  app/lib/ui/phone/virtual_screen_page.dart     |  114 +
@@ -107,7 +109,7 @@ Subject: [PATCH] private build: call deps container-scoped
  docs/wake-word.md                             |  107 +
  dsh-go-wake.patch                             | 2065 +++++++++++++++++
  tooling/build-wake-apk.sh                     |   68 +
- 103 files changed, 11328 insertions(+), 515 deletions(-)
+ 104 files changed, 11433 insertions(+), 516 deletions(-)
  create mode 100644 .github/workflows/wake-apk.yml
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallForegroundService.kt
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallOverlay.kt
@@ -1282,7 +1284,7 @@ index 612f94d..5e615eb 100644
      @Volatile var overlayGate: UserGate? = null
      @Volatile var notificationGate: UserGate? = null
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneControl.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneControl.kt
-index 2fc7cd5..04c75e2 100644
+index 2fc7cd5..c4dc949 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneControl.kt
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneControl.kt
 @@ -297,7 +297,7 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
@@ -1313,7 +1315,23 @@ index 2fc7cd5..04c75e2 100644
              "a11yKeeper" to keeperStatus(),
              "task" to tasks.snapshot().toMap(),
              "taskInterruption" to taskJournal.status(),
-@@ -990,7 +993,7 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
+@@ -943,7 +946,14 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
+     override fun shownControls(): TaskControls? =
+         displaySelection.controls { task, owner, reason -> stopOwner(task, owner, reason) }
+ 
+-    override fun onStopAllRequested(reason: String, source: PhoneTasks.StopSource) { shell.cancelAll(); selfCheck.stop(); sessions.stopAll(reason, source) }
++    override fun onStopAllRequested(reason: String, source: PhoneTasks.StopSource) {
++        shell.cancelAll(); selfCheck.stop()
++        // 熄屏：虚拟屏上的任务照跑（验收单 #32），只停主屏任务。
++        // 之前无障碍服务的熄屏广播走到这里直接 stopAll，把虚拟屏任务也一起杀了
++        // —— 模型因此回答"锁屏就结束"（用户 20:57）。
++        if (source == PhoneTasks.StopSource.SCREEN_OFF) sessions.stopAllExceptBackground(reason, source)
++        else sessions.stopAll(reason, source)
++    }
+ 
+     override fun onAccessibilityChanged(connected: Boolean) = emitStatus()
+ 
+@@ -990,7 +1000,7 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
          if (screen != PhoneScreen.BACKGROUND) return null
          background.endTask(owner.taskId)
          // l10n:keep agent stop reason
@@ -1322,7 +1340,7 @@ index 2fc7cd5..04c75e2 100644
      }
  
      override fun a11yState(): A11yState = when {
-@@ -999,15 +1002,43 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
+@@ -999,15 +1009,43 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
          else -> A11yState.DISABLED
      }
  
@@ -1368,7 +1386,7 @@ index 2fc7cd5..04c75e2 100644
      }
  
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneCore.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneCore.kt
-index 6c70185..1c43600 100644
+index 6c70185..684d307 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneCore.kt
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneCore.kt
 @@ -1,5 +1,7 @@
@@ -1570,7 +1588,7 @@ index 6c70185..1c43600 100644
          safety.checkOpen(app.packageName, app.label)?.let {
              return Out(it.message, error = true, app = app.label, summary = ui.get("phone_log_open_app", "打开 %1\$s", app.packageName), decision = "refused:${it.rule}") // l10n:keep test default
          }
-@@ -558,30 +622,40 @@ class PhoneCore(
+@@ -558,30 +622,44 @@ class PhoneCore(
              } catch (e: Throwable) { skillTrace.fail(ticket); throw e }
              return afterSystem(owner, scope, result, summary)
          }
@@ -1583,6 +1601,10 @@ index 6c70185..1c43600 100644
 +            is Either.Right -> d.value
 +        }
 +        Log.i(TAG, "vscreen target: tool=open target=virtual app=${app.packageName}")
++        // 权限弹窗属于系统的权限控制器，默认弹在手机主屏上，不会跟着应用进虚拟屏；
++        // AI 在虚拟屏里根本点不到它。所以在启动前把常见运行时权限直接授好（用户 20:52
++        // 明确要求"权限弹窗必须落在虚拟屏"，系统做不到 → 改为不让它弹）。
++        grantBeforeVirtualOpen(app.packageName, owner)
          val mainFront = runCatching { env.driver(PhoneScreen.MAIN, owner)?.foregroundPackage() }.getOrNull()
 +        // 写到 wake-debug.log：录屏后能核对"到底开在哪块屏、开完结果是什么"。
 +        io.github.ccch1mneyyy.dsh_app.wake.WakeTrace.log(
@@ -1619,7 +1641,7 @@ index 6c70185..1c43600 100644
              driver.open(app.identity) {
                  if (!current(owner) || openRefusal.get() != null) false else {
                      safety.checkOpen(app.packageName, app.label)?.let { openRefusal.compareAndSet(null, it) }
-@@ -589,17 +663,34 @@ class PhoneCore(
+@@ -589,17 +667,58 @@ class PhoneCore(
                  }
              }
          }
@@ -1653,10 +1675,34 @@ index 6c70185..1c43600 100644
          return Out(res.message, error = !res.ok, screen = res.screen?.let { returnedScreen(driver, it, owner) }, app = app.label,
 -            summary = ui.get("phone_log_open_background", "后台屏打开 %1\$s", app.packageName), decision = if (res.ok) decision else "failed") // l10n:keep test default
 +            summary = ui.get("phone_log_open_background", "虚拟屏打开 %1\$s", app.packageName), decision = if (res.ok) decision else "failed") // l10n:keep test default
++    }
++
++    /** 虚拟屏里启动前预授权：失败静默（没有 shell 通道时权限弹窗仍会出现）。 */
++    private fun grantBeforeVirtualOpen(pkg: String, owner: PhoneTasks.Owner) {
++        val shell = env.androidShell() ?: return
++        val perms = listOf(
++            "android.permission.CAMERA",
++            "android.permission.RECORD_AUDIO",
++            "android.permission.READ_EXTERNAL_STORAGE",
++            "android.permission.WRITE_EXTERNAL_STORAGE",
++            "android.permission.READ_MEDIA_IMAGES",
++            "android.permission.READ_MEDIA_VIDEO",
++            "android.permission.READ_MEDIA_AUDIO",
++            "android.permission.ACCESS_FINE_LOCATION",
++            "android.permission.ACCESS_COARSE_LOCATION",
++            "android.permission.POST_NOTIFICATIONS",
++            "android.permission.READ_CONTACTS",
++            "android.permission.READ_PHONE_STATE",
++        )
++        val cmd = perms.joinToString(" ; ") { "pm grant $pkg $it 2>/dev/null" }
++        runCatching {
++            shell.execute(owner.taskId, cmd, 8_000, { true }) { _, _ -> Decision.ALLOW_ONCE }
++        }
++        io.github.ccch1mneyyy.dsh_app.wake.WakeTrace.log("open: pre-granted runtime permissions for $pkg")
      }
  
      /** The handler is a dispatch fact. Only the following read describes the actual foreground UI. */
-@@ -816,8 +907,54 @@ class PhoneCore(
+@@ -816,8 +935,54 @@ class PhoneCore(
          return Either.Right(d)
      }
  
@@ -1711,7 +1757,7 @@ index 6c70185..1c43600 100644
      /** Admission uses the same argument coercion and routing as the actual tool body. */
      fun requiredScreens(name: String, args: Map<String, Any?>): Either<String, List<PhoneScreen>> {
          return requiredScreens(name, Args(args))
-@@ -825,10 +962,11 @@ class PhoneCore(
+@@ -825,10 +990,11 @@ class PhoneCore(
  
      private fun requiredScreens(name: String, a: Args): Either<String, List<PhoneScreen>> {
          return when (name) {
@@ -1726,7 +1772,7 @@ index 6c70185..1c43600 100644
              // Arbitrary system commands take the main/global unknown-app lease, without reading a screen.
              PhoneToolCatalog.INTENT, PhoneToolCatalog.ANDROID_SHELL -> Either.Right(listOf(PhoneScreen.MAIN))
              PhoneToolCatalog.HANDOFF -> Either.Right(if (lastScreen == PhoneScreen.BACKGROUND)
-@@ -852,7 +990,7 @@ class PhoneCore(
+@@ -852,7 +1018,7 @@ class PhoneCore(
          if (id == null) return Either.Left("缺少 $parameterName（屏幕号，如 s7）。先调用 screen 拿到屏幕号。")
          return PhoneScreen.ofScreenId(id)?.let { Either.Right(it) }
              // l10n:keep agent tool result
@@ -1735,7 +1781,7 @@ index 6c70185..1c43600 100644
      }
  
      private fun locked(summary: String) =
-@@ -871,21 +1009,23 @@ class PhoneCore(
+@@ -871,21 +1037,23 @@ class PhoneCore(
  
      private fun screen(a: Args, owner: PhoneTasks.Owner): Out {
          if (!current(owner)) return stoppedOut("screen")
@@ -1765,7 +1811,7 @@ index 6c70185..1c43600 100644
          return Out(
              // l10n:keep agent tool result
              if (refused) "没有读取这个屏幕的内容。" else "",
-@@ -1362,6 +1502,7 @@ class PhoneCore(
+@@ -1362,6 +1530,7 @@ class PhoneCore(
          summary = summary, decision = "stopped")
  
      companion object {
@@ -1773,7 +1819,7 @@ index 6c70185..1c43600 100644
          internal const val REPLAY = "replay"
          internal const val FOCUS_TEXT = "focus_text"
  
-@@ -1370,6 +1511,9 @@ class PhoneCore(
+@@ -1370,6 +1539,9 @@ class PhoneCore(
          const val PAUSE_WAIT_MS = 600_000L
          const val HANDOFF_MS = 600_000L
  
@@ -3617,10 +3663,10 @@ index 0000000..a605ddd
 +}
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenOverlay.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenOverlay.kt
 new file mode 100644
-index 0000000..4223cb9
+index 0000000..1498038
 --- /dev/null
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenOverlay.kt
-@@ -0,0 +1,1472 @@
+@@ -0,0 +1,1493 @@
 +package io.github.ccch1mneyyy.dsh_app.phone.vscreen
 +
 +import android.annotation.SuppressLint
@@ -3727,6 +3773,7 @@ index 0000000..4223cb9
 +    private const val ICON_PLUS = 0xe030        // plus
 +    private const val ICON_EYE_SLASH = 0xe03e   // eyeSlash
 +    private const val ICON_SPEAKER = 0xe0e8     // speakerHigh
++    private const val ICON_SPEAKER_SLASH = 0xe0e9 // speakerSlash（静音）
 +    private const val ICON_CLOSE = 0xe002       // x
 +
 +    private enum class Shape { SLIVER, SMALL, EXPAND }
@@ -3760,6 +3807,10 @@ index 0000000..4223cb9
 +    private var hint: TextView? = null
 +    private var grip: View? = null
 +    private var waiting: TextView? = null
++    /** 声音开关：**默认静音**，点一下开、再点关（用户 20:45）。 */
++    private var muted = true
++    private var savedVolume = -1
++    private var volumeGlyph: android.widget.TextView? = null
 +    private var volumeRow: LinearLayout? = null
 +    private var backKey: FrameLayout? = null
 +    private var volumeKey: FrameLayout? = null
@@ -3881,6 +3932,7 @@ index 0000000..4223cb9
 +        } catch (_: Exception) {
 +            return false
 +        }
++        applyMuted(app, true)
 +        this.context = app
 +        wm = manager
 +        root = box
@@ -3900,6 +3952,8 @@ index 0000000..4223cb9
 +    }
 +
 +    fun hide() {
++        // 关窗恢复原来的音量（窗口里默认静音，别把手机整体声音一直掐着）。
++        context?.let { restoreVolume(it) }
 +        // 把手是独立窗口：主窗收起时必须一起移除，否则屏幕上会留下一条绿条。
 +        gripWin?.let { v -> wm?.let { m -> runCatching { m.removeView(v) } } }
 +        gripWin = null
@@ -4556,6 +4610,7 @@ index 0000000..4223cb9
 +            }
 +        }
 +        val circle = TextView(app).apply {
++            tag = "glyph"
 +            text = String(Character.toChars(glyph))
 +            gravity = Gravity.CENTER
 +            setTextColor(Color.WHITE)
@@ -4639,7 +4694,11 @@ index 0000000..4223cb9
 +        // 顶部一行放齐四颗键（返 音 眼 …×）：同一行、同尺寸、同一垂直中心，不再一个贴左一个贴右
 +        // 各算各的 margin —— 之前 × 明显比另外三个偏高，就是两套布局各摆各的。
 +        val back = roundKey(app, ICON_BACK, px) { requestBack() }
-+        val volume = roundKey(app, ICON_SPEAKER, px) { toggleVolume() }
++        val volume = roundKey(app, ICON_SPEAKER_SLASH, px) {
++            // 默认静音：第一次点开声音，再点关掉。
++            toggleMute()
++        }
++        volumeGlyph = volume.findViewWithTag("glyph") as? android.widget.TextView
 +        val eye = roundKey(app, ICON_EYE, px) { toggleEye() }
 +        val close = roundKey(app, ICON_CLOSE, px) { endTask() }
 +        val topRow = LinearLayout(app).apply {
@@ -4694,32 +4753,8 @@ index 0000000..4223cb9
 +        // 拖拽条已改成独立小窗（syncGripWindow），这里不再往主窗里放任何东西。
 +
 +
-+        val row = LinearLayout(app).apply {
-+            orientation = LinearLayout.HORIZONTAL
-+            background = GradientDrawable().apply {
-+                cornerRadius = 10 * px
-+                setColor(CHROME)
-+            }
-+            visibility = View.GONE
-+            setPadding(edge, 0, edge, 0)
-+        }
-+        val slider = SeekBar(app).apply {
-+            max = 100
-+            progress = currentVolumePercent(app)
-+            layoutParams = LinearLayout.LayoutParams(0, -2, 1f)
-+            setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
-+                override fun onProgressChanged(bar: SeekBar, value: Int, fromUser: Boolean) {
-+                    if (fromUser) setVolumePercent(app, value)
-+                }
-+
-+                override fun onStartTrackingTouch(bar: SeekBar) {}
-+
-+                override fun onStopTrackingTouch(bar: SeekBar) {}
-+            })
-+        }
-+        row.addView(slider)
-+        box.addView(row, FrameLayout.LayoutParams((140 * px).roundToInt(), (44 * px).roundToInt(), Gravity.CENTER))
-+        volumeRow = row
++        // 音量条已取消：声音键改成"静音开关"（用户 20:45），不再弹滑杆。
++        volumeRow = null
 +    }
 +
 +    private fun currentVolumePercent(app: Context): Int = try {
@@ -4741,9 +4776,41 @@ index 0000000..4223cb9
 +        }
 +    }
 +
-+    private fun toggleVolume() {
-+        val row = volumeRow ?: return
-+        row.visibility = if (row.visibility == View.VISIBLE) View.GONE else View.VISIBLE
++    /** 声音键：静音 ↔ 有声（默认静音），图标跟着变；不再弹音量条。 */
++    private fun toggleMute() {
++        val app = context ?: return
++        applyMuted(app, !muted)
++    }
++
++    private fun applyMuted(app: Context, value: Boolean) {
++        muted = value
++        volumeGlyph?.text = String(Character.toChars(if (muted) ICON_SPEAKER_SLASH else ICON_SPEAKER))
++        try {
++            val audio = app.getSystemService(Context.AUDIO_SERVICE) as? AudioManager ?: return
++            val max = audio.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
++            if (max <= 0) return
++            if (muted) {
++                if (savedVolume < 0) savedVolume = audio.getStreamVolume(AudioManager.STREAM_MUSIC)
++                audio.setStreamVolume(AudioManager.STREAM_MUSIC, 0, 0)
++            } else {
++                val back = if (savedVolume > 0) savedVolume else max / 2
++                audio.setStreamVolume(AudioManager.STREAM_MUSIC, back.coerceIn(0, max), 0)
++            }
++        } catch (_: Exception) {
++        }
++        WakeTrace.log("window: muted=$muted")
++    }
++
++    private fun restoreVolume(app: Context) {
++        val back = savedVolume
++        savedVolume = -1
++        if (back < 0) return
++        try {
++            val audio = app.getSystemService(Context.AUDIO_SERVICE) as? AudioManager ?: return
++            val max = audio.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
++            if (max > 0) audio.setStreamVolume(AudioManager.STREAM_MUSIC, back.coerceIn(0, max), 0)
++        } catch (_: Exception) {
++        }
 +    }
 +
 +    /** 眼睛: hide the picture, keep the display (and its task) running; the glyph follows. */
@@ -79189,7 +79256,7 @@ index ec1a316..bfe2f32 100644
    "@starPromptTitle": {
      "description": "The star prompt's first line. hours is the whole hours of use so far, rounded down; 0 is half an hour (the first ask comes after 30 minutes). The word joiner keeps the ~ on the line of the word before it.",
 diff --git a/app/lib/l10n/gen/app_localizations.dart b/app/lib/l10n/gen/app_localizations.dart
-index 05ad2de..58ec256 100644
+index 05ad2de..1e4c7ff 100644
 --- a/app/lib/l10n/gen/app_localizations.dart
 +++ b/app/lib/l10n/gen/app_localizations.dart
 @@ -3470,6 +3470,12 @@ abstract class L10n {
@@ -79223,7 +79290,32 @@ index 05ad2de..58ec256 100644
    String get phoneDndShizukuAllSet;
  
    /// No description provided for @phoneDndShizukuInstalled.
-@@ -23297,7 +23303,7 @@ abstract class L10n {
+@@ -21980,6 +21986,24 @@ abstract class L10n {
+   /// **'读取中'**
+   String get phoneControlLoading;
+ 
++  /// No description provided for @phoneControlConfirmFree.
++  ///
++  /// In zh, this message translates to:
++  /// **'免确认操作'**
++  String get phoneControlConfirmFree;
++
++  /// No description provided for @phoneControlConfirmFreeTitle.
++  ///
++  /// In zh, this message translates to:
++  /// **'不再逐条确认（始终允许）'**
++  String get phoneControlConfirmFreeTitle;
++
++  /// No description provided for @phoneControlConfirmFreeHint.
++  ///
++  /// In zh, this message translates to:
++  /// **'打开后 DSH 操作手机不再弹「本轮授权」；关掉则每次都问'**
++  String get phoneControlConfirmFreeHint;
++
+   /// No description provided for @phoneControlRules.
+   ///
+   /// In zh, this message translates to:
+@@ -23297,7 +23321,7 @@ abstract class L10n {
    /// No description provided for @phonePreviewTitle.
    ///
    /// In zh, this message translates to:
@@ -79232,7 +79324,7 @@ index 05ad2de..58ec256 100644
    String get phonePreviewTitle;
  
    /// No description provided for @phonePreviewDescription.
-@@ -23309,7 +23315,7 @@ abstract class L10n {
+@@ -23309,7 +23333,7 @@ abstract class L10n {
    /// No description provided for @phonePreviewOpen.
    ///
    /// In zh, this message translates to:
@@ -79241,7 +79333,7 @@ index 05ad2de..58ec256 100644
    String get phonePreviewOpen;
  
    /// No description provided for @phonePreviewTask.
-@@ -23339,7 +23345,7 @@ abstract class L10n {
+@@ -23339,7 +23363,7 @@ abstract class L10n {
    /// No description provided for @phonePreviewWaiting.
    ///
    /// In zh, this message translates to:
@@ -79250,7 +79342,7 @@ index 05ad2de..58ec256 100644
    String get phonePreviewWaiting;
  
    /// No description provided for @phoneViewportTitle.
-@@ -23351,7 +23357,7 @@ abstract class L10n {
+@@ -23351,7 +23375,7 @@ abstract class L10n {
    /// No description provided for @phoneViewportDescription.
    ///
    /// In zh, this message translates to:
@@ -79259,7 +79351,7 @@ index 05ad2de..58ec256 100644
    String get phoneViewportDescription;
  
    /// No description provided for @phoneViewportPortrait.
-@@ -23393,13 +23399,13 @@ abstract class L10n {
+@@ -23393,13 +23417,13 @@ abstract class L10n {
    /// No description provided for @phoneTaskDrainingHint.
    ///
    /// In zh, this message translates to:
@@ -79275,7 +79367,7 @@ index 05ad2de..58ec256 100644
    String get phoneTaskCleanupFailedHint;
  
    /// No description provided for @phoneFinishingTask.
-@@ -23417,7 +23423,7 @@ abstract class L10n {
+@@ -23417,7 +23441,7 @@ abstract class L10n {
    /// No description provided for @phoneCleanupRetryFailed.
    ///
    /// In zh, this message translates to:
@@ -79284,7 +79376,7 @@ index 05ad2de..58ec256 100644
    String get phoneCleanupRetryFailed;
  
    /// No description provided for @phoneSelfCheckTitle.
-@@ -23519,7 +23525,7 @@ abstract class L10n {
+@@ -23519,7 +23543,7 @@ abstract class L10n {
    /// No description provided for @phoneSelfCheckStage.
    ///
    /// In zh, this message translates to:
@@ -79293,7 +79385,7 @@ index 05ad2de..58ec256 100644
    String phoneSelfCheckStage(String stage);
  
    /// No description provided for @phoneSelfCheckReason.
-@@ -23531,7 +23537,7 @@ abstract class L10n {
+@@ -23531,7 +23555,7 @@ abstract class L10n {
    /// No description provided for @phoneSelfCheckTargetScope.
    ///
    /// In zh, this message translates to:
@@ -79302,7 +79394,7 @@ index 05ad2de..58ec256 100644
    String get phoneSelfCheckTargetScope;
  
    /// No description provided for @phoneSelfCheckProfileChoice.
-@@ -23591,7 +23597,7 @@ abstract class L10n {
+@@ -23591,7 +23615,7 @@ abstract class L10n {
    /// No description provided for @phoneTaskBackgroundResource.
    ///
    /// In zh, this message translates to:
@@ -79311,7 +79403,7 @@ index 05ad2de..58ec256 100644
    String get phoneTaskBackgroundResource;
  
    /// No description provided for @phoneInterruptionTitle.
-@@ -23822,6 +23828,30 @@ abstract class L10n {
+@@ -23822,6 +23846,30 @@ abstract class L10n {
    /// **'运行器尚未就绪，请确认本机引擎和开发者环境已配置。'**
    String get phoneIosNeedsSetup;
  
@@ -79342,7 +79434,7 @@ index 05ad2de..58ec256 100644
    /// No description provided for @phoneTaskResultReady.
    ///
    /// In zh, this message translates to:
-@@ -34502,6 +34532,12 @@ abstract class L10n {
+@@ -34502,6 +34550,12 @@ abstract class L10n {
    /// **'通话设置'**
    String get speechCallSettings;
  
@@ -79355,7 +79447,7 @@ index 05ad2de..58ec256 100644
    /// No description provided for @speechCallPause.
    ///
    /// In zh, this message translates to:
-@@ -34628,12 +34664,120 @@ abstract class L10n {
+@@ -34628,12 +34682,120 @@ abstract class L10n {
    /// **'光球'**
    String get speechCallVisualGlass;
  
@@ -79477,7 +79569,7 @@ index 05ad2de..58ec256 100644
    ///
    /// In zh, this message translates to:
 diff --git a/app/lib/l10n/gen/app_localizations_en.dart b/app/lib/l10n/gen/app_localizations_en.dart
-index 546fef8..4804c8f 100644
+index 546fef8..20abe2e 100644
 --- a/app/lib/l10n/gen/app_localizations_en.dart
 +++ b/app/lib/l10n/gen/app_localizations_en.dart
 @@ -1925,6 +1925,9 @@ class L10nEn extends L10n {
@@ -79490,7 +79582,23 @@ index 546fef8..4804c8f 100644
    @override
    String get botsFolderGone => 'This folder is gone';
  
-@@ -13575,6 +13578,19 @@ class L10nEn extends L10n {
+@@ -12382,6 +12385,15 @@ class L10nEn extends L10n {
+   @override
+   String get phoneControlLoading => 'Loading';
+ 
++  @override
++  String get phoneControlConfirmFree => 'No prompts';
++
++  @override
++  String get phoneControlConfirmFreeTitle => 'Stop asking before each action';
++
++  @override
++  String get phoneControlConfirmFreeHint => 'On: DSH operates the phone without per-turn prompts. Off: ask every time.';
++
+   @override
+   String get phoneControlRules => 'Rules';
+ 
+@@ -13575,6 +13587,19 @@ class L10nEn extends L10n {
    @override
    String get phoneIosNeedsSetup => 'The runner is not ready. Check the local engine and developer setup.';
  
@@ -79510,7 +79618,7 @@ index 546fef8..4804c8f 100644
    @override
    String get phoneTaskResultReady => 'Task complete · View result';
  
-@@ -19818,6 +19834,9 @@ class L10nEn extends L10n {
+@@ -19818,6 +19843,9 @@ class L10nEn extends L10n {
    @override
    String get speechCallSettings => 'Call settings';
  
@@ -79520,7 +79628,7 @@ index 546fef8..4804c8f 100644
    @override
    String get speechCallPause => 'Pause before she answers';
  
-@@ -19883,9 +19902,65 @@ class L10nEn extends L10n {
+@@ -19883,9 +19911,65 @@ class L10nEn extends L10n {
    @override
    String get speechCallVisualGlass => 'Orb';
  
@@ -79587,7 +79695,7 @@ index 546fef8..4804c8f 100644
    String starPromptTitle(int hours) {
      String _temp0 = intl.Intl.pluralLogic(
 diff --git a/app/lib/l10n/gen/app_localizations_zh.dart b/app/lib/l10n/gen/app_localizations_zh.dart
-index c66b20d..7d13fb8 100644
+index c66b20d..c9a6aa2 100644
 --- a/app/lib/l10n/gen/app_localizations_zh.dart
 +++ b/app/lib/l10n/gen/app_localizations_zh.dart
 @@ -1827,6 +1827,9 @@ class L10nZh extends L10n {
@@ -79618,7 +79726,23 @@ index c66b20d..7d13fb8 100644
  
    @override
    String get phoneDndShizukuInstalled => '已安装 Shizuku';
-@@ -12511,13 +12514,13 @@ class L10nZh extends L10n {
+@@ -11778,6 +11781,15 @@ class L10nZh extends L10n {
+   @override
+   String get phoneControlLoading => '读取中';
+ 
++  @override
++  String get phoneControlConfirmFree => '免确认操作';
++
++  @override
++  String get phoneControlConfirmFreeTitle => '不再逐条确认（始终允许）';
++
++  @override
++  String get phoneControlConfirmFreeHint => '打开后 DSH 操作手机不再弹「本轮授权」；关掉则每次都问';
++
+   @override
+   String get phoneControlRules => '规则';
+ 
+@@ -12511,13 +12523,13 @@ class L10nZh extends L10n {
    String get phoneDndConnectPortHint => '在系统「无线调试」首页查看「IP 地址和端口」，填写冒号后的端口。请不要使用配对码页面的端口。';
  
    @override
@@ -79634,7 +79758,7 @@ index c66b20d..7d13fb8 100644
  
    @override
    String phonePreviewTask(String taskId) {
-@@ -12534,13 +12537,13 @@ class L10nZh extends L10n {
+@@ -12534,13 +12546,13 @@ class L10nZh extends L10n {
    String get phonePreviewUnavailable => '画面暂不可预览，或受到保护';
  
    @override
@@ -79650,7 +79774,7 @@ index c66b20d..7d13fb8 100644
  
    @override
    String get phoneViewportPortrait => '竖屏';
-@@ -12563,10 +12566,10 @@ class L10nZh extends L10n {
+@@ -12563,10 +12575,10 @@ class L10nZh extends L10n {
    }
  
    @override
@@ -79663,7 +79787,7 @@ index c66b20d..7d13fb8 100644
  
    @override
    String phoneFinishingTask(int task) {
-@@ -12577,7 +12580,7 @@ class L10nZh extends L10n {
+@@ -12577,7 +12589,7 @@ class L10nZh extends L10n {
    String get phoneCleanupRetry => '重试清理';
  
    @override
@@ -79672,7 +79796,7 @@ index c66b20d..7d13fb8 100644
  
    @override
    String get phoneSelfCheckTitle => '检查手机操控';
-@@ -12654,7 +12657,7 @@ class L10nZh extends L10n {
+@@ -12654,7 +12666,7 @@ class L10nZh extends L10n {
      String _temp0 = intl.Intl.selectLogic(stage, {
        'device': '设备前置条件',
        'channel': '已选通道',
@@ -79681,7 +79805,7 @@ index c66b20d..7d13fb8 100644
        'input_probe': '触摸接收核验',
        'launch': '应用启动',
        'tree': '控件树',
-@@ -12710,7 +12713,7 @@ class L10nZh extends L10n {
+@@ -12710,7 +12722,7 @@ class L10nZh extends L10n {
  
    @override
    String get phoneSelfCheckTargetScope =>
@@ -79690,7 +79814,7 @@ index c66b20d..7d13fb8 100644
  
    @override
    String get phoneSelfCheckProfileChoice => '选择下次自检（不会改变下方报告）';
-@@ -12765,7 +12768,7 @@ class L10nZh extends L10n {
+@@ -12765,7 +12777,7 @@ class L10nZh extends L10n {
    String get phoneTaskMainResource => '主屏';
  
    @override
@@ -79699,7 +79823,7 @@ index c66b20d..7d13fb8 100644
  
    @override
    String get phoneInterruptionTitle => '上次手机任务未确认结束';
-@@ -12892,6 +12895,18 @@ class L10nZh extends L10n {
+@@ -12892,6 +12904,18 @@ class L10nZh extends L10n {
    @override
    String get phoneIosNeedsSetup => '运行器尚未就绪，请确认本机引擎和开发者环境已配置。';
  
@@ -79718,7 +79842,7 @@ index c66b20d..7d13fb8 100644
    @override
    String get phoneTaskResultReady => '任务完成 · 查看结果';
  
-@@ -18775,6 +18790,9 @@ class L10nZh extends L10n {
+@@ -18775,6 +18799,9 @@ class L10nZh extends L10n {
    @override
    String get speechCallSettings => '通话设置';
  
@@ -79728,7 +79852,7 @@ index c66b20d..7d13fb8 100644
    @override
    String get speechCallPause => '停顿多久算说完';
  
-@@ -18838,9 +18856,63 @@ class L10nZh extends L10n {
+@@ -18838,9 +18865,63 @@ class L10nZh extends L10n {
    @override
    String get speechCallVisualGlass => '光球';
  
@@ -79817,10 +79941,20 @@ index 104780b..a2b020d 100644
 +  "androidShellNoConfirm": "不再逐条确认（风险自负）"
  }
 diff --git a/app/lib/l10n/parts/phone_en.arb b/app/lib/l10n/parts/phone_en.arb
-index 47d0cdf..f942ddd 100644
+index 47d0cdf..07b1f84 100644
 --- a/app/lib/l10n/parts/phone_en.arb
 +++ b/app/lib/l10n/parts/phone_en.arb
-@@ -690,5 +690,9 @@
+@@ -253,6 +253,9 @@
+   "phoneControlReadScreenHint": "See what DSH reads, without sending it to the model",
+   "phoneControlEnableAccessibilityFirst": "Turn on the accessibility service first",
+   "phoneControlLoading": "Loading",
++  "phoneControlConfirmFree": "No prompts",
++  "phoneControlConfirmFreeTitle": "Stop asking before each action",
++  "phoneControlConfirmFreeHint": "On: DSH operates the phone without per-turn prompts. Off: ask every time.",
+   "phoneControlRules": "Rules",
+   "phoneControlRecentActions": "Recent actions",
+   "phoneControlRecentActionsHint": "Every step is logged, without screen contents",
+@@ -690,5 +693,9 @@
    "phoneIosServiceHint": "Starts on demand after approval and stops when the task ends, closing the system’s “Automation Running” indicator.",
    "phoneIosSetupHint": "Keep LocalDevVPN connected. On first use, allow control for 30 minutes.",
    "phoneIosReturnHint": "Return to this conversation when the task finishes, then stop the phone-control service.",
@@ -79832,7 +79966,7 @@ index 47d0cdf..f942ddd 100644
 +  "phoneVirtualFpsValue": "2–10 fps; lower saves power"
  }
 diff --git a/app/lib/l10n/parts/phone_zh.arb b/app/lib/l10n/parts/phone_zh.arb
-index 4d61a2d..8c3440e 100644
+index 4d61a2d..94a6064 100644
 --- a/app/lib/l10n/parts/phone_zh.arb
 +++ b/app/lib/l10n/parts/phone_zh.arb
 @@ -162,7 +162,7 @@
@@ -79853,7 +79987,17 @@ index 4d61a2d..8c3440e 100644
    "phoneDndShizukuInstalled": "已安装 Shizuku",
    "phoneDndShizukuRunning": "Shizuku 正在运行",
    "phoneDndShizukuGranted": "已授权给 DSH Go",
-@@ -694,9 +694,9 @@
+@@ -253,6 +253,9 @@
+   "phoneControlReadScreenHint": "看看 DSH 读到了什么，不发给模型",
+   "phoneControlEnableAccessibilityFirst": "先打开无障碍服务",
+   "phoneControlLoading": "读取中",
++  "phoneControlConfirmFree": "免确认操作",
++  "phoneControlConfirmFreeTitle": "不再逐条确认（始终允许）",
++  "phoneControlConfirmFreeHint": "打开后 DSH 操作手机不再弹「本轮授权」；关掉则每次都问",
+   "phoneControlRules": "规则",
+   "phoneControlRecentActions": "最近操作",
+   "phoneControlRecentActionsHint": "每一步都会记下，不含屏幕内容",
+@@ -694,9 +697,9 @@
    "phoneDndManualConnect": "按端口连接",
    "phoneDndConnectPortLabel": "连接端口",
    "phoneDndConnectPortHint": "在系统「无线调试」首页查看「IP 地址和端口」，填写冒号后的端口。请不要使用配对码页面的端口。",
@@ -79865,7 +80009,7 @@ index 4d61a2d..8c3440e 100644
    "phonePreviewTask": "预览任务 {taskId}",
    "@phonePreviewTask": {
      "placeholders": {
-@@ -708,17 +708,17 @@
+@@ -708,17 +711,17 @@
    "phonePreviewInUse": "正在预览另一任务",
    "phonePreviewOff": "任务已结束或预览已关闭",
    "phonePreviewUnavailable": "画面暂不可预览，或受到保护",
@@ -79887,7 +80031,7 @@ index 4d61a2d..8c3440e 100644
    "@phoneStoppedTask": {
      "placeholders": {
        "task": {
-@@ -735,7 +735,7 @@
+@@ -735,7 +738,7 @@
      }
    },
    "phoneCleanupRetry": "重试清理",
@@ -79896,7 +80040,7 @@ index 4d61a2d..8c3440e 100644
    "phoneSelfCheckTitle": "检查手机操控",
    "phoneSelfCheckTechnicalDetails": "技术详情",
    "phoneLocalOcrSummary": "本机识别；结果可发给模型，SDK 会收集使用统计。",
-@@ -766,7 +766,7 @@
+@@ -766,7 +769,7 @@
        }
      }
    },
@@ -79905,7 +80049,7 @@ index 4d61a2d..8c3440e 100644
    "@phoneSelfCheckStage": {
      "placeholders": {
        "stage": {
-@@ -782,7 +782,7 @@
+@@ -782,7 +785,7 @@
        }
      }
    },
@@ -79914,7 +80058,7 @@ index 4d61a2d..8c3440e 100644
    "phoneSelfCheckProfileChoice": "选择下次自检（不会改变下方报告）",
    "phoneSelfCheckProfile": "{profile, select, probe_b{输入接收探针（B）} target_c1{固定目标自检（C1）} target_c2{固定输入与画面自检（C2）} other{未知模式}}",
    "@phoneSelfCheckProfile": {
-@@ -806,7 +806,7 @@
+@@ -806,7 +809,7 @@
    "phoneTaskWaitingUnknown": "等待界面资源（应用身份未确认），已等待 {seconds} 秒。",
    "phoneTaskWaitingScreen": "等待{screen}，已等待 {seconds} 秒。",
    "phoneTaskMainResource": "主屏",
@@ -79923,7 +80067,7 @@ index 4d61a2d..8c3440e 100644
    "@phoneTaskWaiting": {
      "placeholders": {
        "taskId": {
-@@ -919,5 +919,9 @@
+@@ -919,5 +922,9 @@
    "phoneIosServiceHint": "授权后按需启动。任务结束会停止服务，系统的“Automation Running”提示也会结束。",
    "phoneIosSetupHint": "保持 LocalDevVPN 已连接，首次使用时允许 30 分钟操控。",
    "phoneIosReturnHint": "任务完成后回到当前对话，并停止手机操控服务。",
@@ -81254,7 +81398,7 @@ index 2a34ba3..f146fdc 100644
 +  };
 +}
 diff --git a/app/lib/ui/phone/android_shell_page.dart b/app/lib/ui/phone/android_shell_page.dart
-index 1214058..3ea9dc8 100644
+index 1214058..167d646 100644
 --- a/app/lib/ui/phone/android_shell_page.dart
 +++ b/app/lib/ui/phone/android_shell_page.dart
 @@ -2,6 +2,7 @@ import 'dart:async';
@@ -81274,7 +81418,7 @@ index 1214058..3ea9dc8 100644
    bool _busy = false;
    bool _stopping = false;
    String? _errorCode;
-@@ -71,6 +74,21 @@ class _AndroidShellPageState extends ConsumerState<AndroidShellPage> {
+@@ -71,6 +74,26 @@ class _AndroidShellPageState extends ConsumerState<AndroidShellPage> {
        },
      );
      unawaited(_refresh());
@@ -81293,10 +81437,15 @@ index 1214058..3ea9dc8 100644
 +    setState(() => _noConfirm = value);
 +    final prefs = await SharedPreferences.getInstance();
 +    await prefs.setBool(_noConfirmKey, value);
++    // 用户 20:53：这个开关的本意是「直接不让他提示」，不只是 Shell。
++    // 屏幕操作（点按/打开/输入/付款）走另一套确认，这里一并切过去。
++    await ref.read(phoneProvider.notifier).setConfirmMode(
++      value ? PhoneConfirmMode.always : PhoneConfirmMode.ask,
++    );
    }
  
    @override
-@@ -217,6 +235,16 @@ class _AndroidShellPageState extends ConsumerState<AndroidShellPage> {
+@@ -217,6 +240,16 @@ class _AndroidShellPageState extends ConsumerState<AndroidShellPage> {
                  onChanged: canEnable || (canSetup && _status.enabled) ? (value) => unawaited(_toggle(value)) : null,
                ),
              ),
@@ -81848,6 +81997,18 @@ index 3a23e52..bbdbb93 100644
              ListPageCard(
                margin: _groupMargin,
                title: l10n.phoneDndRequirements,
+diff --git a/app/lib/ui/phone/phone_control_screen.dart b/app/lib/ui/phone/phone_control_screen.dart
+index fc641e2..5d22fc9 100644
+--- a/app/lib/ui/phone/phone_control_screen.dart
++++ b/app/lib/ui/phone/phone_control_screen.dart
+@@ -16,6 +16,7 @@ import '../../state/phone_overlay_prefs.dart';
+ import '../../state/phone_state.dart';
+ import '../../state/phone_turn_end.dart';
+ import '../common/app_sheet.dart';
++import '../settings/settings_widgets.dart';
+ import '../common/app_dialog.dart';
+ import '../common/ask_ai.dart';
+ import '../common/brief_notice.dart';
 diff --git a/app/lib/ui/phone/phone_task_card.dart b/app/lib/ui/phone/phone_task_card.dart
 new file mode 100644
 index 0000000..26e0742
