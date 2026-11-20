@@ -1,7 +1,7 @@
-From 7b67132437a83de42d9b8212615b78493f4b9b62 Mon Sep 17 00:00:00 2001
+From 10c24bb7c2864ea8cdec121081f6c35bb14531c4 Mon Sep 17 00:00:00 2001
 From: wake-ci <ci@local>
-Date: Fri, 20 Nov 2026 10:18:10 +0800
-Subject: [PATCH] private build: all buttons real
+Date: Fri, 20 Nov 2026 10:21:29 +0800
+Subject: [PATCH] private build: no task card
 
 ---
  .gitattributes                                |    3 +
@@ -80,7 +80,7 @@ Subject: [PATCH] private build: all buttons real
  app/lib/state/update_state.dart               |    9 +
  app/lib/state/virtual_screen_state.dart       |  244 ++
  app/lib/ui/chat/chat_rows.dart                |    2 +
- app/lib/ui/chat/chat_screen.dart              |   94 +-
+ app/lib/ui/chat/chat_screen.dart              |   93 +-
  app/lib/ui/chat/media/media_format.dart       |   16 +-
  app/lib/ui/phone/android_shell_page.dart      |   28 +
  app/lib/ui/phone/background_preview.dart      |  264 +-
@@ -102,7 +102,7 @@ Subject: [PATCH] private build: all buttons real
  docs/wake-word.md                             |  107 +
  dsh-go-wake.patch                             | 2065 +++++++++++
  tooling/build-wake-apk.sh                     |   68 +
- 98 files changed, 12265 insertions(+), 2084 deletions(-)
+ 98 files changed, 12264 insertions(+), 2084 deletions(-)
  create mode 100644 .github/workflows/wake-apk.yml
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallForegroundService.kt
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallOverlay.kt
@@ -88007,7 +88007,7 @@ index 0702d0a..d5e8951 100644
          // 不知道属于哪一轮时,一条用户消息就是一轮的分界。
          close(cut: turn == null ? null : item.seq, artifactsBefore: item.seq);
 diff --git a/app/lib/ui/chat/chat_screen.dart b/app/lib/ui/chat/chat_screen.dart
-index 46d2fd3..741ffe4 100644
+index 46d2fd3..46eb6a5 100644
 --- a/app/lib/ui/chat/chat_screen.dart
 +++ b/app/lib/ui/chat/chat_screen.dart
 @@ -8,6 +8,8 @@ import 'dart:async';
@@ -88165,13 +88165,12 @@ index 46d2fd3..741ffe4 100644
      );
    }
  
-@@ -2176,6 +2257,9 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
+@@ -2176,6 +2257,8 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
                                        strip: false,
                                      ),
                                    ),
-+                                // 任务视图 + 操作进度（第十节 8、9）: what the phone task is doing,
-+                                // right in the conversation. Hidden when no task is live.
-+                                if (!readOnly) const PhoneTaskCard(),
++                                // 任务卡片已按用户要求删除（验收单 #30：要么取消要么加 ×，最终选了取消）。
++                                // 任务进度由虚拟屏悬浮窗和状态提示承担，不再占聊天版面。
                                  if (_preparedPhoneSkill case final prepared?)
                                    Card(
                                      child: Padding(
