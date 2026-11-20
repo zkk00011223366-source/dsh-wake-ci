@@ -1,7 +1,7 @@
-From 22d0a1998cb56caf825b55fc8cc601a70efb8c7c Mon Sep 17 00:00:00 2001
+From 185b4d283439742d94c4dffde4d54c74b80a11db Mon Sep 17 00:00:00 2001
 From: wake-ci <ci@local>
-Date: Fri, 20 Nov 2026 22:52:45 +0800
-Subject: [PATCH] pb: logs
+Date: Fri, 20 Nov 2026 22:56:42 +0800
+Subject: [PATCH] pb: real density
 
 ---
  .gitattributes                                |    3 +
@@ -28,13 +28,13 @@ Subject: [PATCH] pb: logs
  .../dsh_app/phone/a11y/PhoneA11yService.kt    |   20 +
  .../phone/background/BackgroundControl.kt     |   95 +-
  .../phone/background/BackgroundCoordinates.kt |    2 +
- .../phone/background/BackgroundDisplay.kt     |  171 +-
+ .../phone/background/BackgroundDisplay.kt     |  176 +-
  .../phone/background/BackgroundPolicy.kt      |    8 +-
  .../background/BackgroundProbeActivity.kt     |    4 +-
  .../phone/background/BackgroundTree.kt        |    4 +-
- .../phone/background/PrivilegedDisplayCore.kt |  207 +-
+ .../phone/background/PrivilegedDisplayCore.kt |  216 +-
  .../phone/background/PrivilegedDisplayHost.kt |    6 +-
- .../phone/background/PrivilegedProtocol.kt    |   70 +-
+ .../phone/background/PrivilegedProtocol.kt    |   73 +-
  .../dsh_app/phone/skills/PhoneSkillDraft.kt   |    2 +-
  .../dsh_app/phone/vscreen/TaskMover.kt        |   43 +
  .../dsh_app/phone/vscreen/TransferBall.kt     |  404 ++++
@@ -109,7 +109,7 @@ Subject: [PATCH] pb: logs
  docs/wake-word.md                             |  107 +
  dsh-go-wake.patch                             | 2065 +++++++++++++++++
  tooling/build-wake-apk.sh                     |   68 +
- 105 files changed, 11513 insertions(+), 518 deletions(-)
+ 105 files changed, 11525 insertions(+), 523 deletions(-)
  create mode 100644 .github/workflows/wake-apk.yml
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallForegroundService.kt
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallOverlay.kt
@@ -2439,7 +2439,7 @@ index f6b83a0..2eb59f3 100644
          val result = receipt.takeIf { accepted && screen == screenId }
          clear()
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/BackgroundDisplay.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/BackgroundDisplay.kt
-index bc1810a..73af6f5 100644
+index bc1810a..998a914 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/BackgroundDisplay.kt
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/BackgroundDisplay.kt
 @@ -22,6 +22,7 @@ import io.github.ccch1mneyyy.dsh_app.phone.a11y.LocalOcrResult
@@ -2464,7 +2464,19 @@ index bc1810a..73af6f5 100644
          return Availability(true)
      }
  
-@@ -126,7 +127,9 @@ class BackgroundDisplay internal constructor(
+@@ -99,7 +100,10 @@ class BackgroundDisplay internal constructor(
+                 putInt(Proto.RELEASE_RECEIPT, 1)
+                 putString(Proto.OWNER, ownerToken)
+                 putTarget(this, target)
+-                putInt(Proto.SHORT_SIDE, 720)
++                // 用手机真实短边 + 真实密度：720/320dpi 会让微信这类应用进"平板布局"。
++                val dm = android.content.res.Resources.getSystem().displayMetrics
++                putInt(Proto.SHORT_SIDE, minOf(dm.widthPixels, dm.heightPixels).coerceIn(360, 1440))
++                putInt(Proto.DENSITY, dm.densityDpi.coerceIn(120, 640))
+                 putString(Proto.VIEWPORT_PRESET, viewport.preset)
+                 putBoolean(Proto.LOCAL_VISUAL, true)
+                 putInt(Proto.WANT_IMAGE, 0)
+@@ -126,7 +130,9 @@ class BackgroundDisplay internal constructor(
                  }) { Reasons.of("deviceUnavailable") }
              }
              onResourceReady(active)
@@ -2475,7 +2487,7 @@ index bc1810a..73af6f5 100644
              result.copy(backgroundOpenConfirmed = result.ok && TargetIdentity.backgroundOpenConfirmed(target,
                  response.get(Proto.OK), response.get(Proto.BACKGROUND_OPEN_EVIDENCE), response.get(Proto.DISPLAY_ID),
                  response.get(Proto.TARGET_IDENTITY_VERSION), response.get(Proto.PKG), response.get(Proto.TARGET_UID)))
-@@ -165,6 +168,8 @@ class BackgroundDisplay internal constructor(
+@@ -165,6 +171,8 @@ class BackgroundDisplay internal constructor(
              throw e
          }
          requireObservation(response.getBoolean(Proto.OK), response.getString(Proto.ERROR), response.getString(Proto.ERROR_DETAIL))
@@ -2484,7 +2496,7 @@ index bc1810a..73af6f5 100644
          val shown = shownApp(response) ?: return emptySnapshot(response)
          // Local OCR follows the app actually read, under that app's own permission.
          val local = if (requestLocalText) readLocalText(response, shown, ocrEpoch, started) else null
-@@ -345,7 +350,7 @@ class BackgroundDisplay internal constructor(
+@@ -345,7 +353,7 @@ class BackgroundDisplay internal constructor(
          val peer = resourceIo.peer()
          if (step.relation != relation || target == null || peer == null || !navigationSupported ||
              target.packageName != step.app.packageName || target.uid != step.app.uid || !existingReplayTarget(target))
@@ -2493,7 +2505,7 @@ index bc1810a..73af6f5 100644
          val request = navigationRequest(step, null)
          val parsed = checkNotNull(BackgroundNavigationProtocol.request(request.keySet(), request::get))
          val response = dispatch({ navigationCurrent(target, peer) }) {
-@@ -449,10 +454,10 @@ class BackgroundDisplay internal constructor(
+@@ -449,10 +457,10 @@ class BackgroundDisplay internal constructor(
          val started = if (afterVisualSupported) SystemClock.uptimeMillis() else 0L
          val epoch = localOcr?.enabledEpoch()
          // l10n:keep agent screen protocol
@@ -2506,7 +2518,7 @@ index bc1810a..73af6f5 100644
          }
          // Explicit element ids are checked by PhoneCore before perform; collect owns its internal scrolls.
          if (action is PhoneAction.Scroll && action.elementId == null && action.screenId != lastScreenId) {
-@@ -502,7 +507,121 @@ class BackgroundDisplay internal constructor(
+@@ -502,7 +510,121 @@ class BackgroundDisplay internal constructor(
              dispatch(allowed) { OwnerScopeProtocol.execute(channel(), ownerToken, request, it) }
          } catch (error: Exception) { clearSnapshot(); throw error }
              ?: return ActionResult(false, PhoneTasks.STOPPED_MESSAGE)
@@ -2586,7 +2598,7 @@ index bc1810a..73af6f5 100644
 +                putString(Proto.OP, Proto.OP_MOVE_TASK)
 +                putString(Proto.OWNER, ownerToken)
 +                putString(Proto.TASK_DIRECTION, Proto.DIR_VIRTUAL)
-+                putInt(Proto.SHORT_SIDE, 720)
++
 +                putString(Proto.VIEWPORT_PRESET, viewport.preset)
 +                // 第一次请求带上回执，host 才肯为这个 owner 建 scope（opening）。
 +                putInt(Proto.RELEASE_RECEIPT, 1)
@@ -2629,7 +2641,7 @@ index bc1810a..73af6f5 100644
      }
  
      /**
-@@ -573,8 +692,32 @@ class BackgroundDisplay internal constructor(
+@@ -573,8 +695,32 @@ class BackgroundDisplay internal constructor(
  
      override fun foregroundPackage(): String? = currentTarget?.packageName
  
@@ -2662,7 +2674,7 @@ index bc1810a..73af6f5 100644
          val acknowledged = try {
              resourceIo.release { pinned -> OwnerScopeProtocol.release(pinned, ownerToken) }
          } catch (_: Exception) { false }
-@@ -659,7 +802,7 @@ class BackgroundDisplay internal constructor(
+@@ -659,7 +805,7 @@ class BackgroundDisplay internal constructor(
              clearSnapshot()
              val now = response.getString(Proto.FG_PKG)
              // l10n:keep agent target identity
@@ -2671,7 +2683,7 @@ index bc1810a..73af6f5 100644
              return ActionResult(false, Reasons.withDetail(message, detail), staleSnapshot = true)
          }
          if (!ok) clearSnapshot()
-@@ -693,13 +836,13 @@ class BackgroundDisplay internal constructor(
+@@ -693,13 +839,13 @@ class BackgroundDisplay internal constructor(
          if (response.getBoolean(Proto.SECURE)) {
              lastScreenId = id; lastElements = emptyList(); previousLabels = emptySet()
              // l10n:keep agent screen protocol
@@ -2687,7 +2699,7 @@ index bc1810a..73af6f5 100644
              return@commitObservation ScreenSnapshot(id, text, appLabel, pkg, secure = false, poorTree = true, readPackages = setOf(pkg))
          }
          val elements = buildElements(response, markNew)
-@@ -789,14 +932,14 @@ class BackgroundDisplay internal constructor(
+@@ -789,14 +935,14 @@ class BackgroundDisplay internal constructor(
          if (opened.packageName == shown.packageName) return ""
          val name = appLabel?.let { "「$it」（${shown.packageName}）" } ?: shown.packageName
          // l10n:keep agent target identity
@@ -2704,7 +2716,7 @@ index bc1810a..73af6f5 100644
          // l10n:keep agent target identity
          "closed" -> "；${openedTarget?.packageName} 已经退出，需要时重新打开"
          else -> ""
-@@ -810,7 +953,7 @@ class BackgroundDisplay internal constructor(
+@@ -810,7 +956,7 @@ class BackgroundDisplay internal constructor(
          val id = "b${++counter}"
          lastScreenId = id; lastElements = emptyList(); previousLabels = emptySet()
          // l10n:keep agent target identity
@@ -2713,7 +2725,7 @@ index bc1810a..73af6f5 100644
              // l10n:keep agent target identity
              "。可以用 open 重新打开应用。", null, null)
      }
-@@ -821,7 +964,7 @@ class BackgroundDisplay internal constructor(
+@@ -821,7 +967,7 @@ class BackgroundDisplay internal constructor(
          val id = "b${++counter}"
          lastScreenId = id; lastElements = emptyList()
          // l10n:keep agent screen protocol
@@ -2779,7 +2791,7 @@ index 830cb25..5652796 100644
              // l10n:keep model screen format and matchers
              append(" · ").append(if (portrait) "竖屏" else "横屏")
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/PrivilegedDisplayCore.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/PrivilegedDisplayCore.kt
-index c7ed0f7..23ba2df 100644
+index c7ed0f7..c5a9697 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/PrivilegedDisplayCore.kt
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/PrivilegedDisplayCore.kt
 @@ -42,6 +42,7 @@ import android.view.InputEvent
@@ -2857,7 +2869,7 @@ index c7ed0f7..23ba2df 100644
          val pkg = request.getString(Proto.PKG).orEmpty()
          if (!PACKAGE.matches(pkg)) throw Fault("invalidArguments")
          val opening = op == Proto.OP_CREATE || op == Proto.OP_LAUNCH
-@@ -729,6 +767,147 @@ class PrivilegedDisplayCore internal constructor(
+@@ -729,16 +767,158 @@ class PrivilegedDisplayCore internal constructor(
      private fun displayId(): Int = display?.display?.displayId ?: throw Fault("displayMissing")
      private fun requireDisplay() { if (display == null) throw Fault("displayMissing") }
  
@@ -3005,7 +3017,21 @@ index c7ed0f7..23ba2df 100644
      private fun requestedViewport(request: Bundle): BackgroundPolicy.Viewport? {
          if (!request.containsKey(Proto.VIEWPORT_PRESET)) return null
          val preset = BackgroundPolicy.Viewport.parse(request.get(Proto.VIEWPORT_PRESET)) ?: throw Fault("invalidArguments")
-@@ -747,7 +926,20 @@ class PrivilegedDisplayCore internal constructor(
+-        if (request.containsKey(Proto.ASPECT_W) || request.containsKey(Proto.ASPECT_H) ||
+-            request.containsKey(Proto.SHORT_SIDE) && request.get(Proto.SHORT_SIDE) != 720) throw Fault("invalidArguments")
++        if (request.containsKey(Proto.ASPECT_W) || request.containsKey(Proto.ASPECT_H)) throw Fault("invalidArguments")
+         return preset
+     }
+ 
+     private fun createDisplay(request: Bundle, probe: Boolean = false) {
+-        val shortSide = request.getInt(Proto.SHORT_SIDE, 720).coerceIn(360, 1080)
++        val shortSide = request.getInt(Proto.SHORT_SIDE, 720).coerceIn(360, 1440)
++        // 密度跟随手机：720/320dpi 会让微信等应用判定为大屏（平板布局），移回主屏也变形。
++        val density = request.getInt(Proto.DENSITY, 320).coerceIn(120, 640)
+         val aspectW = request.getInt(Proto.ASPECT_W, 9).coerceAtLeast(1)
+         val aspectH = request.getInt(Proto.ASPECT_H, 20).coerceAtLeast(1)
+         val preset = requestedViewport(request)
+@@ -747,7 +927,20 @@ class PrivilegedDisplayCore internal constructor(
          val w = size[0]; val h = size[1]
          if (reader != null || pendingReader != null || readerAllocationUncertain) throw Fault("releasePending")
          // A throwing newInstance returns no reader: nothing is left to close.
@@ -3027,7 +3053,16 @@ index c7ed0f7..23ba2df 100644
          pendingReader = ir
          try {
              // Every flag must resolve; never silently make a focus-stealing display on an old ROM.
-@@ -908,6 +1100,7 @@ class PrivilegedDisplayCore internal constructor(
+@@ -761,7 +954,7 @@ class PrivilegedDisplayCore internal constructor(
+             // their existing display flags; this tests delivery, not every target app's policy.
+             displayCreationAttempted = true
+             probeDisplay = probe
+-            val vd = displays.createVirtualDisplay("dsh-background", w, h, 320, ir.surface,
++            val vd = displays.createVirtualDisplay("dsh-background", w, h, density, ir.surface,
+                 flags or if (probe) DisplayManager.VIRTUAL_DISPLAY_FLAG_PRESENTATION else 0)
+             display = vd; reader = ir; pendingReader = null
+             releasingDisplayId = vd.display.displayId
+@@ -908,6 +1101,7 @@ class PrivilegedDisplayCore internal constructor(
  
      private fun releasePhysical(): Boolean {
          coordinateObservation = null
@@ -3035,7 +3070,7 @@ index c7ed0f7..23ba2df 100644
          closeTreeConnection()
          visualObservation = null
          stopPreview()
-@@ -1166,7 +1359,15 @@ class PrivilegedDisplayCore internal constructor(
+@@ -1166,7 +1360,15 @@ class PrivilegedDisplayCore internal constructor(
      private class CaptureResult(val jpeg: ByteArray, val raw: BackgroundPreviewState.RawFrame?, val local: ImageObservation?, val targetMatched: Boolean? = null)
  
      /** Null means only absent/black frames; other capture failures remain distinguishable. */
@@ -3077,7 +3112,7 @@ index aa3faff..4731fbf 100644
          }
      }
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/PrivilegedProtocol.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/PrivilegedProtocol.kt
-index 4c327b1..d1d60b4 100644
+index 4c327b1..5cdf0e3 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/PrivilegedProtocol.kt
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/PrivilegedProtocol.kt
 @@ -19,7 +19,7 @@ object Proto {
@@ -3089,7 +3124,17 @@ index 4c327b1..d1d60b4 100644
  
      // request keys
      const val OP = "op"
-@@ -125,6 +125,26 @@ object Proto {
+@@ -39,6 +39,9 @@ object Proto {
+     const val VIEWPORT_VERSION = "viewportVersion"
+     const val VIEWPORT_PRESET = "viewportPreset"
+     const val SHORT_SIDE = "shortSide"
++
++    /** 虚拟屏密度（dpi）：和手机一致，应用才不会切成"平板布局"（微信变形）。 */
++    const val DENSITY = "density"
+     const val ASPECT_W = "aspectW"
+     const val ASPECT_H = "aspectH"
+     const val ELEMENT = "element"
+@@ -125,6 +128,26 @@ object Proto {
      const val OP_TEXT = "text"
      const val RELEASE_RECEIPT = "releaseReceipt"
      const val TASK_SCOPE_EMPTY = "taskScopeEmpty"
@@ -3116,7 +3161,7 @@ index 4c327b1..d1d60b4 100644
      const val OP_RELEASE = "release"
      const val OP_DESTROY = "destroy"
      const val OP_COLLECT_SYSTEM_IME = "collectSystemIme"
-@@ -222,30 +242,30 @@ object Reasons {
+@@ -222,30 +245,30 @@ object Reasons {
          // l10n:keep agent background protocol
          "viewportUnsupported" -> "当前特权端不支持横屏视口，请更新或重新连接后重试；未打开应用"
          // l10n:keep agent background protocol
@@ -3155,7 +3200,7 @@ index 4c327b1..d1d60b4 100644
          // l10n:keep agent target identity
          "targetIdentityUnsupported" -> "当前后台服务不支持目标应用身份核验，请更新并重新连接；未派发新的启动请求"
          // l10n:keep agent target identity
-@@ -253,47 +273,47 @@ object Reasons {
+@@ -253,47 +276,47 @@ object Reasons {
          // l10n:keep agent target identity
          "targetIdentityUnavailable" -> "无法确认目标应用身份，已停止后续操作。先重新打开应用或结束任务；先前动作是否完成需核对，不要自动重试"
          // l10n:keep agent target identity
