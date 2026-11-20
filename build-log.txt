@@ -1,7 +1,7 @@
 == resources ==
-/dev/root        72G   54G   19G  75% /
+/dev/root        72G   48G   25G  66% /
                total        used        free      shared  buff/cache   available
-Mem:            7931        4731         542          52        3023        3200
+Mem:            7930        1248         671          50        6446        6682
 == tail ==
 
 ==> 依赖: flutter pub get
@@ -66,46 +66,3 @@ Because l10n.yaml exists, the options defined there will be used instead.
 To use the command line arguments, delete the l10n.yaml file in the Flutter project.
 
 
-✓ 75 parts, 8352 keys
-✓ gen-l10n → lib/l10n/gen/
-
-==> 运行时: 已存在 runtime/out/arm64-v8a
-
-==> 打包: tooling/build-apk.sh -f arm64 --keep-daemon
-dsh-go 1.1.0 (11202052, 2026-11-20 20:52 UTC+8) · release · arm64
-runtime verified: arm64 (arm64-v8a), schema 1, 5 files
-tawcroot: /home/runner/work/dsh-wake-ci/dsh-wake-ci/runtime/out-tawcroot
-→ flutter build apk --release --flavor arm64 --target-platform android-arm64 --build-name 1.1.0 --build-number 11202052 --dart-define=DSH_APP_VERSION=1.1.0+11202052
-Flutter assets will be downloaded from https://storage.googleapis.com. Make sure you trust this source!
-Running Gradle task 'assembleArm64Release'...                   
-WARNING: Your app uses the following plugins that apply Kotlin Gradle Plugin (KGP): flutter_webrtc
-Future versions of Flutter will fail to build if your app uses plugins that apply KGP.
-
-Please check the changelogs of these plugins and upgrade to a version that supports Built-in Kotlin.
-If no such version exists, report the issue to the plugin. If necessary, here is a guide on filing
-an issue against a plugin: https://docs.flutter.dev/release/breaking-changes/migrate-to-built-in-kotlin/for-app-developers#report-incompatible-kotlin-gradle-plugin-usage-to-plugin-authors
-
-If you are a plugin author, please migrate your plugin to Built-in Kotlin using this guide: https://docs.flutter.dev/release/breaking-changes/migrate-to-built-in-kotlin/for-plugin-authors
-Checking the license for package Android SDK Platform 35 in /home/runner/dev/android-sdk/licenses
-License for package Android SDK Platform 35 accepted.
-Preparing "Install Android SDK Platform 35 (revision 2)".
-"Install Android SDK Platform 35 (revision 2)" ready.
-Installing Android SDK Platform 35 in /home/runner/dev/android-sdk/platforms/android-35
-"Install Android SDK Platform 35 (revision 2)" complete.
-"Install Android SDK Platform 35 (revision 2)" finished.
-[=========                              ] 25%                                   
-Checking the license for package Android SDK Platform 34 in /home/runner/dev/android-sdk/licenses
-License for package Android SDK Platform 34 accepted.
-Preparing "Install Android SDK Platform 34 (revision 3)".
-"Install Android SDK Platform 34 (revision 3)" ready.
-Installing Android SDK Platform 34 in /home/runner/dev/android-sdk/platforms/android-34
-"Install Android SDK Platform 34 (revision 3)" complete.
-"Install Android SDK Platform 34 (revision 3)" finished.
-Flutter assets will be downloaded from https://storage.googleapis.com. Make sure you trust this source!
-[=========                              ] 25%                                   
-Font asset "DshIcons.ttf" was tree-shaken, reducing it from 53796 to 50204 bytes (6.7% reduction). Tree-shaking can be disabled by providing the --no-tree-shake-icons flag when building your app.
-Font asset "MaterialIcons-Regular.otf" was tree-shaken, reducing it from 1645184 to 3924 bytes (99.8% reduction). Tree-shaking can be disabled by providing the --no-tree-shake-icons flag when building your app.
-Note: Some input files use or override a deprecated API.
-Note: Recompile with -Xlint:deprecation for details.
-Note: Some input files use unchecked or unsafe operations.
-Note: Recompile with -Xlint:unchecked for details.
