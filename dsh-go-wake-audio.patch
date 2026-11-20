@@ -1,7 +1,7 @@
-From b5208463b57cd2ac2b1ef64c6e913b49fd739dcf Mon Sep 17 00:00:00 2001
+From 2561c59826074e2cf0f8f88a4732ff1f3afc9cee Mon Sep 17 00:00:00 2001
 From: wake-ci <ci@local>
-Date: Fri, 20 Nov 2026 18:51:54 +0800
-Subject: [PATCH] private build: vscreen sync + grip outside
+Date: Fri, 20 Nov 2026 19:25:06 +0800
+Subject: [PATCH] private build: vscreen final batch
 
 ---
  .gitattributes                                |    3 +
@@ -16,11 +16,11 @@ Subject: [PATCH] private build: vscreen sync + grip outside
  .../dsh_app/phone/PhoneBackGuard.kt           |  146 ++
  .../dsh_app/phone/PhoneContracts.kt           |   21 +
  .../ccch1mneyyy/dsh_app/phone/PhoneControl.kt |   39 +-
- .../ccch1mneyyy/dsh_app/phone/PhoneCore.kt    |  165 +-
+ .../ccch1mneyyy/dsh_app/phone/PhoneCore.kt    |  176 +-
  .../ccch1mneyyy/dsh_app/phone/PhonePlugin.kt  |  106 +
  .../dsh_app/phone/PhoneTaskSessions.kt        |   22 +-
  .../ccch1mneyyy/dsh_app/phone/PhoneTasks.kt   |   11 +
- .../dsh_app/phone/PhoneToolCatalog.kt         |   28 +-
+ .../dsh_app/phone/PhoneToolCatalog.kt         |   30 +-
  .../ccch1mneyyy/dsh_app/phone/SafetyGate.kt   |    4 +-
  .../dsh_app/phone/SingleInstanceApps.kt       |   27 +
  .../dsh_app/phone/a11y/ControlOverlay.kt      |   11 +-
@@ -37,7 +37,7 @@ Subject: [PATCH] private build: vscreen sync + grip outside
  .../dsh_app/phone/skills/PhoneSkillDraft.kt   |    2 +-
  .../dsh_app/phone/vscreen/TaskMover.kt        |   43 +
  .../dsh_app/phone/vscreen/TransferBall.kt     |  403 ++++
- .../phone/vscreen/VirtualScreenOverlay.kt     | 1344 +++++++++++
+ .../phone/vscreen/VirtualScreenOverlay.kt     | 1378 +++++++++++
  .../phone/vscreen/VirtualScreenPlugin.kt      |   96 +
  .../ccch1mneyyy/dsh_app/runtime/GuestSetup.kt |   47 +-
  .../dsh_app/shortcuts/EntryActivity.kt        |    3 +
@@ -62,8 +62,8 @@ Subject: [PATCH] private build: vscreen sync + grip outside
  app/assets/kws/tokens.txt                     |  227 ++
  app/lib/app.dart                              |    6 +
  app/lib/app_navigator.dart                    |    4 +
- app/lib/l10n/app_en.arb                       |   22 +
- app/lib/l10n/app_zh.arb                       |   22 +
+ app/lib/l10n/app_en.arb                       |   24 +
+ app/lib/l10n/app_zh.arb                       |   48 +-
  app/lib/l10n/gen/app_localizations.dart       |  168 +-
  app/lib/l10n/gen/app_localizations_en.dart    |   75 +
  app/lib/l10n/gen/app_localizations_zh.dart    |   96 +-
@@ -82,7 +82,7 @@ Subject: [PATCH] private build: vscreen sync + grip outside
  app/lib/speech/wake_reply.dart                |  119 +
  app/lib/state/app_info.dart                   |    5 +
  app/lib/state/update_state.dart               |    9 +
- app/lib/state/virtual_screen_state.dart       |  246 ++
+ app/lib/state/virtual_screen_state.dart       |  261 +++
  app/lib/ui/chat/chat_rows.dart                |    2 +
  app/lib/ui/chat/chat_screen.dart              |  106 +-
  app/lib/ui/chat/media/media_format.dart       |   16 +-
@@ -90,7 +90,7 @@ Subject: [PATCH] private build: vscreen sync + grip outside
  app/lib/ui/phone/background_preview.dart      |  264 +--
  app/lib/ui/phone/dnd_mode_page.dart           |  182 +-
  app/lib/ui/phone/phone_task_card.dart         |  430 ++++
- app/lib/ui/phone/virtual_screen_host.dart     |  268 +++
+ app/lib/ui/phone/virtual_screen_host.dart     |  281 +++
  app/lib/ui/phone/virtual_screen_page.dart     |  114 +
  app/lib/ui/phone/virtual_screen_surface.dart  |  286 +++
  app/lib/ui/settings/voice_settings_page.dart  |  126 +
@@ -107,7 +107,7 @@ Subject: [PATCH] private build: vscreen sync + grip outside
  docs/wake-word.md                             |  107 +
  dsh-go-wake.patch                             | 2065 +++++++++++++++++
  tooling/build-wake-apk.sh                     |   68 +
- 103 files changed, 11050 insertions(+), 490 deletions(-)
+ 103 files changed, 11141 insertions(+), 502 deletions(-)
  create mode 100644 .github/workflows/wake-apk.yml
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallForegroundService.kt
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallOverlay.kt
@@ -1368,7 +1368,7 @@ index 2fc7cd5..04c75e2 100644
      }
  
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneCore.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneCore.kt
-index 6c70185..55f25a3 100644
+index 6c70185..75f49a8 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneCore.kt
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneCore.kt
 @@ -1,5 +1,7 @@
@@ -1420,7 +1420,7 @@ index 6c70185..55f25a3 100644
  
      /**
       * The task's last hard refusal (密码框, 系统设置, 不碰名单), for the `handoff` that usually
-@@ -97,15 +119,26 @@ class PhoneCore(
+@@ -97,15 +119,30 @@ class PhoneCore(
          internal val replayOutcomes: PhoneSkillOutcomes? = null,
          internal val replayDriver: PhoneDriver? = null,
          private val replayApp: PhoneAppIdentity? = null,
@@ -1438,7 +1438,11 @@ index 6c70185..55f25a3 100644
 +        val opensInBackground: Boolean
 +            // 开关说了算：设置关着就留在主屏。只有"开关打开 + 目标应用身份确定"才进虚拟屏
 +            // （虚拟屏只迁得动一个确定的 app；身份读不出来时留主屏）。
-+            get() = args.bool("background") ?: (defaultBackground && launch?.target is SystemTarget.Known)
++            get() = (when (args.str("background")) {
++                "virtual", "true" -> true
++                "main", "false" -> false
++                else -> defaultBackground
++            }) && launch?.target is SystemTarget.Known
 +
          // A MAIN observation has no trustworthy window UID. BG open only queries the
          // selected package on MAIN before moving it; its actual target is checked by T1a.
@@ -1448,7 +1452,7 @@ index 6c70185..55f25a3 100644
      }
  
      /** Only a first claimed native Selection reaches this path; public args never construct it. */
-@@ -119,14 +152,15 @@ class PhoneCore(
+@@ -119,14 +156,15 @@ class PhoneCore(
          val app = PhoneAppIdentity(selection.app.packageName, selection.app.uid)
          val originalDriver = if (screen == PhoneScreen.BACKGROUND) {
              env.existingReplayDriver(owner, app)?.takeIf { it.screen == PhoneScreen.BACKGROUND }
@@ -1466,7 +1470,7 @@ index 6c70185..55f25a3 100644
      }
  
      private fun replay(call: PreparedCall, scope: SerialWorker.Scope, owner: PhoneTasks.Owner): Out {
-@@ -140,7 +174,7 @@ class PhoneCore(
+@@ -140,7 +178,7 @@ class PhoneCore(
          if (!live()) return stop("原任务或路线已不可继续。") // l10n:keep replay result
          val screen = call.screens.single()
          val driver = if (screen == PhoneScreen.BACKGROUND) {
@@ -1475,7 +1479,7 @@ index 6c70185..55f25a3 100644
          } else when (val result = driverFor(screen, owner)) {
              is Either.Left -> return stop(result.value)
              is Either.Right -> result.value
-@@ -361,7 +395,7 @@ class PhoneCore(
+@@ -361,7 +399,7 @@ class PhoneCore(
              // MAIN already excludes other app holders. Resolve again after waiting for it,
              // keeping the originally selected package if its label or launcher has changed.
              val refreshMain = name == PhoneToolCatalog.INTENT ||
@@ -1484,7 +1488,7 @@ index 6c70185..55f25a3 100644
              val call = if (prepared != null && !refreshMain) prepared else when (
                  val result = prepare(name, a, owner, prepared?.requestedApp)
              ) {
-@@ -383,6 +417,7 @@ class PhoneCore(
+@@ -383,6 +421,7 @@ class PhoneCore(
                  PhoneToolCatalog.TAP, PhoneToolCatalog.TYPE, PhoneToolCatalog.SCROLL, PhoneToolCatalog.TAP_XY -> act(name, a, scope, owner)
                  PhoneToolCatalog.KEY -> key(a, owner)
                  PhoneToolCatalog.HANDOFF -> handoff(a, scope, owner)
@@ -1492,20 +1496,18 @@ index 6c70185..55f25a3 100644
                  // l10n:keep agent tool result
                  else -> Out("没有这个手机工具：$name", error = true)
              }
-@@ -391,6 +426,20 @@ class PhoneCore(
+@@ -391,6 +430,18 @@ class PhoneCore(
          }
      }
  
 +    /** 模型自己判断该结束了：把挂断动作交给 App 的通话层（同一个入口，和通话卡上的挂断键）。 */
 +    private fun hangUpCall(a: Args): Out {
 +        val reason = a.str("reason").orEmpty().trim()
-+        val invoked = try {
-+            io.github.ccch1mneyyy.dsh_app.call.CallOverlay.onAction?.invoke("hangUp")
-+            true
-+        } catch (_: Throwable) {
-+            false
-+        }
-+        if (!invoked) return Out("当前没有可以挂断的语音通话。", error = true)
++        val action = io.github.ccch1mneyyy.dsh_app.call.CallOverlay.onAction
++            ?: return Out("当前没有可以挂断的语音通话。", error = true)
++        // MethodChannel 必须在主线程调用；工具跑在后台线程，直接 invoke 会抛异常，
++        // 之前就被 catch 成了"没有可以挂断的通话"（18:50 用户实测）。
++        android.os.Handler(android.os.Looper.getMainLooper()).post { action("hangUp") }
 +        // l10n:keep agent tool result
 +        return Out(if (reason.isEmpty()) "已挂断这段语音通话。" else "已挂断这段语音通话：$reason")
 +    }
@@ -1513,7 +1515,7 @@ index 6c70185..55f25a3 100644
      private fun current(owner: PhoneTasks.Owner): Boolean =
          tasks.isCurrent(owner) && !Thread.currentThread().isInterrupted
  
-@@ -468,7 +517,7 @@ class PhoneCore(
+@@ -468,7 +519,7 @@ class PhoneCore(
                  if (env.isLocked()) return Either.Left(locked("open"))
                  if (url != null) {
                      // l10n:keep agent tool result
@@ -1522,7 +1524,7 @@ index 6c70185..55f25a3 100644
                      UrlPolicy.check(url)?.let {
                          return Either.Left(Out(it, error = true, summary = ui.get("phone_log_open_url", "打开链接"), decision = "refused:url")) // l10n:keep test default
                      }
-@@ -516,14 +565,20 @@ class PhoneCore(
+@@ -516,14 +567,20 @@ class PhoneCore(
              }
          }
          if (!current(owner)) return Either.Left(stoppedOut(name))
@@ -1545,7 +1547,7 @@ index 6c70185..55f25a3 100644
          if (env.isLocked()) return locked("open")
          val plan = checkNotNull(call.launch)
          if (url != null) {
-@@ -543,6 +598,8 @@ class PhoneCore(
+@@ -543,6 +600,8 @@ class PhoneCore(
          // An explicit package is still subject to app rules even when its handler UID is unknown.
          val app = (plan.target as? SystemTarget.Known)?.app
              ?: checkNotNull(call.requestedApp)
@@ -1554,7 +1556,7 @@ index 6c70185..55f25a3 100644
          safety.checkOpen(app.packageName, app.label)?.let {
              return Out(it.message, error = true, app = app.label, summary = ui.get("phone_log_open_app", "打开 %1\$s", app.packageName), decision = "refused:${it.rule}") // l10n:keep test default
          }
-@@ -558,26 +615,32 @@ class PhoneCore(
+@@ -558,26 +617,32 @@ class PhoneCore(
              } catch (e: Throwable) { skillTrace.fail(ticket); throw e }
              return afterSystem(owner, scope, result, summary)
          }
@@ -1594,7 +1596,7 @@ index 6c70185..55f25a3 100644
          }
          val openRefusal = AtomicReference<SafetyGate.Verdict.Refuse?>(null)
          val ticket = skillTrace.beginOpen(owner, PhoneScreen.BACKGROUND)
-@@ -592,14 +655,16 @@ class PhoneCore(
+@@ -592,14 +657,16 @@ class PhoneCore(
          openRefusal.get()?.let { refused ->
              if (!current(owner)) return stoppedOut("open")
              return Out(refused.message, error = true, app = app.label,
@@ -1613,7 +1615,7 @@ index 6c70185..55f25a3 100644
      }
  
      /** The handler is a dispatch fact. Only the following read describes the actual foreground UI. */
-@@ -816,8 +881,45 @@ class PhoneCore(
+@@ -816,8 +883,54 @@ class PhoneCore(
          return Either.Right(d)
      }
  
@@ -1654,12 +1656,21 @@ index 6c70185..55f25a3 100644
 +     * 虚拟屏是默认的操作目标（第二十三节）：工具没写 background 时就在虚拟屏上做事，
 +     * background:true 同样是虚拟屏。主屏是显式的特例（background:false）。
 +     */
-+    internal fun backgroundTarget(a: Args): Boolean = a.bool("background") ?: env.prefersBackground()
++    /**
++     * 目标屏：`background` 现在是三态参数（auto/virtual/main），默认 auto = 按设置开关。
++     * 兼容旧调用里的布尔（true=虚拟屏 / false=主屏）。
++     * 用户明确说的必须生效；没说不许覆盖开关（用户 19:15：默认开关被模型填的值盖掉了）。
++     */
++    internal fun backgroundTarget(a: Args): Boolean = when (val v = a.str("background")) {
++        "virtual", "true" -> true
++        "main", "false" -> false
++        else -> env.prefersBackground()
++    }
 +
      /** Admission uses the same argument coercion and routing as the actual tool body. */
      fun requiredScreens(name: String, args: Map<String, Any?>): Either<String, List<PhoneScreen>> {
          return requiredScreens(name, Args(args))
-@@ -825,10 +927,11 @@ class PhoneCore(
+@@ -825,10 +938,11 @@ class PhoneCore(
  
      private fun requiredScreens(name: String, a: Args): Either<String, List<PhoneScreen>> {
          return when (name) {
@@ -1674,7 +1685,7 @@ index 6c70185..55f25a3 100644
              // Arbitrary system commands take the main/global unknown-app lease, without reading a screen.
              PhoneToolCatalog.INTENT, PhoneToolCatalog.ANDROID_SHELL -> Either.Right(listOf(PhoneScreen.MAIN))
              PhoneToolCatalog.HANDOFF -> Either.Right(if (lastScreen == PhoneScreen.BACKGROUND)
-@@ -852,7 +955,7 @@ class PhoneCore(
+@@ -852,7 +966,7 @@ class PhoneCore(
          if (id == null) return Either.Left("缺少 $parameterName（屏幕号，如 s7）。先调用 screen 拿到屏幕号。")
          return PhoneScreen.ofScreenId(id)?.let { Either.Right(it) }
              // l10n:keep agent tool result
@@ -1683,7 +1694,7 @@ index 6c70185..55f25a3 100644
      }
  
      private fun locked(summary: String) =
-@@ -871,21 +974,23 @@ class PhoneCore(
+@@ -871,21 +985,23 @@ class PhoneCore(
  
      private fun screen(a: Args, owner: PhoneTasks.Owner): Out {
          if (!current(owner)) return stoppedOut("screen")
@@ -1713,7 +1724,7 @@ index 6c70185..55f25a3 100644
          return Out(
              // l10n:keep agent tool result
              if (refused) "没有读取这个屏幕的内容。" else "",
-@@ -1362,6 +1467,7 @@ class PhoneCore(
+@@ -1362,6 +1478,7 @@ class PhoneCore(
          summary = summary, decision = "stopped")
  
      companion object {
@@ -1721,7 +1732,7 @@ index 6c70185..55f25a3 100644
          internal const val REPLAY = "replay"
          internal const val FOCUS_TEXT = "focus_text"
  
-@@ -1370,6 +1476,9 @@ class PhoneCore(
+@@ -1370,6 +1487,9 @@ class PhoneCore(
          const val PAUSE_WAIT_MS = 600_000L
          const val HANDOFF_MS = 600_000L
  
@@ -1965,7 +1976,7 @@ index a09015e..9e6c9a9 100644
          grants.clear()
          visualScopes.clear(); visualGrants.clear(); visualLifecycle = lifecycle
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneToolCatalog.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneToolCatalog.kt
-index cbfb0de..1d9ac4e 100644
+index cbfb0de..3db46f3 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneToolCatalog.kt
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneToolCatalog.kt
 @@ -24,6 +24,7 @@ object PhoneToolCatalog {
@@ -1985,7 +1996,7 @@ index cbfb0de..1d9ac4e 100644
  
      val tools: List<Tool> = listOf(
          Tool(
-@@ -79,14 +80,16 @@ object PhoneToolCatalog {
+@@ -79,14 +80,17 @@ object PhoneToolCatalog {
          Tool(
              OPEN,
              // l10n:keep agent tool catalog
@@ -1998,13 +2009,14 @@ index cbfb0de..1d9ac4e 100644
                  "url" to str("网址或深链"),
                  // l10n:keep agent tool catalog
 -                "background" to bool("在后台屏打开"),
-+                // 目标默认按设置开关；用户明确要求"用主屏/用虚拟屏"时必须能覆盖：
-+                // true=虚拟屏，false=主屏；不传=按开关。只在用户明说时才传。
-+                "background" to bool("仅当用户明确要求某块屏时传：true=虚拟屏，false=主屏；平时不要传，按设置开关走"),
++                // 三态，默认 auto：模型只有"用户明确要求某块屏"时才填 virtual/main，
++                // 平时不传 = 按设置开关（之前用布尔值，模型几乎总会填，把开关盖掉了）。
++                "background" to enum(listOf("auto", "virtual", "main"),
++                    "默认 auto：按设置开关。只有用户明确说「用虚拟屏/用主屏」时才填 virtual 或 main"),
              ),
              emptyList(),
          ),
-@@ -167,14 +170,15 @@ object PhoneToolCatalog {
+@@ -167,14 +171,16 @@ object PhoneToolCatalog {
          Tool(
              SCREEN,
              // l10n:keep agent tool catalog
@@ -2017,12 +2029,13 @@ index cbfb0de..1d9ac4e 100644
                  "image" to bool("请求附带截图；可能因安全或能力限制省略"),
                  // l10n:keep agent tool catalog
 -                "background" to bool("读后台屏（不打扰模式）"),
-+                // 同上：不传就按设置开关；用户明确要求读哪块屏时才传。
-+                "background" to bool("仅当用户明确要求读某块屏时传：true=虚拟屏，false=主屏；平时不要传"),
++                // 同上：默认 auto；用户明确要求读哪块屏时才填 virtual/main。
++                "background" to enum(listOf("auto", "virtual", "main"),
++                    "默认 auto：按设置开关。只有用户明确说「看虚拟屏/看主屏」时才填 virtual 或 main"),
              ),
              emptyList(),
          ),
-@@ -240,10 +244,10 @@ object PhoneToolCatalog {
+@@ -240,10 +246,10 @@ object PhoneToolCatalog {
          Tool(
              TAP_XY,
              // l10n:keep agent tool catalog
@@ -2035,7 +2048,7 @@ index cbfb0de..1d9ac4e 100644
                  // l10n:keep agent tool catalog
                  "x" to int("横坐标（像素，从 0 开始）"),
                  // l10n:keep agent tool catalog
-@@ -267,6 +271,16 @@ object PhoneToolCatalog {
+@@ -267,6 +273,16 @@ object PhoneToolCatalog {
              linkedMapOf("reason" to str("要用户做什么，一句话")),
              listOf("reason"),
          ),
@@ -3563,10 +3576,10 @@ index 0000000..a605ddd
 +}
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenOverlay.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenOverlay.kt
 new file mode 100644
-index 0000000..508203b
+index 0000000..ec3bc5a
 --- /dev/null
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenOverlay.kt
-@@ -0,0 +1,1344 @@
+@@ -0,0 +1,1378 @@
 +package io.github.ccch1mneyyy.dsh_app.phone.vscreen
 +
 +import android.annotation.SuppressLint
@@ -3782,7 +3795,9 @@ index 0000000..508203b
 +        val picture2 = ImageView(app).apply {
 +            // 兜底图也要铺满：FIT_CENTER 会在比例对不齐的瞬间留黑边（验收单 #7 上下有空），
 +            // 裁一点边比露黑边强。
-+            scaleType = ImageView.ScaleType.CENTER_CROP
++            // FIT_XY：整屏缩放到窗口，绝不裁掉两侧（CENTER_CROP 在刚打开、还没直显时
++            // 只显示中间一截，用户 19:10 的截图）。比例略微拉伸也比"看不全"强。
++            scaleType = ImageView.ScaleType.FIT_XY
 +            setBackgroundColor(Color.rgb(8, 10, 18))
 +            visibility = View.GONE
 +            // 抓帧这条兜底路径同样要圆角：它是普通 View，clipToOutline 直接生效。
@@ -3892,6 +3907,7 @@ index 0000000..508203b
 +        val old = lastBitmap
 +        lastBitmap = decoded
 +        target.setImageBitmap(decoded)
++        if (!revealed) main.post { reveal(root) }
 +        target.visibility = if (eyeHidden || !screenOn) View.GONE else View.VISIBLE
 +        waiting?.visibility = View.GONE
 +        old?.recycle()
@@ -3947,6 +3963,8 @@ index 0000000..508203b
 +    }
 +
 +    /** 最后一次拿到的 surface：直显第一次没接上时，用它在之后重试。 */
++    /** 是否已经显示出来：等第一帧/直显，避免"刚出现是黑屏"（用户 19:05）。 */
++    private var revealed = false
 +    private var lastSurface: Surface? = null
 +    private var surfaceRetries = 0
 +
@@ -3999,13 +4017,25 @@ index 0000000..508203b
 +            displayWidth = (reply["width"] as? Int) ?: displayWidth
 +            displayHeight = (reply["height"] as? Int) ?: displayHeight
 +            liveSurface = attached
-+            if (attached) surfaceRetries = 0
++            if (attached) {
++                surfaceRetries = 0
++                main.post { reveal(root) }
++            }
 +            else if (surface != null) scheduleSurfaceRetry(app, gen)
 +            main.post {
 +                applyAspect()
 +                applyLive()
 +            }
 +        }
++    }
++
++    /** 有画面了才显示窗口。 */
++    private fun reveal(box: View?) {
++        val v = box ?: root ?: return
++        if (revealed) return
++        revealed = true
++        v.animate().alpha(1f).setDuration(120).start()
++        WakeTrace.log("window: revealed")
 +    }
 +
 +    private fun scheduleSurfaceRetry(app: Context, gen: Int) {
@@ -4212,7 +4242,8 @@ index 0000000..508203b
 +        }, 120)
 +        val margin = (10 * px).roundToInt()
 +        // 把手在底边中间突出：窗口比卡片高一个 overhang，边条压在卡片底边上。
-+        val overhang = if (next == Shape.SLIVER) 0 else overhangOf(px)
++        // 全屏不要拖拽条，也就不要给把手留空间（否则底部多一条空白）。
++        val overhang = if (next == Shape.SLIVER || (next == Shape.EXPAND && fullscreen)) 0 else overhangOf(px)
 +        // 定位用整窗高度（h + overhang），不然底边会超出安全区。
 +        // 全屏不按贴边位置摆：钉在安全区左上角。
 +        val at = if (next == Shape.EXPAND && fullscreen) {
@@ -4243,7 +4274,8 @@ index 0000000..508203b
 +            glp.topMargin = h + (3 * px).roundToInt()
 +            g.layoutParams = glp
 +            // 拖动条只在展开态显示（验收单 #9）：小窗整块能拖，不需要条。
-+            g.visibility = if (next == Shape.EXPAND) View.VISIBLE else View.GONE
++            // 只有"展开"才有拖拽条：小窗、全屏都没有（用户 19:20）。
++            g.visibility = if (next == Shape.EXPAND && !fullscreen) View.VISIBLE else View.GONE
 +            g.requestLayout()
 +        }
 +        cardBg?.requestLayout()
@@ -4266,6 +4298,8 @@ index 0000000..508203b
 +        content?.visibility = if (next == Shape.SLIVER) View.INVISIBLE else View.VISIBLE
 +        // 小窗只有画面：一颗键都不放（用户 16:40 要求）。点一下变大，键才出来。
 +        backKey?.visibility = if (next == Shape.EXPAND) View.VISIBLE else View.GONE
++        // 底部一排（⇄ 切主屏 / ⛶ 全屏与回中窗）：展开和全屏都有；小窗、竖条没有（用户 19:25）。
++        bottomRight?.visibility = if (next == Shape.EXPAND) View.VISIBLE else View.GONE
 +        volumeKey?.visibility = if (next == Shape.EXPAND) View.VISIBLE else View.GONE
 +        eyeKey?.visibility = if (next == Shape.EXPAND) View.VISIBLE else View.GONE
 +        closeKey?.visibility = if (next == Shape.EXPAND) View.VISIBLE else View.GONE
@@ -4624,11 +4658,20 @@ index 0000000..508203b
 +    }
 +
 +    /** 返: the app on the virtual screen steps back one level. */
++    /**
++     * ← 返回键 = **收起窗口**（用户 19:02 选定）。不进引擎、不等回包：
++     * 之前走通道问引擎"让应用后退"，回包丢失就把界面卡在忙，表现成"返回键完全没反应"。
++     * 展开 → 收成小窗；小窗 → 整个收起（等同 × 的收窗，但不杀任务）。
++     */
 +    private fun requestBack() {
-+        // 15:20 用户：返回键还是无效。之前 hasApp=false 就直接 return（窗口不知道有前台
-+        // 应用时静默吞掉）。现在一律发出，让驱动自己判断——没有应用时它会把原因回报。
-+        WakeTrace.log("window: back tapped (hasApp=$hasApp shape=$shape)")
-+        onAction?.invoke("back")
++        val app = context ?: return
++        val manager = wm ?: return
++        val box = root ?: return
++        val lp = (box.layoutParams as? WindowManager.LayoutParams) ?: params ?: return
++        val px = app.resources.displayMetrics.density
++        WakeTrace.log("window: back (collapse) shape=$shape")
++        // 收起 = 回到"虚拟屏刚启动时"的尺寸和形态（小窗），不是关闭窗口（用户 19:05）。
++        applyShape(Shape.SMALL, manager, lp, box, area(app, manager), px)
 +    }
 +
 +    /** 转: this screen's app goes to the phone itself, and the window steps aside. */
@@ -4637,10 +4680,10 @@ index 0000000..508203b
 +        onAction?.invoke("toMain")
 +    }
 +
-+    /** ×: one tap ends the task, and the window goes with it (第十二 / 17 节). */
-+    /** ×：只关窗（任务继续跑，验收单 39 条 #17「× 关窗」）。停任务在任务卡片上点「结束」。 */
++    /** ×：关窗 + 结束任务（用户 19:32 选定）。 */
 +    private fun endTask() {
 +        hide()
++        onAction?.invoke("stop")
 +    }
 +
 +    // Touch: dragging, parking, shapes, and the person's own fingers
@@ -4738,6 +4781,10 @@ index 0000000..508203b
 +            applyShape(Shape.SLIVER, manager, lp, box, area, px)
 +        }
 +
++        // 先透明：等第一帧（抓帧或直显）再显示，别让用户看到黑框。
++        box.alpha = 0f
++        revealed = false
++        main.postDelayed({ reveal(box) }, 2500)
 +        box.setOnTouchListener { _, event ->
 +            when (event.actionMasked) {
 +                MotionEvent.ACTION_DOWN -> {
@@ -78796,7 +78843,7 @@ index 0000000..8e1a253
 +/// 全局导航键：通话悬浮球等"不挂在某个页面下"的入口用它在任何界面 push/pop。
 +final GlobalKey<NavigatorState> appNavigatorKey = GlobalKey<NavigatorState>();
 diff --git a/app/lib/l10n/app_en.arb b/app/lib/l10n/app_en.arb
-index e1de712..813abc6 100644
+index e1de712..ba4fd7e 100644
 --- a/app/lib/l10n/app_en.arb
 +++ b/app/lib/l10n/app_en.arb
 @@ -563,6 +563,7 @@
@@ -78826,7 +78873,7 @@ index e1de712..813abc6 100644
    "speechCallPause": "Pause before she answers",
    "speechCallPauseQuick": "Short",
    "speechCallPauseNormal": "Medium",
-@@ -5756,7 +5762,23 @@
+@@ -5756,7 +5762,25 @@
    "speechCallVisualRing": "Ring",
    "speechCallVisualMono": "Line",
    "speechCallVisualGlass": "Orb",
@@ -78834,7 +78881,9 @@ index e1de712..813abc6 100644
 +  "speechWakeFooter": "Always-on listening keeps the microphone, also with the screen off, and leaves a notification. Calls and dictation take the microphone first; listening comes back afterwards.",
 +  "speechWakeEnable": "Always-on listening",
 +  "speechWakeKeyword": "Wake word",
-+  "speechWakeKeywordHint": "Saying this opens a voice call; 「小安小安」 by default",
++  "speechWakeKeywordHint": "Saying this opens a voice call; 「小志小志」 by default",
++  "speechWakeReply": "Wake reply",
++  "speechWakeReplyHint": "The first thing I say after you call; 「我在」 by default",
 +  "speechWakeChime": "Chime",
 +  "speechWakeVibrate": "Vibrate",
 +  "speechWakeStateListening": "Listening",
@@ -78851,7 +78900,7 @@ index e1de712..813abc6 100644
    "starPromptBody": "DSH Go is free and open source. If it’s made your phone a little nicer to use, please give it a Star — it means so much to this little whale!",
    "starPromptPlea": "Pretty please~ It really matters!!",
 diff --git a/app/lib/l10n/app_zh.arb b/app/lib/l10n/app_zh.arb
-index ec1a316..d07e4e8 100644
+index ec1a316..bfe2f32 100644
 --- a/app/lib/l10n/app_zh.arb
 +++ b/app/lib/l10n/app_zh.arb
 @@ -1062,6 +1062,7 @@
@@ -78862,6 +78911,95 @@ index ec1a316..d07e4e8 100644
    "botsFolderGone": "这个文件夹已经不在了",
    "botsFolderReadFailed": "没能读取这个文件夹",
    "botsFolderOpenFailed": "打不开这个文件夹",
+@@ -6673,7 +6674,7 @@
+   "phoneDndSuiMissing": "没有检测到 Sui。在 Magisk 或 KernelSU 里装好 Sui 模块并重启手机，再回到这里。",
+   "phoneDndSuiRunning": "Sui 接口可用",
+   "phoneDndSuiStopped": "Sui 接口当前不可用。确认 Sui 模块已启用，重启手机后再试。",
+-  "phoneDndSuiAllSet": "Sui 已启动并授权，接下来连接后台屏。",
++  "phoneDndSuiAllSet": "Sui 已启动并授权，接下来连接虚拟屏。",
+   "phoneDndSuiPermissionFailed": "没能请求 Sui 授权。确认 Sui 模块已启用后再试。",
+   "phoneDndRootWaiting": "正在等待 root 授权，请在 root 管理器的弹窗里选择。",
+   "phoneDndRootConnected": "root 已连接。断开后要回到这里再选一次；打开「更多设置」中的「保持 root 通道」，DSH Go 才会自己再去申请。",
+@@ -6684,7 +6685,7 @@
+   "phoneDndStartShizuku": "打开 Shizuku，按里面「通过无线调试启动」的说明做一遍（要连 Wi‑Fi）。回到这里会自动刷新。",
+   "phoneDndGrantShizukuHint": "Shizuku 已在运行，还要给 DSH Go 授权。",
+   "phoneDndGrantShizuku": "授权给 DSH Go",
+-  "phoneDndShizukuAllSet": "Shizuku 已启动并授权，接下来连接后台屏。",
++  "phoneDndShizukuAllSet": "Shizuku 已启动并授权，接下来连接虚拟屏。",
+   "phoneDndShizukuInstalled": "已安装 Shizuku",
+   "phoneDndShizukuRunning": "Shizuku 正在运行",
+   "phoneDndShizukuGranted": "已授权给 DSH Go",
+@@ -7205,9 +7206,9 @@
+   "phoneDndManualConnect": "按端口连接",
+   "phoneDndConnectPortLabel": "连接端口",
+   "phoneDndConnectPortHint": "在系统「无线调试」首页查看「IP 地址和端口」，填写冒号后的端口。请不要使用配对码页面的端口。",
+-  "phonePreviewTitle": "实时查看后台屏",
++  "phonePreviewTitle": "实时查看虚拟屏",
+   "phonePreviewDescription": "仅在预览可见时取帧。画面只留在本机；预览不可点击。",
+-  "phonePreviewOpen": "查看后台屏",
++  "phonePreviewOpen": "查看虚拟屏",
+   "phonePreviewTask": "预览任务 {taskId}",
+   "@phonePreviewTask": {
+     "placeholders": {
+@@ -7219,9 +7220,9 @@
+   "phonePreviewInUse": "正在预览另一任务",
+   "phonePreviewOff": "任务已结束或预览已关闭",
+   "phonePreviewUnavailable": "画面暂不可预览，或受到保护",
+-  "phonePreviewWaiting": "等待后台屏的新画面",
++  "phonePreviewWaiting": "等待虚拟屏的新画面",
+   "phoneViewportTitle": "后台视口",
+-  "phoneViewportDescription": "下次新建后台屏时生效；当前后台屏不变，交还后重建会采用新设置。视口方向不会强制应用旋转。",
++  "phoneViewportDescription": "下次新建虚拟屏时生效；当前虚拟屏不变，交还后重建会采用新设置。视口方向不会强制应用旋转。",
+   "phoneViewportPortrait": "竖屏",
+   "phoneViewportLandscape": "横屏",
+   "phoneResumeTask": "重新允许手机操控",
+@@ -7235,8 +7236,8 @@
+       }
+     }
+   },
+-  "phoneTaskDrainingHint": "正在等待上一动作退出并清理后台屏。",
+-  "phoneTaskCleanupFailedHint": "未能确认后台屏已清理，手机操控仍被阻挡。",
++  "phoneTaskDrainingHint": "正在等待上一动作退出并清理虚拟屏。",
++  "phoneTaskCleanupFailedHint": "未能确认虚拟屏已清理，手机操控仍被阻挡。",
+   "phoneFinishingTask": "手机任务 {task} 正在收尾",
+   "@phoneFinishingTask": {
+     "placeholders": {
+@@ -7246,7 +7247,7 @@
+     }
+   },
+   "phoneCleanupRetry": "重试清理",
+-  "phoneCleanupRetryFailed": "仍未能确认上一后台屏已清理，屏幕占用继续保留。",
++  "phoneCleanupRetryFailed": "仍未能确认上一虚拟屏已清理，屏幕占用继续保留。",
+   "phoneSelfCheckTitle": "检查手机操控",
+   "phoneSelfCheckTechnicalDetails": "技术详情",
+   "phoneLocalOcrSummary": "本机识别；结果可发给模型，SDK 会收集使用统计。",
+@@ -7277,7 +7278,7 @@
+       }
+     }
+   },
+-  "phoneSelfCheckStage": "{stage, select, device{设备前置条件} channel{已选通道} display{临时后台屏创建} input_probe{触摸接收核验} launch{应用启动} tree{控件树} tap{应用按钮点按} scroll{应用滚动} back{应用返回} text_ascii{固定 ASCII 输入} text_zh{固定中文输入} capture{本地图样截图} continuity{有限受控刷新} main{有限主屏观察} ocr{本机OCR} cleanup{严格清理} other{未知项目}}",
++  "phoneSelfCheckStage": "{stage, select, device{设备前置条件} channel{已选通道} display{临时虚拟屏创建} input_probe{触摸接收核验} launch{应用启动} tree{控件树} tap{应用按钮点按} scroll{应用滚动} back{应用返回} text_ascii{固定 ASCII 输入} text_zh{固定中文输入} capture{本地图样截图} continuity{有限受控刷新} main{有限主屏观察} ocr{本机OCR} cleanup{严格清理} other{未知项目}}",
+   "@phoneSelfCheckStage": {
+     "placeholders": {
+       "stage": {
+@@ -7293,7 +7294,7 @@
+       }
+     }
+   },
+-  "phoneSelfCheckTargetScope": "使用普通临时后台屏和固定本地目标，检查启动、控件树及一次按钮点击。文字、滚动、截图和 OCR 未测试；主屏只记录实际观察到的受扰失败，不提供通过结论。仅清理完成不证明曾创建后台屏。",
++  "phoneSelfCheckTargetScope": "使用普通临时虚拟屏和固定本地目标，检查启动、控件树及一次按钮点击。文字、滚动、截图和 OCR 未测试；主屏只记录实际观察到的受扰失败，不提供通过结论。仅清理完成不证明曾创建虚拟屏。",
+   "phoneSelfCheckProfileChoice": "选择下次自检（不会改变下方报告）",
+   "phoneSelfCheckProfile": "{profile, select, probe_b{输入接收探针（B）} target_c1{固定目标自检（C1）} target_c2{固定输入与画面自检（C2）} other{未知模式}}",
+   "@phoneSelfCheckProfile": {
+@@ -7351,7 +7352,7 @@
+     }
+   },
+   "phoneTaskMainResource": "主屏",
+-  "phoneTaskBackgroundResource": "后台屏",
++  "phoneTaskBackgroundResource": "虚拟屏",
+   "phoneInterruptionTitle": "上次手机任务未确认结束",
+   "phoneInterruptionLoading": "正在读取任务中断记录…",
+   "phoneInterruptionStorageError": "无法保存或读取任务结束记录。请重试；这不表示后台资源已清理。",
 @@ -7431,6 +7432,10 @@
    "phoneIosSetupHint": "保持 LocalDevVPN 已连接，首次使用时允许 30 分钟操控。",
    "phoneIosReturnHint": "任务完成后回到当前对话，并停止手机操控服务。",
@@ -78881,7 +79019,7 @@ index ec1a316..d07e4e8 100644
    "speechCallPause": "停顿多久算说完",
    "speechCallPauseQuick": "快",
    "speechCallPauseNormal": "适中",
-@@ -11221,7 +11227,23 @@
+@@ -11221,7 +11227,25 @@
    "speechCallVisualRing": "光环",
    "speechCallVisualMono": "细线",
    "speechCallVisualGlass": "光球",
@@ -78889,7 +79027,9 @@ index ec1a316..d07e4e8 100644
 +  "speechWakeFooter": "常驻监听会一直占用麦克风（息屏也在），通知栏留一条常驻通知。通话、听写开始时会自动让位，结束后自动恢复。",
 +  "speechWakeEnable": "常驻监听",
 +  "speechWakeKeyword": "唤醒词",
-+  "speechWakeKeywordHint": "说出这句就进入语音通话，默认「小安小安」",
++  "speechWakeKeywordHint": "说出这句就进入语音通话，默认「小志小志」",
++  "speechWakeReply": "唤醒回应",
++  "speechWakeReplyHint": "喊完之后我第一句说什么；默认「我在」",
 +  "speechWakeChime": "唤醒提示音",
 +  "speechWakeVibrate": "唤醒震动",
 +  "speechWakeStateListening": "正在监听",
@@ -80473,10 +80613,10 @@ index c089d19..a15b64d 100644
  
 diff --git a/app/lib/state/virtual_screen_state.dart b/app/lib/state/virtual_screen_state.dart
 new file mode 100644
-index 0000000..40847a5
+index 0000000..54bfbfe
 --- /dev/null
 +++ b/app/lib/state/virtual_screen_state.dart
-@@ -0,0 +1,246 @@
+@@ -0,0 +1,261 @@
 +import 'dart:async';
 +
 +import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -80635,6 +80775,10 @@ index 0000000..40847a5
 +  /// 才解除（第十四节 1：切到主屏后虚拟屏窗口应消失）。
 +  int? _suppressTask;
 +
++  /// 刚「转到虚拟屏」的宽限期：迁移成功到状态更新之间有一瞬 lastScreen 还是主屏，
++  /// 原来会因此把窗口关掉（用户 18:49：闪一下就没了）。这段时间内不因瞬时状态关闭。
++  DateTime? _holdOpenUntil;
++
 +  @override
 +  VirtualWindowState build() {
 +    _frames; // 先建好：dispose 时才有东西可关
@@ -80666,12 +80810,23 @@ index 0000000..40847a5
 +    // 窗口跟随"实际在用哪块屏"（用户 15:47）：AI 明确在主屏操作时窗口不出现；
 +    // 只有真的在虚拟屏上干活（或刚转进来）才显示。设置开关只是默认值。
 +    final onVirtual = status.lastScreen == 'background';
-+    if (!onVirtual || taskId == null) {
++    final holding = _holdOpenUntil != null && DateTime.now().isBefore(_holdOpenUntil!);
++    if (holding) _holdOpenUntil = null;
++    if (!onVirtual && !holding) {
++      if (state.open) unawaited(close());
++      return;
++    }
++    if (taskId == null) {
 +      if (state.open) unawaited(close());
 +      return;
 +    }
 +    if (state.open && state.taskId == taskId) return;
 +    unawaited(open(taskId));
++  }
++
++  /// 迁移成功后的宽限：这之后 3 秒内即使状态还写着"主屏"，也不关窗口。
++  void holdOpen([Duration span = const Duration(seconds: 3)]) {
++    _holdOpenUntil = DateTime.now().add(span);
 +  }
 +
 +  void _applySetting(bool on) {
@@ -81965,10 +82120,10 @@ index 0000000..26e0742
 +final phoneTaskClockProvider = NotifierProvider<PhoneTaskClock, DateTime>(PhoneTaskClock.new);
 diff --git a/app/lib/ui/phone/virtual_screen_host.dart b/app/lib/ui/phone/virtual_screen_host.dart
 new file mode 100644
-index 0000000..6e3e64e
+index 0000000..89f4fcf
 --- /dev/null
 +++ b/app/lib/ui/phone/virtual_screen_host.dart
-@@ -0,0 +1,268 @@
+@@ -0,0 +1,281 @@
 +import 'dart:async';
 +
 +import 'package:flutter/material.dart';
@@ -82071,7 +82226,12 @@ index 0000000..6e3e64e
 +    diagWake('back: asking task $taskId');
 +    _acting = true;
 +    try {
-+      final result = await ref.read(phoneChannelProvider).previewBack(taskId: taskId);
++      // 原生回不来就不要再等：之前 _acting 卡在 true，后面所有点按都被当成"忙"吞掉，
++      // 表现就是"返回键完全没反应"（18:55 日志：asking task 8 之后没有回包）。
++      final result = await ref.read(phoneChannelProvider).previewBack(taskId: taskId).timeout(
++        const Duration(seconds: 4),
++        onTimeout: () => const PhoneGestureResult(false, '返回没有响应（虚拟屏可能不在前台）'),
++      );
 +      if (mounted && !result.ok && result.message != null) {
 +        showBriefNotice(context, result.message!);
 +      }
@@ -82095,7 +82255,15 @@ index 0000000..6e3e64e
 +    // 滑动必须带终点：原生校验 swipe 需要 x2/y2，之前没传 → 一律"参数不对"（日志 14:55）。
 +    final x2 = values.length > 3 ? double.tryParse(values[3]) : null;
 +    final y2 = values.length > 4 ? double.tryParse(values[4]) : null;
-+    _acting = true;
++    // 每次点击都按 400ms 按住 → 手感"慢半拍"（用户 19:08）。按动作给真实时长。
++    final duration = switch (values[2]) {
++      'tap' => 40,
++      'long' => 600,
++      _ => 220,
++    };
++    // 点按不再排队等上一次（后到覆盖先到）：轻点被 acting 挡住同样像"慢半拍"。
++    final gated = values[2] != 'tap';
++    if (gated) _acting = true;
 +    try {
 +      final result = await ref.read(phoneChannelProvider).previewGesture(
 +        taskId: taskId,
@@ -82104,14 +82272,14 @@ index 0000000..6e3e64e
 +        y: y,
 +        x2: x2,
 +        y2: y2,
-+        durationMs: 400,
++        durationMs: duration,
 +      );
 +      diagWake('manual: ok=${result.ok} msg=${result.message ?? ""}');
 +      if (mounted && !result.ok && result.message != null) showBriefNotice(context, result.message!);
 +    } catch (e) {
 +      diagWake('manual: threw $e');
 +    } finally {
-+      _acting = false;
++      if (gated) _acting = false;
 +    }
 +  }
 +
