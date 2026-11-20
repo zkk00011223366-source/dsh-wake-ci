@@ -1,7 +1,7 @@
 == resources ==
-/dev/root        72G   51G   21G  71% /
+/dev/root        72G   51G   21G  72% /
                total        used        free      shared  buff/cache   available
-Mem:            7931        4006         245          51        4044        3925
+Mem:            7931        5236         212          22        2819        2695
 == tail ==
 
 ==> 依赖: flutter pub get
@@ -89,3 +89,16 @@ If you are a plugin author, please migrate your plugin to Built-in Kotlin using 
 Checking the license for package Android SDK Platform 35 in /home/runner/dev/android-sdk/licenses
 License for package Android SDK Platform 35 accepted.
 Preparing "Install Android SDK Platform 35 (revision 2)".
+"Install Android SDK Platform 35 (revision 2)" ready.
+Installing Android SDK Platform 35 in /home/runner/dev/android-sdk/platforms/android-35
+"Install Android SDK Platform 35 (revision 2)" complete.
+"Install Android SDK Platform 35 (revision 2)" finished.
+[=========                              ] 25%                                   
+Checking the license for package Android SDK Platform 34 in /home/runner/dev/android-sdk/licenses
+License for package Android SDK Platform 34 accepted.
+Preparing "Install Android SDK Platform 34 (revision 3)".
+"Install Android SDK Platform 34 (revision 3)" ready.
+Installing Android SDK Platform 34 in /home/runner/dev/android-sdk/platforms/android-34
+"Install Android SDK Platform 34 (revision 3)" complete.
+"Install Android SDK Platform 34 (revision 3)" finished.
+Flutter assets will be downloaded from https://storage.googleapis.com. Make sure you trust this source!
