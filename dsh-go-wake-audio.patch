@@ -1,7 +1,7 @@
-From 185b4d283439742d94c4dffde4d54c74b80a11db Mon Sep 17 00:00:00 2001
+From 2544fce6a9f5f2c2bc9e941f488b5842b8534d5f Mon Sep 17 00:00:00 2001
 From: wake-ci <ci@local>
-Date: Fri, 20 Nov 2026 22:56:42 +0800
-Subject: [PATCH] pb: real density
+Date: Fri, 20 Nov 2026 23:21:19 +0800
+Subject: [PATCH] pb: call page keep
 
 ---
  .gitattributes                                |    3 +
@@ -99,7 +99,7 @@ Subject: [PATCH] pb: real density
  app/lib/ui/shell/call_overlay_host.dart       |   55 +
  app/lib/ui/shell/home_shell.dart              |    7 +
  app/lib/ui/shell/system_entry_host.dart       |   44 +
- app/lib/ui/speech/voice_call_page.dart        |  294 ++-
+ app/lib/ui/speech/voice_call_page.dart        |  298 ++-
  app/lib/ui/theme/app_icons.dart               |    4 +
  app/lib/ui/update/update_tiles.dart           |    5 +-
  app/lib/voice/wake_keywords.dart              |   50 +
@@ -109,7 +109,7 @@ Subject: [PATCH] pb: real density
  docs/wake-word.md                             |  107 +
  dsh-go-wake.patch                             | 2065 +++++++++++++++++
  tooling/build-wake-apk.sh                     |   68 +
- 105 files changed, 11525 insertions(+), 523 deletions(-)
+ 105 files changed, 11529 insertions(+), 523 deletions(-)
  create mode 100644 .github/workflows/wake-apk.yml
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallForegroundService.kt
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallOverlay.kt
@@ -83630,20 +83630,21 @@ index 172e773..3f2fdd9 100644
          // The microphone opens only for an app on screen; the shortcut's
          // intent can arrive a beat before Flutter hears it is resumed.
 diff --git a/app/lib/ui/speech/voice_call_page.dart b/app/lib/ui/speech/voice_call_page.dart
-index 2f99689..53e21ab 100644
+index 2f99689..b931a99 100644
 --- a/app/lib/ui/speech/voice_call_page.dart
 +++ b/app/lib/ui/speech/voice_call_page.dart
-@@ -17,6 +17,9 @@ import 'package:flutter/services.dart';
+@@ -17,6 +17,10 @@ import 'package:flutter/services.dart';
  import 'package:flutter_riverpod/flutter_riverpod.dart';
  
  import '../../companion/companion_voice.dart';
 +import '../../app_navigator.dart';
 +import '../../speech/call/active_call.dart';
++import '../../state/phone_state.dart';
 +import '../phone/virtual_screen_host.dart' show globalHandOver;
  import '../../companion/companion_voice_source.dart';
  import '../../l10n/l10n.dart';
  import '../../performance/performance_state.dart';
-@@ -26,6 +29,8 @@ import '../../speech/call/thinking_cue.dart';
+@@ -26,6 +30,8 @@ import '../../speech/call/thinking_cue.dart';
  import '../../speech/call/voice_call.dart';
  import '../../speech/deepseek_speech.dart';
  import '../../speech/read_aloud.dart';
@@ -83652,7 +83653,7 @@ index 2f99689..53e21ab 100644
  import '../../speech/speech_audio.dart';
  import '../../speech/speech_out.dart';
  import '../../speech/speech_settings.dart';
-@@ -47,10 +52,12 @@ import '../../usage/usage_stats.dart';
+@@ -47,10 +53,12 @@ import '../../usage/usage_stats.dart';
  import '../../voice/live_words.dart';
  import '../../voice/live_words_model.dart';
  import '../../voice/streaming_pcm.dart';
@@ -83665,7 +83666,7 @@ index 2f99689..53e21ab 100644
  import 'speech_ui.dart';
  
  /// Opens a call with the main chat's conversation. [session] gives its id,
-@@ -59,16 +66,49 @@ Future<void> openChatCall(
+@@ -59,16 +67,49 @@ Future<void> openChatCall(
    BuildContext context, {
    required String title,
    required Future<String?> Function() session,
@@ -83717,7 +83718,7 @@ index 2f99689..53e21ab 100644
        transitionsBuilder: (_, animation, _, child) {
          final curve = CurvedAnimation(parent: animation, curve: AppMotion.enter, reverseCurve: AppMotion.exit);
          // Opening: the page rises out of the dark.
-@@ -79,16 +119,18 @@ Future<void> openChatCall(
+@@ -79,16 +120,18 @@ Future<void> openChatCall(
        },
      ),
    );
@@ -83739,7 +83740,7 @@ index 2f99689..53e21ab 100644
    @override
    ConsumerState<VoiceCallPage> createState() => _VoiceCallPageState();
  }
-@@ -118,26 +160,56 @@ class _VoiceCallPageState extends ConsumerState<VoiceCallPage> with WidgetsBindi
+@@ -118,26 +161,56 @@ class _VoiceCallPageState extends ConsumerState<VoiceCallPage> with WidgetsBindi
    /// and the page comes in without its staggered rise.
    bool _still = false;
  
@@ -83806,7 +83807,7 @@ index 2f99689..53e21ab 100644
        },
        voice: () => speechOutFor(
          _voice,
-@@ -146,7 +218,7 @@ class _VoiceCallPageState extends ConsumerState<VoiceCallPage> with WidgetsBindi
+@@ -146,7 +219,7 @@ class _VoiceCallPageState extends ConsumerState<VoiceCallPage> with WidgetsBindi
          speaker: speaker,
          call: true,
          levels: true,
@@ -83815,7 +83816,7 @@ index 2f99689..53e21ab 100644
        ),
        // The saved ones, not the defaults shown while they load (a first call after launch).
        choices: () async {
-@@ -165,6 +237,9 @@ class _VoiceCallPageState extends ConsumerState<VoiceCallPage> with WidgetsBindi
+@@ -165,6 +238,9 @@ class _VoiceCallPageState extends ConsumerState<VoiceCallPage> with WidgetsBindi
          if ((await callSettings.ready()).cue && _call.cueStill) await playThinkingCue(audio);
        },
      )..addListener(_changed);
@@ -83825,7 +83826,7 @@ index 2f99689..53e21ab 100644
      // Changed in 通话设置 (or anywhere) during the call: from the next sentence on.
      ref.listenManual(speechVoiceSettingsProvider, (_, _) => unawaited(_settleVoice()));
      ref.listenManual(voiceSettingsProvider, (_, _) => unawaited(_call.refreshRecognizer()));
-@@ -172,6 +247,19 @@ class _VoiceCallPageState extends ConsumerState<VoiceCallPage> with WidgetsBindi
+@@ -172,6 +248,19 @@ class _VoiceCallPageState extends ConsumerState<VoiceCallPage> with WidgetsBindi
      ref.listenManual(callSettingsProvider.select((s) => s.pause), (_, pause) => _call.setPause(pause));
      HapticFeedback.mediumImpact();
      _enter.forward();
@@ -83845,7 +83846,7 @@ index 2f99689..53e21ab 100644
      unawaited(_start());
    }
  
-@@ -209,25 +297,59 @@ class _VoiceCallPageState extends ConsumerState<VoiceCallPage> with WidgetsBindi
+@@ -209,25 +298,59 @@ class _VoiceCallPageState extends ConsumerState<VoiceCallPage> with WidgetsBindi
  
    int _settling = 0;
  
@@ -83917,7 +83918,7 @@ index 2f99689..53e21ab 100644
      } on Object {
        // Without live captions the call goes on as before.
        _live = null;
-@@ -265,6 +387,7 @@ class _VoiceCallPageState extends ConsumerState<VoiceCallPage> with WidgetsBindi
+@@ -265,6 +388,7 @@ class _VoiceCallPageState extends ConsumerState<VoiceCallPage> with WidgetsBindi
      switch (phase) {
        case CallPhase.listening when _since == null:
          _since = DateTime.now();
@@ -83925,7 +83926,7 @@ index 2f99689..53e21ab 100644
          HapticFeedback.lightImpact();
          // Anonymous usage statistics: a call got through (the microphone is on).
          ref.read(usageStatsProvider.notifier).count(UsageCount.call);
-@@ -313,22 +436,114 @@ class _VoiceCallPageState extends ConsumerState<VoiceCallPage> with WidgetsBindi
+@@ -313,22 +437,117 @@ class _VoiceCallPageState extends ConsumerState<VoiceCallPage> with WidgetsBindi
  
    @override
    void didChangeAppLifecycleState(AppLifecycleState state) {
@@ -83944,8 +83945,11 @@ index 2f99689..53e21ab 100644
 +    // phone (导航, 外卖, 设置) is part of a call, not the end of one. What appears while the
 +    // app is behind is the card, so the call is one tap away.
 +    if (_call.phase != CallPhase.ended) unawaited(_floatInBackground());
-+    // 退到后台就等于收起（用户 14:46）：从桌面点图标回来应当是 App 正常界面，不是通话页。
-+    if (_call.phase != CallPhase.ended && mounted && Navigator.of(context).canPop()) {
++    // 退到后台就收起（用户 14:46：从桌面点图标回来应是正常界面）——
++    // 但**助手正在操作手机时不算"用户离开"**：操作别的应用会让 App 进后台，
++    // 这时收起会把通话页弹掉，回来就落在聊天页（23:05 反馈的回归）。
++    final operating = ref.read(phoneProvider).status.task.active;
++    if (!operating && _call.phase != CallPhase.ended && mounted && Navigator.of(context).canPop()) {
 +      Navigator.of(context).pop();
 +    }
 +  }
@@ -84045,7 +84049,7 @@ index 2f99689..53e21ab 100644
    void _hangUp() {
      HapticFeedback.heavyImpact();
      _call.hangUp();
-@@ -645,6 +860,17 @@ class _VoiceCallPageState extends ConsumerState<VoiceCallPage> with WidgetsBindi
+@@ -645,6 +864,17 @@ class _VoiceCallPageState extends ConsumerState<VoiceCallPage> with WidgetsBindi
                          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                          crossAxisAlignment: CrossAxisAlignment.end,
                          children: [
@@ -84063,7 +84067,7 @@ index 2f99689..53e21ab 100644
                            _rise(
                              0.4,
                              CallKey(
-@@ -658,7 +884,7 @@ class _VoiceCallPageState extends ConsumerState<VoiceCallPage> with WidgetsBindi
+@@ -658,7 +888,7 @@ class _VoiceCallPageState extends ConsumerState<VoiceCallPage> with WidgetsBindi
                              distance: 28,
                            ),
                            _rise(
