@@ -1,7 +1,7 @@
-From 4553b23e3de70cdf800bcc910ec5f25fb9a940e1 Mon Sep 17 00:00:00 2001
+From b881b18e730093463c6414fd5ac9884aaf5c30c8 Mon Sep 17 00:00:00 2001
 From: wake-ci <ci@local>
-Date: Fri, 20 Nov 2026 20:40:55 +0800
-Subject: [PATCH] private build: vscreen restructure
+Date: Fri, 20 Nov 2026 20:45:01 +0800
+Subject: [PATCH] private build: call deps container-scoped
 
 ---
  .gitattributes                                |    3 +
@@ -97,7 +97,7 @@ Subject: [PATCH] private build: vscreen restructure
  app/lib/ui/shell/call_overlay_host.dart       |   55 +
  app/lib/ui/shell/home_shell.dart              |    7 +
  app/lib/ui/shell/system_entry_host.dart       |   44 +
- app/lib/ui/speech/voice_call_page.dart        |  269 ++-
+ app/lib/ui/speech/voice_call_page.dart        |  294 ++-
  app/lib/ui/theme/app_icons.dart               |    4 +
  app/lib/ui/update/update_tiles.dart           |    5 +-
  app/lib/voice/wake_keywords.dart              |   50 +
@@ -107,7 +107,7 @@ Subject: [PATCH] private build: vscreen restructure
  docs/wake-word.md                             |  107 +
  dsh-go-wake.patch                             | 2065 +++++++++++++++++
  tooling/build-wake-apk.sh                     |   68 +
- 103 files changed, 11313 insertions(+), 505 deletions(-)
+ 103 files changed, 11328 insertions(+), 515 deletions(-)
  create mode 100644 .github/workflows/wake-apk.yml
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallForegroundService.kt
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallOverlay.kt
@@ -83314,7 +83314,7 @@ index 172e773..3f2fdd9 100644
          // The microphone opens only for an app on screen; the shortcut's
          // intent can arrive a beat before Flutter hears it is resumed.
 diff --git a/app/lib/ui/speech/voice_call_page.dart b/app/lib/ui/speech/voice_call_page.dart
-index 2f99689..173a85d 100644
+index 2f99689..53e21ab 100644
 --- a/app/lib/ui/speech/voice_call_page.dart
 +++ b/app/lib/ui/speech/voice_call_page.dart
 @@ -17,6 +17,9 @@ import 'package:flutter/services.dart';
@@ -83423,7 +83423,7 @@ index 2f99689..173a85d 100644
    @override
    ConsumerState<VoiceCallPage> createState() => _VoiceCallPageState();
  }
-@@ -118,10 +160,23 @@ class _VoiceCallPageState extends ConsumerState<VoiceCallPage> with WidgetsBindi
+@@ -118,26 +160,56 @@ class _VoiceCallPageState extends ConsumerState<VoiceCallPage> with WidgetsBindi
    /// and the page comes in without its staggered rise.
    bool _still = false;
  
@@ -83438,20 +83438,33 @@ index 2f99689..173a85d 100644
    void initState() {
      super.initState();
      WidgetsBinding.instance.addObserver(this);
+-    final callSettings = ref.read(callSettingsProvider.notifier);
+-    final voices = ref.read(speechVoiceSettingsProvider.notifier);
 +    _wake = ref.read(wakeWordProvider.notifier);
 +    unawaited(_wake!.suspend());
 +    const MethodChannel('dsh/app').setMethodCallHandler(_onAppCall);
 +    // 通话 keeps the microphone in the background: the assistant operating the phone during a
 +    // call (导航, 外卖) must not take it away.
 +    unawaited(const MethodChannel('dsh/call-overlay').invokeMethod<void>('keepAlive', {'active': true}));
-     final callSettings = ref.read(callSettingsProvider.notifier);
-     final voices = ref.read(speechVoiceSettingsProvider.notifier);
++    // 控制器比页面活得久（收起成球后页面销毁、通话继续）。它依赖的东西必须挂在
++    // 容器上，不能闭包抓页面的 ref —— 页面 dispose 后 ref 失效，创建 TTS 时抛异常，
++    // 表现就是「收起后只有文字、没有声音」（20:14 日志）。
++    final container = ProviderScope.containerOf(context, listen: false);
++    final callSettings = container.read(callSettingsProvider.notifier);
++    final voices = container.read(speechVoiceSettingsProvider.notifier);
      // The chosen voice, as soon as the settings have been read (the first reply comes later).
-@@ -130,9 +185,21 @@ class _VoiceCallPageState extends ConsumerState<VoiceCallPage> with WidgetsBindi
-     final audio = ref.read(speechAudioProvider);
-     final deepseek = ref.read(deepSeekSpeechProvider);
-     final bridge = ref.read(voiceBridgeProvider);
+-    _voice = ref.read(speechVoiceSettingsProvider) ?? voices.defaults;
+-    final speaker = ref.read(speechSpeakerProvider);
+-    final audio = ref.read(speechAudioProvider);
+-    final deepseek = ref.read(deepSeekSpeechProvider);
+-    final bridge = ref.read(voiceBridgeProvider);
 -    _call = VoiceCallController(
++    _voice = container.read(speechVoiceSettingsProvider) ?? voices.defaults;
++    final speaker = container.read(speechSpeakerProvider);
++    final audio = container.read(speechAudioProvider);
++    final deepseek = container.read(deepSeekSpeechProvider);
++    final bridge = container.read(voiceBridgeProvider);
++    final gap = container.read(deepSeekSpeechGapProvider);
 +    final active = ActiveCall.instance;
 +    if (active.live && identical(widget.conversation, active.conversation)) {
 +      // 点悬浮球弹回来：接上同一通电话，不再建控制器。
@@ -83470,7 +83483,23 @@ index 2f99689..173a85d 100644
        recognizer: () async {
          // The phone's own voice warms up while the call starts, not when changed mid-reply.
          await _settleVoice(warm: _call.phase == CallPhase.starting);
-@@ -165,6 +232,9 @@ class _VoiceCallPageState extends ConsumerState<VoiceCallPage> with WidgetsBindi
+-        if (!mounted) return null;
+-        return ref.read(callRecognizerProvider)();
++        // 收起后页面不在，也要能继续识别：用容器取，不用页面 ref。
++        return container.read(callRecognizerProvider)();
+       },
+       voice: () => speechOutFor(
+         _voice,
+@@ -146,7 +218,7 @@ class _VoiceCallPageState extends ConsumerState<VoiceCallPage> with WidgetsBindi
+         speaker: speaker,
+         call: true,
+         levels: true,
+-        gap: ref.read(deepSeekSpeechGapProvider),
++        gap: gap,
+       ),
+       // The saved ones, not the defaults shown while they load (a first call after launch).
+       choices: () async {
+@@ -165,6 +237,9 @@ class _VoiceCallPageState extends ConsumerState<VoiceCallPage> with WidgetsBindi
          if ((await callSettings.ready()).cue && _call.cueStill) await playThinkingCue(audio);
        },
      )..addListener(_changed);
@@ -83480,7 +83509,7 @@ index 2f99689..173a85d 100644
      // Changed in 通话设置 (or anywhere) during the call: from the next sentence on.
      ref.listenManual(speechVoiceSettingsProvider, (_, _) => unawaited(_settleVoice()));
      ref.listenManual(voiceSettingsProvider, (_, _) => unawaited(_call.refreshRecognizer()));
-@@ -172,6 +242,19 @@ class _VoiceCallPageState extends ConsumerState<VoiceCallPage> with WidgetsBindi
+@@ -172,6 +247,19 @@ class _VoiceCallPageState extends ConsumerState<VoiceCallPage> with WidgetsBindi
      ref.listenManual(callSettingsProvider.select((s) => s.pause), (_, pause) => _call.setPause(pause));
      HapticFeedback.mediumImpact();
      _enter.forward();
@@ -83500,7 +83529,7 @@ index 2f99689..173a85d 100644
      unawaited(_start());
    }
  
-@@ -209,25 +292,59 @@ class _VoiceCallPageState extends ConsumerState<VoiceCallPage> with WidgetsBindi
+@@ -209,25 +297,59 @@ class _VoiceCallPageState extends ConsumerState<VoiceCallPage> with WidgetsBindi
  
    int _settling = 0;
  
@@ -83572,7 +83601,7 @@ index 2f99689..173a85d 100644
      } on Object {
        // Without live captions the call goes on as before.
        _live = null;
-@@ -265,6 +382,7 @@ class _VoiceCallPageState extends ConsumerState<VoiceCallPage> with WidgetsBindi
+@@ -265,6 +387,7 @@ class _VoiceCallPageState extends ConsumerState<VoiceCallPage> with WidgetsBindi
      switch (phase) {
        case CallPhase.listening when _since == null:
          _since = DateTime.now();
@@ -83580,7 +83609,7 @@ index 2f99689..173a85d 100644
          HapticFeedback.lightImpact();
          // Anonymous usage statistics: a call got through (the microphone is on).
          ref.read(usageStatsProvider.notifier).count(UsageCount.call);
-@@ -313,22 +431,114 @@ class _VoiceCallPageState extends ConsumerState<VoiceCallPage> with WidgetsBindi
+@@ -313,22 +436,114 @@ class _VoiceCallPageState extends ConsumerState<VoiceCallPage> with WidgetsBindi
  
    @override
    void didChangeAppLifecycleState(AppLifecycleState state) {
@@ -83700,7 +83729,7 @@ index 2f99689..173a85d 100644
    void _hangUp() {
      HapticFeedback.heavyImpact();
      _call.hangUp();
-@@ -645,6 +855,17 @@ class _VoiceCallPageState extends ConsumerState<VoiceCallPage> with WidgetsBindi
+@@ -645,6 +860,17 @@ class _VoiceCallPageState extends ConsumerState<VoiceCallPage> with WidgetsBindi
                          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                          crossAxisAlignment: CrossAxisAlignment.end,
                          children: [
@@ -83718,7 +83747,7 @@ index 2f99689..173a85d 100644
                            _rise(
                              0.4,
                              CallKey(
-@@ -658,7 +879,7 @@ class _VoiceCallPageState extends ConsumerState<VoiceCallPage> with WidgetsBindi
+@@ -658,7 +884,7 @@ class _VoiceCallPageState extends ConsumerState<VoiceCallPage> with WidgetsBindi
                              distance: 28,
                            ),
                            _rise(
