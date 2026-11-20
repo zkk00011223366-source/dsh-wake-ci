@@ -1,7 +1,7 @@
-From 06bc79ea49cad623d3e2ddf8edd473e92cf9166d Mon Sep 17 00:00:00 2001
+From 379da228d64d0f29049526296fb693f6104bfc46 Mon Sep 17 00:00:00 2001
 From: wake-ci <ci@local>
-Date: Fri, 20 Nov 2026 09:57:45 +0800
-Subject: [PATCH] private build: ball fix included
+Date: Fri, 20 Nov 2026 10:10:39 +0800
+Subject: [PATCH] private build: null-promotion fixed
 
 ---
  .gitattributes                                |    3 +
@@ -92,7 +92,7 @@ Subject: [PATCH] private build: ball fix included
  app/lib/ui/settings/voice_settings_page.dart  |   89 +
  app/lib/ui/shell/home_shell.dart              |    4 +
  app/lib/ui/shell/system_entry_host.dart       |   36 +
- app/lib/ui/speech/voice_call_page.dart        |  174 +-
+ app/lib/ui/speech/voice_call_page.dart        |  176 +-
  app/lib/ui/theme/app_icons.dart               |    4 +
  app/lib/ui/update/update_tiles.dart           |    5 +-
  app/lib/voice/wake_keywords.dart              |   50 +
@@ -102,7 +102,7 @@ Subject: [PATCH] private build: ball fix included
  docs/wake-word.md                             |  107 +
  dsh-go-wake.patch                             | 2065 +++++++++++
  tooling/build-wake-apk.sh                     |   68 +
- 98 files changed, 12254 insertions(+), 2084 deletions(-)
+ 98 files changed, 12256 insertions(+), 2084 deletions(-)
  create mode 100644 .github/workflows/wake-apk.yml
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallForegroundService.kt
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallOverlay.kt
@@ -90099,7 +90099,7 @@ index 172e773..a1f9c8d 100644
          // The microphone opens only for an app on screen; the shortcut's
          // intent can arrive a beat before Flutter hears it is resumed.
 diff --git a/app/lib/ui/speech/voice_call_page.dart b/app/lib/ui/speech/voice_call_page.dart
-index 2f99689..f42b708 100644
+index 2f99689..0044928 100644
 --- a/app/lib/ui/speech/voice_call_page.dart
 +++ b/app/lib/ui/speech/voice_call_page.dart
 @@ -12,11 +12,14 @@ import 'dart:io';
@@ -90183,7 +90183,7 @@ index 2f99689..f42b708 100644
      final callSettings = ref.read(callSettingsProvider.notifier);
      final voices = ref.read(speechVoiceSettingsProvider.notifier);
      // The chosen voice, as soon as the settings have been read (the first reply comes later).
-@@ -209,11 +231,61 @@ class _VoiceCallPageState extends ConsumerState<VoiceCallPage> with WidgetsBindi
+@@ -209,11 +231,63 @@ class _VoiceCallPageState extends ConsumerState<VoiceCallPage> with WidgetsBindi
  
    int _settling = 0;
  
@@ -90205,12 +90205,14 @@ index 2f99689..f42b708 100644
 +      diagWake('call: read-aloud skipped, no session id');
 +      return;
 +    }
-+    diagWake('call: read-aloud watching session $sid');
++    // 闭包里用到 sid，Dart 不会给它做智能提升：转到不可空局部变量。
++    final session = sid;
++    diagWake('call: read-aloud watching session $session');
 +    var spoken = false;
 +    late final ProviderSubscription<ChatState> sub;
 +    void check() {
 +      if (spoken || !mounted) return;
-+      final replies = ref.read(chatProvider(sid)).items.whereType<AssistantChatItem>().toList();
++      final replies = ref.read(chatProvider(session)).items.whereType<AssistantChatItem>().toList();
 +      if (replies.isEmpty) return;
 +      final reply = replies.last;
 +      if (reply.time == null || !reply.time!.isAfter(startAt)) return;
@@ -90219,7 +90221,7 @@ index 2f99689..f42b708 100644
 +      sub.close();
 +      readAloudReply(context, reply.id, dshUiPlainText(reply.text));
 +    }
-+    sub = ref.listenManual(chatProvider(sid), (_, _) => check());
++    sub = ref.listenManual(chatProvider(session), (_, _) => check());
 +    // 流式结束不一定会再触发监听：隔几秒补看几次，直到念出来或超时。
 +    for (final ms in const [1500, 3000, 5000, 8000]) {
 +      Timer(Duration(milliseconds: ms), check);
@@ -90245,7 +90247,7 @@ index 2f99689..f42b708 100644
      try {
        final chosen = await found;
        if (chosen == null || !mounted || _call.phase == CallPhase.ended) return;
-@@ -313,11 +385,51 @@ class _VoiceCallPageState extends ConsumerState<VoiceCallPage> with WidgetsBindi
+@@ -313,11 +387,51 @@ class _VoiceCallPageState extends ConsumerState<VoiceCallPage> with WidgetsBindi
  
    @override
    void didChangeAppLifecycleState(AppLifecycleState state) {
@@ -90298,7 +90300,7 @@ index 2f99689..f42b708 100644
      WidgetsBinding.instance.removeObserver(this);
      unawaited(_live?.stop());
      _leave?.cancel();
-@@ -329,6 +441,49 @@ class _VoiceCallPageState extends ConsumerState<VoiceCallPage> with WidgetsBindi
+@@ -329,6 +443,49 @@ class _VoiceCallPageState extends ConsumerState<VoiceCallPage> with WidgetsBindi
      super.dispose();
    }
  
@@ -90348,7 +90350,7 @@ index 2f99689..f42b708 100644
    void _hangUp() {
      HapticFeedback.heavyImpact();
      _call.hangUp();
-@@ -645,6 +800,17 @@ class _VoiceCallPageState extends ConsumerState<VoiceCallPage> with WidgetsBindi
+@@ -645,6 +802,17 @@ class _VoiceCallPageState extends ConsumerState<VoiceCallPage> with WidgetsBindi
                          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                          crossAxisAlignment: CrossAxisAlignment.end,
                          children: [
@@ -90366,7 +90368,7 @@ index 2f99689..f42b708 100644
                            _rise(
                              0.4,
                              CallKey(
-@@ -658,7 +824,7 @@ class _VoiceCallPageState extends ConsumerState<VoiceCallPage> with WidgetsBindi
+@@ -658,7 +826,7 @@ class _VoiceCallPageState extends ConsumerState<VoiceCallPage> with WidgetsBindi
                              distance: 28,
                            ),
                            _rise(
