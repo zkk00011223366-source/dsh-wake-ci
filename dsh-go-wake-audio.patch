@@ -1,7 +1,7 @@
-From 82bb849d4a876e9d1f1575e4c6434ba5d1890cab Mon Sep 17 00:00:00 2001
+From 12d0028b11d1a8a145cad2a4380bf31bd7afb3bd Mon Sep 17 00:00:00 2001
 From: wake-ci <ci@local>
-Date: Fri, 20 Nov 2026 17:04:27 +0800
-Subject: [PATCH] private build: wake reply custom
+Date: Fri, 20 Nov 2026 17:10:56 +0800
+Subject: [PATCH] private build: wake reply + call trace
 
 ---
  .gitattributes                                |    3 +
@@ -77,6 +77,7 @@ Subject: [PATCH] private build: wake reply custom
  app/lib/phone/phone_channel.dart              |  123 +-
  app/lib/phone/virtual_screen_window.dart      |  115 +
  app/lib/speech/call/active_call.dart          |  110 +
+ app/lib/speech/call/chat_call.dart            |    3 +
  app/lib/speech/call/voice_call.dart           |   35 +-
  app/lib/speech/wake_reply.dart                |  119 +
  app/lib/state/app_info.dart                   |    5 +
@@ -106,7 +107,7 @@ Subject: [PATCH] private build: wake reply custom
  docs/wake-word.md                             |  107 +
  dsh-go-wake.patch                             | 2065 +++++++++++++++++
  tooling/build-wake-apk.sh                     |   68 +
- 102 files changed, 10979 insertions(+), 488 deletions(-)
+ 103 files changed, 10982 insertions(+), 488 deletions(-)
  create mode 100644 .github/workflows/wake-apk.yml
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallForegroundService.kt
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallOverlay.kt
@@ -80082,6 +80083,34 @@ index 0000000..b30cbf8
 +    }
 +  }
 +}
+diff --git a/app/lib/speech/call/chat_call.dart b/app/lib/speech/call/chat_call.dart
+index b9b8ffa..0c4f229 100644
+--- a/app/lib/speech/call/chat_call.dart
++++ b/app/lib/speech/call/chat_call.dart
+@@ -9,6 +9,7 @@ import 'package:dsh_client/dsh_client.dart';
+ import 'package:flutter_riverpod/flutter_riverpod.dart';
+ 
+ import '../../state/chat_state.dart';
++import '../../voice/wake_word.dart' show diagWake;
+ import '../../state/hosts_state.dart';
+ import '../../state/notify_state.dart';
+ import 'voice_call.dart';
+@@ -100,6 +101,7 @@ class ChatCallConversation implements CallConversation {
+         if (item is AssistantChatItem && !_before.contains(item.key) && item.text.trim().isNotEmpty) item.text.trim(),
+     ];
+     final text = steps.join('\n');
++    diagWake('call-chat: changed running=${state.running} steps=${steps.length} chars=${text.length} spoken=${_last.length}');
+     if (text != _last && text.length >= _last.length) {
+       _last = text;
+       if (!_replies.isClosed) _replies.add(CallReply(text, done: false));
+@@ -109,6 +111,7 @@ class ChatCallConversation implements CallConversation {
+ 
+   void _done() {
+     if (!_tracking) return;
++    diagWake('call-chat: turn done, final chars=${_last.length}');
+     _tracking = false;
+     _idle?.cancel();
+     if (!_replies.isClosed) _replies.add(CallReply(_last, done: true));
 diff --git a/app/lib/speech/call/voice_call.dart b/app/lib/speech/call/voice_call.dart
 index d97ef1a..8841acc 100644
 --- a/app/lib/speech/call/voice_call.dart
