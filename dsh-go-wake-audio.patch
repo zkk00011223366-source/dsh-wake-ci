@@ -1,7 +1,7 @@
-From 379da228d64d0f29049526296fb693f6104bfc46 Mon Sep 17 00:00:00 2001
+From 7b67132437a83de42d9b8212615b78493f4b9b62 Mon Sep 17 00:00:00 2001
 From: wake-ci <ci@local>
-Date: Fri, 20 Nov 2026 10:10:39 +0800
-Subject: [PATCH] private build: null-promotion fixed
+Date: Fri, 20 Nov 2026 10:18:10 +0800
+Subject: [PATCH] private build: all buttons real
 
 ---
  .gitattributes                                |    3 +
@@ -85,7 +85,7 @@ Subject: [PATCH] private build: null-promotion fixed
  app/lib/ui/phone/android_shell_page.dart      |   28 +
  app/lib/ui/phone/background_preview.dart      |  264 +-
  app/lib/ui/phone/dnd_mode_page.dart           |  174 +-
- app/lib/ui/phone/phone_task_card.dart         |  421 +++
+ app/lib/ui/phone/phone_task_card.dart         |  430 +++
  app/lib/ui/phone/virtual_screen_host.dart     |  247 ++
  app/lib/ui/phone/virtual_screen_page.dart     |  115 +
  app/lib/ui/phone/virtual_screen_surface.dart  |  286 ++
@@ -102,7 +102,7 @@ Subject: [PATCH] private build: null-promotion fixed
  docs/wake-word.md                             |  107 +
  dsh-go-wake.patch                             | 2065 +++++++++++
  tooling/build-wake-apk.sh                     |   68 +
- 98 files changed, 12256 insertions(+), 2084 deletions(-)
+ 98 files changed, 12265 insertions(+), 2084 deletions(-)
  create mode 100644 .github/workflows/wake-apk.yml
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallForegroundService.kt
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallOverlay.kt
@@ -3463,7 +3463,7 @@ index 0000000..228b337
 +}
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenOverlay.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenOverlay.kt
 new file mode 100644
-index 0000000..49475f9
+index 0000000..a14f475
 --- /dev/null
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenOverlay.kt
 @@ -0,0 +1,1187 @@
@@ -4384,8 +4384,8 @@ index 0000000..49475f9
 +    }
 +
 +    /** ×: one tap ends the task, and the window goes with it (第十二 / 17 节). */
++    /** ×：只关窗（任务继续跑，验收单 39 条 #17「× 关窗」）。停任务在任务卡片上点「结束」。 */
 +    private fun endTask() {
-+        onAction?.invoke("stop")
 +        hide()
 +    }
 +
@@ -88807,10 +88807,11 @@ index 3a23e52..f93bf25 100644
                              : () => unawaited(_run(() => _phone.setBackgroundViewport(preset))),
 diff --git a/app/lib/ui/phone/phone_task_card.dart b/app/lib/ui/phone/phone_task_card.dart
 new file mode 100644
-index 0000000..afeb6e8
+index 0000000..26e0742
 --- /dev/null
 +++ b/app/lib/ui/phone/phone_task_card.dart
-@@ -0,0 +1,421 @@
+@@ -0,0 +1,430 @@
++import '../phone/virtual_screen_page.dart';
 +import 'dart:async';
 +
 +import 'package:flutter/material.dart';
@@ -89105,7 +89106,15 @@ index 0000000..afeb6e8
 +                  ),
 +                  TextButton(
 +                    key: const ValueKey('phone-task-takeover'),
-+                    onPressed: _busy ? null : () => _run(() => ref.read(phoneProvider.notifier).stopTask()),
++                    // 真接管：打开可操作的虚拟屏整页，人亲自点哪打哪；
++                    // 之前这里调 stopTask()，跟「结束」一样，等于假按钮。
++                    onPressed: _busy
++                        ? null
++                        : () {
++                            final id = task.id;
++                            if (id == null) return;
++                            Navigator.of(context).push(VirtualScreenPage.route(id));
++                          },
 +                    child: const Text('接管'),
 +                  ),
 +                  TextButton(
