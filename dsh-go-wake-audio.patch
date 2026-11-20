@@ -1,7 +1,7 @@
-From da432a6f0bf85de6c204e92ceea40528c95d8819 Mon Sep 17 00:00:00 2001
+From ed5739535ae10960b11b7c7275d12bc74906ebd9 Mon Sep 17 00:00:00 2001
 From: wake-ci <ci@local>
-Date: Fri, 20 Nov 2026 11:01:22 +0800
-Subject: [PATCH] private build: ball alive-gated
+Date: Fri, 20 Nov 2026 13:37:40 +0800
+Subject: [PATCH] private build: call minimize + vscreen batch
 
 ---
  .gitattributes                                |    3 +
@@ -60,7 +60,8 @@ Subject: [PATCH] private build: ball alive-gated
  app/assets/kws/encoder.int8.onnx              |  Bin 0 -> 4777666 bytes
  app/assets/kws/joiner.int8.onnx               |  Bin 0 -> 65242 bytes
  app/assets/kws/tokens.txt                     |  227 ++
- app/lib/app.dart                              |    3 +
+ app/lib/app.dart                              |    6 +
+ app/lib/app_navigator.dart                    |    4 +
  app/lib/l10n/app_en.arb                       |   22 +
  app/lib/l10n/app_zh.arb                       |   22 +
  app/lib/l10n/gen/app_localizations.dart       |  147 +-
@@ -75,24 +76,26 @@ Subject: [PATCH] private build: ball alive-gated
  app/lib/links/launcher_entries.dart           |    7 +-
  app/lib/phone/phone_channel.dart              |  114 +-
  app/lib/phone/virtual_screen_window.dart      |  115 +
- app/lib/speech/call/voice_call.dart           |   21 +-
+ app/lib/speech/call/active_call.dart          |  105 +
+ app/lib/speech/call/voice_call.dart           |   40 +-
  app/lib/state/app_info.dart                   |    5 +
  app/lib/state/update_state.dart               |    9 +
- app/lib/state/virtual_screen_state.dart       |  244 ++
+ app/lib/state/virtual_screen_state.dart       |  246 ++
  app/lib/ui/chat/chat_rows.dart                |    2 +
- app/lib/ui/chat/chat_screen.dart              |   93 +-
+ app/lib/ui/chat/chat_screen.dart              |   98 +-
  app/lib/ui/chat/media/media_format.dart       |   16 +-
  app/lib/ui/phone/android_shell_page.dart      |   28 +
  app/lib/ui/phone/background_preview.dart      |  264 +-
  app/lib/ui/phone/dnd_mode_page.dart           |  174 +-
  app/lib/ui/phone/phone_task_card.dart         |  430 +++
- app/lib/ui/phone/virtual_screen_host.dart     |  257 ++
- app/lib/ui/phone/virtual_screen_page.dart     |  115 +
+ app/lib/ui/phone/virtual_screen_host.dart     |  261 ++
+ app/lib/ui/phone/virtual_screen_page.dart     |  114 +
  app/lib/ui/phone/virtual_screen_surface.dart  |  286 ++
  app/lib/ui/settings/voice_settings_page.dart  |   89 +
- app/lib/ui/shell/home_shell.dart              |    4 +
- app/lib/ui/shell/system_entry_host.dart       |   36 +
- app/lib/ui/speech/voice_call_page.dart        |  176 +-
+ app/lib/ui/shell/call_overlay_host.dart       |   45 +
+ app/lib/ui/shell/home_shell.dart              |    7 +
+ app/lib/ui/shell/system_entry_host.dart       |   43 +
+ app/lib/ui/speech/voice_call_page.dart        |  212 +-
  app/lib/ui/theme/app_icons.dart               |    4 +
  app/lib/ui/update/update_tiles.dart           |    5 +-
  app/lib/voice/wake_keywords.dart              |   50 +
@@ -102,7 +105,7 @@ Subject: [PATCH] private build: ball alive-gated
  docs/wake-word.md                             |  107 +
  dsh-go-wake.patch                             | 2065 +++++++++++
  tooling/build-wake-apk.sh                     |   68 +
- 98 files changed, 12282 insertions(+), 2084 deletions(-)
+ 101 files changed, 12500 insertions(+), 2098 deletions(-)
  create mode 100644 .github/workflows/wake-apk.yml
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallForegroundService.kt
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallOverlay.kt
@@ -124,12 +127,15 @@ Subject: [PATCH] private build: ball alive-gated
  create mode 100644 app/assets/kws/encoder.int8.onnx
  create mode 100644 app/assets/kws/joiner.int8.onnx
  create mode 100644 app/assets/kws/tokens.txt
+ create mode 100644 app/lib/app_navigator.dart
  create mode 100644 app/lib/phone/virtual_screen_window.dart
+ create mode 100644 app/lib/speech/call/active_call.dart
  create mode 100644 app/lib/state/virtual_screen_state.dart
  create mode 100644 app/lib/ui/phone/phone_task_card.dart
  create mode 100644 app/lib/ui/phone/virtual_screen_host.dart
  create mode 100644 app/lib/ui/phone/virtual_screen_page.dart
  create mode 100644 app/lib/ui/phone/virtual_screen_surface.dart
+ create mode 100644 app/lib/ui/shell/call_overlay_host.dart
  create mode 100644 app/lib/voice/wake_keywords.dart
  create mode 100644 app/lib/voice/wake_settings.dart
  create mode 100644 app/lib/voice/wake_word.dart
@@ -78499,10 +78505,19 @@ index 0000000..5880fbf
 +#28 225
 +#29 226
 diff --git a/app/lib/app.dart b/app/lib/app.dart
-index 1b1e7de..b2de292 100644
+index 1b1e7de..ec5aedb 100644
 --- a/app/lib/app.dart
 +++ b/app/lib/app.dart
-@@ -14,6 +14,7 @@ import 'state/appearance_state.dart';
+@@ -5,6 +5,8 @@ import 'package:flutter/material.dart';
+ import 'package:flutter_localizations/flutter_localizations.dart';
+ import 'package:flutter_riverpod/flutter_riverpod.dart';
+ 
++import 'app_navigator.dart';
++
+ import 'companion/companion_initiative_owner.dart' show companionInitiativeProvider;
+ import 'l10n/l10n.dart';
+ import 'performance/performance_state.dart';
+@@ -14,6 +16,7 @@ import 'state/appearance_state.dart';
  import 'state/locale_state.dart';
  import 'state/star_prompt.dart' show starPromptGateProvider, starPromptProvider;
  import 'state/tile_style_state.dart';
@@ -78510,7 +78525,7 @@ index 1b1e7de..b2de292 100644
  import 'ui/chat/dsh_ui/dsh_ui_model.dart' show DshUiAppAccent;
  import 'ui/common/keyboard_motion.dart';
  import 'ui/common/side_insets.dart';
-@@ -76,6 +77,8 @@ class _DshAppState extends ConsumerState<DshApp> with WidgetsBindingObserver {
+@@ -76,6 +79,8 @@ class _DshAppState extends ConsumerState<DshApp> with WidgetsBindingObserver {
      if (ref.read(starPromptGateProvider)) ref.read(starPromptProvider);
      // 伙伴小屋: her invitation ledger is read now, so it is known before the room opens.
      ref.read(companionInitiativeProvider);
@@ -78519,6 +78534,24 @@ index 1b1e7de..b2de292 100644
      // 刷新率: some systems cap third-party apps at 60 Hz and then show their per-app
      // switch as an in-app setting; the app answers frames to run at the fastest rate
      // while it is actually drawing (see RefreshRateService).
+@@ -178,6 +183,7 @@ class _DshAppState extends ConsumerState<DshApp> with WidgetsBindingObserver {
+     final reducedChanged = _reducedBefore != null && _reducedBefore != reduced;
+     _reducedBefore = reduced;
+     return MaterialApp(
++      navigatorKey: appNavigatorKey,
+       title: AppInfo.name,
+       debugShowCheckedModeBanner: false,
+       theme: _light,
+diff --git a/app/lib/app_navigator.dart b/app/lib/app_navigator.dart
+new file mode 100644
+index 0000000..8e1a253
+--- /dev/null
++++ b/app/lib/app_navigator.dart
+@@ -0,0 +1,4 @@
++import 'package:flutter/widgets.dart';
++
++/// 全局导航键：通话悬浮球等"不挂在某个页面下"的入口用它在任何界面 push/pop。
++final GlobalKey<NavigatorState> appNavigatorKey = GlobalKey<NavigatorState>();
 diff --git a/app/lib/l10n/app_en.arb b/app/lib/l10n/app_en.arb
 index e1de712..813abc6 100644
 --- a/app/lib/l10n/app_en.arb
@@ -87665,8 +87698,119 @@ index 0000000..56040d3
 +    }
 +  }
 +}
+diff --git a/app/lib/speech/call/active_call.dart b/app/lib/speech/call/active_call.dart
+new file mode 100644
+index 0000000..e60fca9
+--- /dev/null
++++ b/app/lib/speech/call/active_call.dart
+@@ -0,0 +1,105 @@
++import 'package:flutter/foundation.dart';
++
++import '../../app_navigator.dart';
++import 'voice_call.dart';
++
++/// 全局唯一的活跃通话（微信式最小化）。
++///
++/// 通话页只是这通电话的"视图"：
++/// - [attach] 通话页新建控制器后注册（带"点球弹回"的入口 [reopen]）
++/// - [attachView]/[detachView] 通话页被 push/pop 时维护 [viewOpen]
++/// - [_watchEnd] 控制器 ended 时统一收尾（页面死不死都收得到）
++/// - [toggleView] 点悬浮球：通话页开着就 pop（回到推它上来的那层），
++///   收着就 push（回到同一个通话）。带 600ms 冷却防连点把底层页面弹掉。
++///
++/// 重复进入（AI 键/唤醒词/快捷方式）由 openChatCall 检查 [live]：
++/// 有活通话就 toggle 而不是新开（用户选 A：复用当前通话）。
++class ActiveCall extends ChangeNotifier {
++  static ActiveCall? _instance;
++
++  /// 进程内唯一的那个实例；通话页与各入口共用。
++  static ActiveCall get instance => _instance ??= ActiveCall();
++
++  static bool get hasLiveCall => _instance?.live ?? false;
++
++  VoiceCallController? _call;
++  CallConversation? conversation;
++  DateTime? since;
++  bool viewOpen = false;
++  DateTime? _lastToggle;
++
++  bool get live => _call != null && _call!.phase != CallPhase.ended;
++
++  VoiceCallController? get call => live ? _call : null;
++
++  /// 通话时长起点（悬浮窗计时用）。
++  DateTime? get startedAt => since;
++  set startedAt(DateTime value) => since = value;
++
++  /// 点悬浮球时把通话页弹回来；openChatCall 首次开页时注册。
++  void Function()? reopen;
++
++  /// 通话结束时的跨界面收尾（清「正在通话」标记、灭球、关 keepAlive、唤醒词拿回麦克风）。
++  /// openChatCall 首次开页时注册（它有 container，能读 provider）。
++  void Function()? onEnded;
++
++  /// 新建通话后注册（通话页创建控制器时调用）。[reopen] 由 openChatCall 先挂好。
++  void attach(VoiceCallController controller, {required DateTime start, CallConversation? conv}) {
++    _call = controller;
++    since = start;
++    conversation = conv;
++    // 新建时通话页正在被 push：视图是开着的。
++    viewOpen = true;
++    // 自己盯结束：收起态下挂断时页面已死，没人能再收尾。
++    controller.addListener(_watchEnd);
++    notifyListeners();
++  }
++
++  void _watchEnd() {
++    final c = _call;
++    if (c == null || c.phase != CallPhase.ended) return;
++    c.removeListener(_watchEnd);
++    // 页面还活着（viewOpen）就由页面 dispose 控制器；页面已死就这里销毁。
++    if (!viewOpen) c.dispose();
++    final onEnded = this.onEnded;
++    _call = null;
++    conversation = null;
++    since = null;
++    viewOpen = false;
++    reopen = null;
++    this.onEnded = null;
++    notifyListeners();
++    onEnded?.call();
++  }
++
++  /// 通话页被 push（视图回来）。
++  void attachView() {
++    viewOpen = true;
++    notifyListeners();
++  }
++
++  /// 通话页被 pop（收起），通话继续。
++  void detachView() {
++    viewOpen = false;
++    notifyListeners();
++  }
++
++  /// 点悬浮球：开着就收起，收着就弹回。
++  ///
++  /// viewOpen 的权威归通话页（initState 置 true、dispose 置 false）；这里只发起 pop/push。
++  /// 冷却 600ms > 通话页 pop 动画（520ms）：动画走完、页面 dispose 置位之前连点不会把
++  /// 底层页面也 pop 掉。
++  void toggleView() {
++    final now = DateTime.now();
++    if (_lastToggle != null && now.difference(_lastToggle!) < const Duration(milliseconds: 600)) return;
++    _lastToggle = now;
++    if (!live) return;
++    if (viewOpen) {
++      appNavigatorKey.currentState?.pop();
++    } else {
++      final open = reopen;
++      if (open == null) return;
++      open();
++    }
++  }
++}
 diff --git a/app/lib/speech/call/voice_call.dart b/app/lib/speech/call/voice_call.dart
-index d97ef1a..e4547de 100644
+index d97ef1a..9bb3b7f 100644
 --- a/app/lib/speech/call/voice_call.dart
 +++ b/app/lib/speech/call/voice_call.dart
 @@ -20,6 +20,7 @@ import 'dart:async';
@@ -87677,7 +87821,39 @@ index d97ef1a..e4547de 100644
  import '../speech_audio.dart';
  import '../speech_out.dart';
  import '../voice_cloud.dart';
-@@ -432,11 +433,28 @@ class VoiceCallController extends ChangeNotifier {
+@@ -96,6 +97,9 @@ class VoiceCallController extends ChangeNotifier {
+     required this.recognizer,
+     required this.voice,
+     required this.choices,
++    /// 用户这句是就地执行的命令（返回 true 时消费掉，不发给模型）：
++    /// 通话里说「切到主屏/切到虚拟屏」这类本地指令走这条（用户 12:30 要求）。
++    this.onCommand,
+     this.permission,
+     this.cutNote,
+     this.thinkingCue,
+@@ -119,6 +123,9 @@ class VoiceCallController extends ChangeNotifier {
+   final SpeechAudio audio;
+   final CallConversation conversation;
+ 
++  /// 见构造函数注释。
++  final bool Function(String text)? onCommand;
++
+   /// The recognizer for this call; null when none can be had (the call ends).
+   final Future<VoiceCloud?> Function() recognizer;
+ 
+@@ -400,6 +407,11 @@ class VoiceCallController extends ChangeNotifier {
+       return;
+     }
+     _heard = text.trim();
++    // 本地命令（切主屏/切虚拟屏）：就地执行，不进模型。
++    if (onCommand?.call(_heard) == true) {
++      if (_phase != CallPhase.ended) _set(CallPhase.listening);
++      return;
++    }
+     _turns.add(CallTurn(_heard));
+     _reply = '';
+     _said = '';
+@@ -432,11 +444,28 @@ class VoiceCallController extends ChangeNotifier {
      }
    }
  
@@ -87707,7 +87883,22 @@ index d97ef1a..e4547de 100644
        final out = _out ??= _newVoice();
        out.add(text.substring(_spoken));
        _spoken = text.length;
-@@ -505,6 +523,7 @@ class VoiceCallController extends ChangeNotifier {
+@@ -496,6 +525,14 @@ class VoiceCallController extends ChangeNotifier {
+     unawaited(thinkingCue?.call());
+   }
+ 
++  /// 唤醒那一刻直接开口（用户 12:24：别等模型，唤醒的同时就说「我在」）。
++  Future<void> sayLine(String text) async {
++    if (_phase == CallPhase.ended) return;
++    final out = _out ??= _newVoice();
++    out.add(text);
++    out.finish();
++  }
++
+   SpeechOut _newVoice() {
+     final out = voice();
+     final turn = _turn;
+@@ -505,6 +542,7 @@ class VoiceCallController extends ChangeNotifier {
          case SpeechOutStarted():
            _voiced = true;
            _cueTimer?.cancel();
@@ -87753,16 +87944,15 @@ index c089d19..a15b64d 100644
  
 diff --git a/app/lib/state/virtual_screen_state.dart b/app/lib/state/virtual_screen_state.dart
 new file mode 100644
-index 0000000..94b2bbd
+index 0000000..b30fd85
 --- /dev/null
 +++ b/app/lib/state/virtual_screen_state.dart
-@@ -0,0 +1,244 @@
+@@ -0,0 +1,246 @@
 +import 'dart:async';
 +
 +import 'package:flutter_riverpod/flutter_riverpod.dart';
 +import 'package:shared_preferences/shared_preferences.dart';
 +
-+import '../phone/phone_channel.dart';
 +import '../phone/virtual_screen_window.dart';
 +import 'phone_state.dart';
 +
@@ -87944,7 +88134,10 @@ index 0000000..94b2bbd
 +      _suppressTask = null;
 +    }
 +    final taskId = firstBackgroundTaskId(status);
-+    if (!ref.read(virtualScreenSettingsProvider).window || taskId == null) {
++    // 窗口跟随「AI 默认操作虚拟屏」开关，不再看已删除的 window 设置
++    // （window 开关删掉后没人再把它写 true，sync 永远 close → 虚拟屏不显示，12:23 反馈）。
++    final on = ref.read(virtualScreenSettingsProvider).target == VirtualScreenTarget.virtual;
++    if (!on || taskId == null) {
 +      if (state.open) unawaited(close());
 +      return;
 +    }
@@ -88015,36 +88208,20 @@ index 0702d0a..d5e8951 100644
          // 不知道属于哪一轮时,一条用户消息就是一轮的分界。
          close(cut: turn == null ? null : item.seq, artifactsBefore: item.seq);
 diff --git a/app/lib/ui/chat/chat_screen.dart b/app/lib/ui/chat/chat_screen.dart
-index 46d2fd3..46eb6a5 100644
+index 46d2fd3..25b3e21 100644
 --- a/app/lib/ui/chat/chat_screen.dart
 +++ b/app/lib/ui/chat/chat_screen.dart
-@@ -8,6 +8,8 @@ import 'dart:async';
- import 'dart:math' as math;
- 
- import 'package:dsh_client/dsh_client.dart';
-+import '../speech/speech_ui.dart' show readAloudReply;
-+import 'dsh_ui/dsh_ui_model.dart' show dshUiPlainText;
- import 'package:flutter/foundation.dart' show defaultTargetPlatform;
- import 'package:flutter/material.dart';
- import 'package:flutter/services.dart';
-@@ -28,6 +30,8 @@ import '../../state/streaming_pcm_state.dart';
+@@ -28,6 +28,9 @@ import '../../state/streaming_pcm_state.dart';
  import '../../voice/live_words.dart';
  import '../../voice/live_words_model.dart';
  import '../../voice/streaming_pcm.dart';
 +import '../../voice/wake_settings.dart';
++import '../../speech/call/active_call.dart';
 +import '../../voice/wake_word.dart';
  import '../../state/agents_state.dart' show subagentParentProvider;
  import '../../state/attachments.dart';
  import '../../state/balance_state.dart';
-@@ -74,6 +78,7 @@ import '../pets/pet_perch.dart';
- import '../pets/pet_stage.dart';
- import '../plugins/native/composer_strip.dart' show ComposerStripSlot;
- import '../plugins/native/native_composer_bar.dart';
-+import '../phone/phone_task_card.dart';
- import '../plugins/native/native_taps.dart' show NativeComposerHost, NativeComposerScope, runNativeAction;
- import '../plugins/seats/plugin_overlay_layer.dart';
- import '../safe_mode/engine_failure_card.dart';
-@@ -178,6 +183,14 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
+@@ -178,6 +181,14 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
  
    @override
    void didChangeAppLifecycleState(AppLifecycleState state) {
@@ -88059,7 +88236,7 @@ index 46d2fd3..46eb6a5 100644
      if (state == AppLifecycleState.resumed) _scheduleInteraction();
    }
  
-@@ -366,6 +379,32 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
+@@ -366,6 +377,32 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
      WidgetsBinding.instance.addObserver(this);
      _scheduleInteraction();
      ref.listenManual(currentSessionProvider, (_, _) => _scheduleInteraction());
@@ -88092,7 +88269,7 @@ index 46d2fd3..46eb6a5 100644
      _voice = VoiceInputController(
        input: _input,
        bridge: ref.read(voiceBridgeProvider),
-@@ -1474,33 +1513,75 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
+@@ -1474,33 +1511,82 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
      showUsageSheet(context, sessionId: sessionId, model: model);
    }
  
@@ -88111,6 +88288,13 @@ index 46d2fd3..46eb6a5 100644
 -  Future<void> _startCall(bool Function() ownsDraft) async {
 +  Future<void> _startCall(bool Function() ownsDraft, {String? wakePhrase}) async {
 +    diagWake('startCall: enter (phrase=${wakePhrase ?? "-"})');
++    // 重复进入守卫（用户选 A）：已有活通话就把它的页面弹回来，不开第二个，
++    // 也不建新会话、不重念招呼。放在最前面，避免先切会话再发现无事可做。
++    final active = ActiveCall.instance;
++    if (active.live) {
++      if (!active.viewOpen) active.toggleView();
++      return;
++    }
 +    // 语音唤醒 gives the microphone up before the call takes it (voice/wake_word.dart).
 +    final wake = ref.read(wakeWordProvider.notifier);
 +    await wake.suspend();
@@ -88173,7 +88357,7 @@ index 46d2fd3..46eb6a5 100644
      );
    }
  
-@@ -2176,6 +2257,8 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
+@@ -2176,6 +2262,8 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
                                        strip: false,
                                      ),
                                    ),
@@ -88574,7 +88758,7 @@ index 173f148..475ff4b 100644
 +  _ => '任务迁移没成功，应用还在原处。',
 +};
 diff --git a/app/lib/ui/phone/dnd_mode_page.dart b/app/lib/ui/phone/dnd_mode_page.dart
-index 3a23e52..f93bf25 100644
+index 3a23e52..ca784c9 100644
 --- a/app/lib/ui/phone/dnd_mode_page.dart
 +++ b/app/lib/ui/phone/dnd_mode_page.dart
 @@ -16,8 +16,8 @@ import '../common/row_marks.dart';
@@ -88595,7 +88779,7 @@ index 3a23e52..f93bf25 100644
    String? _error;
    late final AppLifecycleListener _lifecycle;
  
-@@ -181,41 +180,12 @@ class _PhoneDndPageState extends ConsumerState<PhoneDndPage> {
+@@ -181,51 +180,14 @@ class _PhoneDndPageState extends ConsumerState<PhoneDndPage> {
      await _run(() => _phone.adbConnect(port: port), done: l10n.phoneDndConnected);
    }
  
@@ -88604,14 +88788,11 @@ index 3a23e52..f93bf25 100644
 -      status.task.backgroundSlot != null ||
 -      status.tasks.any((task) => task.backgroundSlot != null);
 -
-+  /// 活跃任务即候选：旧的「后台槽位」机制已删，不再按槽位挑任务。
-   Iterable<PhoneTaskStatus> _previewTasks(PhoneStatus status) {
+-  Iterable<PhoneTaskStatus> _previewTasks(PhoneStatus status) {
 -    final modern = _hasSlotMetadata(status);
 -    return (modern ? status.tasks : [status.task]).where(
 -      (task) => task.active && task.id != null && task.id! > 0 && (!modern || task.backgroundSlot == true),
-+    final all = (status.tasks.isNotEmpty ? status.tasks : [status.task]).where(
-+      (task) => task.active && task.id != null && task.id! > 0,
-     );
+-    );
 -  }
 -
 -  Future<void> _showPreview(int taskId) async {
@@ -88637,24 +88818,22 @@ index 3a23e52..f93bf25 100644
 -    } finally {
 -      _previewOpen = false;
 -    }
-+    return all;
-   }
- 
+-  }
+-
    @override
-@@ -223,9 +193,11 @@ class _PhoneDndPageState extends ConsumerState<PhoneDndPage> {
+   Widget build(BuildContext context) {
      final l10n = context.l10n;
      final status = ref.watch(phoneProvider.select((s) => s.status));
      final bg = status.background;
 -    final hasSlotMetadata = _hasSlotMetadata(status);
-     final previewTasks = _previewTasks(status);
+-    final previewTasks = _previewTasks(status);
      final using = bg.effectiveMode;
-+    final windowOn = ref.watch(virtualScreenSettingsProvider.select((s) => s.window));
 +    final target = ref.watch(virtualScreenSettingsProvider.select((s) => s.target));
 +    final manualOn = ref.watch(virtualScreenSettingsProvider.select((s) => s.manual));
      final waiting = using == PhonePrivilegedMode.root && bg.root.starting;
      final open = _open ?? (bg.effectiveReady ? PhonePrivilegedMode.off : using);
      final choices = <Widget>[
-@@ -276,36 +248,74 @@ class _PhoneDndPageState extends ConsumerState<PhoneDndPage> {
+@@ -276,36 +238,74 @@ class _PhoneDndPageState extends ConsumerState<PhoneDndPage> {
                  subtitle: bg.effectiveReady ? l10n.phoneReady : (waiting ? bg.effectiveReason : null),
                  trailing: TextButton(onPressed: _ready ? _close : null, child: Text(l10n.commonClose)),
                ),
@@ -88752,7 +88931,7 @@ index 3a23e52..f93bf25 100644
          if (_error case final error? when error != bg.effectiveReason) PhoneNote(tone: NoteTone.warn, text: error),
          if (bg.keep.enabled && _keepStatus(bg.keep).$1 != null)
            PhoneNote(
-@@ -327,43 +337,6 @@ class _PhoneDndPageState extends ConsumerState<PhoneDndPage> {
+@@ -327,43 +327,6 @@ class _PhoneDndPageState extends ConsumerState<PhoneDndPage> {
            children: [
              if (using != PhonePrivilegedMode.off && bg.privileged != null)
                ListPageCard(margin: _groupMargin, children: [_keepRow(using, bg.keep)]),
@@ -88796,7 +88975,7 @@ index 3a23e52..f93bf25 100644
              if (bg.viewport case final viewport? when bg.androidOk)
                ListPageCard(
                  margin: _groupMargin,
-@@ -377,9 +350,12 @@ class _PhoneDndPageState extends ConsumerState<PhoneDndPage> {
+@@ -377,9 +340,12 @@ class _PhoneDndPageState extends ConsumerState<PhoneDndPage> {
                        child: ListPageRow(
                          key: ValueKey('phone-viewport-${preset.name}'),
                          leading: Icon(viewport == preset ? AppIcons.radioOn : AppIcons.radioOff),
@@ -89250,10 +89429,10 @@ index 0000000..26e0742
 +final phoneTaskClockProvider = NotifierProvider<PhoneTaskClock, DateTime>(PhoneTaskClock.new);
 diff --git a/app/lib/ui/phone/virtual_screen_host.dart b/app/lib/ui/phone/virtual_screen_host.dart
 new file mode 100644
-index 0000000..f04df4d
+index 0000000..9b9cebd
 --- /dev/null
 +++ b/app/lib/ui/phone/virtual_screen_host.dart
-@@ -0,0 +1,257 @@
+@@ -0,0 +1,261 @@
 +import 'dart:async';
 +
 +import 'package:flutter/material.dart';
@@ -89281,6 +89460,9 @@ index 0000000..f04df4d
 +  ConsumerState<VirtualScreenHost> createState() => _VirtualScreenHostState();
 +}
 +
++/// 任何地方（通话页等）都能触发和按钮一致的转场；宿主挂载时注册。
++Future<void> Function({required bool toMain})? globalHandOver;
++
 +class _VirtualScreenHostState extends ConsumerState<VirtualScreenHost> {
 +  static const MethodChannel _channel = MethodChannel('dsh/virtual-screen');
 +  bool _opening = false;
@@ -89295,6 +89477,7 @@ index 0000000..f04df4d
 +  @override
 +  void initState() {
 +    super.initState();
++    globalHandOver = ({required bool toMain}) => _transfer(toMain: toMain);
 +    _foreground = WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed;
 +    _lifecycle = AppLifecycleListener(onStateChange: (state) {
 +      _foreground = state == AppLifecycleState.resumed;
@@ -89304,6 +89487,7 @@ index 0000000..f04df4d
 +
 +  @override
 +  void dispose() {
++    globalHandOver = null;
 +    _lifecycle?.dispose();
 +    super.dispose();
 +  }
@@ -89480,7 +89664,6 @@ index 0000000..f04df4d
 +  /// 主屏的「转」：App 不在前台时出现——有虚拟屏任务在跑（窗口在），或虚拟屏通道可用（随时
 +  /// 能把主屏当前应用转进去）；桌面 / 本 App 在前面时球自己会藏起来（第十四节 1 反向切换）。
 +  void _syncBall() {
-+    final status = ref.read(phoneProvider).status;
 +    final open = ref.read(virtualWindowProvider).open;
 +    // 只在「主屏操作 + 刚转过主屏（或虚拟屏窗口开着）」时显示。
 +    // 之前用 task.active / channelReady 当条件：只要有个任务在跑，打开任何应用球都弹出来，
@@ -89513,16 +89696,15 @@ index 0000000..f04df4d
 +}
 diff --git a/app/lib/ui/phone/virtual_screen_page.dart b/app/lib/ui/phone/virtual_screen_page.dart
 new file mode 100644
-index 0000000..353ac08
+index 0000000..15060b4
 --- /dev/null
 +++ b/app/lib/ui/phone/virtual_screen_page.dart
-@@ -0,0 +1,115 @@
+@@ -0,0 +1,114 @@
 +import 'dart:async';
 +
 +import 'package:flutter/material.dart';
 +import 'package:flutter_riverpod/flutter_riverpod.dart';
 +
-+import '../../phone/phone_channel.dart';
 +import '../../state/phone_state.dart';
 +import '../../state/virtual_screen_state.dart';
 +import 'background_preview.dart' show PhoneHandOverDone, phoneHandOverMessage;
@@ -90045,39 +90227,94 @@ index 38418e6..185aa3f 100644
        ],
      );
    }
+diff --git a/app/lib/ui/shell/call_overlay_host.dart b/app/lib/ui/shell/call_overlay_host.dart
+new file mode 100644
+index 0000000..f312159
+--- /dev/null
++++ b/app/lib/ui/shell/call_overlay_host.dart
+@@ -0,0 +1,45 @@
++import 'package:flutter/services.dart';
++import 'package:flutter/widgets.dart';
++
++import '../../speech/call/active_call.dart';
++
++/// 通话悬浮球的全局入口：挂在 HomeShell，任何时候（通话页开或收）都能处理球点按。
++///
++/// - 球点按（action=open）：通话页开着就收起、收着就弹回（ActiveCall.toggleView）
++/// - 球挂断（action=hangUp）：从球上结束通话
++class CallOverlayHost extends StatefulWidget {
++  const CallOverlayHost({super.key});
++
++  @override
++  State<CallOverlayHost> createState() => _CallOverlayHostState();
++}
++
++class _CallOverlayHostState extends State<CallOverlayHost> {
++  @override
++  void initState() {
++    super.initState();
++    const MethodChannel('dsh/call-overlay').setMethodCallHandler(_onCall);
++  }
++
++  @override
++  void dispose() {
++    const MethodChannel('dsh/call-overlay').setMethodCallHandler(null);
++    super.dispose();
++  }
++
++  Future<void> _onCall(MethodCall call) async {
++    if (call.method != 'action') return;
++    final active = ActiveCall.instance;
++    if (!active.live) return;
++    if (call.arguments == 'hangUp') {
++      active.call?.hangUp();
++      return;
++    }
++    if (call.arguments == 'open') {
++      active.toggleView();
++    }
++  }
++
++  @override
++  Widget build(BuildContext context) => const SizedBox.shrink();
++}
 diff --git a/app/lib/ui/shell/home_shell.dart b/app/lib/ui/shell/home_shell.dart
-index 9a236c7..0809e69 100644
+index 9a236c7..005e9e7 100644
 --- a/app/lib/ui/shell/home_shell.dart
 +++ b/app/lib/ui/shell/home_shell.dart
-@@ -34,6 +34,7 @@ import '../plugins/plugins_screen.dart';
+@@ -34,6 +34,8 @@ import '../plugins/plugins_screen.dart';
  import '../pets/pet_settings_page.dart';
  import '../phone/phone_stop_watcher.dart';
  import '../phone/system_actions_host.dart';
++import 'call_overlay_host.dart';
 +import '../phone/virtual_screen_host.dart';
  import '../remote/host_switcher.dart' show showHostSheet;
  import '../remote/remote_screen.dart';
  import '../safe_mode/safe_mode_notice_listener.dart';
-@@ -370,6 +371,9 @@ class _HomeShellState extends ConsumerState<HomeShell> with TickerProviderStateM
+@@ -370,6 +372,11 @@ class _HomeShellState extends ConsumerState<HomeShell> with TickerProviderStateM
                        const TavernIntakeHost(),
                        // Share sheet, launcher shortcuts, the tile: into the chat (draws nothing).
                        SystemEntryHost(onReveal: _revealChat),
 +                      // 悬浮屏: the window's own switch is remembered here, and a tap on it opens
 +                      // the operable virtual screen page (draws nothing).
 +                      const VirtualScreenHost(),
++                      // 通话悬浮球：全局接管球点按（收起/弹回），不随通话页生死。
++                      const CallOverlayHost(),
                        // Forum links (sign-in return, topics): registers them with the router.
                        const ForumLinkHost(),
                        // DS Bot: keeps its feed and notifications alive with the shell.
 diff --git a/app/lib/ui/shell/system_entry_host.dart b/app/lib/ui/shell/system_entry_host.dart
-index 172e773..a1f9c8d 100644
+index 172e773..b5a1d15 100644
 --- a/app/lib/ui/shell/system_entry_host.dart
 +++ b/app/lib/ui/shell/system_entry_host.dart
-@@ -37,9 +37,14 @@ import '../../state/compose_inbox.dart';
+@@ -37,9 +37,15 @@ import '../../state/compose_inbox.dart';
  import '../../state/draft_store.dart';
  import '../../state/hosts_state.dart';
  import '../../state/sessions_state.dart';
 +import '../../state/chat_state.dart';
 +import '../../voice/wake_settings.dart';
-+import '../../voice/wake_word.dart' show callOnOpenProvider, diagWake, wakeGreetingInstruction;
++import '../../speech/call/active_call.dart';
++import '../../voice/wake_word.dart' show diagWake, wakeGreetingInstruction;
  import '../common/discard_guard.dart';
  import '../tavern/tavern_deepseek_import.dart';
  import '../tavern/tavern_intake.dart';
@@ -90086,7 +90323,7 @@ index 172e773..a1f9c8d 100644
  
  /// Draws nothing. Put it once in the home shell's stack, next to [LinkHost].
  class SystemEntryHost extends ConsumerStatefulWidget {
-@@ -140,6 +145,37 @@ class _SystemEntryHostState extends ConsumerState<SystemEntryHost> {
+@@ -140,6 +146,43 @@ class _SystemEntryHostState extends ConsumerState<SystemEntryHost> {
  
    Future<void> _onEntry(LauncherEntry entry) async {
      switch (entry) {
@@ -90097,6 +90334,12 @@ index 172e773..a1f9c8d 100644
 +        diagWake('shortcut-call: entry reached Dart');
 +        await _untilResumed();
 +        if (!mounted) return;
++        // 重复进入守卫（用户选 A）：已有活通话就弹回，不建新会话、不重念招呼。
++        final activeCall = ActiveCall.instance;
++        if (activeCall.live) {
++          if (!activeCall.viewOpen) activeCall.toggleView();
++          return;
++        }
 +        final freshCall = ref.read(wakeSettingsProvider).freshChat;
 +        String? id = ref.read(currentSessionProvider);
 +        if (freshCall || id == null) {
@@ -90125,21 +90368,16 @@ index 172e773..a1f9c8d 100644
          // The microphone opens only for an app on screen; the shortcut's
          // intent can arrive a beat before Flutter hears it is resumed.
 diff --git a/app/lib/ui/speech/voice_call_page.dart b/app/lib/ui/speech/voice_call_page.dart
-index 2f99689..0044928 100644
+index 2f99689..d224b3a 100644
 --- a/app/lib/ui/speech/voice_call_page.dart
 +++ b/app/lib/ui/speech/voice_call_page.dart
-@@ -12,11 +12,14 @@ import 'dart:io';
- import 'dart:math' as math;
- import 'dart:ui' as ui;
- 
-+import 'package:dsh_client/dsh_client.dart';
- import 'package:flutter/material.dart';
- import 'package:flutter/services.dart';
+@@ -17,6 +17,9 @@ import 'package:flutter/services.dart';
  import 'package:flutter_riverpod/flutter_riverpod.dart';
  
  import '../../companion/companion_voice.dart';
-+import '../chat/dsh_ui/dsh_ui_model.dart' show dshUiPlainText;
-+import '../../state/chat_state.dart';
++import '../../app_navigator.dart';
++import '../../speech/call/active_call.dart';
++import '../phone/virtual_screen_host.dart' show globalHandOver;
  import '../../companion/companion_voice_source.dart';
  import '../../l10n/l10n.dart';
  import '../../performance/performance_state.dart';
@@ -90151,7 +90389,7 @@ index 2f99689..0044928 100644
  import 'call/call_backdrop.dart';
  import 'call/call_parts.dart';
  import 'call/call_transcript.dart';
-@@ -59,6 +63,7 @@ Future<void> openChatCall(
+@@ -59,16 +63,49 @@ Future<void> openChatCall(
    BuildContext context, {
    required String title,
    required Future<String?> Function() session,
@@ -90159,17 +90397,56 @@ index 2f99689..0044928 100644
  }) async {
    final container = ProviderScope.containerOf(context, listen: false);
    container.read(readAloudProvider.notifier).stop();
-@@ -68,7 +73,8 @@ Future<void> openChatCall(
+-  await Navigator.of(context).push(
++  // 重复进入守卫（用户选 A）：已经有活通话，就把它的页面弹回来，不开第二个。
++  final active = ActiveCall.instance;
++  if (active.live) {
++    // 页面已开：什么都不做；收着：弹回来。
++    if (!active.viewOpen) active.toggleView();
++    return;
++  }
++  final conversation = ChatCallConversation(container, session);
++  // 点悬浮球"弹回"的入口：复用同一个 conversation，回到同一通电话。
++  active.reopen = () => _pushCallRoute(container, conversation, title);
++  // 通话结束的跨界面收尾：无论页面开还是收（收起态挂断时页面已死）。
++  active.onEnded = () {
++    container.read(callChatProvider.notifier).set(null);
++    unawaited(const MethodChannel('dsh/call-overlay').invokeMethod<void>('hide'));
++    unawaited(const MethodChannel('dsh/call-overlay').invokeMethod<void>('keepAlive', {'active': false}));
++    container.read(wakeWordProvider.notifier).resume();
++  };
++  await _pushCallRoute(container, conversation, title, firstWords: firstWords);
++  // 「正在通话的会话」标记改在通话结束时清（见 _changed）：
++  // 收起只是页面离开，通话还活着，标记必须保留。
++}
++
++/// 全局导航键推通话页（首次打开与"点球弹回"共用）。
++Future<void> _pushCallRoute(
++  ProviderContainer container,
++  CallConversation conversation,
++  String title, {
++  String? firstWords,
++}) async {
++  final context = appNavigatorKey.currentContext;
++  if (context == null) return;
++  await appNavigatorKey.currentState!.push(
+     PageRouteBuilder<void>(
+       opaque: true,
        fullscreenDialog: true,
        transitionDuration: AppMotion.of(context, const Duration(milliseconds: 520)),
        reverseTransitionDuration: AppMotion.of(context, AppMotion.collapse),
 -      pageBuilder: (_, _, _) => VoiceCallPage(title: title, conversation: ChatCallConversation(container, session)),
-+      pageBuilder: (_, _, _) =>
-+          VoiceCallPage(title: title, conversation: ChatCallConversation(container, session), firstWords: firstWords),
++      pageBuilder: (_, _, _) => VoiceCallPage(
++          title: title, conversation: conversation, firstWords: firstWords),
        transitionsBuilder: (_, animation, _, child) {
          final curve = CurvedAnimation(parent: animation, curve: AppMotion.enter, reverseCurve: AppMotion.exit);
          // Opening: the page rises out of the dark.
-@@ -84,11 +90,15 @@ Future<void> openChatCall(
+@@ -79,16 +116,18 @@ Future<void> openChatCall(
+       },
+     ),
+   );
+-  // Off the call: its conversation is no longer the one being heard (ChatCallConversation set it).
+-  container.read(callChatProvider.notifier).set(null);
  }
  
  class VoiceCallPage extends ConsumerStatefulWidget {
@@ -90186,7 +90463,7 @@ index 2f99689..0044928 100644
    @override
    ConsumerState<VoiceCallPage> createState() => _VoiceCallPageState();
  }
-@@ -118,10 +128,22 @@ class _VoiceCallPageState extends ConsumerState<VoiceCallPage> with WidgetsBindi
+@@ -118,10 +157,23 @@ class _VoiceCallPageState extends ConsumerState<VoiceCallPage> with WidgetsBindi
    /// and the page comes in without its staggered rise.
    bool _still = false;
  
@@ -90194,6 +90471,8 @@ index 2f99689..0044928 100644
 +  /// the page goes: the handoff belongs to the call, not to whichever screen opened it.
 +  WakeWordController? _wake;
 +  bool _overlay = false;
++  /// 点悬浮球弹回来接上的通话：不再 start、不再念招呼。
++  bool _reuse = false;
 +
    @override
    void initState() {
@@ -90202,56 +90481,66 @@ index 2f99689..0044928 100644
 +    _wake = ref.read(wakeWordProvider.notifier);
 +    unawaited(_wake!.suspend());
 +    const MethodChannel('dsh/app').setMethodCallHandler(_onAppCall);
-+    const MethodChannel('dsh/call-overlay').setMethodCallHandler(_onOverlayCall);
 +    // 通话 keeps the microphone in the background: the assistant operating the phone during a
 +    // call (导航, 外卖) must not take it away.
 +    unawaited(const MethodChannel('dsh/call-overlay').invokeMethod<void>('keepAlive', {'active': true}));
      final callSettings = ref.read(callSettingsProvider.notifier);
      final voices = ref.read(speechVoiceSettingsProvider.notifier);
      // The chosen voice, as soon as the settings have been read (the first reply comes later).
-@@ -209,11 +231,63 @@ class _VoiceCallPageState extends ConsumerState<VoiceCallPage> with WidgetsBindi
+@@ -130,9 +182,21 @@ class _VoiceCallPageState extends ConsumerState<VoiceCallPage> with WidgetsBindi
+     final audio = ref.read(speechAudioProvider);
+     final deepseek = ref.read(deepSeekSpeechProvider);
+     final bridge = ref.read(voiceBridgeProvider);
+-    _call = VoiceCallController(
++    final active = ActiveCall.instance;
++    if (active.live && identical(widget.conversation, active.conversation)) {
++      // 点悬浮球弹回来：接上同一通电话，不再建控制器。
++      _call = active.call!
++        ..addListener(_changed);
++      _since = active.startedAt;
++      _reuse = true;
++      active.attachView();
++      unawaited(const MethodChannel('dsh/call-overlay').invokeMethod<void>('hide'));
++    } else {
++      _call = VoiceCallController(
+       audio: audio,
+       conversation: widget.conversation,
++      // 通话里的本地指令：切主屏/切虚拟屏就地执行，不等挂断、不进模型（用户 12:30）。
++      onCommand: _handleLocalCommand,
+       recognizer: () async {
+         // The phone's own voice warms up while the call starts, not when changed mid-reply.
+         await _settleVoice(warm: _call.phase == CallPhase.starting);
+@@ -165,6 +229,9 @@ class _VoiceCallPageState extends ConsumerState<VoiceCallPage> with WidgetsBindi
+         if ((await callSettings.ready()).cue && _call.cueStill) await playThinkingCue(audio);
+       },
+     )..addListener(_changed);
++      // 注册成全局唯一通话；点悬浮球弹回的入口 openChatCall 已经挂好。
++      ActiveCall.instance.attach(_call, start: DateTime.now(), conv: widget.conversation);
++    }
+     // Changed in 通话设置 (or anywhere) during the call: from the next sentence on.
+     ref.listenManual(speechVoiceSettingsProvider, (_, _) => unawaited(_settleVoice()));
+     ref.listenManual(voiceSettingsProvider, (_, _) => unawaited(_call.refreshRecognizer()));
+@@ -209,11 +276,37 @@ class _VoiceCallPageState extends ConsumerState<VoiceCallPage> with WidgetsBindi
  
    int _settling = 0;
  
-+  /// 唤醒招呼的回应用「朗读」通道念一次（只念这一条，不重复）。
-+  Future<void> _speakReplyAloud() async {
-+    // 布防时刻：从这一刻开始算"新回复"，必须在等会话 id 之前记录，
-+    // 不然 id 解析慢时回复会落在基准之前、被误当成旧消息。
-+    final startAt = DateTime.now();
-+    final conv = widget.conversation;
-+    // 会话是懒解析的：刚发出招呼那一刻 sessionId 可能还是 null，直接返回就等于"没有声音"。
-+    // 等它出现（最多 8 秒），拿到再开始盯回复。
-+    var sid = conv is ChatCallConversation ? conv.sessionId : null;
-+    for (var i = 0; sid == null && i < 16; i++) {
-+      await Future<void>.delayed(const Duration(milliseconds: 500));
-+      if (!mounted) return;
-+      sid = conv is ChatCallConversation ? conv.sessionId : null;
-+    }
-+    if (sid == null) {
-+      diagWake('call: read-aloud skipped, no session id');
-+      return;
-+    }
-+    // 闭包里用到 sid，Dart 不会给它做智能提升：转到不可空局部变量。
-+    final session = sid;
-+    diagWake('call: read-aloud watching session $session');
-+    var spoken = false;
-+    late final ProviderSubscription<ChatState> sub;
-+    void check() {
-+      if (spoken || !mounted) return;
-+      final replies = ref.read(chatProvider(session)).items.whereType<AssistantChatItem>().toList();
-+      if (replies.isEmpty) return;
-+      final reply = replies.last;
-+      if (reply.time == null || !reply.time!.isAfter(startAt)) return;
-+      if (reply.streaming || reply.text.trim().isEmpty) return;
-+      spoken = true;
-+      sub.close();
-+      readAloudReply(context, reply.id, dshUiPlainText(reply.text));
-+    }
-+    sub = ref.listenManual(chatProvider(session), (_, _) => check());
-+    // 流式结束不一定会再触发监听：隔几秒补看几次，直到念出来或超时。
-+    for (final ms in const [1500, 3000, 5000, 8000]) {
-+      Timer(Duration(milliseconds: ms), check);
-+    }
++  /// 语音本地指令：只认「切到/切回/回到 主屏｜虚拟屏」，其余一律返回 false 交给模型。
++  bool _handleLocalCommand(String text) {
++    final t = text;
++    // 否定句不执行："别切到主屏""不要切到虚拟屏"是讨论，不是命令。
++    if (RegExp('别切|不要切|不用切|别切到|不要切到|不用切到').hasMatch(t)) return false;
++    final toMain = RegExp('切[到回]?[主屏]|回[到]?主屏|主屏[幕上]?操作').hasMatch(t);
++    final toVirtual = RegExp('切[到回]?虚拟屏|虚拟屏[上]?操作').hasMatch(t);
++    if (toMain == toVirtual) return false; // 没匹配或两者都命中：交给模型
++    unawaited(_runSwitch(toMain: toMain));
++    unawaited(_call.sayLine(toMain ? '好，切到主屏操作' : '好，切到虚拟屏操作'));
++    return true;
++  }
++
++  Future<void> _runSwitch({required bool toMain}) async {
++    final fn = globalHandOver;
++    if (fn == null) return;
++    await fn(toMain: toMain);
 +  }
 +
 +
@@ -90259,21 +90548,26 @@ index 2f99689..0044928 100644
      final pcm = ref.read(streamingPcmCaptureProvider);
      final asr = ref.read(streamingAsrProvider);
      final found = liveWordsModel(ref);
-     await _call.start();
+-    await _call.start();
++    if (!_reuse) await _call.start();
 +    final first = widget.firstWords?.trim() ?? '';
-+    if (first.isNotEmpty) {
-+      // Through the conversation, not the chat provider: only what the conversation sends is
-+      // spoken when the reply arrives. expectReply 补上「第一句的回复也要念」的缺口（十五节）。
-+      // 先布防再发消息：会话 id 是懒解析的，等 id 出现时回复可能已经落地，
-+      // 条数基准会落在回复之后，导致"没有新回复"而永远不念（验收单 #23 无声根因）。
-+      unawaited(_speakReplyAloud());
-+      // 不调用 expectReply()：这条回应交给下面的朗读通道念，两套一起念会重复。
-+      unawaited(widget.conversation.send(first));
++    if (first.isNotEmpty && !_reuse) {
++      // 唤醒的同时直接开口说「我在」，不等模型回复（用户 12:24：回答太慢）。
++      // 不把招呼发给模型（省 token，也没有可念的回复），说完直接进入听。
++      unawaited(_call.sayLine('我在'));
 +    }
      try {
        final chosen = await found;
        if (chosen == null || !mounted || _call.phase == CallPhase.ended) return;
-@@ -313,11 +387,51 @@ class _VoiceCallPageState extends ConsumerState<VoiceCallPage> with WidgetsBindi
+@@ -265,6 +358,7 @@ class _VoiceCallPageState extends ConsumerState<VoiceCallPage> with WidgetsBindi
+     switch (phase) {
+       case CallPhase.listening when _since == null:
+         _since = DateTime.now();
++        ActiveCall.instance.since = _since;
+         HapticFeedback.lightImpact();
+         // Anonymous usage statistics: a call got through (the microphone is on).
+         ref.read(usageStatsProvider.notifier).count(UsageCount.call);
+@@ -313,22 +407,103 @@ class _VoiceCallPageState extends ConsumerState<VoiceCallPage> with WidgetsBindi
  
    @override
    void didChangeAppLifecycleState(AppLifecycleState state) {
@@ -90316,17 +90610,33 @@ index 2f99689..0044928 100644
  
    @override
    void dispose() {
-+    if (_overlay) unawaited(const MethodChannel('dsh/call-overlay').invokeMethod<void>('hide'));
-+    unawaited(const MethodChannel('dsh/call-overlay').invokeMethod<void>('keepAlive', {'active': false}));
 +    const MethodChannel('dsh/app').setMethodCallHandler(null);
-+    const MethodChannel('dsh/call-overlay').setMethodCallHandler(null);
-+    final wake = _wake;
-+    _wake = null;
-+    if (wake != null) unawaited(wake.resume());
      WidgetsBinding.instance.removeObserver(this);
-     unawaited(_live?.stop());
+-    unawaited(_live?.stop());
++    final ended = _call.phase == CallPhase.ended;
++    if (ended) {
++      // 挂断/自然结束：跨界面的收尾由 ActiveCall.onEnded 统一做（灭球、keepAlive、
++      // 唤醒词拿回麦克风）；这里只做页面本地的。
++      _wake = null;
++      unawaited(_live?.stop());
++      _call
++        ..removeListener(_changed)
++        ..dispose();
++    } else {
++      // 收起（点球/返回键离开通话页）：通话继续，悬浮球常显（App 前台也显示）。
++      // 字幕流随页面停（弹回时 _start 会重建），否则页面死了它还在跑，弹回后再叠一个。
++      unawaited(_live?.stop());
++      _live = null;
++      _call.removeListener(_changed);
++      ActiveCall.instance.detachView();
++      unawaited(_floatInBackground());
++    }
      _leave?.cancel();
-@@ -329,6 +443,49 @@ class _VoiceCallPageState extends ConsumerState<VoiceCallPage> with WidgetsBindi
+     _enter.dispose();
+-    _call
+-      ..removeListener(_changed)
+-      ..dispose();
+     _scene.dispose();
      super.dispose();
    }
  
@@ -90361,22 +90671,12 @@ index 2f99689..0044928 100644
 +    unawaited(const MethodChannel('dsh/app').invokeMethod<bool>('requestOverlayPermission'));
 +  }
 +
-+  /// The card's own key: end the call from the window.
-+  Future<void> _onOverlayCall(MethodCall call) async {
-+    if (call.method != 'action') return;
-+    final action = call.arguments;
-+    if (action == 'hangUp') {
-+      if (mounted) _hangUp();
-+    } else if (action == 'open') {
-+      // The card brought the page back: it has done its job.
-+      _overlay = false;
-+    }
-+  }
++
 +
    void _hangUp() {
      HapticFeedback.heavyImpact();
      _call.hangUp();
-@@ -645,6 +802,17 @@ class _VoiceCallPageState extends ConsumerState<VoiceCallPage> with WidgetsBindi
+@@ -645,6 +820,17 @@ class _VoiceCallPageState extends ConsumerState<VoiceCallPage> with WidgetsBindi
                          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                          crossAxisAlignment: CrossAxisAlignment.end,
                          children: [
@@ -90394,7 +90694,7 @@ index 2f99689..0044928 100644
                            _rise(
                              0.4,
                              CallKey(
-@@ -658,7 +826,7 @@ class _VoiceCallPageState extends ConsumerState<VoiceCallPage> with WidgetsBindi
+@@ -658,7 +844,7 @@ class _VoiceCallPageState extends ConsumerState<VoiceCallPage> with WidgetsBindi
                              distance: 28,
                            ),
                            _rise(
