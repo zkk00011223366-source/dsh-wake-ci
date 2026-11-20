@@ -1,7 +1,7 @@
 == resources ==
-/dev/root        72G   54G   18G  76% /
+/dev/root        72G   55G   18G  76% /
                total        used        free      shared  buff/cache   available
-Mem:            7931        5692         210          31        2373        2238
+Mem:            7931        5648         533          32        2095        2283
 == tail ==
 
 ==> 依赖: flutter pub get
@@ -109,3 +109,37 @@ Note: Some input files use or override a deprecated API.
 Note: Recompile with -Xlint:deprecation for details.
 Note: Some input files use unchecked or unsafe operations.
 Note: Recompile with -Xlint:unchecked for details.
+e: file:///home/runner/work/dsh-wake-ci/dsh-wake-ci/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenOverlay.kt:838:29 Unresolved reference 'Paint'.
+e: file:///home/runner/work/dsh-wake-ci/dsh-wake-ci/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenOverlay.kt:838:35 Unresolved reference 'Paint'.
+e: file:///home/runner/work/dsh-wake-ci/dsh-wake-ci/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenOverlay.kt:838:58 Cannot infer type for type parameter 'T'. Specify it explicitly.
+e: file:///home/runner/work/dsh-wake-ci/dsh-wake-ci/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenOverlay.kt:838:64 Cannot infer type for type parameter 'T'. Specify it explicitly.
+e: file:///home/runner/work/dsh-wake-ci/dsh-wake-ci/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenOverlay.kt:839:13 Unresolved reference 'style'.
+e: file:///home/runner/work/dsh-wake-ci/dsh-wake-ci/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenOverlay.kt:839:21 Unresolved reference 'Paint'.
+e: file:///home/runner/work/dsh-wake-ci/dsh-wake-ci/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenOverlay.kt:840:13 Unresolved reference 'strokeWidth'.
+e: file:///home/runner/work/dsh-wake-ci/dsh-wake-ci/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenOverlay.kt:841:13 Unresolved reference 'color'.
+e: file:///home/runner/work/dsh-wake-ci/dsh-wake-ci/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenOverlay.kt:842:13 Unresolved reference 'strokeJoin'.
+e: file:///home/runner/work/dsh-wake-ci/dsh-wake-ci/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenOverlay.kt:842:26 Unresolved reference 'Paint'.
+e: file:///home/runner/work/dsh-wake-ci/dsh-wake-ci/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenOverlay.kt:843:13 Unresolved reference 'strokeCap'.
+e: file:///home/runner/work/dsh-wake-ci/dsh-wake-ci/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenOverlay.kt:843:25 Unresolved reference 'Paint'.
+e: file:///home/runner/work/dsh-wake-ci/dsh-wake-ci/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenOverlay.kt:846:9 'onDraw' overrides nothing. Potential signatures for overriding:
+fun onDraw(p0: Canvas): Unit
+e: file:///home/runner/work/dsh-wake-ci/dsh-wake-ci/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenOverlay.kt:846:37 Unresolved reference 'Canvas'.
+e: file:///home/runner/work/dsh-wake-ci/dsh-wake-ci/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenOverlay.kt:853:20 Unresolved reference 'drawRoundRect'.
+e: file:///home/runner/work/dsh-wake-ci/dsh-wake-ci/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenOverlay.kt:854:20 Unresolved reference 'drawRoundRect'.
+
+FAILURE: Build failed with an exception.
+
+* What went wrong:
+Execution failed for task ':app:compileArm64ReleaseKotlin'.
+> A failure occurred while executing org.jetbrains.kotlin.compilerRunner.btapi.BuildToolsApiCompilationWork
+   > Compilation error. See log for more details
+
+* Try:
+> Run with --stacktrace option to get the stack trace.
+> Run with --info or --debug option to get more log output.
+> Run with --scan to get full insights from a Build Scan (powered by Develocity).
+> Get more help at https://help.gradle.org.
+
+BUILD FAILED in 14m 54s
+Running Gradle task 'assembleArm64Release'...                     895.5s
+Gradle task assembleArm64Release failed with exit code 1
