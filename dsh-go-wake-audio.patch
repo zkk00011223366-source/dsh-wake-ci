@@ -1,15 +1,14 @@
-From 24bbdc821b57dbbc00847c47922e1bf9eb3a09d8 Mon Sep 17 00:00:00 2001
+From 8d0c9729a09cae59dc683d089df731af366558cf Mon Sep 17 00:00:00 2001
 From: wake-ci <ci@local>
-Date: Fri, 20 Nov 2026 21:01:59 +0800
-Subject: [PATCH] private build: mute switch + no-prompt + screen-off +
- pre-grant
+Date: Fri, 20 Nov 2026 21:57:42 +0800
+Subject: [PATCH] private build: black screen fix
 
 ---
  .gitattributes                                |    3 +
  .github/workflows/wake-apk.yml                |  192 ++
  app/android/app/build.gradle.kts              |    6 +-
  app/android/app/src/main/AndroidManifest.xml  |   30 +-
- .../ccch1mneyyy/dsh_app/MainActivity.kt       |   80 +
+ .../ccch1mneyyy/dsh_app/MainActivity.kt       |   85 +-
  .../dsh_app/call/CallForegroundService.kt     |   94 +
  .../ccch1mneyyy/dsh_app/call/CallOverlay.kt   |  317 +++
  .../dsh_app/call/CallOverlayPlugin.kt         |   66 +
@@ -63,8 +62,8 @@ Subject: [PATCH] private build: mute switch + no-prompt + screen-off +
  app/assets/kws/tokens.txt                     |  227 ++
  app/lib/app.dart                              |    6 +
  app/lib/app_navigator.dart                    |    4 +
- app/lib/l10n/app_en.arb                       |   24 +
- app/lib/l10n/app_zh.arb                       |   48 +-
+ app/lib/l10n/app_en.arb                       |   27 +
+ app/lib/l10n/app_zh.arb                       |   51 +-
  app/lib/l10n/gen/app_localizations.dart       |  186 +-
  app/lib/l10n/gen/app_localizations_en.dart    |   84 +
  app/lib/l10n/gen/app_localizations_zh.dart    |  105 +-
@@ -109,7 +108,7 @@ Subject: [PATCH] private build: mute switch + no-prompt + screen-off +
  docs/wake-word.md                             |  107 +
  dsh-go-wake.patch                             | 2065 +++++++++++++++++
  tooling/build-wake-apk.sh                     |   68 +
- 104 files changed, 11433 insertions(+), 516 deletions(-)
+ 104 files changed, 11443 insertions(+), 517 deletions(-)
  create mode 100644 .github/workflows/wake-apk.yml
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallForegroundService.kt
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallOverlay.kt
@@ -443,7 +442,7 @@ index 1473ba2..317471f 100644
          <provider
              android:name="androidx.core.content.FileProvider"
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/MainActivity.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/MainActivity.kt
-index f7f9490..671e35b 100644
+index f7f9490..bd5d6a0 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/MainActivity.kt
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/MainActivity.kt
 @@ -8,6 +8,7 @@ import android.content.res.Configuration
@@ -522,7 +521,7 @@ index f7f9490..671e35b 100644
          inForeground = true
          // Coming back counts as activity: the first frames may not be scheduled yet.
          framesActive = true
-@@ -188,6 +229,29 @@ class MainActivity : FlutterActivity() {
+@@ -188,10 +229,36 @@ class MainActivity : FlutterActivity() {
                      applyRefreshRate()
                      result.success(null)
                  }
@@ -550,9 +549,17 @@ index f7f9490..671e35b 100644
 +                    result.success(null)
 +                }
                  "bringToFront" -> {
++                    // REORDER_TO_FRONT：只把已有 Activity 提到前台，**不重建**。
++                    // 之前用 CLEAR_TOP 会重建 Activity，而 Flutter 引擎是复用的，
++                    // 重建后画面变黑（日志 21:52:10 main: onCreate 之后整屏黑）。
                      startActivity(
                          Intent(this, MainActivity::class.java)
-@@ -213,7 +277,23 @@ class MainActivity : FlutterActivity() {
+-                            .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP),
++                            .addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT or Intent.FLAG_ACTIVITY_SINGLE_TOP),
+                     )
+                     result.success(null)
+                 }
+@@ -213,7 +280,23 @@ class MainActivity : FlutterActivity() {
      /** Flutter produced a frame recently (see RefreshRateService): auto mode follows it. */
      private var framesActive = true
  
@@ -79053,7 +79060,7 @@ index 0000000..8e1a253
 +/// 全局导航键：通话悬浮球等"不挂在某个页面下"的入口用它在任何界面 push/pop。
 +final GlobalKey<NavigatorState> appNavigatorKey = GlobalKey<NavigatorState>();
 diff --git a/app/lib/l10n/app_en.arb b/app/lib/l10n/app_en.arb
-index e1de712..ba4fd7e 100644
+index e1de712..7f6016a 100644
 --- a/app/lib/l10n/app_en.arb
 +++ b/app/lib/l10n/app_en.arb
 @@ -563,6 +563,7 @@
@@ -79064,7 +79071,17 @@ index e1de712..ba4fd7e 100644
    "botsFolderGone": "This folder is gone",
    "botsFolderReadFailed": "Couldn’t read this folder",
    "botsFolderOpenFailed": "Couldn’t open this folder",
-@@ -3955,6 +3956,10 @@
+@@ -3648,6 +3649,9 @@
+   "phoneControlReadScreenHint": "See what DSH reads, without sending it to the model",
+   "phoneControlEnableAccessibilityFirst": "Turn on the accessibility service first",
+   "phoneControlLoading": "Loading",
++  "phoneControlConfirmFree": "No prompts",
++  "phoneControlConfirmFreeTitle": "Stop asking before each action",
++  "phoneControlConfirmFreeHint": "On: DSH operates the phone without per-turn prompts. Off: ask every time.",
+   "phoneControlRules": "Rules",
+   "phoneControlRecentActions": "Recent actions",
+   "phoneControlRecentActionsHint": "Every step is logged, without screen contents",
+@@ -3955,6 +3959,10 @@
    "phoneIosSetupHint": "Keep LocalDevVPN connected. On first use, allow control for 30 minutes.",
    "phoneIosReturnHint": "Return to this conversation when the task finishes, then stop the phone-control service.",
    "phoneIosNeedsSetup": "The runner is not ready. Check the local engine and developer setup.",
@@ -79075,7 +79092,7 @@ index e1de712..ba4fd7e 100644
    "phoneTaskResultReady": "Task complete · View result",
    "phoneTaskEndedResult": "Task ended · View result",
    "phoneBackgroundGuideTitle": "Confirmations and return",
-@@ -5735,6 +5740,7 @@
+@@ -5735,6 +5743,7 @@
    "speechCallEarpiece": "Earpiece",
    "speechBackdropTitle": "Call background",
    "speechCallSettings": "Call settings",
@@ -79083,7 +79100,7 @@ index e1de712..ba4fd7e 100644
    "speechCallPause": "Pause before she answers",
    "speechCallPauseQuick": "Short",
    "speechCallPauseNormal": "Medium",
-@@ -5756,7 +5762,25 @@
+@@ -5756,7 +5765,25 @@
    "speechCallVisualRing": "Ring",
    "speechCallVisualMono": "Line",
    "speechCallVisualGlass": "Orb",
@@ -79110,7 +79127,7 @@ index e1de712..ba4fd7e 100644
    "starPromptBody": "DSH Go is free and open source. If it’s made your phone a little nicer to use, please give it a Star — it means so much to this little whale!",
    "starPromptPlea": "Pretty please~ It really matters!!",
 diff --git a/app/lib/l10n/app_zh.arb b/app/lib/l10n/app_zh.arb
-index ec1a316..bfe2f32 100644
+index ec1a316..bc26861 100644
 --- a/app/lib/l10n/app_zh.arb
 +++ b/app/lib/l10n/app_zh.arb
 @@ -1062,6 +1062,7 @@
@@ -79139,7 +79156,17 @@ index ec1a316..bfe2f32 100644
    "phoneDndShizukuInstalled": "已安装 Shizuku",
    "phoneDndShizukuRunning": "Shizuku 正在运行",
    "phoneDndShizukuGranted": "已授权给 DSH Go",
-@@ -7205,9 +7206,9 @@
+@@ -6764,6 +6765,9 @@
+   "phoneControlReadScreenHint": "看看 DSH 读到了什么，不发给模型",
+   "phoneControlEnableAccessibilityFirst": "先打开无障碍服务",
+   "phoneControlLoading": "读取中",
++  "phoneControlConfirmFree": "免确认操作",
++  "phoneControlConfirmFreeTitle": "不再逐条确认（始终允许）",
++  "phoneControlConfirmFreeHint": "打开后 DSH 操作手机不再弹「本轮授权」；关掉则每次都问",
+   "phoneControlRules": "规则",
+   "phoneControlRecentActions": "最近操作",
+   "phoneControlRecentActionsHint": "每一步都会记下，不含屏幕内容",
+@@ -7205,9 +7209,9 @@
    "phoneDndManualConnect": "按端口连接",
    "phoneDndConnectPortLabel": "连接端口",
    "phoneDndConnectPortHint": "在系统「无线调试」首页查看「IP 地址和端口」，填写冒号后的端口。请不要使用配对码页面的端口。",
@@ -79151,7 +79178,7 @@ index ec1a316..bfe2f32 100644
    "phonePreviewTask": "预览任务 {taskId}",
    "@phonePreviewTask": {
      "placeholders": {
-@@ -7219,9 +7220,9 @@
+@@ -7219,9 +7223,9 @@
    "phonePreviewInUse": "正在预览另一任务",
    "phonePreviewOff": "任务已结束或预览已关闭",
    "phonePreviewUnavailable": "画面暂不可预览，或受到保护",
@@ -79163,7 +79190,7 @@ index ec1a316..bfe2f32 100644
    "phoneViewportPortrait": "竖屏",
    "phoneViewportLandscape": "横屏",
    "phoneResumeTask": "重新允许手机操控",
-@@ -7235,8 +7236,8 @@
+@@ -7235,8 +7239,8 @@
        }
      }
    },
@@ -79174,7 +79201,7 @@ index ec1a316..bfe2f32 100644
    "phoneFinishingTask": "手机任务 {task} 正在收尾",
    "@phoneFinishingTask": {
      "placeholders": {
-@@ -7246,7 +7247,7 @@
+@@ -7246,7 +7250,7 @@
      }
    },
    "phoneCleanupRetry": "重试清理",
@@ -79183,7 +79210,7 @@ index ec1a316..bfe2f32 100644
    "phoneSelfCheckTitle": "检查手机操控",
    "phoneSelfCheckTechnicalDetails": "技术详情",
    "phoneLocalOcrSummary": "本机识别；结果可发给模型，SDK 会收集使用统计。",
-@@ -7277,7 +7278,7 @@
+@@ -7277,7 +7281,7 @@
        }
      }
    },
@@ -79192,7 +79219,7 @@ index ec1a316..bfe2f32 100644
    "@phoneSelfCheckStage": {
      "placeholders": {
        "stage": {
-@@ -7293,7 +7294,7 @@
+@@ -7293,7 +7297,7 @@
        }
      }
    },
@@ -79201,7 +79228,7 @@ index ec1a316..bfe2f32 100644
    "phoneSelfCheckProfileChoice": "选择下次自检（不会改变下方报告）",
    "phoneSelfCheckProfile": "{profile, select, probe_b{输入接收探针（B）} target_c1{固定目标自检（C1）} target_c2{固定输入与画面自检（C2）} other{未知模式}}",
    "@phoneSelfCheckProfile": {
-@@ -7351,7 +7352,7 @@
+@@ -7351,7 +7355,7 @@
      }
    },
    "phoneTaskMainResource": "主屏",
@@ -79210,7 +79237,7 @@ index ec1a316..bfe2f32 100644
    "phoneInterruptionTitle": "上次手机任务未确认结束",
    "phoneInterruptionLoading": "正在读取任务中断记录…",
    "phoneInterruptionStorageError": "无法保存或读取任务结束记录。请重试；这不表示后台资源已清理。",
-@@ -7431,6 +7432,10 @@
+@@ -7431,6 +7435,10 @@
    "phoneIosSetupHint": "保持 LocalDevVPN 已连接，首次使用时允许 30 分钟操控。",
    "phoneIosReturnHint": "任务完成后回到当前对话，并停止手机操控服务。",
    "phoneIosNeedsSetup": "运行器尚未就绪，请确认本机引擎和开发者环境已配置。",
@@ -79221,7 +79248,7 @@ index ec1a316..bfe2f32 100644
    "phoneTaskResultReady": "任务完成 · 查看结果",
    "phoneTaskEndedResult": "任务已结束 · 查看结果",
    "phoneBackgroundGuideTitle": "后台确认与返回",
-@@ -11200,6 +11205,7 @@
+@@ -11200,6 +11208,7 @@
    "speechCallEarpiece": "听筒",
    "speechBackdropTitle": "通话背景",
    "speechCallSettings": "通话设置",
@@ -79229,7 +79256,7 @@ index ec1a316..bfe2f32 100644
    "speechCallPause": "停顿多久算说完",
    "speechCallPauseQuick": "快",
    "speechCallPauseNormal": "适中",
-@@ -11221,7 +11227,25 @@
+@@ -11221,7 +11230,25 @@
    "speechCallVisualRing": "光环",
    "speechCallVisualMono": "细线",
    "speechCallVisualGlass": "光球",
