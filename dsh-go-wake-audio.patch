@@ -1,7 +1,7 @@
-From 2544fce6a9f5f2c2bc9e941f488b5842b8534d5f Mon Sep 17 00:00:00 2001
+From be6eb42179ec0065df1e07822cfa8c3b9e47c0d0 Mon Sep 17 00:00:00 2001
 From: wake-ci <ci@local>
-Date: Fri, 20 Nov 2026 23:21:19 +0800
-Subject: [PATCH] pb: call page keep
+Date: Sat, 21 Nov 2026 00:20:53 +0800
+Subject: [PATCH] pb: voice cache+glyph
 
 ---
  .gitattributes                                |    3 +
@@ -37,8 +37,8 @@ Subject: [PATCH] pb: call page keep
  .../phone/background/PrivilegedProtocol.kt    |   73 +-
  .../dsh_app/phone/skills/PhoneSkillDraft.kt   |    2 +-
  .../dsh_app/phone/vscreen/TaskMover.kt        |   43 +
- .../dsh_app/phone/vscreen/TransferBall.kt     |  404 ++++
- .../phone/vscreen/VirtualScreenOverlay.kt     | 1546 ++++++++++++
+ .../dsh_app/phone/vscreen/TransferBall.kt     |  405 ++++
+ .../phone/vscreen/VirtualScreenOverlay.kt     | 1571 +++++++++++++
  .../phone/vscreen/VirtualScreenPlugin.kt      |  104 +
  .../ccch1mneyyy/dsh_app/runtime/GuestSetup.kt |   47 +-
  .../dsh_app/shortcuts/EntryActivity.kt        |    3 +
@@ -80,12 +80,12 @@ Subject: [PATCH] pb: call page keep
  app/lib/speech/call/active_call.dart          |  110 +
  app/lib/speech/call/chat_call.dart            |    3 +
  app/lib/speech/call/voice_call.dart           |   57 +-
- app/lib/speech/wake_reply.dart                |  122 +
+ app/lib/speech/wake_reply.dart                |  123 +
  app/lib/state/app_info.dart                   |    5 +
  app/lib/state/update_state.dart               |    9 +
  app/lib/state/virtual_screen_state.dart       |  266 +++
  app/lib/ui/chat/chat_rows.dart                |    2 +
- app/lib/ui/chat/chat_screen.dart              |  106 +-
+ app/lib/ui/chat/chat_screen.dart              |  108 +-
  app/lib/ui/chat/media/media_format.dart       |   16 +-
  app/lib/ui/phone/android_shell_page.dart      |   33 +
  app/lib/ui/phone/background_preview.dart      |  264 +--
@@ -109,7 +109,7 @@ Subject: [PATCH] pb: call page keep
  docs/wake-word.md                             |  107 +
  dsh-go-wake.patch                             | 2065 +++++++++++++++++
  tooling/build-wake-apk.sh                     |   68 +
- 105 files changed, 11529 insertions(+), 523 deletions(-)
+ 105 files changed, 11557 insertions(+), 524 deletions(-)
  create mode 100644 .github/workflows/wake-apk.yml
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallForegroundService.kt
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallOverlay.kt
@@ -3328,10 +3328,10 @@ index 0000000..8ddabc9
 +}
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/TransferBall.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/TransferBall.kt
 new file mode 100644
-index 0000000..6807867
+index 0000000..1174ba0
 --- /dev/null
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/TransferBall.kt
-@@ -0,0 +1,404 @@
+@@ -0,0 +1,405 @@
 +package io.github.ccch1mneyyy.dsh_app.phone.vscreen
 +
 +import android.annotation.SuppressLint
@@ -3699,7 +3699,8 @@ index 0000000..6807867
 +
 +    private fun sliverBackground(px: Float) = GradientDrawable().apply {
 +        cornerRadius = 6 * px
-+        setColor(0x80000000.toInt())
++        // 吸边长条跟球同色（黄色），之前还是深灰（00:02）。
++        setColor(0xE6FFC53D.toInt())
 +    }
 +
 +    /** 第十八节: 半透明深色圆 + 细描边，没有彩色。 */
@@ -3738,10 +3739,10 @@ index 0000000..6807867
 +}
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenOverlay.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenOverlay.kt
 new file mode 100644
-index 0000000..34bbea7
+index 0000000..9c8440d
 --- /dev/null
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenOverlay.kt
-@@ -0,0 +1,1546 @@
+@@ -0,0 +1,1571 @@
 +package io.github.ccch1mneyyy.dsh_app.phone.vscreen
 +
 +import android.annotation.SuppressLint
@@ -4634,8 +4635,31 @@ index 0000000..34bbea7
 +        val lp = (box.layoutParams as? WindowManager.LayoutParams) ?: params ?: return
 +        val px = app.resources.displayMetrics.density
 +        fullscreen = !fullscreen
-+        WakeTrace.log("window: fullscreen=$fullscreen")
-+        applyShape(Shape.EXPAND, manager, lp, box, area(app, manager), px)
++        val a = area(app, manager)
++        if (fullscreen) {
++            // 全屏：直接铺满安全区，不再经过 windowSize 的分支判断
++            // （23:59 实测：窗口仍是展开尺寸，说明那条分支没被执行）。
++            val margin = (10 * px).roundToInt()
++            val w = a.screenW - a.left - a.right - margin * 2
++            val hgt = a.screenH - a.top - a.bottom - margin * 2
++            lp.width = w
++            lp.height = hgt
++            lp.x = EdgeSnap.minX(a, margin)
++            lp.y = EdgeSnap.minY(a, margin)
++            shape = Shape.EXPAND
++            try { manager.updateViewLayout(box, lp) } catch (_: Exception) {}
++            content?.layoutParams = (content?.layoutParams as? FrameLayout.LayoutParams ?: FrameLayout.LayoutParams(-1, -1)).also {
++                it.width = w
++                it.height = hgt
++            }
++            content?.requestLayout()
++            syncGripWindow(app, manager, lp.x, lp.y, w, hgt, false)
++            WakeTrace.log("window: fullscreen size=${w}x$hgt at=${lp.x},${lp.y}")
++            return
++        }
++        // 退出全屏：回到展开尺寸
++        WakeTrace.log("window: fullscreen=false")
++        applyShape(Shape.EXPAND, manager, lp, box, a, px)
 +    }
 +
 +    private fun stepZoom(direction: Int) {
@@ -4776,7 +4800,7 @@ index 0000000..34bbea7
 +    private class SoundGlyph(context: Context, private val px: Float, var muted: Boolean) : View(context) {
 +        private val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
 +            style = Paint.Style.STROKE
-+            strokeWidth = 2.2f * px
++            strokeWidth = 1.6f * px
 +            color = Color.WHITE
 +            strokeJoin = Paint.Join.ROUND
 +            strokeCap = Paint.Cap.ROUND
@@ -4785,8 +4809,10 @@ index 0000000..34bbea7
 +        override fun onDraw(canvas: Canvas) {
 +            val w = width.toFloat(); val h = height.toFloat()
 +            val cx = w / 2f; val cy = h / 2f
-+            val u = 11f * px
++            val u = 7.2f * px
 +            // 喇叭主体（三角 + 矩形）
++            // 整体略向左，给右边的 ✕/声波留位置，不越出圆底（00:03 反馈）。
++            val cx2 = cx - u * 0.55f
 +            val path = android.graphics.Path()
 +            path.moveTo(cx - u * 0.9f, cy - u * 0.35f)
 +            path.lineTo(cx - u * 0.35f, cy - u * 0.35f)
@@ -4797,12 +4823,12 @@ index 0000000..34bbea7
 +            path.close()
 +            canvas.drawPath(path, paint)
 +            if (muted) {
-+                val d = 4.6f * px
-+                canvas.drawLine(cx + u * 0.55f, cy - d, cx + u * 1.35f, cy + d, paint)
-+                canvas.drawLine(cx + u * 0.55f, cy + d, cx + u * 1.35f, cy - d, paint)
++                val d = 3.4f * px
++                canvas.drawLine(cx2 + u * 0.55f, cy - d, cx2 + u * 1.05f, cy + d, paint)
++                canvas.drawLine(cx2 + u * 0.55f, cy + d, cx2 + u * 1.05f, cy - d, paint)
 +            } else {
-+                canvas.drawArc(cx + u * 0.35f - 6f * px, cy - 6f * px, cx + u * 0.35f + 6f * px, cy + 6f * px, -55f, 110f, false, paint)
-+                canvas.drawArc(cx + u * 0.35f - 11f * px, cy - 11f * px, cx + u * 0.35f + 11f * px, cy + 11f * px, -50f, 100f, false, paint)
++                canvas.drawArc(cx2 + u * 0.35f - 4.6f * px, cy - 4.6f * px, cx2 + u * 0.35f + 4.6f * px, cy + 4.6f * px, -55f, 110f, false, paint)
++                canvas.drawArc(cx2 + u * 0.35f - 8.2f * px, cy - 8.2f * px, cx2 + u * 0.35f + 8.2f * px, cy + 8.2f * px, -50f, 100f, false, paint)
 +            }
 +        }
 +    }
@@ -80909,10 +80935,10 @@ index d97ef1a..fd2c6b6 100644
            _voiceLevel = value;
 diff --git a/app/lib/speech/wake_reply.dart b/app/lib/speech/wake_reply.dart
 new file mode 100644
-index 0000000..9552304
+index 0000000..b3e7af1
 --- /dev/null
 +++ b/app/lib/speech/wake_reply.dart
-@@ -0,0 +1,122 @@
+@@ -0,0 +1,123 @@
 +// 唤醒回应「我在」：预合成缓存 + 本地播放（用户 16:53）。
 +//
 +// 需求：喊完**立刻**有声音，而且这句话用户可以在设置里自定义。
@@ -80957,7 +80983,8 @@ index 0000000..9552304
 +    final base = await getApplicationSupportDirectory();
 +    final dir = Directory('${base.path}/wake_reply');
 +    if (!await dir.exists()) await dir.create(recursive: true);
-+    return File('${dir.path}/${_fnv(text)}.pcm');
++    // 缓存键必须带音色：否则换了音色还在播旧的（00:14 反馈"两个声音"）。
++    return File('${dir.path}/${_fnv('$text|$_voice')}.pcm');
 +  }
 +
 +  /// 缓存里有就直接播（近乎零延迟）；没有就现合成并顺手存下来。
@@ -81357,7 +81384,7 @@ index 0702d0a..d5e8951 100644
          // 不知道属于哪一轮时,一条用户消息就是一轮的分界。
          close(cut: turn == null ? null : item.seq, artifactsBefore: item.seq);
 diff --git a/app/lib/ui/chat/chat_screen.dart b/app/lib/ui/chat/chat_screen.dart
-index 46d2fd3..4eb6616 100644
+index 46d2fd3..5f8f824 100644
 --- a/app/lib/ui/chat/chat_screen.dart
 +++ b/app/lib/ui/chat/chat_screen.dart
 @@ -28,6 +28,9 @@ import '../../state/streaming_pcm_state.dart';
@@ -81463,19 +81490,20 @@ index 46d2fd3..4eb6616 100644
 +      return;
 +    }
      final host = ref.read(activeHostProvider);
+-    final sessionId = ref.read(currentSessionProvider);
 +    // 唤醒后开新对话 or 接着上次：one setting, used by the wake word and by the AI key alike.
 +    // Only a wake/shortcut call (a phrase was given) starts fresh; a tap on 通话 keeps the
 +    // conversation the person is looking at.
 +    final fresh = wakePhrase != null && ref.read(wakeSettingsProvider).freshChat;
++    String? freshId;
 +    if (fresh && mounted) {
-+      // 建新会话要联网（1–2 秒）：放到后台，先让页面出来；会话回调自己会等它。
-+      unawaited(() async {
-+        final made = await ref.read(sessionsProvider.notifier).create();
-+        if (!mounted) return;
-+        ref.read(currentSessionProvider.notifier).select(made);
-+      }());
++      // 勾了「唤醒后开新对话」：**必须等会话建好**再开通话，否则通话会绑到旧会话、
++      // 记录写进老对话（23:28 反馈）。没勾的仍走快速路径，不等网络。
++      freshId = await ref.read(sessionsProvider.notifier).create();
++      if (!mounted) return;
++      ref.read(currentSessionProvider.notifier).select(freshId);
 +    }
-     final sessionId = ref.read(currentSessionProvider);
++    final sessionId = freshId ?? ref.read(currentSessionProvider);
      final listed = sessionId == null ? null : ref.read(chatProvider(sessionId)).title;
      final title = listed != null && listed.trim().isNotEmpty ? chatTitleShown(listed.trim()) : appL10n.commonNewChat;
      // The call stays with the conversation it began in, whatever is opened meanwhile.
