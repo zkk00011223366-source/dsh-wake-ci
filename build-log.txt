@@ -1,7 +1,7 @@
 == resources ==
 /dev/root        72G   52G   21G  72% /
                total        used        free      shared  buff/cache   available
-Mem:            7931        5408         213          20        2642        2523
+Mem:            7931        5469         153          21        2643        2462
 == tail ==
 
 ==> 依赖: flutter pub get
@@ -102,3 +102,6 @@ Installing Android SDK Platform 34 in /home/runner/dev/android-sdk/platforms/and
 "Install Android SDK Platform 34 (revision 3)" complete.
 "Install Android SDK Platform 34 (revision 3)" finished.
 Flutter assets will be downloaded from https://storage.googleapis.com. Make sure you trust this source!
+lib/ui/speech/voice_call_page.dart:257:45: Error: The argument type 'String?' can't be assigned to the parameter type 'String'.
+      final replies = ref.read(chatProvider(sid)).items.whereType<AssistantChatItem>().toList();
+                                            ^
