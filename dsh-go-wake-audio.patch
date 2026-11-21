@@ -1,6 +1,6 @@
-From 54e2eda2a9edaa1b39c72592299649f7b16147ab Mon Sep 17 00:00:00 2001
+From 0492be425acf7f80e604afee193adbf32ff7b32e Mon Sep 17 00:00:00 2001
 From: w <c@l>
-Date: Sat, 21 Nov 2026 18:44:09 +0800
+Date: Sat, 21 Nov 2026 18:53:25 +0800
 Subject: [PATCH] pb: full
 
 ---
@@ -87,7 +87,7 @@ Subject: [PATCH] pb: full
  app/lib/speech/wake_reply.dart                |  175 ++
  app/lib/state/app_info.dart                   |    5 +
  app/lib/state/update_state.dart               |    9 +
- app/lib/state/virtual_screen_state.dart       |  368 +++
+ app/lib/state/virtual_screen_state.dart       |  374 +++
  app/lib/ui/chat/chat_rows.dart                |    2 +
  app/lib/ui/chat/chat_screen.dart              |  108 +-
  app/lib/ui/chat/media/media_format.dart       |   16 +-
@@ -114,7 +114,7 @@ Subject: [PATCH] pb: full
  docs/wake-word.md                             |  107 +
  dsh-go-wake.patch                             | 2065 +++++++++++++++++
  tooling/build-wake-apk.sh                     |   68 +
- 110 files changed, 12662 insertions(+), 529 deletions(-)
+ 110 files changed, 12668 insertions(+), 529 deletions(-)
  create mode 100644 .github/workflows/wake-apk.yml
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallForegroundService.kt
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallOverlay.kt
@@ -82079,10 +82079,10 @@ index c089d19..a15b64d 100644
  
 diff --git a/app/lib/state/virtual_screen_state.dart b/app/lib/state/virtual_screen_state.dart
 new file mode 100644
-index 0000000..fe6fb57
+index 0000000..cdb6751
 --- /dev/null
 +++ b/app/lib/state/virtual_screen_state.dart
-@@ -0,0 +1,368 @@
+@@ -0,0 +1,374 @@
 +import 'dart:async';
 +
 +import 'package:flutter/services.dart';
@@ -82369,6 +82369,12 @@ index 0000000..fe6fb57
 +    if (taskId == null) {
 +      // 任务结束：没有可见窗口就不该再挂球（18:4x 用户报"第二个任务结束后黄条不退"）。
 +      if (!state.open && _ballOn) {
++        _ballOn = false;
++        unawaited(ref.read(virtualWindowProvider.notifier).setBall(false));
++      }
++    } else if (onVirtual) {
++      // 默认/指令=虚拟屏：先给窗口，不出球（设置只是默认，此处正是默认的体现）。
++      if (_ballOn) {
 +        _ballOn = false;
 +        unawaited(ref.read(virtualWindowProvider.notifier).setBall(false));
 +      }
