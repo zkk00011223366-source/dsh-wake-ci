@@ -1,7 +1,7 @@
 == resources ==
-/dev/root       145G   53G   92G  37% /
+/dev/root       145G   54G   92G  37% /
                total        used        free      shared  buff/cache   available
-Mem:           15982        4596        1020          50       10760       11385
+Mem:           15982        5272         264          50       10840       10709
 == tail ==
 
 ==> 依赖: flutter pub get
