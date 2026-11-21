@@ -1,7 +1,7 @@
-From 04ce1bb28071e28827f49b4ab51b91abfcded766 Mon Sep 17 00:00:00 2001
+From d18b042363a7fd8482d0ead3eda7105db38ad7c7 Mon Sep 17 00:00:00 2001
 From: wake-ci <ci@local>
-Date: Sat, 21 Nov 2026 10:57:32 +0800
-Subject: [PATCH] pb: prompt3
+Date: Sat, 21 Nov 2026 11:09:56 +0800
+Subject: [PATCH] pb: three channels
 
 ---
  .gitattributes                                |    3 +
@@ -15,9 +15,9 @@ Subject: [PATCH] pb: prompt3
  .../dsh_app/notify/NotifyPlugin.kt            |    5 +-
  .../dsh_app/phone/PhoneAndroidShell.kt        |   10 +-
  .../dsh_app/phone/PhoneBackGuard.kt           |  146 ++
- .../dsh_app/phone/PhoneContracts.kt           |   27 +
- .../ccch1mneyyy/dsh_app/phone/PhoneControl.kt |   66 +-
- .../ccch1mneyyy/dsh_app/phone/PhoneCore.kt    |  232 +-
+ .../dsh_app/phone/PhoneContracts.kt           |   30 +
+ .../ccch1mneyyy/dsh_app/phone/PhoneControl.kt |   70 +-
+ .../ccch1mneyyy/dsh_app/phone/PhoneCore.kt    |  237 +-
  .../ccch1mneyyy/dsh_app/phone/PhonePlugin.kt  |  106 +
  .../dsh_app/phone/PhoneTaskSessions.kt        |   22 +-
  .../ccch1mneyyy/dsh_app/phone/PhoneTasks.kt   |   11 +
@@ -85,13 +85,13 @@ Subject: [PATCH] pb: prompt3
  app/lib/speech/wake_reply.dart                |  171 ++
  app/lib/state/app_info.dart                   |    5 +
  app/lib/state/update_state.dart               |    9 +
- app/lib/state/virtual_screen_state.dart       |  286 +++
+ app/lib/state/virtual_screen_state.dart       |  291 +++
  app/lib/ui/chat/chat_rows.dart                |    2 +
  app/lib/ui/chat/chat_screen.dart              |  108 +-
  app/lib/ui/chat/media/media_format.dart       |   16 +-
  app/lib/ui/phone/android_shell_page.dart      |   33 +
  app/lib/ui/phone/background_preview.dart      |  264 +--
- app/lib/ui/phone/dnd_mode_page.dart           |  182 +-
+ app/lib/ui/phone/dnd_mode_page.dart           |  186 +-
  app/lib/ui/phone/phone_control_screen.dart    |    1 +
  app/lib/ui/phone/phone_task_card.dart         |  430 ++++
  app/lib/ui/phone/virtual_screen_host.dart     |  349 +++
@@ -111,7 +111,7 @@ Subject: [PATCH] pb: prompt3
  docs/wake-word.md                             |  107 +
  dsh-go-wake.patch                             | 2065 +++++++++++++++++
  tooling/build-wake-apk.sh                     |   68 +
- 107 files changed, 12218 insertions(+), 524 deletions(-)
+ 107 files changed, 12240 insertions(+), 523 deletions(-)
  create mode 100644 .github/workflows/wake-apk.yml
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallForegroundService.kt
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallOverlay.kt
@@ -1287,11 +1287,16 @@ index 0000000..175e47b
 +    }
 +}
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneContracts.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneContracts.kt
-index 612f94d..6541fdd 100644
+index 612f94d..a81a57f 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneContracts.kt
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneContracts.kt
-@@ -353,6 +353,33 @@ interface ControlListener {
+@@ -351,8 +351,38 @@ interface ControlListener {
+  * connect and clear on disconnect; the bridge reads these on every call.
+  */
  object PhoneRegistry {
++    /** AI 指定的"后台屏"：在虚拟屏里干活但不弹窗口（11:0x 三通道）。 */
++    @Volatile var backgroundSilent: Boolean = false
++
      @Volatile var mainDriver: PhoneDriver? = null
  
 +    /**
@@ -1325,7 +1330,7 @@ index 612f94d..6541fdd 100644
      @Volatile var overlayGate: UserGate? = null
      @Volatile var notificationGate: UserGate? = null
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneControl.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneControl.kt
-index 2fc7cd5..f5da912 100644
+index 2fc7cd5..02e040a 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneControl.kt
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneControl.kt
 @@ -201,6 +201,8 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
@@ -1390,7 +1395,7 @@ index 2fc7cd5..f5da912 100644
      }
  
      override fun a11yState(): A11yState = when {
-@@ -999,15 +1011,59 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
+@@ -999,15 +1011,63 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
          else -> A11yState.DISABLED
      }
  
@@ -1411,10 +1416,14 @@ index 2fc7cd5..f5da912 100644
 +        // 之前那版要求 privileged.ready/status.ready 才认，而这两个标志在没有活动任务、
 +        // 或走 ADB 通道时是 false —— 于是开关打开、操作照样落在主屏，用户看不出原因。
 +        // 屏能建就在执行时按需建；建不出来由后面的错误提示说清楚，不静默降级。
-+        val value = runCatching {
++        // 默认操作屏三选一：main / background（后台屏，不弹窗）/ virtual（虚拟屏，弹窗）。
++        // AI 的明确指令（background 参数）优先级更高，在 backgroundTarget 里已先行判断。
++        val target = runCatching {
 +            app.getSharedPreferences("FlutterSharedPreferences", Context.MODE_PRIVATE)
-+                .getString("flutter.virtual_screen_target", "main") == "virtual"
-+        }.getOrDefault(true)
++                .getString("flutter.virtual_screen_target", "main") ?: "main"
++        }.getOrDefault("main")
++        PhoneRegistry.backgroundSilent = target == "background"
++        val value = target == "virtual" || target == "background"
 +        prefersBackgroundValue = value
 +        prefersBackgroundAt = now
 +        return value
@@ -1452,7 +1461,7 @@ index 2fc7cd5..f5da912 100644
      }
  
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneCore.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneCore.kt
-index 6c70185..684d307 100644
+index 6c70185..d97cd1e 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneCore.kt
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneCore.kt
 @@ -1,5 +1,7 @@
@@ -1768,7 +1777,7 @@ index 6c70185..684d307 100644
      }
  
      /** The handler is a dispatch fact. Only the following read describes the actual foreground UI. */
-@@ -816,8 +935,54 @@ class PhoneCore(
+@@ -816,8 +935,59 @@ class PhoneCore(
          return Either.Right(d)
      }
  
@@ -1814,16 +1823,21 @@ index 6c70185..684d307 100644
 +     * 兼容旧调用里的布尔（true=虚拟屏 / false=主屏）。
 +     * 用户明确说的必须生效；没说不许覆盖开关（用户 19:15：默认开关被模型填的值盖掉了）。
 +     */
-+    internal fun backgroundTarget(a: Args): Boolean = when (val v = a.str("background")) {
-+        "virtual", "true" -> true
-+        "main", "false" -> false
-+        else -> env.prefersBackground()
++    internal fun backgroundTarget(a: Args): Boolean {
++        val v = a.str("background")
++        // 三通道：主屏 / 虚拟屏（看得见）/ 后台屏（只在后台干活，不显示窗口）。
++        io.github.ccch1mneyyy.dsh_app.phone.PhoneRegistry.backgroundSilent = v == "silent"
++        return when (v) {
++            "virtual", "silent", "true" -> true
++            "main", "false" -> false
++            else -> env.prefersBackground()
++        }
 +    }
 +
      /** Admission uses the same argument coercion and routing as the actual tool body. */
      fun requiredScreens(name: String, args: Map<String, Any?>): Either<String, List<PhoneScreen>> {
          return requiredScreens(name, Args(args))
-@@ -825,10 +990,11 @@ class PhoneCore(
+@@ -825,10 +995,11 @@ class PhoneCore(
  
      private fun requiredScreens(name: String, a: Args): Either<String, List<PhoneScreen>> {
          return when (name) {
@@ -1838,7 +1852,7 @@ index 6c70185..684d307 100644
              // Arbitrary system commands take the main/global unknown-app lease, without reading a screen.
              PhoneToolCatalog.INTENT, PhoneToolCatalog.ANDROID_SHELL -> Either.Right(listOf(PhoneScreen.MAIN))
              PhoneToolCatalog.HANDOFF -> Either.Right(if (lastScreen == PhoneScreen.BACKGROUND)
-@@ -852,7 +1018,7 @@ class PhoneCore(
+@@ -852,7 +1023,7 @@ class PhoneCore(
          if (id == null) return Either.Left("缺少 $parameterName（屏幕号，如 s7）。先调用 screen 拿到屏幕号。")
          return PhoneScreen.ofScreenId(id)?.let { Either.Right(it) }
              // l10n:keep agent tool result
@@ -1847,7 +1861,7 @@ index 6c70185..684d307 100644
      }
  
      private fun locked(summary: String) =
-@@ -871,21 +1037,23 @@ class PhoneCore(
+@@ -871,21 +1042,23 @@ class PhoneCore(
  
      private fun screen(a: Args, owner: PhoneTasks.Owner): Out {
          if (!current(owner)) return stoppedOut("screen")
@@ -1877,7 +1891,7 @@ index 6c70185..684d307 100644
          return Out(
              // l10n:keep agent tool result
              if (refused) "没有读取这个屏幕的内容。" else "",
-@@ -1362,6 +1530,7 @@ class PhoneCore(
+@@ -1362,6 +1535,7 @@ class PhoneCore(
          summary = summary, decision = "stopped")
  
      companion object {
@@ -1885,7 +1899,7 @@ index 6c70185..684d307 100644
          internal const val REPLAY = "replay"
          internal const val FOCUS_TEXT = "focus_text"
  
-@@ -1370,6 +1539,9 @@ class PhoneCore(
+@@ -1370,6 +1544,9 @@ class PhoneCore(
          const val PAUSE_WAIT_MS = 600_000L
          const val HANDOFF_MS = 600_000L
  
@@ -2129,7 +2143,7 @@ index a09015e..9e6c9a9 100644
          grants.clear()
          visualScopes.clear(); visualGrants.clear(); visualLifecycle = lifecycle
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneToolCatalog.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneToolCatalog.kt
-index cbfb0de..3db46f3 100644
+index cbfb0de..9d6a56a 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneToolCatalog.kt
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneToolCatalog.kt
 @@ -24,6 +24,7 @@ object PhoneToolCatalog {
@@ -2164,7 +2178,7 @@ index cbfb0de..3db46f3 100644
 -                "background" to bool("在后台屏打开"),
 +                // 三态，默认 auto：模型只有"用户明确要求某块屏"时才填 virtual/main，
 +                // 平时不传 = 按设置开关（之前用布尔值，模型几乎总会填，把开关盖掉了）。
-+                "background" to enum(listOf("auto", "virtual", "main"),
++                "background" to enum(listOf("auto", "virtual", "silent", "main"),
 +                    "默认 auto：按设置开关。只有用户明确说「用虚拟屏/用主屏」时才填 virtual 或 main"),
              ),
              emptyList(),
@@ -2183,7 +2197,7 @@ index cbfb0de..3db46f3 100644
                  // l10n:keep agent tool catalog
 -                "background" to bool("读后台屏（不打扰模式）"),
 +                // 同上：默认 auto；用户明确要求读哪块屏时才填 virtual/main。
-+                "background" to enum(listOf("auto", "virtual", "main"),
++                "background" to enum(listOf("auto", "virtual", "silent", "main"),
 +                    "默认 auto：按设置开关。只有用户明确说「看虚拟屏/看主屏」时才填 virtual 或 main"),
              ),
              emptyList(),
@@ -81684,10 +81698,10 @@ index c089d19..a15b64d 100644
  
 diff --git a/app/lib/state/virtual_screen_state.dart b/app/lib/state/virtual_screen_state.dart
 new file mode 100644
-index 0000000..be85707
+index 0000000..a56b193
 --- /dev/null
 +++ b/app/lib/state/virtual_screen_state.dart
-@@ -0,0 +1,286 @@
+@@ -0,0 +1,291 @@
 +import 'dart:async';
 +
 +import 'package:flutter/services.dart';
@@ -81747,7 +81761,9 @@ index 0000000..be85707
 +}
 +
 +/// 助手动手的地方：虚拟屏（默认），还是人眼前的这块（特例）。
-+enum VirtualScreenTarget { virtual, main }
++/// 默认操作屏：主屏 / 后台屏（不弹窗）/ 虚拟屏（弹窗）。
++/// AI 的明确指令（background=main/virtual/silent）优先于此设置。
++enum VirtualScreenTarget { main, background, virtual }
 +
 +final virtualScreenSettingsProvider =
 +    NotifierProvider<VirtualScreenSettingsController, VirtualScreenSettings>(VirtualScreenSettingsController.new);
@@ -81902,7 +81918,10 @@ index 0000000..be85707
 +    final taskId = firstBackgroundTaskId(status);
 +    // 窗口跟随"实际在用哪块屏"（用户 15:47）：AI 明确在主屏操作时窗口不出现；
 +    // 只有真的在虚拟屏上干活（或刚转进来）才显示。设置开关只是默认值。
-+    final onVirtual = status.lastScreen == 'background';
++    // 默认操作=后台屏时，窗口不自动弹（AI 在后台默默干活）；AI 明确要虚拟屏时会切 target。
++    final silent = ref.read(virtualScreenSettingsProvider).target ==
++        VirtualScreenTarget.background;
++    final onVirtual = status.lastScreen == 'background' && !silent;
 +    // 宽限期内一直算"该显示"，到期自然失效（不能读一次就清掉，否则第二次 sync 又关了）。
 +    // 窗口为什么开/为什么关：迁移、"明确主屏却弹窗"这类问题只靠这行日志能定案。
 +    diagWake('vsync: lastScreen=${status.lastScreen} task=${firstBackgroundTaskId(status)} open=${state.open} hold=${_holdOpenUntil != null}');
@@ -82550,7 +82569,7 @@ index 173f148..475ff4b 100644
 +  _ => '任务迁移没成功，应用还在原处。',
 +};
 diff --git a/app/lib/ui/phone/dnd_mode_page.dart b/app/lib/ui/phone/dnd_mode_page.dart
-index 3a23e52..bbdbb93 100644
+index 3a23e52..8bea0b8 100644
 --- a/app/lib/ui/phone/dnd_mode_page.dart
 +++ b/app/lib/ui/phone/dnd_mode_page.dart
 @@ -16,8 +16,8 @@ import '../common/row_marks.dart';
@@ -82625,19 +82644,11 @@ index 3a23e52..bbdbb93 100644
      final waiting = using == PhonePrivilegedMode.root && bg.root.starting;
      final open = _open ?? (bg.effectiveReady ? PhonePrivilegedMode.off : using);
      final choices = <Widget>[
-@@ -276,36 +238,68 @@ class _PhoneDndPageState extends ConsumerState<PhoneDndPage> {
+@@ -276,36 +238,74 @@ class _PhoneDndPageState extends ConsumerState<PhoneDndPage> {
                  subtitle: bg.effectiveReady ? l10n.phoneReady : (waiting ? bg.effectiveReason : null),
                  trailing: TextButton(onPressed: _ready ? _close : null, child: Text(l10n.commonClose)),
                ),
 -              if (bg.previewVersion == 1) ...[
--                ListPageRow(
--                  leading: const SizedBox(),
--                  title: l10n.phonePreviewTitle,
--                  subtitle: l10n.phonePreviewDescription,
--                  subtitleMaxLines: 4,
--                  trailing: Switch(
--                    value: bg.previewEnabled,
--                    onChanged: !_ready || _busy
 +              // 「实时查看虚拟屏」是旧后台屏的预览开关（只读预览），已被悬浮屏完全覆盖，
 +              // 按用户要求删掉，避免两个开关说同一件事。
 +              // 「悬浮屏」独立开关已删（验收单 #35 + 新反馈）：窗口显示直接跟随「AI 默认操作虚拟屏」。
@@ -82655,25 +82666,38 @@ index 3a23e52..bbdbb93 100644
 +                      ref.read(virtualScreenSettingsProvider.notifier).setManual(on),
 +                ),
 +              ),
-+              // 主屏是特例：默认在虚拟屏上做事，需要时把操作目标切回去。
-+              ListPageRow(
-+                key: const ValueKey('phone-virtual-target'),
-+                leading: Icon(target == VirtualScreenTarget.virtual ? AppIcons.radioOn : AppIcons.radioOff),
-+                title: 'AI 默认操作虚拟屏',
-+                subtitle: '开：任务都在虚拟屏做，悬浮窗自动弹出来；关：都在主屏做，窗口收起',
-+                subtitleMaxLines: 2,
-+                trailing: Switch(
-+                  value: target == VirtualScreenTarget.virtual,
-+                  onChanged: (on) => unawaited(_run(() async {
-+                    // 只改"默认值"：窗口显隐跟随 AI 实际在用哪块屏（lastScreen），
-+                    // 不再由开关直接开关窗口——AI 明确要求主屏时窗口不该弹出来（用户 15:47）。
-+                    await ref
-+                        .read(virtualScreenSettingsProvider.notifier)
-+                        .setTarget(on ? VirtualScreenTarget.virtual : VirtualScreenTarget.main);
++              // 默认操作屏三选一（用户 11:0x）：主屏 / 后台屏（不弹窗）/ 虚拟屏（弹窗）。
++              // AI 的明确指令（background=main/virtual/silent）优先于这里。
++              for (final option in VirtualScreenTarget.values)
+                 ListPageRow(
+-                  leading: const SizedBox(),
+-                  title: l10n.phonePreviewTitle,
+-                  subtitle: l10n.phonePreviewDescription,
+-                  subtitleMaxLines: 4,
+-                  trailing: Switch(
+-                    value: bg.previewEnabled,
+-                    onChanged: !_ready || _busy
++                  key: ValueKey('phone-virtual-target-${option.name}'),
++                  leading: Icon(target == option ? AppIcons.radioOn : AppIcons.radioOff),
++                  title: switch (option) {
++                    VirtualScreenTarget.main => '默认操作：主屏',
++                    VirtualScreenTarget.background => '默认操作：后台屏（不显示窗口）',
++                    VirtualScreenTarget.virtual => '默认操作：虚拟屏（显示窗口）',
++                  },
++                  subtitle: switch (option) {
++                    VirtualScreenTarget.main => '任务在手机上做，你能看到',
++                    VirtualScreenTarget.background => '任务在虚拟屏里默默做，不弹窗口',
++                    VirtualScreenTarget.virtual => '任务在虚拟屏里做，悬浮窗自动弹出',
++                  },
++                  subtitleMaxLines: 2,
++                  trailing: target == option
++                      ? const Icon(AppIcons.radioOn, size: 20)
++                      : null,
++                  onTap: () => unawaited(_run(() async {
++                    await ref.read(virtualScreenSettingsProvider.notifier).setTarget(option);
 +                    return const PhoneResult(true);
 +                  })),
 +                ),
-+              ),
 +              // 横屏 / 竖屏 / 跟随主屏（第九节 2）：视频类应用要横屏，聊天、信息流要竖屏。
 +              // 建屏那一刻按这一条决定虚拟显示宽高，不是事后旋转。
 +              if (bg.viewport case final viewport?)
@@ -82717,7 +82741,7 @@ index 3a23e52..bbdbb93 100644
          if (_error case final error? when error != bg.effectiveReason) PhoneNote(tone: NoteTone.warn, text: error),
          if (bg.keep.enabled && _keepStatus(bg.keep).$1 != null)
            PhoneNote(
-@@ -327,66 +321,6 @@ class _PhoneDndPageState extends ConsumerState<PhoneDndPage> {
+@@ -327,66 +327,6 @@ class _PhoneDndPageState extends ConsumerState<PhoneDndPage> {
            children: [
              if (using != PhonePrivilegedMode.off && bg.privileged != null)
                ListPageCard(margin: _groupMargin, children: [_keepRow(using, bg.keep)]),
