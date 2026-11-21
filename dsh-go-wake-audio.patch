@@ -1,7 +1,7 @@
-From 25c8addc1abac33d06921911782c71534ff06800 Mon Sep 17 00:00:00 2001
+From 5798921a75aebd6bec53aaf7d850df0b050a7070 Mon Sep 17 00:00:00 2001
 From: wake-ci <ci@local>
-Date: Sat, 21 Nov 2026 11:19:49 +0800
-Subject: [PATCH] pb: manual prompt
+Date: Sat, 21 Nov 2026 11:28:31 +0800
+Subject: [PATCH] pb: silent2
 
 ---
  .gitattributes                                |    3 +
@@ -85,7 +85,7 @@ Subject: [PATCH] pb: manual prompt
  app/lib/speech/wake_reply.dart                |  171 ++
  app/lib/state/app_info.dart                   |    5 +
  app/lib/state/update_state.dart               |    9 +
- app/lib/state/virtual_screen_state.dart       |  298 +++
+ app/lib/state/virtual_screen_state.dart       |  305 +++
  app/lib/ui/chat/chat_rows.dart                |    2 +
  app/lib/ui/chat/chat_screen.dart              |  108 +-
  app/lib/ui/chat/media/media_format.dart       |   16 +-
@@ -94,7 +94,7 @@ Subject: [PATCH] pb: manual prompt
  app/lib/ui/phone/dnd_mode_page.dart           |  186 +-
  app/lib/ui/phone/phone_control_screen.dart    |    1 +
  app/lib/ui/phone/phone_task_card.dart         |  430 ++++
- app/lib/ui/phone/virtual_screen_host.dart     |  351 +++
+ app/lib/ui/phone/virtual_screen_host.dart     |  352 +++
  app/lib/ui/phone/virtual_screen_page.dart     |  114 +
  app/lib/ui/phone/virtual_screen_surface.dart  |  286 +++
  app/lib/ui/settings/voice_settings_page.dart  |  151 ++
@@ -111,7 +111,7 @@ Subject: [PATCH] pb: manual prompt
  docs/wake-word.md                             |  107 +
  dsh-go-wake.patch                             | 2065 +++++++++++++++++
  tooling/build-wake-apk.sh                     |   68 +
- 107 files changed, 12257 insertions(+), 523 deletions(-)
+ 107 files changed, 12265 insertions(+), 523 deletions(-)
  create mode 100644 .github/workflows/wake-apk.yml
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallForegroundService.kt
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallOverlay.kt
@@ -81706,10 +81706,10 @@ index c089d19..a15b64d 100644
  
 diff --git a/app/lib/state/virtual_screen_state.dart b/app/lib/state/virtual_screen_state.dart
 new file mode 100644
-index 0000000..7be0b17
+index 0000000..4ee569c
 --- /dev/null
 +++ b/app/lib/state/virtual_screen_state.dart
-@@ -0,0 +1,298 @@
+@@ -0,0 +1,305 @@
 +import 'dart:async';
 +
 +import 'package:flutter/services.dart';
@@ -81771,6 +81771,9 @@ index 0000000..7be0b17
 +/// 助手动手的地方：虚拟屏（默认），还是人眼前的这块（特例）。
 +/// 默认操作屏：主屏 / 后台屏（不弹窗）/ 虚拟屏（弹窗）。
 +/// AI 的明确指令（background=main/virtual/silent）优先于此设置。
++/// 你手动从球里打开查看：静默模式不再立刻把窗口关掉（11:2x）。
++bool vscreenManualView = false;
++
 +enum VirtualScreenTarget { main, background, virtual }
 +
 +final virtualScreenSettingsProvider =
@@ -81902,6 +81905,8 @@ index 0000000..7be0b17
 +  /// 跟着任务状态走：有后台任务、开关开着，就把它摆出来；任务没了就收起来。
 +  String? _lastSeenScreen;
 +
++
++
 +  // 弹胶囊那一刻的任务号：等用户选择时它已经不在虚拟屏，必须提前记住（11:0x）。
 +
 +  void sync(PhoneStatus status) {
@@ -81910,7 +81915,8 @@ index 0000000..7be0b17
 +    _lastSeenScreen = status.lastScreen;
 +    if (prev == 'background' &&
 +        status.lastScreen != 'background' &&
-+        state.open &&
++        (state.open || status.backgroundSilent) &&
++        firstBackgroundTaskId(status) != null &&
 +        !status.task.active) {
 +      VirtualPrompt.taskId = firstBackgroundTaskId(status);
 +      const MethodChannel('dsh/virtual-screen').invokeMethod<void>('prompt', {'on': true});
@@ -81930,8 +81936,9 @@ index 0000000..7be0b17
 +    // 窗口跟随"实际在用哪块屏"（用户 15:47）：AI 明确在主屏操作时窗口不出现；
 +    // 只有真的在虚拟屏上干活（或刚转进来）才显示。设置开关只是默认值。
 +    // 默认操作=后台屏时，窗口不自动弹（AI 在后台默默干活）；AI 明确要虚拟屏时会切 target。
-+    final silent = status.backgroundSilent ||
++    var silent = status.backgroundSilent ||
 +        ref.read(virtualScreenSettingsProvider).target == VirtualScreenTarget.background;
++    if (vscreenManualView && !status.backgroundSilent) silent = false;
 +    final onVirtual = status.lastScreen == 'background' && !silent;
 +    // 静默模式也保留球：你手动点它就能看/回虚拟屏（11:2x）。
 +    if (silent && taskId != null) {
@@ -83273,10 +83280,10 @@ index 0000000..26e0742
 +final phoneTaskClockProvider = NotifierProvider<PhoneTaskClock, DateTime>(PhoneTaskClock.new);
 diff --git a/app/lib/ui/phone/virtual_screen_host.dart b/app/lib/ui/phone/virtual_screen_host.dart
 new file mode 100644
-index 0000000..79cbda8
+index 0000000..18ecf8e
 --- /dev/null
 +++ b/app/lib/ui/phone/virtual_screen_host.dart
-@@ -0,0 +1,351 @@
+@@ -0,0 +1,352 @@
 +import 'dart:async';
 +
 +import 'package:flutter/material.dart';
@@ -83386,7 +83393,8 @@ index 0000000..79cbda8
 +      // 窗口已隐藏到后台：把球打开，给用户一个回来的入口。
 +      await ref.read(virtualWindowProvider.notifier).setBall(true);
 +    } else if (action == 'eye') {
-+      // 合并球上键：回到虚拟屏窗口（小窗形态）。
++      // 合并球上键：回到虚拟屏窗口（小窗形态）。手动查看压过静默（11:2x）。
++      vscreenManualView = true;
 +      final id = firstBackgroundTaskId(ref.read(phoneProvider).status) ?? 0;
 +      ref.read(virtualWindowProvider.notifier).holdOpen();
 +      await ref.read(virtualWindowProvider.notifier).open(id);
