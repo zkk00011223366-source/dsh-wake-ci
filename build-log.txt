@@ -1,7 +1,7 @@
 == resources ==
-/dev/root       145G   54G   92G  37% /
+/dev/root       145G   54G   91G  37% /
                total        used        free      shared  buff/cache   available
-Mem:           15983        5180         407          49       10790       10802
+Mem:           15983        5334         986          49       10056       10648
 == tail ==
 
 ==> 依赖: flutter pub get
@@ -189,3 +189,10 @@ If no such version exists, report the issue to the plugin. If necessary, here is
 an issue against a plugin: https://docs.flutter.dev/release/breaking-changes/migrate-to-built-in-kotlin/for-app-developers#report-incompatible-kotlin-gradle-plugin-usage-to-plugin-authors
 
 If you are a plugin author, please migrate your plugin to Built-in Kotlin using this guide: https://docs.flutter.dev/release/breaking-changes/migrate-to-built-in-kotlin/for-plugin-authors
+Flutter assets will be downloaded from https://storage.googleapis.com. Make sure you trust this source!
+Font asset "DshIcons.ttf" was tree-shaken, reducing it from 53796 to 50204 bytes (6.7% reduction). Tree-shaking can be disabled by providing the --no-tree-shake-icons flag when building your app.
+Font asset "MaterialIcons-Regular.otf" was tree-shaken, reducing it from 1645184 to 3924 bytes (99.8% reduction). Tree-shaking can be disabled by providing the --no-tree-shake-icons flag when building your app.
+Note: Some input files use or override a deprecated API.
+Note: Recompile with -Xlint:deprecation for details.
+Note: Some input files use unchecked or unsafe operations.
+Note: Recompile with -Xlint:unchecked for details.
