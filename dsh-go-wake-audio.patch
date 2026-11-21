@@ -1,7 +1,7 @@
-From 5798921a75aebd6bec53aaf7d850df0b050a7070 Mon Sep 17 00:00:00 2001
+From 6886a322806dd67873921a1d0baa7adb169c9f7c Mon Sep 17 00:00:00 2001
 From: wake-ci <ci@local>
-Date: Sat, 21 Nov 2026 11:28:31 +0800
-Subject: [PATCH] pb: silent2
+Date: Sat, 21 Nov 2026 11:30:40 +0800
+Subject: [PATCH] pb: silent3
 
 ---
  .gitattributes                                |    3 +
@@ -85,7 +85,7 @@ Subject: [PATCH] pb: silent2
  app/lib/speech/wake_reply.dart                |  171 ++
  app/lib/state/app_info.dart                   |    5 +
  app/lib/state/update_state.dart               |    9 +
- app/lib/state/virtual_screen_state.dart       |  305 +++
+ app/lib/state/virtual_screen_state.dart       |  306 +++
  app/lib/ui/chat/chat_rows.dart                |    2 +
  app/lib/ui/chat/chat_screen.dart              |  108 +-
  app/lib/ui/chat/media/media_format.dart       |   16 +-
@@ -111,7 +111,7 @@ Subject: [PATCH] pb: silent2
  docs/wake-word.md                             |  107 +
  dsh-go-wake.patch                             | 2065 +++++++++++++++++
  tooling/build-wake-apk.sh                     |   68 +
- 107 files changed, 12265 insertions(+), 523 deletions(-)
+ 107 files changed, 12266 insertions(+), 523 deletions(-)
  create mode 100644 .github/workflows/wake-apk.yml
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallForegroundService.kt
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallOverlay.kt
@@ -81706,10 +81706,10 @@ index c089d19..a15b64d 100644
  
 diff --git a/app/lib/state/virtual_screen_state.dart b/app/lib/state/virtual_screen_state.dart
 new file mode 100644
-index 0000000..4ee569c
+index 0000000..0fd1807
 --- /dev/null
 +++ b/app/lib/state/virtual_screen_state.dart
-@@ -0,0 +1,305 @@
+@@ -0,0 +1,306 @@
 +import 'dart:async';
 +
 +import 'package:flutter/services.dart';
@@ -81916,7 +81916,6 @@ index 0000000..4ee569c
 +    if (prev == 'background' &&
 +        status.lastScreen != 'background' &&
 +        (state.open || status.backgroundSilent) &&
-+        firstBackgroundTaskId(status) != null &&
 +        !status.task.active) {
 +      VirtualPrompt.taskId = firstBackgroundTaskId(status);
 +      const MethodChannel('dsh/virtual-screen').invokeMethod<void>('prompt', {'on': true});
@@ -81938,6 +81937,8 @@ index 0000000..4ee569c
 +    // 默认操作=后台屏时，窗口不自动弹（AI 在后台默默干活）；AI 明确要虚拟屏时会切 target。
 +    var silent = status.backgroundSilent ||
 +        ref.read(virtualScreenSettingsProvider).target == VirtualScreenTarget.background;
++    // AI 这次明确要"后台屏"：清掉手动查看，静默重新生效（11:3x）。
++    if (status.backgroundSilent) vscreenManualView = false;
 +    if (vscreenManualView && !status.backgroundSilent) silent = false;
 +    final onVirtual = status.lastScreen == 'background' && !silent;
 +    // 静默模式也保留球：你手动点它就能看/回虚拟屏（11:2x）。
