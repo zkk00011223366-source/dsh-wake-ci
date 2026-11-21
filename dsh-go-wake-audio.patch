@@ -1,7 +1,7 @@
-From 2e5be43b3d3f68b019cad431aaa65881b0627eb5 Mon Sep 17 00:00:00 2001
+From 90fa81c43a6b71ea17ec351732001a8ddc5611ef Mon Sep 17 00:00:00 2001
 From: wake-ci <ci@local>
-Date: Sat, 21 Nov 2026 13:31:44 +0800
-Subject: [PATCH] pb: bundle1
+Date: Sat, 21 Nov 2026 14:00:33 +0800
+Subject: [PATCH] pb: full tree
 
 ---
  .gitattributes                                |    3 +
@@ -18,7 +18,7 @@ Subject: [PATCH] pb: bundle1
  .../dsh_app/phone/PhoneContracts.kt           |   43 +
  .../ccch1mneyyy/dsh_app/phone/PhoneControl.kt |   77 +-
  .../ccch1mneyyy/dsh_app/phone/PhoneCore.kt    |  261 ++-
- .../ccch1mneyyy/dsh_app/phone/PhonePlugin.kt  |  163 ++
+ .../ccch1mneyyy/dsh_app/phone/PhonePlugin.kt  |  164 ++
  .../dsh_app/phone/PhoneTaskSessions.kt        |   22 +-
  .../ccch1mneyyy/dsh_app/phone/PhoneTasks.kt   |   11 +
  .../dsh_app/phone/PhoneToolCatalog.kt         |   30 +-
@@ -40,7 +40,7 @@ Subject: [PATCH] pb: bundle1
  .../phone/vscreen/SwitchPromptOverlay.kt      |  142 ++
  .../dsh_app/phone/vscreen/TaskMover.kt        |   43 +
  .../dsh_app/phone/vscreen/TransferBall.kt     |  430 ++++
- .../phone/vscreen/VirtualScreenOverlay.kt     | 1745 ++++++++++++++
+ .../phone/vscreen/VirtualScreenOverlay.kt     | 1776 ++++++++++++++
  .../phone/vscreen/VirtualScreenPlugin.kt      |  129 +
  .../ccch1mneyyy/dsh_app/runtime/GuestSetup.kt |   47 +-
  .../dsh_app/shortcuts/EntryActivity.kt        |    3 +
@@ -112,7 +112,7 @@ Subject: [PATCH] pb: bundle1
  docs/wake-word.md                             |  107 +
  dsh-go-wake.patch                             | 2065 +++++++++++++++++
  tooling/build-wake-apk.sh                     |   68 +
- 108 files changed, 12406 insertions(+), 526 deletions(-)
+ 108 files changed, 12438 insertions(+), 526 deletions(-)
  create mode 100644 .github/workflows/wake-apk.yml
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallForegroundService.kt
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallOverlay.kt
@@ -1962,20 +1962,21 @@ index 6c70185..151f839 100644
          private val WRITES = setOf(FOCUS_TEXT, PhoneToolCatalog.TAP, PhoneToolCatalog.TYPE, PhoneToolCatalog.TAP_XY, PhoneToolCatalog.OPEN)
          /** An uncertain effect call tightens draft eligibility; it does not prove input was dispatched. */
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhonePlugin.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhonePlugin.kt
-index 4a76535..c23211f 100644
+index 4a76535..6d60a0b 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhonePlugin.kt
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhonePlugin.kt
-@@ -2,7 +2,9 @@ package io.github.ccch1mneyyy.dsh_app.phone
+@@ -2,7 +2,10 @@ package io.github.ccch1mneyyy.dsh_app.phone
  
  import io.github.ccch1mneyyy.dsh_app.i18n.AppStrings
  import io.github.ccch1mneyyy.dsh_app.R
 +import io.github.ccch1mneyyy.dsh_app.phone.background.BackgroundDisplay
  import io.github.ccch1mneyyy.dsh_app.phone.background.BackgroundPreview
 +import io.github.ccch1mneyyy.dsh_app.phone.vscreen.VirtualScreenOverlay
++import io.github.ccch1mneyyy.dsh_app.wake.WakeTrace
  import android.app.Activity
  import android.app.Application
  import android.content.Context
-@@ -77,6 +79,61 @@ class PhonePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
+@@ -77,6 +80,61 @@ class PhonePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
          promptOwner = Any()
          attached = true
          control.background.restoreKeptChannel()
@@ -2001,7 +2002,7 @@ index 4a76535..c23211f 100644
 +            val taskOnVirtual = runCatching { control.background.anyPreviewTarget() != null }
 +                .getOrDefault(false)
 +            val state = if (windowShown) "virtual" else if (taskOnVirtual) "background" else "main"
-+            io.github.ccch1mneyyy.dsh_app.wake.WakeTrace.log("ball: tap=$action state=$state")
++            WakeTrace.log("ball: tap=$action state=$state")
 +            when (action) {
 +                "eye" -> {
 +                    when {
@@ -2022,7 +2023,7 @@ index 4a76535..c23211f 100644
 +                            val target = runCatching { control.background.anyPreviewTarget() }.getOrNull()
 +                            if (target != null) {
 +                                val reply = control.background.handOverTask(target, toMain = true)
-+                                io.github.ccch1mneyyy.dsh_app.wake.WakeTrace.log("ball: swap to main reply=$reply")
++                                WakeTrace.log("ball: swap to main reply=$reply")
 +                            }
 +                            main.post { VirtualScreenOverlay.hide() }
 +                        }
@@ -2037,7 +2038,7 @@ index 4a76535..c23211f 100644
          methods = MethodChannel(binding.binaryMessenger, "dsh/phone").also { it.setMethodCallHandler(this) }
          events = EventChannel(binding.binaryMessenger, "dsh/phone/events").also { it.setStreamHandler(this) }
          previewEvents = EventChannel(binding.binaryMessenger, "dsh/phone/preview").also { channel ->
-@@ -103,9 +160,23 @@ class PhonePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
+@@ -103,9 +161,23 @@ class PhonePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
          }
      }
  
@@ -2045,7 +2046,7 @@ index 4a76535..c23211f 100644
 +    private fun moveBallTarget(showWindow: Boolean) {
 +        val display = control.driver(PhoneScreen.BACKGROUND) as? BackgroundDisplay
 +        val reply = display?.moveMainTaskToVirtual() ?: mapOf("ok" to false, "reason" to "noDisplay")
-+        io.github.ccch1mneyyy.dsh_app.wake.WakeTrace.log(
++        WakeTrace.log(
 +            "ball: move main→virtual showWindow=$showWindow reply=$reply")
 +        if (showWindow) {
 +            main.post { VirtualScreenOverlay.show(appContext, VirtualScreenOverlay.currentTaskId()) }
@@ -2061,7 +2062,7 @@ index 4a76535..c23211f 100644
          skillSelectionRequest = Any()
          skillInspection = null
          skillClient?.let { control.skillReplaySelections.retireClient(it); control.skillDrafts.retireClient(it) }
-@@ -249,6 +320,98 @@ class PhonePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
+@@ -249,6 +321,98 @@ class PhonePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
                  result.success(if (removed) mapOf("kind" to "discarded") else replayRejected("stale"))
              }
              "setBackgroundPreview" -> result.success(control.preview.setEnabled(call.argument<Boolean>("enabled") == true))
@@ -4211,10 +4212,10 @@ index 0000000..f6c9a99
 +}
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenOverlay.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenOverlay.kt
 new file mode 100644
-index 0000000..dad11ca
+index 0000000..17436fc
 --- /dev/null
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenOverlay.kt
-@@ -0,0 +1,1745 @@
+@@ -0,0 +1,1776 @@
 +package io.github.ccch1mneyyy.dsh_app.phone.vscreen
 +
 +import android.annotation.SuppressLint
@@ -4385,6 +4386,9 @@ index 0000000..dad11ca
 +
 +    /** The display is really composing into [picture]; preview frames are not needed. */
 +    private var liveSurface = false
++
++    /** 直连接上后留给应用画第一帧的时刻；之前窗口靠占位文字撑住可见性。 */
++    private var paintedAt = 0L
 +    private var surfaceGen = 0
 +
 +    private val worker = Executors.newSingleThreadExecutor { r -> Thread(r, "dsh-vscreen-surface").apply { isDaemon = true } }
@@ -4693,7 +4697,9 @@ index 0000000..dad11ca
 +        val px = app.resources.displayMetrics.density
 +        val area = area(app, manager)
 +        WakeTrace.log("window: reshape by display ${displayW}x$displayH shape=$shape")
-+        applyShape(if (shape == Shape.EXPAND || shape == Shape.SMALL) shape else Shape.SMALL, manager, lp, view, area, px)
++        // 保持当前形态：以前这里把 SLIVER 也当成 SMALL 重算，所以细条一出现就被
++        // 自己的 surface 回调立刻恢复成小窗（13:40:26 日志：SLIVER 只活了 13 毫秒）。
++        applyShape(shape, manager, lp, view, area, px)
 +    }
 +
 +    /**
@@ -4766,6 +4772,14 @@ index 0000000..dad11ca
 +            if (attached) {
 +                previewTaskId = target.taskId
 +                surfaceRetries = 0
++                // 直连接上不等于画好了：给应用 1.2 秒把第一帧画进 surface，
++                // 这期间窗口保留占位文字，别变成一块全透明。
++                paintedAt = SystemClock.elapsedRealtime() + 1200
++                // 画面比例（用户 13:4x 截图）：surface 之前是"窗口多大就多大"（385x860），
++                // 虚拟屏却按 720x1600 往里画，系统只能 1:1 从左上角裁一块 —— 小窗被裁、
++                // 全屏左边一条、右边全黑。把 surface 固定成虚拟屏的真实尺寸，让系统缩放
++                // 到窗口里，窗口本身的宽高比已经按这块屏算过，缩下来正好铺满。
++                fixSurfaceSize()
 +                // 表面接上 ≠ 应用画好了：立刻显示会看到黑屏（20:19 日志）。
 +                // 给应用 0.9 秒画第一帧；期间窗口保持透明。
 +                main.postDelayed({ reveal(root) }, 900)
@@ -4778,12 +4792,28 @@ index 0000000..dad11ca
 +        }
 +    }
 +
++    /** 把 SurfaceView 的 surface 固定成虚拟屏真实尺寸，让系统缩放而不是 1:1 裁。 */
++    private fun fixSurfaceSize() {
++        val w = displayW
++        val h = displayH
++        if (w <= 0 || h <= 0) return
++        main.post {
++            val view = picture as? android.view.SurfaceView ?: return@post
++            val frame = try { view.holder.surfaceFrame } catch (_: Throwable) { null }
++            if (frame != null && frame.width() == w && frame.height() == h) return@post
++            runCatching { view.holder.setFixedSize(w, h) }
++            WakeTrace.log("window: surface fixed=${w}x$h")
++        }
++    }
++
 +    /** 有画面了才显示窗口。 */
 +    private fun reveal(box: View?) {
 +        val v = box ?: root ?: return
 +        if (revealed) return
 +        revealed = true
-+        v.animate().alpha(1f).setDuration(120).start()
++        // 直接置 1，不做动画：ViewPropertyAnimator 在这条路径上没跑完过，
++        // 窗口就一直是全透明的（13:39 日志只有一条 alpha=0.0，再没后续）。
++        v.alpha = 1f
 +        // 一条能自证"真的显示出来了"的日志：alpha/挂载/尺寸缺一个就是没显示。
 +        WakeTrace.log("window: revealed alpha=${v.alpha} attached=${v.isAttachedToWindow} size=${v.width}x${v.height} live=$liveSurface")
 +    }
@@ -4850,7 +4880,8 @@ index 0000000..dad11ca
 +        // 现在只要不是"眼睛隐藏/锁屏"就保持可见，让纹理建起来、直显接上。
 +        surface.visibility = if (showPicture) View.VISIBLE else View.INVISIBLE
 +        frames.visibility = if (!liveSurface && showPicture && lastBitmap != null) View.VISIBLE else View.GONE
-+        waiting?.visibility = if (showPicture && !liveSurface && lastBitmap == null) View.VISIBLE else View.GONE
++        val placeholder = !hasPicture() || SystemClock.elapsedRealtime() < paintedAt
++        waiting?.visibility = if (showPicture && placeholder) View.VISIBLE else View.GONE
 +    }
 +
 +    private fun registerScreen(app: Context) {
@@ -5743,8 +5774,9 @@ index 0000000..dad11ca
 +            applyShape(Shape.SLIVER, manager, lp, box, area, px)
 +        }
 +
-+        // 先透明：等第一帧（抓帧或直显）再显示，别让用户看到黑框。
-+        box.alpha = 0f
++        // 一建出来就可见：以前 alpha 一直是 0，等 reveal 才动；13:39 实测出现过
++        // "窗口在、点得到、屏幕上什么都没有"。现在先露面，里面是一句占位人话。
++        box.alpha = 1f
 +        revealed = false
 +        // 比例未知时显示出来是歪的（21:47），所以仍等直显/首帧再 reveal；
 +        // 但"接不上就永远透明"是 bug：直连 scopeBusy/displayMissing 时窗口状态是开着
