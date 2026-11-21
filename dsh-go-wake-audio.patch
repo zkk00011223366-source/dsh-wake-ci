@@ -1,7 +1,7 @@
-From 0887474cf88d20c78d227a7787705a08b6c60446 Mon Sep 17 00:00:00 2001
+From a68e84e196bb9c8c8300ab54264fdcf182bd9e28 Mon Sep 17 00:00:00 2001
 From: wake-ci <ci@local>
-Date: Sat, 21 Nov 2026 08:53:34 +0800
-Subject: [PATCH] pb: fit
+Date: Sat, 21 Nov 2026 08:59:50 +0800
+Subject: [PATCH] pb: voice log
 
 ---
  .gitattributes                                |    3 +
@@ -36,6 +36,7 @@ Subject: [PATCH] pb: fit
  .../phone/background/PrivilegedDisplayHost.kt |    6 +-
  .../phone/background/PrivilegedProtocol.kt    |   73 +-
  .../dsh_app/phone/skills/PhoneSkillDraft.kt   |    2 +-
+ .../dsh_app/phone/vscreen/PresentationHost.kt |   69 +
  .../dsh_app/phone/vscreen/TaskMover.kt        |   43 +
  .../dsh_app/phone/vscreen/TransferBall.kt     |  405 ++++
  .../phone/vscreen/VirtualScreenOverlay.kt     | 1622 +++++++++++++
@@ -80,7 +81,7 @@ Subject: [PATCH] pb: fit
  app/lib/speech/call/active_call.dart          |  110 +
  app/lib/speech/call/chat_call.dart            |    3 +
  app/lib/speech/call/voice_call.dart           |   57 +-
- app/lib/speech/wake_reply.dart                |  149 ++
+ app/lib/speech/wake_reply.dart                |  151 ++
  app/lib/state/app_info.dart                   |    5 +
  app/lib/state/update_state.dart               |    9 +
  app/lib/state/virtual_screen_state.dart       |  266 +++
@@ -109,13 +110,14 @@ Subject: [PATCH] pb: fit
  docs/wake-word.md                             |  107 +
  dsh-go-wake.patch                             | 2065 +++++++++++++++++
  tooling/build-wake-apk.sh                     |   68 +
- 105 files changed, 11708 insertions(+), 524 deletions(-)
+ 106 files changed, 11779 insertions(+), 524 deletions(-)
  create mode 100644 .github/workflows/wake-apk.yml
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallForegroundService.kt
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallOverlay.kt
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallOverlayPlugin.kt
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneBackGuard.kt
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/SingleInstanceApps.kt
+ create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/PresentationHost.kt
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/TaskMover.kt
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/TransferBall.kt
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenOverlay.kt
@@ -3314,6 +3316,81 @@ index 2857cee..4138076 100644
                  append(n).append(". 在").append(screen).append("重新观察并确认应用 {{app_").append(n).append("}}；")
                  append(instruction(step, n)).append("。\n")
                  append("   核对 {{check_").append(n).append("}}，不能只凭工具返回正常判断业务完成。历史记录仅表明请求已交给驱动/系统并返回接受；")
+diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/PresentationHost.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/PresentationHost.kt
+new file mode 100644
+index 0000000..660d427
+--- /dev/null
++++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/PresentationHost.kt
+@@ -0,0 +1,69 @@
++package io.github.ccch1mneyyy.dsh_app.phone.vscreen
++
++import android.app.Presentation
++import android.content.Context
++import android.graphics.Color
++import android.graphics.drawable.GradientDrawable
++import android.os.Bundle
++import android.view.Display
++import android.view.Gravity
++import android.view.View
++import android.view.ViewGroup
++import android.widget.FrameLayout
++
++/**
++ * 虚拟屏显示层：把整块虚拟屏交给系统画（与 Mika / Operit 同路）。
++ *
++ * 旧做法是 TextureView + 自己算窗口/内容尺寸，窗口一变画面就"漏出来"（只有中窗显示全）。
++ * Presentation 由系统按窗口大小绘制整块 display：小窗/中窗/全屏天然一致，不需要我们算比例。
++ *
++ * 用法：
++ *   val host = PresentationHost(context, virtualDisplay) { contentView -> … }
++ *   host.show(viewGroup)   // 挂到悬浮窗容器上
++ *   host.dismiss()         // 卸载
++ */
++class PresentationHost(
++    private val context: Context,
++    private val display: Display,
++    private val onContent: (FrameLayout) -> Unit = {},
++) {
++    private var presentation: Presentation? = null
++
++    /** 圆角容器：系统画的内容放进这里，四角由容器裁剪。 */
++    private fun contentShell(radiusPx: Float): FrameLayout = FrameLayout(context).apply {
++        clipChildren = true
++        clipToOutline = true
++        outlineProvider = object : android.view.ViewOutlineProvider() {
++            override fun getOutline(view: View, outline: android.graphics.Outline) {
++                outline.setRoundRect(0, 0, view.width, view.height, radiusPx)
++            }
++        }
++        setBackgroundColor(Color.rgb(8, 10, 18))
++    }
++
++    /** 在 [display] 上显示整块虚拟屏。[radiusPx] 与悬浮窗圆角保持一致。 */
++    fun show(parent: ViewGroup, radiusPx: Float) {
++        dismiss()
++        val shell = contentShell(radiusPx)
++        val p = Presentation(context, display).apply {
++            setContentView(shell, ViewGroup.LayoutParams(-1, -1))
++            window?.setBackgroundDrawable(GradientDrawable().apply { setColor(Color.TRANSPARENT) })
++            window?.setGravity(Gravity.TOP or Gravity.START)
++        }
++        presentation = p
++        onContent(shell)
++        parent.addView(shell, FrameLayout.LayoutParams(-1, -1))
++        runCatching { p.show() }
++    }
++
++    /** 卸载（窗口关闭/切后台时调用）。 */
++    fun dismiss() {
++        runCatching { presentation?.dismiss() }
++        presentation = null
++    }
++
++    fun isShowing(): Boolean = presentation?.isShowing == true
++
++    /** Presentation 的窗口回调（需要时扩展）。 */
++    fun onCreate(bundle: Bundle?) = Unit
++}
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/TaskMover.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/TaskMover.kt
 new file mode 100644
 index 0000000..8ddabc9
@@ -81046,10 +81123,10 @@ index d97ef1a..fd2c6b6 100644
            _voiceLevel = value;
 diff --git a/app/lib/speech/wake_reply.dart b/app/lib/speech/wake_reply.dart
 new file mode 100644
-index 0000000..7ea0816
+index 0000000..f311a46
 --- /dev/null
 +++ b/app/lib/speech/wake_reply.dart
-@@ -0,0 +1,149 @@
+@@ -0,0 +1,151 @@
 +// 唤醒回应「我在」：预合成缓存 + 本地播放（用户 16:53）。
 +//
 +// 需求：喊完**立刻**有声音，而且这句话用户可以在设置里自定义。
@@ -81117,6 +81194,8 @@ index 0000000..7ea0816
 +    final trimmed = text.trim();
 +    if (trimmed.isEmpty) return false;
 +    final id = 'wake-reply-${DateTime.now().microsecondsSinceEpoch}';
++    // 对照日志：唤醒实际用的来源与音色，和通话那行比对（09:0x 仍在排查两个声音）。
++    diagWake('wake: voice source=${_settings?.source?.name} name=$_voice deepseek=$_deepseek');
 +    if (!_deepseek) {
 +      // 系统音色：直接用统一出口说，不缓存。
 +      try {
