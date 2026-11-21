@@ -1,7 +1,7 @@
-From 73b082163abd15244d1b2c38b05bc33af0ef71a6 Mon Sep 17 00:00:00 2001
+From cdf75c6c0f4285bbbc564766ecde6cd8392237e3 Mon Sep 17 00:00:00 2001
 From: wake-ci <ci@local>
-Date: Sat, 21 Nov 2026 10:48:36 +0800
-Subject: [PATCH] pb: prompt capsule
+Date: Sat, 21 Nov 2026 10:52:24 +0800
+Subject: [PATCH] pb: prompt fix
 
 ---
  .gitattributes                                |    3 +
@@ -37,7 +37,7 @@ Subject: [PATCH] pb: prompt capsule
  .../phone/background/PrivilegedProtocol.kt    |   78 +-
  .../dsh_app/phone/skills/PhoneSkillDraft.kt   |    2 +-
  .../dsh_app/phone/vscreen/PresentationHost.kt |   69 +
- .../phone/vscreen/SwitchPromptOverlay.kt      |  136 ++
+ .../phone/vscreen/SwitchPromptOverlay.kt      |  142 ++
  .../dsh_app/phone/vscreen/TaskMover.kt        |   43 +
  .../dsh_app/phone/vscreen/TransferBall.kt     |  425 ++++
  .../phone/vscreen/VirtualScreenOverlay.kt     | 1736 ++++++++++++++
@@ -85,7 +85,7 @@ Subject: [PATCH] pb: prompt capsule
  app/lib/speech/wake_reply.dart                |  171 ++
  app/lib/state/app_info.dart                   |    5 +
  app/lib/state/update_state.dart               |    9 +
- app/lib/state/virtual_screen_state.dart       |  276 +++
+ app/lib/state/virtual_screen_state.dart       |  286 +++
  app/lib/ui/chat/chat_rows.dart                |    2 +
  app/lib/ui/chat/chat_screen.dart              |  108 +-
  app/lib/ui/chat/media/media_format.dart       |   16 +-
@@ -111,7 +111,7 @@ Subject: [PATCH] pb: prompt capsule
  docs/wake-word.md                             |  107 +
  dsh-go-wake.patch                             | 2065 +++++++++++++++++
  tooling/build-wake-apk.sh                     |   68 +
- 107 files changed, 12196 insertions(+), 524 deletions(-)
+ 107 files changed, 12212 insertions(+), 524 deletions(-)
  create mode 100644 .github/workflows/wake-apk.yml
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallForegroundService.kt
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallOverlay.kt
@@ -3440,10 +3440,10 @@ index 0000000..660d427
 +}
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/SwitchPromptOverlay.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/SwitchPromptOverlay.kt
 new file mode 100644
-index 0000000..55ae22f
+index 0000000..847cfe4
 --- /dev/null
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/SwitchPromptOverlay.kt
-@@ -0,0 +1,136 @@
+@@ -0,0 +1,142 @@
 +package io.github.ccch1mneyyy.dsh_app.phone.vscreen
 +
 +import android.annotation.SuppressLint
@@ -3547,9 +3547,15 @@ index 0000000..55ae22f
 +            y = (56 * px).roundToInt()
 +            x = (16 * px).roundToInt()
 +        }
++        val added = runCatching { manager.addView(row, lp) }.isSuccess
++        if (!added) {
++            WakeTrace.log("prompt: addView failed (no overlay permission?)")
++            root = null
++            wm = null
++            return
++        }
 +        root = row
 +        wm = manager
-+        runCatching { manager.addView(row, lp) }
 +        WakeTrace.log("prompt: shown (${seconds}s)")
 +
 +        remaining = seconds
@@ -81677,13 +81683,14 @@ index c089d19..a15b64d 100644
  
 diff --git a/app/lib/state/virtual_screen_state.dart b/app/lib/state/virtual_screen_state.dart
 new file mode 100644
-index 0000000..cccd9cf
+index 0000000..be85707
 --- /dev/null
 +++ b/app/lib/state/virtual_screen_state.dart
-@@ -0,0 +1,276 @@
+@@ -0,0 +1,286 @@
 +import 'dart:async';
 +
 +import 'package:flutter/services.dart';
++
 +import 'package:flutter_riverpod/flutter_riverpod.dart';
 +
 +import '../voice/wake_word.dart' show diagWake;
@@ -81691,6 +81698,12 @@ index 0000000..cccd9cf
 +
 +import '../phone/virtual_screen_window.dart';
 +import 'phone_state.dart';
++
++/// 弹胶囊那一刻的任务号（选择时用；那时任务已经不在虚拟屏里）。
++class VirtualPrompt {
++  static int? taskId;
++}
++
 +
 +/// 虚拟屏 悬浮窗 的设置：画面刷新多快、画质多高、操作目标在哪块屏、悬浮窗开着没有。
 +class VirtualScreenSettings {
@@ -81864,11 +81877,14 @@ index 0000000..cccd9cf
 +  /// 跟着任务状态走：有后台任务、开关开着，就把它摆出来；任务没了就收起来。
 +  String? _lastSeenScreen;
 +
++  // 弹胶囊那一刻的任务号：等用户选择时它已经不在虚拟屏，必须提前记住（11:0x）。
++
 +  void sync(PhoneStatus status) {
 +    // 应用从虚拟屏被挪到主屏（用户手动切前台）→ 弹胶囊问"我来操作 / AI 继续"。
 +    final prev = _lastSeenScreen;
 +    _lastSeenScreen = status.lastScreen;
 +    if (prev == 'background' && status.lastScreen != 'background' && state.open) {
++      VirtualPrompt.taskId = firstBackgroundTaskId(status);
 +      const MethodChannel('dsh/virtual-screen').invokeMethod<void>('prompt', {'on': true});
 +      diagWake('prompt: app left virtual screen → ask user');
 +    }
@@ -83217,7 +83233,7 @@ index 0000000..26e0742
 +final phoneTaskClockProvider = NotifierProvider<PhoneTaskClock, DateTime>(PhoneTaskClock.new);
 diff --git a/app/lib/ui/phone/virtual_screen_host.dart b/app/lib/ui/phone/virtual_screen_host.dart
 new file mode 100644
-index 0000000..fc6ba75
+index 0000000..a6f0ec9
 --- /dev/null
 +++ b/app/lib/ui/phone/virtual_screen_host.dart
 @@ -0,0 +1,344 @@
@@ -83309,13 +83325,13 @@ index 0000000..fc6ba75
 +      await _transfer(toMain: true, taskId: id);
 +    } else if (action == 'prompt:manual') {
 +      // 用户选择手动接管：停止自动操作，虚拟屏保持存活（不销毁、不释放）。
-+      final id = firstBackgroundTaskId(ref.read(phoneProvider).status);
++      final id = VirtualPrompt.taskId ?? firstBackgroundTaskId(ref.read(phoneProvider).status);
 +      await ref.read(phoneProvider.notifier).stopTask(taskId: id);
 +      diagWake('prompt: manual takeover');
 +    } else if (action == 'prompt:ai') {
 +      // 继续 AI：把应用搬回虚拟屏再继续。
 +      const ch = MethodChannel('dsh/virtual-screen');
-+      final id = firstBackgroundTaskId(ref.read(phoneProvider).status) ?? 0;
++      final id = VirtualPrompt.taskId ?? firstBackgroundTaskId(ref.read(phoneProvider).status) ?? 0;
 +      await ch.invokeMethod<bool>('moveTask', {'taskId': id, 'toMain': false});
 +      diagWake('prompt: ai continues');
 +    } else if (action == 'eyeHidden') {
