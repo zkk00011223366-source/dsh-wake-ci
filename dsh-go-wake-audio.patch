@@ -1,7 +1,7 @@
-From f16192f88474bfe8e45a8628e6dc3738f38e4dad Mon Sep 17 00:00:00 2001
+From 9a25c604f673c45ef2405e582b9b338cc801a0ad Mon Sep 17 00:00:00 2001
 From: wake-ci <ci@local>
-Date: Sat, 21 Nov 2026 12:07:30 +0800
-Subject: [PATCH] pb: tiny window
+Date: Sat, 21 Nov 2026 12:17:24 +0800
+Subject: [PATCH] pb: surfaceview
 
 ---
  .gitattributes                                |    3 +
@@ -40,7 +40,7 @@ Subject: [PATCH] pb: tiny window
  .../phone/vscreen/SwitchPromptOverlay.kt      |  142 ++
  .../dsh_app/phone/vscreen/TaskMover.kt        |   43 +
  .../dsh_app/phone/vscreen/TransferBall.kt     |  425 ++++
- .../phone/vscreen/VirtualScreenOverlay.kt     | 1737 ++++++++++++++
+ .../phone/vscreen/VirtualScreenOverlay.kt     | 1731 ++++++++++++++
  .../phone/vscreen/VirtualScreenPlugin.kt      |  129 +
  .../ccch1mneyyy/dsh_app/runtime/GuestSetup.kt |   47 +-
  .../dsh_app/shortcuts/EntryActivity.kt        |    3 +
@@ -111,7 +111,7 @@ Subject: [PATCH] pb: tiny window
  docs/wake-word.md                             |  107 +
  dsh-go-wake.patch                             | 2065 +++++++++++++++++
  tooling/build-wake-apk.sh                     |   68 +
- 107 files changed, 12286 insertions(+), 523 deletions(-)
+ 107 files changed, 12280 insertions(+), 523 deletions(-)
  create mode 100644 .github/workflows/wake-apk.yml
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallForegroundService.kt
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallOverlay.kt
@@ -4089,10 +4089,10 @@ index 0000000..637e733
 +}
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenOverlay.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenOverlay.kt
 new file mode 100644
-index 0000000..fc782a6
+index 0000000..d5b7194
 --- /dev/null
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenOverlay.kt
-@@ -0,0 +1,1737 @@
+@@ -0,0 +1,1731 @@
 +package io.github.ccch1mneyyy.dsh_app.phone.vscreen
 +
 +import android.annotation.SuppressLint
@@ -4208,7 +4208,7 @@ index 0000000..fc782a6
 +    private var root: FrameLayout? = null
 +    /** 画面容器（卡片内缩 3dp 的那一层）。 */
 +    private var content: FrameLayout? = null
-+    private var picture: TextureView? = null
++    private var picture: android.view.SurfaceView? = null
 +    private var fallback: ImageView? = null
 +    private var params: WindowManager.LayoutParams? = null
 +    private var context: Context? = null
@@ -4307,14 +4307,8 @@ index 0000000..fc782a6
 +        box.addView(inner, FrameLayout.LayoutParams(-1, -1))
 +        // 用 TextureView 承载画面：它是普通 View，能按圆角裁剪（SurfaceView 是独立图层，
 +        // 圆角裁剪管不到，只能靠底色盖四角 —— Mika 那种"画面本身是圆的"就要用这条）。
-+        val surfaceView = TextureView(app)
-+        surfaceView.clipToOutline = true
-+        surfaceView.outlineProvider = object : ViewOutlineProvider() {
-+            override fun getOutline(view: View, outline: Outline) {
-+                val r = 16f * px
-+                outline.setRoundRect(0, 0, view.width, view.height, r)
-+            }
-+        }
++        val surfaceView = android.view.SurfaceView(app)
++        surfaceView.setZOrderMediaOverlay(false)
 +        inner.addView(surfaceView, FrameLayout.LayoutParams(-1, -1))
 +        val picture2 = ImageView(app).apply {
 +            // 兜底图也要铺满：FIT_CENTER 会在比例对不齐的瞬间留黑边（验收单 #7 上下有空），
@@ -4347,7 +4341,7 @@ index 0000000..fc782a6
 +        buildChrome(app, box, px)
 +        // 监听必须在视图进入窗口之前挂好：TextureView 的 SurfaceTexture 可能在 addView 那一刻就绪，
 +        // 之后再设 listener 会错过回调 —— 直显因此永远接不上（日志里 live 一直是 false）。
-+        attachSurfaceHost(app, surfaceView)
++        attachSurfaceViewHost(app, surfaceView)
 +
 +        val lp = WindowManager.LayoutParams(
 +            w,
@@ -4385,7 +4379,8 @@ index 0000000..fc782a6
 +        main.postDelayed({ applyFitTransform() }, 160)
 +        applyShape(Shape.SMALL, manager, lp, box, area, px)
 +        // 已经就绪的情况（监听挂得早，回调可能已错过这次创建）：补一次直连。
-+        if (surfaceView.isAvailable) requestSurface(app, Surface(checkNotNull(surfaceView.surfaceTexture)), surfaceGen)
++        val ready = surfaceView.holder.surface
++        if (ready != null && ready.isValid) requestSurface(app, ready, surfaceGen)
 +        registerScreen(app)
 +        return true
 +    }
@@ -4506,6 +4501,23 @@ index 0000000..fc782a6
 +     * The engine that owns the display composes into this view's surface. Detach on close, and
 +     * on the way back to JPEG: a VirtualDisplay has one output surface, so it can only be one.
 +     */
++    private fun attachSurfaceViewHost(app: Context, view: android.view.SurfaceView) {
++        view.holder.addCallback(object : android.view.SurfaceHolder.Callback {
++            override fun surfaceCreated(holder: android.view.SurfaceHolder) = Unit
++            override fun surfaceChanged(holder: android.view.SurfaceHolder, format: Int, width: Int, height: Int) {
++                // 尺寸变化时重新把 Surface 交给虚拟屏：画面跟着窗口走，不裁不卡（12:1x）。
++                val gen = ++surfaceGen
++                WakeTrace.log("window: surface ready ${width}x$height")
++                requestSurface(app, holder.surface, gen)
++            }
++            override fun surfaceDestroyed(holder: android.view.SurfaceHolder) {
++                surfaceGen++
++                liveSurface = false
++                main.post { applyLive() }
++            }
++        })
++    }
++
 +    private fun attachSurfaceHost(app: Context, view: TextureView) {
 +        val gen = ++surfaceGen
 +        view.surfaceTextureListener = object : TextureView.SurfaceTextureListener {
@@ -4555,26 +4567,8 @@ index 0000000..fc782a6
 +     * 把虚拟屏画面"完整"放进窗口：按比例缩放并居中（letterbox），
 +     * 窗口比例与虚拟屏比例不同时也不会裁掉内容（09:2x 的"显示不全"）。
 +     */
-+    private fun applyFitTransform() {
-+        val view = picture ?: return
-+        val dw = displayW
-+        val dh = displayH
-+        val vw = view.width
-+        val vh = view.height
-+        if (dw <= 0 || dh <= 0 || vw <= 0 || vh <= 0) return
-+        // 全屏 = 铺满（cover，居中裁掉溢出）；其它形态 = 完整可见（letterbox）。
-+        val cover = fullscreen
-+        val scale = if (cover) {
-+            maxOf(vw.toFloat() / dw, vh.toFloat() / dh)
-+        } else {
-+            minOf(vw.toFloat() / dw, vh.toFloat() / dh)
-+        }
-+        val m = android.graphics.Matrix()
-+        m.setScale(scale, scale)
-+        m.postTranslate((vw - dw * scale) / 2f, (vh - dh * scale) / 2f)
-+        view.setTransform(m)
-+        WakeTrace.log("window: fit view=${vw}x$vh display=${dw}x$dh scale=${"%.3f".format(scale)} cover=$cover")
-+    }
++    /** SurfaceView 直显：不需要自算缩放/裁剪（12:1x，参考 Mika 的做法）。 */
++    private fun applyFitTransform() = Unit
 +
 +    private fun requestSurface(app: Context, surface: Surface?, gen: Int) {
 +        if (gen != surfaceGen) return
