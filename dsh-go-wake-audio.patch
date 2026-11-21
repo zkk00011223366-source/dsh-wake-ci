@@ -1,7 +1,7 @@
-From d64e6fbba41362b7c6a37236e176042ee18b6b91 Mon Sep 17 00:00:00 2001
+From 9ab431592e4f4ccd7487d86c091967ee5419723e Mon Sep 17 00:00:00 2001
 From: ci <ci@local>
-Date: Sat, 21 Nov 2026 23:37:53 +0800
-Subject: [PATCH] pb: scene3e
+Date: Sun, 22 Nov 2026 00:11:52 +0800
+Subject: [PATCH] pb: scene3g
 
 ---
  .gitattributes                                |    3 +
@@ -18,9 +18,9 @@ Subject: [PATCH] pb: scene3e
  .../dsh_app/phone/PhoneContracts.kt           |  103 +
  .../ccch1mneyyy/dsh_app/phone/PhoneControl.kt |   91 +-
  .../ccch1mneyyy/dsh_app/phone/PhoneCore.kt    |  289 ++-
- .../ccch1mneyyy/dsh_app/phone/PhonePlugin.kt  |  312 +++
+ .../ccch1mneyyy/dsh_app/phone/PhonePlugin.kt  |  316 +++
  .../dsh_app/phone/PhoneTaskSessions.kt        |   33 +-
- .../ccch1mneyyy/dsh_app/phone/PhoneTasks.kt   |   11 +
+ .../ccch1mneyyy/dsh_app/phone/PhoneTasks.kt   |   19 +
  .../dsh_app/phone/PhoneToolCatalog.kt         |   30 +-
  .../ccch1mneyyy/dsh_app/phone/SafetyGate.kt   |    4 +-
  .../dsh_app/phone/SingleInstanceApps.kt       |   27 +
@@ -40,7 +40,7 @@ Subject: [PATCH] pb: scene3e
  .../phone/vscreen/SwitchPromptOverlay.kt      |  142 ++
  .../dsh_app/phone/vscreen/TaskMover.kt        |  123 +
  .../dsh_app/phone/vscreen/TransferBall.kt     |  456 ++++
- .../phone/vscreen/VirtualScreenOverlay.kt     | 1939 ++++++++++++++++
+ .../phone/vscreen/VirtualScreenOverlay.kt     | 1960 ++++++++++++++++
  .../phone/vscreen/VirtualScreenPlugin.kt      |  223 ++
  .../ccch1mneyyy/dsh_app/runtime/GuestSetup.kt |   47 +-
  .../dsh_app/shortcuts/EntryActivity.kt        |    3 +
@@ -114,7 +114,7 @@ Subject: [PATCH] pb: scene3e
  docs/wake-word.md                             |  107 +
  dsh-go-wake.patch                             | 2065 +++++++++++++++++
  tooling/build-wake-apk.sh                     |   68 +
- 110 files changed, 13377 insertions(+), 530 deletions(-)
+ 110 files changed, 13410 insertions(+), 530 deletions(-)
  create mode 100644 .github/workflows/wake-apk.yml
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallForegroundService.kt
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallOverlay.kt
@@ -2075,7 +2075,7 @@ index 6c70185..d47346e 100644
          private val WRITES = setOf(FOCUS_TEXT, PhoneToolCatalog.TAP, PhoneToolCatalog.TYPE, PhoneToolCatalog.TAP_XY, PhoneToolCatalog.OPEN)
          /** An uncertain effect call tightens draft eligibility; it does not prove input was dispatched. */
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhonePlugin.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhonePlugin.kt
-index 4a76535..a736dd3 100644
+index 4a76535..64e73cd 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhonePlugin.kt
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhonePlugin.kt
 @@ -2,7 +2,11 @@ package io.github.ccch1mneyyy.dsh_app.phone
@@ -2158,11 +2158,11 @@ index 4a76535..a736dd3 100644
 +                        taskOnVirtual -> runCatching {
 +                            VirtualScreenOverlay.show(appContext, VirtualScreenOverlay.currentTaskId())
 +                        }.onFailure { WakeTrace.log("ball: eye show threw ${it.javaClass.simpleName}") }
-+                        // 主屏 → 后台屏：先告诉上层"这条路径不进窗口"，再把应用搬进虚拟屏。
-+                        // 顺序不能反：先搬后置，Dart 会照默认值把窗口弹出来（实测就是这样）。
++                        // 两边都不在（窗口没开、虚拟屏里也没任务）：眼睛没有可切的对象。
++                        // 以前这里会"偷偷把主屏应用搬进虚拟屏且不弹窗"——那是反例（设后台屏
++                        // 开局双键时一按就中）。现在明确拒绝，只留一行日志。
 +                        else -> {
-+                            VirtualScreenOverlay.onAction?.invoke("eyeHidden")
-+                            io.execute { runCatching { moveBallTarget(showWindow = false) } }
++                            WakeTrace.log("ball: eye on main → ignored（虚拟屏/后台屏都不在）")
 +                        }
 +                    }
 +                    true
@@ -2190,7 +2190,7 @@ index 4a76535..a736dd3 100644
          methods = MethodChannel(binding.binaryMessenger, "dsh/phone").also { it.setMethodCallHandler(this) }
          events = EventChannel(binding.binaryMessenger, "dsh/phone/events").also { it.setStreamHandler(this) }
          previewEvents = EventChannel(binding.binaryMessenger, "dsh/phone/preview").also { channel ->
-@@ -103,9 +193,137 @@ class PhonePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
+@@ -103,9 +193,141 @@ class PhonePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
          }
      }
  
@@ -2262,7 +2262,11 @@ index 4a76535..a736dd3 100644
 +        // 用"未激活 owner"按需建/拿一块虚拟屏，把这条用户路径打通。
 +        val display = runCatching { control.driver(PhoneScreen.BACKGROUND) as? BackgroundDisplay }.getOrNull()
 +            ?: runCatching {
-+                val owner = control.tasks.beforeTaskOwner() ?: return@runCatching null
++                // 三种 owner 依次尝试：AI 任务空闲（activeOwner 空）或任务之间（beforeTaskOwner 空）
++                // 都要能拿到屏，最后兜到用户固定的 owner（真机 00:04:12 就是两个都空 → noDisplay）。
++                val owner = control.tasks.activeOwner()
++                    ?: control.tasks.beforeTaskOwner()
++                    ?: control.tasks.userOwner()
 +                control.background.driverForTask(owner, { true }) { block -> block(); true }
 +            }.getOrNull()
 +        // 场景1：按"用户真正在用的包名"搬，而不是按"最前面的任务"（那常是我们自己的悬浮条）。
@@ -2328,7 +2332,7 @@ index 4a76535..a736dd3 100644
          skillSelectionRequest = Any()
          skillInspection = null
          skillClient?.let { control.skillReplaySelections.retireClient(it); control.skillDrafts.retireClient(it) }
-@@ -249,6 +467,100 @@ class PhonePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
+@@ -249,6 +471,100 @@ class PhonePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
                  result.success(if (removed) mapOf("kind" to "discarded") else replayRejected("stale"))
              }
              "setBackgroundPreview" -> result.success(control.preview.setEnabled(call.argument<Boolean>("enabled") == true))
@@ -2520,7 +2524,7 @@ index 3fd6e48..6a2410f 100644
          // An implementation memory bound, not a measured throughput limit. Never evict a fence.
          const val MAX_RUNS_PER_LAUNCH = 256
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneTasks.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneTasks.kt
-index a09015e..9e6c9a9 100644
+index a09015e..08f65ac 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneTasks.kt
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneTasks.kt
 @@ -73,6 +73,9 @@ class PhoneTasks(
@@ -2533,8 +2537,18 @@ index a09015e..9e6c9a9 100644
      private val listeners = CopyOnWriteArrayList<(Snapshot) -> Unit>()
  
      fun addListener(l: (Snapshot) -> Unit) {
-@@ -263,6 +266,13 @@ class PhoneTasks(
+@@ -261,8 +264,23 @@ class PhoneTasks(
+         Owner(taskId, lifecycle, false)
+     }
  
++    /**
++     * 用户自己动手时用的 owner（黄条【切换】、窗口【⇄】）：
++     * 这时 AI 既可能在跑但空闲（activeOwner 返回 null），也可能是任务之间的空档
++     * （beforeTaskOwner 也返回 null）——两边都拿不到时，仍然需要一块虚拟屏可搬。
++     * 固定 id，复用同一条驱动记录；不会被任务收尾当成"当前任务"。
++     */
++    fun userOwner(): Owner = Owner(-1L, 0L, true)
++
      fun isCurrent(owner: Owner): Boolean = synchronized(lock) { currentLocked(owner) }
  
 +    /** 这一轮剩下的操作留在主屏：单账号应用不在虚拟屏里开第二个实例（第二十一节）。 */
@@ -2547,7 +2561,7 @@ index a09015e..9e6c9a9 100644
      /** Result bookkeeping must not adopt the task that replaced its call. Keep [action] short. */
      fun runIfCurrent(owner: Owner, action: () -> Unit): Boolean = synchronized(lock) {
          if (!currentLocked(owner)) return false
-@@ -527,6 +537,7 @@ class PhoneTasks(
+@@ -527,6 +545,7 @@ class PhoneTasks(
      private fun endLocked() {
          lifecycle++
          active = false
@@ -4771,10 +4785,10 @@ index 0000000..3c37851
 +}
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenOverlay.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenOverlay.kt
 new file mode 100644
-index 0000000..56627a0
+index 0000000..1b784f0
 --- /dev/null
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenOverlay.kt
-@@ -0,0 +1,1939 @@
+@@ -0,0 +1,1960 @@
 +package io.github.ccch1mneyyy.dsh_app.phone.vscreen
 +
 +import android.annotation.SuppressLint
@@ -6323,6 +6337,13 @@ index 0000000..56627a0
 +        val lp = (box.layoutParams as? WindowManager.LayoutParams) ?: params ?: return
 +        val px = app.resources.displayMetrics.density
 +        WakeTrace.log("window: back (collapse) shape=$shape")
++        // 语义：中窗/全屏 → 回小窗；已经在小窗 → 收起成黄条（等同眼睛键）。
++        // 以前小窗按 ← 什么都不做（注释写了但没实现）。
++        if (shape == Shape.SMALL) {
++            WakeTrace.log("window: back on SMALL → hide to bar")
++            hideWindowOnly()
++            return
++        }
 +        // 收起 = 回到"虚拟屏刚启动时"的尺寸和形态（小窗），不是关闭窗口（用户 19:05）。
 +        applyShape(Shape.SMALL, manager, lp, box, area(app, manager), px)
 +    }
@@ -6342,12 +6363,26 @@ index 0000000..56627a0
 +        onAction?.invoke(if (id != null && id > 0) "toMain:$id" else "toMain")
 +    }
 +
-+    /** ×：关窗 + 结束任务（用户 19:32 选定）。 */
++    /**
++     * ×：关窗 + 结束任务（用户 19:32 选定）。
++     * 语义：**先把屏里的应用交回主屏**，再结束任务——否则任务收尾会释放 hold、销毁虚拟屏，
++     * 屏里那个应用连带被杀（用户看到"应用没了"）。交不回去就照旧结束。
++     */
 +    private fun endTask() {
 +        // 带上窗口实际绑定的任务号：不带号时原生找不到"当前任务"，停止会静默失败（10:1x）。
 +        val id = previewTaskId.takeIf { it > 0 } ?: taskId
 +        hide()
-+        onAction?.invoke(if (id > 0) "stop:$id" else "stop")
++        val hand = io.github.ccch1mneyyy.dsh_app.phone.PhoneRegistry.handBackToMain
++        if (hand == null) {
++            WakeTrace.log("window: stop without hand-back (no hook) task=$id")
++            onAction?.invoke(if (id > 0) "stop:$id" else "stop")
++            return
++        }
++        worker.execute {
++            val handed = runCatching { hand.invoke(); true }.getOrDefault(false)
++            WakeTrace.log("window: hand back before stop handed=$handed task=$id")
++            main.post { onAction?.invoke(if (id > 0) "stop:$id" else "stop") }
++        }
 +    }
 +
 +    // Touch: dragging, parking, shapes, and the person's own fingers
