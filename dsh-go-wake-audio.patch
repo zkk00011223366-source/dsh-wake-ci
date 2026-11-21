@@ -1,7 +1,7 @@
-From 2ce57cc462a3a4e92acfae5de3b5e5f4591349f1 Mon Sep 17 00:00:00 2001
+From c435aa6d80829d2ce82d0e45cff7435f89ad501a Mon Sep 17 00:00:00 2001
 From: wake-ci <ci@local>
-Date: Sat, 21 Nov 2026 09:33:52 +0800
-Subject: [PATCH] pb: fit-on-attach
+Date: Sat, 21 Nov 2026 09:38:26 +0800
+Subject: [PATCH] pb: eye-hide
 
 ---
  .gitattributes                                |    3 +
@@ -39,7 +39,7 @@ Subject: [PATCH] pb: fit-on-attach
  .../dsh_app/phone/vscreen/PresentationHost.kt |   69 +
  .../dsh_app/phone/vscreen/TaskMover.kt        |   43 +
  .../dsh_app/phone/vscreen/TransferBall.kt     |  425 ++++
- .../phone/vscreen/VirtualScreenOverlay.kt     | 1685 ++++++++++++++
+ .../phone/vscreen/VirtualScreenOverlay.kt     | 1708 ++++++++++++++
  .../phone/vscreen/VirtualScreenPlugin.kt      |  118 +
  .../ccch1mneyyy/dsh_app/runtime/GuestSetup.kt |   47 +-
  .../dsh_app/shortcuts/EntryActivity.kt        |    3 +
@@ -93,7 +93,7 @@ Subject: [PATCH] pb: fit-on-attach
  app/lib/ui/phone/dnd_mode_page.dart           |  182 +-
  app/lib/ui/phone/phone_control_screen.dart    |    1 +
  app/lib/ui/phone/phone_task_card.dart         |  430 ++++
- app/lib/ui/phone/virtual_screen_host.dart     |  328 +++
+ app/lib/ui/phone/virtual_screen_host.dart     |  331 +++
  app/lib/ui/phone/virtual_screen_page.dart     |  114 +
  app/lib/ui/phone/virtual_screen_surface.dart  |  286 +++
  app/lib/ui/settings/voice_settings_page.dart  |  151 ++
@@ -110,7 +110,7 @@ Subject: [PATCH] pb: fit-on-attach
  docs/wake-word.md                             |  107 +
  dsh-go-wake.patch                             | 2065 +++++++++++++++++
  tooling/build-wake-apk.sh                     |   68 +
- 106 files changed, 11906 insertions(+), 524 deletions(-)
+ 106 files changed, 11932 insertions(+), 524 deletions(-)
  create mode 100644 .github/workflows/wake-apk.yml
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallForegroundService.kt
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallOverlay.kt
@@ -3873,10 +3873,10 @@ index 0000000..637e733
 +}
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenOverlay.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenOverlay.kt
 new file mode 100644
-index 0000000..97a806f
+index 0000000..1a0712d
 --- /dev/null
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenOverlay.kt
-@@ -0,0 +1,1685 @@
+@@ -0,0 +1,1708 @@
 +package io.github.ccch1mneyyy.dsh_app.phone.vscreen
 +
 +import android.annotation.SuppressLint
@@ -4171,6 +4171,22 @@ index 0000000..97a806f
 +        return true
 +    }
 +
++    /**
++     * 切到后台：只把窗口从屏幕上拿掉，**不释放直显 surface、不注销预览**
++     * （与用户决策一致：任务继续、AI 继续读屏、点球回来立刻有画面）。
++     */
++    fun hideWindowOnly() {
++        val view = root ?: return
++        gripWin?.let { v -> wm?.let { m -> runCatching { m.removeView(v) } } }
++        gripWin = null
++        gripParams = null
++        val manager = wm
++        root = null
++        try { manager?.removeView(view) } catch (_: Exception) {}
++        WakeTrace.log("window: hidden (surface kept, display=$displayId)")
++        onAction?.invoke("eyeHidden")
++    }
++
 +    fun hide() {
 +        runCatching { presentationHost?.dismiss() }
 +        presentationHost = null
@@ -4234,6 +4250,13 @@ index 0000000..97a806f
 +
 +    /** 虚拟屏上有没有前台应用：没有就把「返」「转」置灰。 */
 +    /** Dart 同步过来的任务号（迁移后会变）；窗口的动作都带它，避免拿空 id 去注入。 */
++    /** 迁移完成后把窗口改绑到新任务号（否则预览/画面指错任务）。 */
++    fun retaskPreview(id: Long) {
++        previewTaskId = id
++        taskId = id
++        WakeTrace.log("window: retask preview=$id")
++    }
++
 +    /** 当前窗口绑定的虚拟屏 displayId（0 = 还没建/没接上）。 */
 +    fun currentDisplayId(): Int = displayId
 +
@@ -5186,8 +5209,8 @@ index 0000000..97a806f
 +
 +    /** 眼睛: hide the picture, keep the display (and its task) running; the glyph follows. */
 +    private fun toggleEye() {
-+        // 眼睛键 = 切到后台操作：隐藏窗口（任务与预览通道继续）。
-+        hide()
++        // 眼睛键 = 切到后台操作：只隐藏窗口（surface/预览都保留）。
++        hideWindowOnly()
 +        return
 +        @Suppress("UNREACHABLE_CODE")
 +        eyeHidden = !eyeHidden
@@ -82929,10 +82952,10 @@ index 0000000..26e0742
 +final phoneTaskClockProvider = NotifierProvider<PhoneTaskClock, DateTime>(PhoneTaskClock.new);
 diff --git a/app/lib/ui/phone/virtual_screen_host.dart b/app/lib/ui/phone/virtual_screen_host.dart
 new file mode 100644
-index 0000000..d272c4c
+index 0000000..48aa710
 --- /dev/null
 +++ b/app/lib/ui/phone/virtual_screen_host.dart
-@@ -0,0 +1,328 @@
+@@ -0,0 +1,331 @@
 +import 'dart:async';
 +
 +import 'package:flutter/material.dart';
@@ -83017,6 +83040,9 @@ index 0000000..d272c4c
 +      // 原生会把窗口实际绑定的任务号带过来（toMain:7），避免拿空 id 去迁移。
 +      final id = action.contains(':') ? int.tryParse(action.split(':').last) : null;
 +      await _transfer(toMain: true, taskId: id);
++    } else if (action == 'eyeHidden') {
++      // 窗口已隐藏到后台：把球打开，给用户一个回来的入口。
++      await ref.read(virtualWindowProvider.notifier).setBall(true);
 +    } else if (action == 'eye') {
 +      // 合并球上键：回到虚拟屏窗口（小窗形态）。
 +      final id = firstBackgroundTaskId(ref.read(phoneProvider).status) ?? 0;
