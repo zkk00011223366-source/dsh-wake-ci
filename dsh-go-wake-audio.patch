@@ -1,7 +1,7 @@
-From 78cf71adc0aaacdb679255459e037bd30793d30c Mon Sep 17 00:00:00 2001
+From a95437ba5b0005e0072625c9af2c75ac914e6dc4 Mon Sep 17 00:00:00 2001
 From: wake-ci <ci@local>
-Date: Sat, 21 Nov 2026 09:55:03 +0800
-Subject: [PATCH] pb: retask
+Date: Sat, 21 Nov 2026 10:00:29 +0800
+Subject: [PATCH] pb: final
 
 ---
  .gitattributes                                |    3 +
@@ -39,7 +39,7 @@ Subject: [PATCH] pb: retask
  .../dsh_app/phone/vscreen/PresentationHost.kt |   69 +
  .../dsh_app/phone/vscreen/TaskMover.kt        |   43 +
  .../dsh_app/phone/vscreen/TransferBall.kt     |  425 ++++
- .../phone/vscreen/VirtualScreenOverlay.kt     | 1710 ++++++++++++++
+ .../phone/vscreen/VirtualScreenOverlay.kt     | 1714 ++++++++++++++
  .../phone/vscreen/VirtualScreenPlugin.kt      |  118 +
  .../ccch1mneyyy/dsh_app/runtime/GuestSetup.kt |   47 +-
  .../dsh_app/shortcuts/EntryActivity.kt        |    3 +
@@ -110,7 +110,7 @@ Subject: [PATCH] pb: retask
  docs/wake-word.md                             |  107 +
  dsh-go-wake.patch                             | 2065 +++++++++++++++++
  tooling/build-wake-apk.sh                     |   68 +
- 106 files changed, 11954 insertions(+), 524 deletions(-)
+ 106 files changed, 11958 insertions(+), 524 deletions(-)
  create mode 100644 .github/workflows/wake-apk.yml
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallForegroundService.kt
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallOverlay.kt
@@ -3873,10 +3873,10 @@ index 0000000..637e733
 +}
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenOverlay.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenOverlay.kt
 new file mode 100644
-index 0000000..c53a57d
+index 0000000..0e5b6ae
 --- /dev/null
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenOverlay.kt
-@@ -0,0 +1,1710 @@
+@@ -0,0 +1,1714 @@
 +package io.github.ccch1mneyyy.dsh_app.phone.vscreen
 +
 +import android.annotation.SuppressLint
@@ -4164,6 +4164,8 @@ index 0000000..c53a57d
 +        liveSurface = false
 +        eyeHidden = false
 +        shape = Shape.SMALL
++        // 窗口重建后补一次适配（10:0x：重建时 displayW/H 已存在，直接算）。
++        main.postDelayed({ applyFitTransform() }, 160)
 +        applyShape(Shape.SMALL, manager, lp, box, area, px)
 +        // 已经就绪的情况（监听挂得早，回调可能已错过这次创建）：补一次直连。
 +        if (surfaceView.isAvailable) requestSurface(app, Surface(checkNotNull(surfaceView.surfaceTexture)), surfaceGen)
@@ -5309,6 +5311,8 @@ index 0000000..c53a57d
 +                    WakeTrace.log("window: shell inject $cmd")
 +                    return
 +                }
++                // 退回无障碍：写清楚原因，避免"看起来改了其实没走新路"（10:0x）。
++                WakeTrace.log("window: shell inject unavailable (displayId=$displayId ch=${io.github.ccch1mneyyy.dsh_app.phone.PhoneRegistry.injectDisplayInput != null}) fallback=previewGesture")
 +            }
 +            val tail = if (to == null) "" else {
 +                val (tx, ty) = fraction(to.x, to.y)
