@@ -1,7 +1,7 @@
-From 3d39fd9a6b48ebc7f6f18afc8c77e55e6ab0a683 Mon Sep 17 00:00:00 2001
+From 04e4f4472f58c610607877a9c169226875fb3746 Mon Sep 17 00:00:00 2001
 From: wake-ci <ci@local>
-Date: Sat, 21 Nov 2026 09:10:02 +0800
-Subject: [PATCH] pb: sensitivity
+Date: Sat, 21 Nov 2026 09:27:36 +0800
+Subject: [PATCH] pb: fit+eye
 
 ---
  .gitattributes                                |    3 +
@@ -38,8 +38,8 @@ Subject: [PATCH] pb: sensitivity
  .../dsh_app/phone/skills/PhoneSkillDraft.kt   |    2 +-
  .../dsh_app/phone/vscreen/PresentationHost.kt |   69 +
  .../dsh_app/phone/vscreen/TaskMover.kt        |   43 +
- .../dsh_app/phone/vscreen/TransferBall.kt     |  405 ++++
- .../phone/vscreen/VirtualScreenOverlay.kt     | 1622 +++++++++++++
+ .../dsh_app/phone/vscreen/TransferBall.kt     |  425 ++++
+ .../phone/vscreen/VirtualScreenOverlay.kt     | 1677 +++++++++++++
  .../phone/vscreen/VirtualScreenPlugin.kt      |  118 +
  .../ccch1mneyyy/dsh_app/runtime/GuestSetup.kt |   47 +-
  .../dsh_app/shortcuts/EntryActivity.kt        |    3 +
@@ -93,7 +93,7 @@ Subject: [PATCH] pb: sensitivity
  app/lib/ui/phone/dnd_mode_page.dart           |  182 +-
  app/lib/ui/phone/phone_control_screen.dart    |    1 +
  app/lib/ui/phone/phone_task_card.dart         |  430 ++++
- app/lib/ui/phone/virtual_screen_host.dart     |  323 +++
+ app/lib/ui/phone/virtual_screen_host.dart     |  328 +++
  app/lib/ui/phone/virtual_screen_page.dart     |  114 +
  app/lib/ui/phone/virtual_screen_surface.dart  |  286 +++
  app/lib/ui/settings/voice_settings_page.dart  |  151 ++
@@ -110,7 +110,7 @@ Subject: [PATCH] pb: sensitivity
  docs/wake-word.md                             |  107 +
  dsh-go-wake.patch                             | 2065 +++++++++++++++++
  tooling/build-wake-apk.sh                     |   68 +
- 106 files changed, 11818 insertions(+), 524 deletions(-)
+ 106 files changed, 11898 insertions(+), 524 deletions(-)
  create mode 100644 .github/workflows/wake-apk.yml
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallForegroundService.kt
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallOverlay.kt
@@ -3442,10 +3442,10 @@ index 0000000..8ddabc9
 +}
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/TransferBall.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/TransferBall.kt
 new file mode 100644
-index 0000000..1174ba0
+index 0000000..637e733
 --- /dev/null
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/TransferBall.kt
-@@ -0,0 +1,405 @@
+@@ -0,0 +1,425 @@
 +package io.github.ccch1mneyyy.dsh_app.phone.vscreen
 +
 +import android.annotation.SuppressLint
@@ -3504,11 +3504,15 @@ index 0000000..1174ba0
 +    private const val REST_ALPHA = 0.85f
 +
 +    /** ⇄（arrowsLeftRight，0xe011）：单色线框图标，与窗口按键同一套字体。 */
++    private const val ICON_EYE = 0xe02e
 +    private const val ICON_SWAP = 0xe011
 +
 +    private var wm: WindowManager? = null
 +    private var root: FrameLayout? = null
 +    private var label: TextView? = null
++
++    /** 展开态的两个图标（收成边条时隐藏）。 */
++    private var iconColumn: View? = null
 +    private var params: WindowManager.LayoutParams? = null
 +    private var dock = Dock(side = Side.RIGHT, yFraction = 0.5f)
 +    private var open = false
@@ -3603,22 +3607,29 @@ index 0000000..1174ba0
 +            at = WindowPos(at.x, y)
 +        }
 +
-+        val holder = FrameLayout(app).apply { background = sliverBackground(px) }
-+        // 单色图标（第十八节）：28dp 视觉圆 + 44dp 触摸，跟窗口按键同规格。
-+        val text = TextView(app).apply {
-+            text = String(Character.toChars(ICON_SWAP))
-+            gravity = Gravity.CENTER
-+            setTextColor(Color.WHITE)
-+            setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 16f)
-+            runCatching { typeface = android.graphics.Typeface.createFromAsset(app.assets, "flutter_assets/assets/fonts/DshIcons.ttf") }
++        // 合并球：竖排两个图标（上=眼睛 回虚拟屏，下=⇄ 转进虚拟屏），黄底。
++        val holder = FrameLayout(app).apply {
 +            background = GradientDrawable().apply {
-+                shape = GradientDrawable.OVAL
-+                setColor(0x99000000.toInt())
-+                setStroke((1.5f * px).roundToInt(), 0x66FFFFFF)
++                cornerRadius = 22 * px
++                setColor(0xF2FFC53D.toInt())
 +            }
-+            visibility = View.GONE
 +        }
-+        holder.addView(text, FrameLayout.LayoutParams((28 * px).roundToInt(), (28 * px).roundToInt(), Gravity.CENTER))
++        val icon = { glyph: Int ->
++            TextView(app).apply {
++                text = String(Character.toChars(glyph))
++                gravity = Gravity.CENTER
++                setTextColor(0xE6303444.toInt())
++                setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 15f)
++                runCatching { typeface = android.graphics.Typeface.createFromAsset(app.assets, "flutter_assets/assets/fonts/DshIcons.ttf") }
++            }
++        }
++        val eyeIcon = icon(ICON_EYE)
++        val swapIcon = icon(ICON_SWAP)
++        val col = android.widget.LinearLayout(app).apply { orientation = android.widget.LinearLayout.VERTICAL }
++        col.addView(eyeIcon, android.widget.LinearLayout.LayoutParams(-1, 0, 1f))
++        col.addView(swapIcon, android.widget.LinearLayout.LayoutParams(-1, 0, 1f))
++        holder.addView(col, FrameLayout.LayoutParams(-1, -1))
++        iconColumn = col
 +        val lp = WindowManager.LayoutParams(
 +            w,
 +            h,
@@ -3639,7 +3650,7 @@ index 0000000..1174ba0
 +            manager.addView(holder, lp)
 +            wm = manager
 +            root = holder
-+            label = text
++            label = null
 +            params = lp
 +            open = false
 +            true
@@ -3678,10 +3689,13 @@ index 0000000..1174ba0
 +    }
 +
 +    private fun sizeOf(expanded: Boolean, px: Float): Pair<Int, Int> =
-+        if (expanded) (BALL * px).roundToInt() to (BALL * px).roundToInt()
++        // 合并球：竖排两个键，所以展开态是 44×84dp 的胶囊（不是正方形）。
++        if (expanded) (44 * px).roundToInt() to (84 * px).roundToInt()
 +        else (SLIVER_W * px).roundToInt() to (SLIVER_H * px).roundToInt()
 +
 +    private fun setOpen(expanded: Boolean) {
++        // 只有展开态显示两个图标；收成边条时只剩黄色条。
++        iconColumn?.visibility = if (expanded) View.VISIBLE else View.GONE
 +        val view = root ?: return
 +        val manager = wm ?: return
 +        val lp = params ?: return
@@ -3726,10 +3740,12 @@ index 0000000..1174ba0
 +        var vx = 0f
 +        var dragging = false
 +        var downAt = 0L
++        var downY = 0f
 +
 +        view.setOnTouchListener { _, event ->
 +            when (event.actionMasked) {
 +                MotionEvent.ACTION_DOWN -> {
++                    downY = event.rawY
 +                    startX = event.rawX
 +                    startY = event.rawY
 +                    fromX = lp.x
@@ -3785,7 +3801,11 @@ index 0000000..1174ba0
 +                    if (SystemClock.elapsedRealtime() - downAt > 400) return@setOnTouchListener true
 +                    if (open) {
 +                        // 执行转换: this screen's app goes to the virtual screen.
-+                        onAction?.invoke("toVirtual")
++                        // 合并球：上半（眼睛）= 回到虚拟屏窗口；下半（⇄）= 把当前应用转进虚拟屏。
++                        // 以球自身中心为界：上半=眼睛（回虚拟屏），下半=⇄（把当前应用转进去）。
++                        val centerY = lp.y + lp.height / 2f
++                        val half = if (downY < centerY) "eye" else "toVirtual"
++                        onAction?.invoke(half)
 +                        setOpen(false)
 +                    } else {
 +                        setOpen(true)
@@ -3853,10 +3873,10 @@ index 0000000..1174ba0
 +}
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenOverlay.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenOverlay.kt
 new file mode 100644
-index 0000000..5512bad
+index 0000000..701c93e
 --- /dev/null
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenOverlay.kt
-@@ -0,0 +1,1622 @@
+@@ -0,0 +1,1677 @@
 +package io.github.ccch1mneyyy.dsh_app.phone.vscreen
 +
 +import android.annotation.SuppressLint
@@ -3984,6 +4004,9 @@ index 0000000..5512bad
 +
 +    /** 虚拟屏的 displayId 与真实像素尺寸：shell 注入（input -d）要用。 */
 +    private var displayId = 0
++
++    /** Presentation 显示层：系统负责把整块虚拟屏画进容器（窗口变它就变）。 */
++    private var presentationHost: PresentationHost? = null
 +    private var displayW = 0
 +    private var displayH = 0
 +    private var zoom = 1.0f
@@ -4149,6 +4172,8 @@ index 0000000..5512bad
 +    }
 +
 +    fun hide() {
++        runCatching { presentationHost?.dismiss() }
++        presentationHost = null
 +        // 关窗恢复原来的音量（窗口里默认静音，别把手机整体声音一直掐着）。
 +        context?.let { restoreVolume(it) }
 +        // 把手是独立窗口：主窗收起时必须一起移除，否则屏幕上会留下一条绿条。
@@ -4269,6 +4294,25 @@ index 0000000..5512bad
 +    private var lastSurface: Surface? = null
 +    private var surfaceRetries = 0
 +
++    /**
++     * 把虚拟屏画面"完整"放进窗口：按比例缩放并居中（letterbox），
++     * 窗口比例与虚拟屏比例不同时也不会裁掉内容（09:2x 的"显示不全"）。
++     */
++    private fun applyFitTransform() {
++        val view = picture ?: return
++        val dw = displayW
++        val dh = displayH
++        val vw = view.width
++        val vh = view.height
++        if (dw <= 0 || dh <= 0 || vw <= 0 || vh <= 0) return
++        val scale = minOf(vw.toFloat() / dw, vh.toFloat() / dh)
++        val m = android.graphics.Matrix()
++        m.setScale(scale, scale)
++        m.postTranslate((vw - dw * scale) / 2f, (vh - dh * scale) / 2f)
++        view.setTransform(m)
++        WakeTrace.log("window: fit view=${vw}x$vh display=${dw}x$dh scale=${"%.3f".format(scale)}")
++    }
++
 +    private fun requestSurface(app: Context, surface: Surface?, gen: Int) {
 +        if (gen != surfaceGen) return
 +        if (surface != null) lastSurface = surface
@@ -4343,6 +4387,30 @@ index 0000000..5512bad
 +        revealed = true
 +        v.animate().alpha(1f).setDuration(120).start()
 +        WakeTrace.log("window: revealed")
++    }
++
++    /** 用 Presentation 把整块虚拟屏画进容器：小窗/中窗/全屏都由系统缩放，不再裁切。 */
++    private fun attachPresentation(app: Context) {
++        val id = displayId
++        val container = content ?: return
++        if (id <= 0) return
++        val dm = app.getSystemService(Context.DISPLAY_SERVICE) as? android.hardware.display.DisplayManager
++        val display = dm?.getDisplay(id) ?: return
++        if (presentationHost?.isShowing() == true) return
++        val host = PresentationHost(app, display)
++        presentationHost = host
++        val px = app.resources.displayMetrics.density
++        try {
++            host.show(container, 16f * px)
++            // 直显纹理退居后台（保留 surface，窗口尺寸变时不用重贴）。
++            picture?.visibility = View.GONE
++            fallback?.visibility = View.GONE
++            waiting?.visibility = View.GONE
++            WakeTrace.log("window: presentation attached display=$id")
++        } catch (t: Throwable) {
++            WakeTrace.log("window: presentation failed ${t.javaClass.simpleName}: ${t.message}")
++            presentationHost = null
++        }
 +    }
 +
 +    private fun scheduleSurfaceRetry(app: Context, gen: Int) {
@@ -4544,6 +4612,8 @@ index 0000000..5512bad
 +            WakeTrace.log(
 +                "window: size-check box=${b?.width}x${b?.height} " +
 +                    "content=${content?.width}x${content?.height} lp=${params?.width}x${params?.height}")
++            // 窗口尺寸定了再算适配：画面完整放进窗口。
++            applyFitTransform()
 +        }, 120)
 +        val margin = (10 * px).roundToInt()
 +        // 窗口 = 画面：高度不再给把手留空间（把手是独立窗口）。
@@ -4793,6 +4863,7 @@ index 0000000..5512bad
 +            content?.requestLayout()
 +            syncGripWindow(app, manager, lp.x, lp.y, w, hgt, false)
 +            WakeTrace.log("window: fullscreen size=${w}x$hgt at=${lp.x},${lp.y}")
++            main.postDelayed({ applyFitTransform() }, 120)
 +            return
 +        }
 +        // 退出全屏：回到展开尺寸
@@ -5107,6 +5178,10 @@ index 0000000..5512bad
 +
 +    /** 眼睛: hide the picture, keep the display (and its task) running; the glyph follows. */
 +    private fun toggleEye() {
++        // 眼睛键 = 切到后台操作：隐藏窗口（任务与预览通道继续）。
++        hide()
++        return
++        @Suppress("UNREACHABLE_CODE")
 +        eyeHidden = !eyeHidden
 +        eyeGlyph?.text = String(Character.toChars(if (eyeHidden) ICON_EYE_SLASH else ICON_EYE))
 +        applyLive()
@@ -82846,10 +82921,10 @@ index 0000000..26e0742
 +final phoneTaskClockProvider = NotifierProvider<PhoneTaskClock, DateTime>(PhoneTaskClock.new);
 diff --git a/app/lib/ui/phone/virtual_screen_host.dart b/app/lib/ui/phone/virtual_screen_host.dart
 new file mode 100644
-index 0000000..d7252a4
+index 0000000..d272c4c
 --- /dev/null
 +++ b/app/lib/ui/phone/virtual_screen_host.dart
-@@ -0,0 +1,323 @@
+@@ -0,0 +1,328 @@
 +import 'dart:async';
 +
 +import 'package:flutter/material.dart';
@@ -82934,6 +83009,11 @@ index 0000000..d7252a4
 +      // 原生会把窗口实际绑定的任务号带过来（toMain:7），避免拿空 id 去迁移。
 +      final id = action.contains(':') ? int.tryParse(action.split(':').last) : null;
 +      await _transfer(toMain: true, taskId: id);
++    } else if (action == 'eye') {
++      // 合并球上键：回到虚拟屏窗口（小窗形态）。
++      final id = firstBackgroundTaskId(ref.read(phoneProvider).status) ?? 0;
++      ref.read(virtualWindowProvider.notifier).holdOpen();
++      await ref.read(virtualWindowProvider.notifier).open(id);
 +    } else if (action == 'toVirtual') {
 +      // 主屏上的悬浮球：把主屏当前应用交给 AI。
 +      await _transfer(toMain: false);
