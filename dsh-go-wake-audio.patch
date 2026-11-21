@@ -1,6 +1,6 @@
-From 8340ab6d9fd6ee2ca672a2178a484cbdebd820f4 Mon Sep 17 00:00:00 2001
+From 54e2eda2a9edaa1b39c72592299649f7b16147ab Mon Sep 17 00:00:00 2001
 From: w <c@l>
-Date: Sat, 21 Nov 2026 18:39:36 +0800
+Date: Sat, 21 Nov 2026 18:44:09 +0800
 Subject: [PATCH] pb: full
 
 ---
@@ -40,7 +40,7 @@ Subject: [PATCH] pb: full
  .../phone/vscreen/SwitchPromptOverlay.kt      |  142 ++
  .../dsh_app/phone/vscreen/TaskMover.kt        |   43 +
  .../dsh_app/phone/vscreen/TransferBall.kt     |  411 ++++
- .../phone/vscreen/VirtualScreenOverlay.kt     | 1846 +++++++++++++++
+ .../phone/vscreen/VirtualScreenOverlay.kt     | 1861 +++++++++++++++
  .../phone/vscreen/VirtualScreenPlugin.kt      |  149 ++
  .../ccch1mneyyy/dsh_app/runtime/GuestSetup.kt |   47 +-
  .../dsh_app/shortcuts/EntryActivity.kt        |    3 +
@@ -87,7 +87,7 @@ Subject: [PATCH] pb: full
  app/lib/speech/wake_reply.dart                |  175 ++
  app/lib/state/app_info.dart                   |    5 +
  app/lib/state/update_state.dart               |    9 +
- app/lib/state/virtual_screen_state.dart       |  374 +++
+ app/lib/state/virtual_screen_state.dart       |  368 +++
  app/lib/ui/chat/chat_rows.dart                |    2 +
  app/lib/ui/chat/chat_screen.dart              |  108 +-
  app/lib/ui/chat/media/media_format.dart       |   16 +-
@@ -114,7 +114,7 @@ Subject: [PATCH] pb: full
  docs/wake-word.md                             |  107 +
  dsh-go-wake.patch                             | 2065 +++++++++++++++++
  tooling/build-wake-apk.sh                     |   68 +
- 110 files changed, 12653 insertions(+), 529 deletions(-)
+ 110 files changed, 12662 insertions(+), 529 deletions(-)
  create mode 100644 .github/workflows/wake-apk.yml
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallForegroundService.kt
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallOverlay.kt
@@ -4275,10 +4275,10 @@ index 0000000..8c9ef8d
 +}
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenOverlay.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenOverlay.kt
 new file mode 100644
-index 0000000..914ffb4
+index 0000000..a1a24b9
 --- /dev/null
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenOverlay.kt
-@@ -0,0 +1,1846 @@
+@@ -0,0 +1,1861 @@
 +package io.github.ccch1mneyyy.dsh_app.phone.vscreen
 +
 +import android.annotation.SuppressLint
@@ -4971,7 +4971,8 @@ index 0000000..914ffb4
 +        surface.visibility = if (showPicture) View.VISIBLE else View.INVISIBLE
 +        frames.visibility = if (!liveSurface && showPicture && lastBitmap != null) View.VISIBLE else View.GONE
 +        val placeholder = !hasPicture() || SystemClock.elapsedRealtime() < paintedAt
-+        waiting?.visibility = if (showPicture && placeholder) View.VISIBLE else View.GONE
++        // 有画面就绝不显示占位文案（18:4x 截图里"等待 AI 开始操作"压在视频上）。
++        waiting?.visibility = if (showPicture && placeholder && !liveSurface) View.VISIBLE else View.GONE
 +    }
 +
 +    private fun registerScreen(app: Context) {
@@ -5159,6 +5160,20 @@ index 0000000..914ffb4
 +        // 窗口尺寸变了要重贴一次固定 surface 尺寸：不然全屏回中窗时 SurfaceView 的
 +        // 图层几何还停在旧尺寸上，画面只显示一半（用户 15:21 实测）。
 +        main.postDelayed({ fixSurfaceSize() }, 60)
++        // 全屏/退出全屏：把虚拟屏 resize 到窗口尺寸，画面才不会被裁或缩小（18:4x）。
++        runCatching {
++            val dm = view.context.resources.displayMetrics
++            val targetW = if (next == Shape.EXPAND && fullscreen) w else displayW.coerceAtLeast(1)
++            val targetH = if (next == Shape.EXPAND && fullscreen) h else displayH.coerceAtLeast(1)
++            if (targetW > 0 && targetH > 0 && (targetW != displayW || targetH != displayH)) {
++                val ok = io.github.ccch1mneyyy.dsh_app.phone.background.BackgroundControl.get(view.context)
++                    .resizeDisplay(targetW, targetH, dm.densityDpi)
++                if (ok) {
++                    displayW = targetW; displayH = targetH
++                    WakeTrace.log("window: display resized to ${targetW}x$targetH fullscreen=$fullscreen")
++                }
++            }
++        }
 +        // 位置定了再摆把手：它与主窗底边对齐，全屏态不显示（用户 19:20）。
 +        syncGripWindow(view.context, manager, lp.x, lp.y, w, h, next == Shape.EXPAND && !fullscreen)
 +        // 非 SLIVER 时 box 完全透明（画面自己带圆角），窗口边缘就是画面边缘。
@@ -82064,10 +82079,10 @@ index c089d19..a15b64d 100644
  
 diff --git a/app/lib/state/virtual_screen_state.dart b/app/lib/state/virtual_screen_state.dart
 new file mode 100644
-index 0000000..219b634
+index 0000000..fe6fb57
 --- /dev/null
 +++ b/app/lib/state/virtual_screen_state.dart
-@@ -0,0 +1,374 @@
+@@ -0,0 +1,368 @@
 +import 'dart:async';
 +
 +import 'package:flutter/services.dart';
@@ -82354,12 +82369,6 @@ index 0000000..219b634
 +    if (taskId == null) {
 +      // 任务结束：没有可见窗口就不该再挂球（18:4x 用户报"第二个任务结束后黄条不退"）。
 +      if (!state.open && _ballOn) {
-+        _ballOn = false;
-+        unawaited(ref.read(virtualWindowProvider.notifier).setBall(false));
-+      }
-+    } else if (onVirtual) {
-+      // AI 正在虚拟屏干活：该给窗口，不该先冒球（18:3x 用户报"先出黄条再出窗口"）。
-+      if (_ballOn) {
 +        _ballOn = false;
 +        unawaited(ref.read(virtualWindowProvider.notifier).setBall(false));
 +      }
