@@ -1,7 +1,7 @@
-From 04e4f4472f58c610607877a9c169226875fb3746 Mon Sep 17 00:00:00 2001
+From 4361b2455f6dd6cd6dbdd32f927e06ccbd7b2318 Mon Sep 17 00:00:00 2001
 From: wake-ci <ci@local>
-Date: Sat, 21 Nov 2026 09:27:36 +0800
-Subject: [PATCH] pb: fit+eye
+Date: Sat, 21 Nov 2026 09:30:15 +0800
+Subject: [PATCH] pb: cover
 
 ---
  .gitattributes                                |    3 +
@@ -39,7 +39,7 @@ Subject: [PATCH] pb: fit+eye
  .../dsh_app/phone/vscreen/PresentationHost.kt |   69 +
  .../dsh_app/phone/vscreen/TaskMover.kt        |   43 +
  .../dsh_app/phone/vscreen/TransferBall.kt     |  425 ++++
- .../phone/vscreen/VirtualScreenOverlay.kt     | 1677 +++++++++++++
+ .../phone/vscreen/VirtualScreenOverlay.kt     | 1683 ++++++++++++++
  .../phone/vscreen/VirtualScreenPlugin.kt      |  118 +
  .../ccch1mneyyy/dsh_app/runtime/GuestSetup.kt |   47 +-
  .../dsh_app/shortcuts/EntryActivity.kt        |    3 +
@@ -110,7 +110,7 @@ Subject: [PATCH] pb: fit+eye
  docs/wake-word.md                             |  107 +
  dsh-go-wake.patch                             | 2065 +++++++++++++++++
  tooling/build-wake-apk.sh                     |   68 +
- 106 files changed, 11898 insertions(+), 524 deletions(-)
+ 106 files changed, 11904 insertions(+), 524 deletions(-)
  create mode 100644 .github/workflows/wake-apk.yml
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallForegroundService.kt
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallOverlay.kt
@@ -3873,10 +3873,10 @@ index 0000000..637e733
 +}
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenOverlay.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenOverlay.kt
 new file mode 100644
-index 0000000..701c93e
+index 0000000..f3cad7e
 --- /dev/null
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenOverlay.kt
-@@ -0,0 +1,1677 @@
+@@ -0,0 +1,1683 @@
 +package io.github.ccch1mneyyy.dsh_app.phone.vscreen
 +
 +import android.annotation.SuppressLint
@@ -4305,12 +4305,18 @@ index 0000000..701c93e
 +        val vw = view.width
 +        val vh = view.height
 +        if (dw <= 0 || dh <= 0 || vw <= 0 || vh <= 0) return
-+        val scale = minOf(vw.toFloat() / dw, vh.toFloat() / dh)
++        // 全屏 = 铺满（cover，居中裁掉溢出）；其它形态 = 完整可见（letterbox）。
++        val cover = fullscreen
++        val scale = if (cover) {
++            maxOf(vw.toFloat() / dw, vh.toFloat() / dh)
++        } else {
++            minOf(vw.toFloat() / dw, vh.toFloat() / dh)
++        }
 +        val m = android.graphics.Matrix()
 +        m.setScale(scale, scale)
 +        m.postTranslate((vw - dw * scale) / 2f, (vh - dh * scale) / 2f)
 +        view.setTransform(m)
-+        WakeTrace.log("window: fit view=${vw}x$vh display=${dw}x$dh scale=${"%.3f".format(scale)}")
++        WakeTrace.log("window: fit view=${vw}x$vh display=${dw}x$dh scale=${"%.3f".format(scale)} cover=$cover")
 +    }
 +
 +    private fun requestSurface(app: Context, surface: Surface?, gen: Int) {
