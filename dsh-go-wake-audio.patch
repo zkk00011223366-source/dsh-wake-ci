@@ -1,7 +1,7 @@
-From 90fa81c43a6b71ea17ec351732001a8ddc5611ef Mon Sep 17 00:00:00 2001
+From eed53356f13190d0db8561b034bbc22bf2fe22d5 Mon Sep 17 00:00:00 2001
 From: wake-ci <ci@local>
-Date: Sat, 21 Nov 2026 14:00:33 +0800
-Subject: [PATCH] pb: full tree
+Date: Sat, 21 Nov 2026 15:39:45 +0800
+Subject: [PATCH] pb: bundle4
 
 ---
  .gitattributes                                |    3 +
@@ -15,11 +15,11 @@ Subject: [PATCH] pb: full tree
  .../dsh_app/notify/NotifyPlugin.kt            |    5 +-
  .../dsh_app/phone/PhoneAndroidShell.kt        |   10 +-
  .../dsh_app/phone/PhoneBackGuard.kt           |  146 ++
- .../dsh_app/phone/PhoneContracts.kt           |   43 +
+ .../dsh_app/phone/PhoneContracts.kt           |   49 +
  .../ccch1mneyyy/dsh_app/phone/PhoneControl.kt |   77 +-
  .../ccch1mneyyy/dsh_app/phone/PhoneCore.kt    |  261 ++-
- .../ccch1mneyyy/dsh_app/phone/PhonePlugin.kt  |  164 ++
- .../dsh_app/phone/PhoneTaskSessions.kt        |   22 +-
+ .../ccch1mneyyy/dsh_app/phone/PhonePlugin.kt  |  182 ++
+ .../dsh_app/phone/PhoneTaskSessions.kt        |   33 +-
  .../ccch1mneyyy/dsh_app/phone/PhoneTasks.kt   |   11 +
  .../dsh_app/phone/PhoneToolCatalog.kt         |   30 +-
  .../ccch1mneyyy/dsh_app/phone/SafetyGate.kt   |    4 +-
@@ -39,12 +39,13 @@ Subject: [PATCH] pb: full tree
  .../dsh_app/phone/vscreen/PresentationHost.kt |   69 +
  .../phone/vscreen/SwitchPromptOverlay.kt      |  142 ++
  .../dsh_app/phone/vscreen/TaskMover.kt        |   43 +
- .../dsh_app/phone/vscreen/TransferBall.kt     |  430 ++++
- .../phone/vscreen/VirtualScreenOverlay.kt     | 1776 ++++++++++++++
- .../phone/vscreen/VirtualScreenPlugin.kt      |  129 +
+ .../dsh_app/phone/vscreen/TransferBall.kt     |  411 ++++
+ .../phone/vscreen/VirtualScreenOverlay.kt     | 1799 ++++++++++++++
+ .../phone/vscreen/VirtualScreenPlugin.kt      |  148 ++
  .../ccch1mneyyy/dsh_app/runtime/GuestSetup.kt |   47 +-
  .../dsh_app/shortcuts/EntryActivity.kt        |    3 +
  .../dsh_app/shortcuts/ShortcutsPlugin.kt      |   13 +-
+ .../ccch1mneyyy/dsh_app/speech/CallCapture.kt |    6 +-
  .../dsh_app/wake/WakeBootReceiver.kt          |   29 +
  .../ccch1mneyyy/dsh_app/wake/WakeCapture.kt   |  172 ++
  .../ccch1mneyyy/dsh_app/wake/WakeTrace.kt     |   39 +
@@ -86,7 +87,7 @@ Subject: [PATCH] pb: full tree
  app/lib/speech/wake_reply.dart                |  175 ++
  app/lib/state/app_info.dart                   |    5 +
  app/lib/state/update_state.dart               |    9 +
- app/lib/state/virtual_screen_state.dart       |  310 +++
+ app/lib/state/virtual_screen_state.dart       |  340 +++
  app/lib/ui/chat/chat_rows.dart                |    2 +
  app/lib/ui/chat/chat_screen.dart              |  108 +-
  app/lib/ui/chat/media/media_format.dart       |   16 +-
@@ -95,7 +96,7 @@ Subject: [PATCH] pb: full tree
  app/lib/ui/phone/dnd_mode_page.dart           |  186 +-
  app/lib/ui/phone/phone_control_screen.dart    |    1 +
  app/lib/ui/phone/phone_task_card.dart         |  430 ++++
- app/lib/ui/phone/virtual_screen_host.dart     |  352 +++
+ app/lib/ui/phone/virtual_screen_host.dart     |  354 +++
  app/lib/ui/phone/virtual_screen_page.dart     |  114 +
  app/lib/ui/phone/virtual_screen_surface.dart  |  286 +++
  app/lib/ui/settings/voice_settings_page.dart  |  151 ++
@@ -112,7 +113,7 @@ Subject: [PATCH] pb: full tree
  docs/wake-word.md                             |  107 +
  dsh-go-wake.patch                             | 2065 +++++++++++++++++
  tooling/build-wake-apk.sh                     |   68 +
- 108 files changed, 12438 insertions(+), 526 deletions(-)
+ 109 files changed, 12531 insertions(+), 529 deletions(-)
  create mode 100644 .github/workflows/wake-apk.yml
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallForegroundService.kt
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallOverlay.kt
@@ -1288,7 +1289,7 @@ index 0000000..175e47b
 +    }
 +}
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneContracts.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneContracts.kt
-index 612f94d..becf045 100644
+index 612f94d..ac960bd 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneContracts.kt
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneContracts.kt
 @@ -220,6 +220,13 @@ interface PhoneDriver {
@@ -1305,7 +1306,7 @@ index 612f94d..becf045 100644
  }
  
  data class ConfirmRequest(
-@@ -351,8 +358,44 @@ interface ControlListener {
+@@ -351,8 +358,50 @@ interface ControlListener {
   * connect and clear on disconnect; the bridge reads these on every call.
   */
  object PhoneRegistry {
@@ -1342,6 +1343,12 @@ index 612f94d..becf045 100644
 +    @Volatile var handBackToMain: (() -> Unit)? = null
 +
 +    /**
++     * 引擎自己最近一次"搬屏/开屏"的时刻（SystemClock.elapsedRealtime）。
++     * 胶囊只问手动切到前台的情况：这个值在 2.5 秒内说明是 AI 动的，不弹（第⑥项）。
++     */
++    @Volatile var lastEngineMoveMs: Long = 0
++
++    /**
 +     * 主屏合并球的两个键（"eye" / "toVirtual"）：原生直接处理，返回 true 表示已经办了。
 +     * 之前这两个动作回给 Dart，App 在后台时没人接，点了没反应（问题#3）。
 +     */
@@ -1351,7 +1358,7 @@ index 612f94d..becf045 100644
      @Volatile var overlayGate: UserGate? = null
      @Volatile var notificationGate: UserGate? = null
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneControl.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneControl.kt
-index 2fc7cd5..84d3700 100644
+index 2fc7cd5..033804d 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneControl.kt
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneControl.kt
 @@ -201,6 +201,8 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
@@ -1446,7 +1453,7 @@ index 2fc7cd5..84d3700 100644
 +        // AI 的明确指令（background 参数）优先级更高，在 backgroundTarget 里已先行判断。
 +        val target = runCatching {
 +            app.getSharedPreferences("FlutterSharedPreferences", Context.MODE_PRIVATE)
-+                .getString("flutter.virtual_screen_target", "main") ?: "main"
++                .getString("flutter.virtual_screen_target", "virtual") ?: "virtual"
 +        }.getOrDefault("main")
 +        PhoneRegistry.backgroundSilent = target == "background"
 +        io.github.ccch1mneyyy.dsh_app.wake.WakeTrace.log(
@@ -1962,21 +1969,22 @@ index 6c70185..151f839 100644
          private val WRITES = setOf(FOCUS_TEXT, PhoneToolCatalog.TAP, PhoneToolCatalog.TYPE, PhoneToolCatalog.TAP_XY, PhoneToolCatalog.OPEN)
          /** An uncertain effect call tightens draft eligibility; it does not prove input was dispatched. */
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhonePlugin.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhonePlugin.kt
-index 4a76535..6d60a0b 100644
+index 4a76535..ad29625 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhonePlugin.kt
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhonePlugin.kt
-@@ -2,7 +2,10 @@ package io.github.ccch1mneyyy.dsh_app.phone
+@@ -2,7 +2,11 @@ package io.github.ccch1mneyyy.dsh_app.phone
  
  import io.github.ccch1mneyyy.dsh_app.i18n.AppStrings
  import io.github.ccch1mneyyy.dsh_app.R
 +import io.github.ccch1mneyyy.dsh_app.phone.background.BackgroundDisplay
  import io.github.ccch1mneyyy.dsh_app.phone.background.BackgroundPreview
 +import io.github.ccch1mneyyy.dsh_app.phone.vscreen.VirtualScreenOverlay
++import io.github.ccch1mneyyy.dsh_app.phone.vscreen.TransferBall
 +import io.github.ccch1mneyyy.dsh_app.wake.WakeTrace
  import android.app.Activity
  import android.app.Application
  import android.content.Context
-@@ -77,6 +80,61 @@ class PhonePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
+@@ -77,6 +81,66 @@ class PhonePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
          promptOwner = Any()
          attached = true
          control.background.restoreKeptChannel()
@@ -2020,12 +2028,17 @@ index 4a76535..6d60a0b 100644
 +                    when {
 +                        // 虚拟屏 / 后台屏 → 主屏：任务交回手机，窗口收起。
 +                        windowShown || taskOnVirtual -> io.execute {
++                            // 这一下是自己搬的：打时间戳，胶囊那边就不会再把它当成
++                            // "手动切前台"弹一次问用户（第③⑥项的交界处）。
++                            PhoneRegistry.lastEngineMoveMs = SystemClock.elapsedRealtime()
 +                            val target = runCatching { control.background.anyPreviewTarget() }.getOrNull()
 +                            if (target != null) {
 +                                val reply = control.background.handOverTask(target, toMain = true)
 +                                WakeTrace.log("ball: swap to main reply=$reply")
 +                            }
 +                            main.post { VirtualScreenOverlay.hide() }
++                            // 搬到主屏后窗口没了，但用户需要入口切回来：出球。
++                            main.post { TransferBall.setWanted(true, appContext, forced = true) }
 +                        }
 +                        // 主屏 → 虚拟屏：搬进虚拟屏并开窗。
 +                        else -> io.execute { moveBallTarget(showWindow = true) }
@@ -2038,18 +2051,28 @@ index 4a76535..6d60a0b 100644
          methods = MethodChannel(binding.binaryMessenger, "dsh/phone").also { it.setMethodCallHandler(this) }
          events = EventChannel(binding.binaryMessenger, "dsh/phone/events").also { it.setStreamHandler(this) }
          previewEvents = EventChannel(binding.binaryMessenger, "dsh/phone/preview").also { channel ->
-@@ -103,9 +161,23 @@ class PhonePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
+@@ -103,9 +167,33 @@ class PhonePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
          }
      }
  
 +    /** 主屏 → 虚拟屏：把主屏最上面的任务搬进来，按需要开窗（球的两个键共用）。 */
 +    private fun moveBallTarget(showWindow: Boolean) {
++        // 只在"主屏最前面是一个真应用"时才搬：桌面、本 App 自己、读不到前台都不搬，
++        // 否则会把桌面或自己搬进虚拟屏（三地方规则里"主屏"态最容易踩这个坑）。
++        val front = runCatching { PhoneRegistry.mainDriver?.foregroundPackage() }.getOrNull()
++        if (front == null || front == appContext.packageName || front.contains("launcher")) {
++            WakeTrace.log("ball: move skipped front=$front")
++            return
++        }
 +        val display = control.driver(PhoneScreen.BACKGROUND) as? BackgroundDisplay
 +        val reply = display?.moveMainTaskToVirtual() ?: mapOf("ok" to false, "reason" to "noDisplay")
 +        WakeTrace.log(
 +            "ball: move main→virtual showWindow=$showWindow reply=$reply")
 +        if (showWindow) {
 +            main.post { VirtualScreenOverlay.show(appContext, VirtualScreenOverlay.currentTaskId()) }
++        } else {
++            // 进后台不弹窗，但要让 Dart 知道"这条路径别自动开窗"，并且把球叫出来。
++            VirtualScreenOverlay.onAction?.invoke("eyeHidden")
 +        }
 +    }
 +
@@ -2062,7 +2085,7 @@ index 4a76535..6d60a0b 100644
          skillSelectionRequest = Any()
          skillInspection = null
          skillClient?.let { control.skillReplaySelections.retireClient(it); control.skillDrafts.retireClient(it) }
-@@ -249,6 +321,98 @@ class PhonePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
+@@ -249,6 +337,100 @@ class PhonePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
                  result.success(if (removed) mapOf("kind" to "discarded") else replayRejected("stale"))
              }
              "setBackgroundPreview" -> result.success(control.preview.setEnabled(call.argument<Boolean>("enabled") == true))
@@ -2148,6 +2171,8 @@ index 4a76535..6d60a0b 100644
 +                val valid = args != null && args.keys.all { it in setOf("taskId", "toMain") } &&
 +                    taskId != null && (taskId > 0 || toMain == false) && toMain != null
 +                val target = if (valid && (taskId ?: 0L) > 0) control.background.previewTarget(taskId!!) else null
++                // 引擎自己搬屏：胶囊据此判断"不是手动切的"，别弹（第⑥项）。
++                if (valid) PhoneRegistry.lastEngineMoveMs = SystemClock.elapsedRealtime()
 +                when {
 +                    !valid -> result.success(mapOf("ok" to false, "reason" to "invalidArguments"))
 +                    target == null && toMain == false -> async(result) {
@@ -2162,10 +2187,17 @@ index 4a76535..6d60a0b 100644
                  val selected = call.argument<String>("mode").orEmpty()
                  val enabled = call.argument<Boolean>("enabled") == true
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneTaskSessions.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneTaskSessions.kt
-index 3fd6e48..a170f6f 100644
+index 3fd6e48..6a2410f 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneTaskSessions.kt
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneTaskSessions.kt
-@@ -29,7 +29,11 @@ class PhoneTaskSessions(
+@@ -1,5 +1,6 @@
+ package io.github.ccch1mneyyy.dsh_app.phone
+ 
++import io.github.ccch1mneyyy.dsh_app.wake.WakeTrace
+ import io.github.ccch1mneyyy.dsh_app.phone.skills.PhoneSkillReplaySelections
+ import io.github.ccch1mneyyy.dsh_app.phone.skills.PhoneSkillOutcomes
+ 
+@@ -29,7 +30,11 @@ class PhoneTaskSessions(
      private val journal: PhoneTaskJournal? = null,
      private val createBackgroundWorker: () -> SerialWorker = { SerialWorker("dsh-phone-background") },
      // Pure in-memory capability/setting snapshot. Never probe a peer or read preferences here.
@@ -2178,7 +2210,24 @@ index 3fd6e48..a170f6f 100644
      private val screenRecoveryReady: () -> Boolean = { false },
      // Connection preparation precedes any new screen lease and runs outside registry/Tasks locks.
      private val prepareBackground: (Task, PhoneTasks.Owner) -> String? = { _, _ -> null },
-@@ -472,7 +476,7 @@ class PhoneTaskSessions(
+@@ -459,7 +464,15 @@ class PhoneTaskSessions(
+     }
+ 
+     private fun awaitResources(a: Admission, call: PhoneCore.PreparedCall): String? {
+-        val needed = call.screens
++        // 只读观察不改变任何状态，不该被别的对话的独占锁挡住：别人正在主屏上操作时，
++        // 这个会话连"看一眼"都要排队 30 秒然后失败（我们自己踩到过——另一个对话在操作，
++        // 这边 screen 完全读不了，只能退回截图）。读屏就不抢 MAIN 了。
++        val sharedRead = call.name == PhoneToolCatalog.SCREEN &&
++            synchronized(lock) { mainHolder != null && mainHolder !== a.task }
++        if (sharedRead) {
++            WakeTrace.log("screen: shared read (main held by another task)")
++        }
++        val needed = if (sharedRead) call.screens.filterNot { it == PhoneScreen.MAIN } else call.screens
+         val known = call.knownApp
+         val unknown = call.unknownApp
+         if (needed.isEmpty() && known == null && !unknown) return null
+@@ -472,7 +485,7 @@ class PhoneTaskSessions(
          fun acquire(): String? = synchronized(a) {
              if (remainingMs(a) <= 0) return@synchronized deadlineOutput().text
              call.borrowedMainForBackgroundOpen = call.name == PhoneToolCatalog.OPEN &&
@@ -2187,7 +2236,7 @@ index 3fd6e48..a170f6f 100644
              if (PhoneScreen.MAIN in needed) mainHolder = task
              if (PhoneScreen.BACKGROUND in needed) backgroundHolders += task
              if (known != null) task.heldApps += known
-@@ -700,7 +704,6 @@ class PhoneTaskSessions(
+@@ -700,7 +713,6 @@ class PhoneTaskSessions(
                  else mapOf("kind" to "known", "packageName" to checkNotNull(task.waitingApp).packageName)
              mapOf("sessionId" to task.sessionId, "runId" to task.runId,
              "identity" to if (task.sessionId == null) "legacy" else "session",
@@ -2195,7 +2244,7 @@ index 3fd6e48..a170f6f 100644
              "waitingForScreen" to task.waitingScreens.firstOrNull { screen ->
                  when (screen) {
                      PhoneScreen.MAIN -> mainHolder != null && mainHolder !== task
-@@ -864,13 +867,20 @@ class PhoneTaskSessions(
+@@ -864,13 +876,20 @@ class PhoneTaskSessions(
          return synchronized(lock) { lastAdmitted[task.sessionId] === task } && task.tasks.isCurrent(owner)
      }
  
@@ -2218,7 +2267,7 @@ index 3fd6e48..a170f6f 100644
                  // A prior cancellation keeps responsibility for its external work. Still
                  // invalidate this lifetime now. An idle record must not gain a stop hold or
                  // a session fence merely because the screen/service disappeared.
-@@ -948,7 +958,7 @@ class PhoneTaskSessions(
+@@ -948,7 +967,7 @@ class PhoneTaskSessions(
  
      companion object {
          // l10n:keep agent resource admission
@@ -3776,10 +3825,10 @@ index 0000000..8ddabc9
 +}
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/TransferBall.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/TransferBall.kt
 new file mode 100644
-index 0000000..f6c9a99
+index 0000000..8c9ef8d
 --- /dev/null
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/TransferBall.kt
-@@ -0,0 +1,430 @@
+@@ -0,0 +1,411 @@
 +package io.github.ccch1mneyyy.dsh_app.phone.vscreen
 +
 +import android.annotation.SuppressLint
@@ -3853,27 +3902,26 @@ index 0000000..f6c9a99
 +
 +    /** The app asked for the ball; it stays off screen whenever nothing is handable. */
 +    private var wanted = false
++
++    /** 由眼睛键触发的显示：不看前台是谁，一律露头。 */
++    @Volatile private var forcedByEye = false
++
++    /** 球现在要不要在场（占屏判断用：球在就说明虚拟屏上还有活要看）。 */
++    val isWanted: Boolean get() = wanted
 +    private val main = Handler(Looper.getMainLooper())
 +    private val fold = Runnable { setOpen(false) }
 +    private val watch = object : Runnable {
 +        override fun run() {
-+            if (!wanted) return
++            // 球只跟"任务"绑定，不跟"前台应用"绑定（用户 15:3x 实测：球的显隐会跟着
++            // AI 的悬浮窗一起变，就是因为在读主屏前台包名）。显隐完全由上层按任务算好后
++            // 通过 setWanted 下发，这里只负责把它画出来或收起来。
 +            val context = appContext ?: return
-+            // 附加硬条件（10:58 用户反馈）：虚拟屏真有东西才显示。
-+            // 之前只看"前台是普通应用"，于是引擎都关了球还跟着应用乱弹。
-+            val alive = VirtualScreenOverlay.shown ||
-+                io.github.ccch1mneyyy.dsh_app.phone.PhoneRegistry.mainTaskActive ||
-+                runCatching {
-+                    io.github.ccch1mneyyy.dsh_app.phone.background.BackgroundControl.get(context)
-+                        .anyPreviewTarget() != null
-+                }.getOrDefault(false)
-+            val can = alive && hasSomethingToMove(context)
-+            if (can && root == null) {
++            if (wanted && root == null) {
 +                if (!show(context)) {
 +                    main.postDelayed(this, WATCH_MS)
 +                    return
 +                }
-+            } else if (!can && root != null) {
++            } else if (!wanted && root != null) {
 +                hide()
 +            }
 +            main.postDelayed(this, WATCH_MS)
@@ -3884,31 +3932,13 @@ index 0000000..f6c9a99
 +
 +    val shown: Boolean get() = root != null
 +
-+    /**
-+     * 主屏上有没有值得搬的东西：桌面、本 App 自己在前面时没有。读不到前台应用（无障碍没连）就
-+     * 当作有——让那一下点击自己报出原因，比把功能藏起来好。
-+     */
-+    private fun hasSomethingToMove(context: Context): Boolean {
-+        val pkg = mainForegroundPackage()?.takeIf { it.isNotEmpty() } ?: return true
-+        if (pkg == context.packageName) return false
-+        val home = runCatching {
-+            context.packageManager.resolveActivity(
-+                Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME),
-+                PackageManager.MATCH_DEFAULT_ONLY,
-+            )?.activityInfo?.packageName
-+        }.getOrNull()
-+        return pkg != home
-+    }
-+
-+    /** The main screen's foreground package through the accessibility driver; null when unreadable. */
-+    private fun mainForegroundPackage(): String? = runCatching {
-+        io.github.ccch1mneyyy.dsh_app.phone.PhoneRegistry.mainDriver?.foregroundPackage()
-+    }.getOrNull()
-+
 +    /** 想不想要: the app says yes or no; the ball decides on its own whether right now is a moment. */
-+    fun setWanted(on: Boolean, context: Context? = null) {
++    fun setWanted(on: Boolean, context: Context? = null, forced: Boolean = false) {
 +        if (context != null) appContext = context.applicationContext
 +        wanted = on
++        // forced：眼睛键把窗口收起来之后，球必须出现——那一刻主屏前台往往就是本 App
++        // 自己，按"前台可迁移"的过滤会被藏掉（用户实测点眼睛后没有球）。
++        forcedByEye = on && forced
 +        main.removeCallbacks(watch)
 +        if (!on) {
 +            hide()
@@ -4212,10 +4242,10 @@ index 0000000..f6c9a99
 +}
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenOverlay.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenOverlay.kt
 new file mode 100644
-index 0000000..17436fc
+index 0000000..f27ce7d
 --- /dev/null
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenOverlay.kt
-@@ -0,0 +1,1776 @@
+@@ -0,0 +1,1799 @@
 +package io.github.ccch1mneyyy.dsh_app.phone.vscreen
 +
 +import android.annotation.SuppressLint
@@ -4512,6 +4542,14 @@ index 0000000..17436fc
 +                WakeTrace.log("window: reveal fallback (no surface yet)")
 +            }
 +        }, 2500)
++        // 硬规则：窗口出现必须有画面。5 秒还接不上直连就自己收窗、把球叫出来，
++        // 不给用户留一个空的/黑屏悬浮窗。
++        main.postDelayed({
++            if (root === box && !liveSurface) {
++                WakeTrace.log("window: no picture in 5s, hide and show ball")
++                hideWindowOnly()
++            }
++        }, 5000)
 +        // 已经就绪的情况（监听挂得早，回调可能已错过这次创建）：补一次直连。
 +        val ready = surfaceView.holder.surface
 +        if (ready != null && ready.isValid) requestSurface(app, ready, surfaceGen)
@@ -4534,6 +4572,13 @@ index 0000000..17436fc
 +        // 窗口已不在屏上：状态必须跟着变，否则后续"切形态"会对着空窗口算尺寸。
 +        shape = Shape.SLIVER
 +        WakeTrace.log("window: hidden (surface kept, display=$displayId)")
++        // 先原生把球叫出来：Dart 那条 onAction 只是通知，App 在后台时可能没人接，
++        // 而"点眼睛 → 立刻出两键球"是硬需求。
++        val app = context
++        if (app != null) {
++            TransferBall.setWanted(true, app, forced = true)
++            WakeTrace.log("ball: forced on (eye hidden)")
++        }
 +        onAction?.invoke("eyeHidden")
 +    }
 +
@@ -5066,6 +5111,9 @@ index 0000000..17436fc
 +            manager.updateViewLayout(view, lp)
 +        } catch (_: Exception) {
 +        }
++        // 窗口尺寸变了要重贴一次固定 surface 尺寸：不然全屏回中窗时 SurfaceView 的
++        // 图层几何还停在旧尺寸上，画面只显示一半（用户 15:21 实测）。
++        main.postDelayed({ fixSurfaceSize() }, 60)
 +        // 位置定了再摆把手：它与主窗底边对齐，全屏态不显示（用户 19:20）。
 +        syncGripWindow(view.context, manager, lp.x, lp.y, w, h, next == Shape.EXPAND && !fullscreen)
 +        // 非 SLIVER 时 box 完全透明（画面自己带圆角），窗口边缘就是画面边缘。
@@ -5220,7 +5268,12 @@ index 0000000..17436fc
 +        val hi = EdgeSnap.maxY(area, lp.height, margin)
 +        val fraction = if (hi > lo) ((lp.y - lo).toFloat() / (hi - lo)).coerceIn(0f, 1f) else dock.yFraction
 +        dock = Dock(side, fraction)
-+        applyShape(shape, manager, lp, box, area, px)
++        // 文档 §四：拖到屏幕左/右边缘松手 → 收成 12×56 细条贴边。
++        // 以前这里只是"按松手位置摆好"，不会变细条，所以从拖拽条拖到边上没反应。
++        val edge = (12 * px).roundToInt()
++        val nearLeft = lp.x <= EdgeSnap.minX(area, margin) + edge
++        val nearRight = lp.x + lp.width >= EdgeSnap.maxX(area, lp.width, margin) - edge
++        applyShape(if (nearLeft || nearRight) Shape.SLIVER else shape, manager, lp, box, area, px)
 +        val sp = app.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
 +        sp.putString(KEY_SIDE, if (dock.side == Side.LEFT) "l" else "r").putFloat(KEY_FRACTION, dock.yFraction).apply()
 +    }
@@ -5994,10 +6047,10 @@ index 0000000..17436fc
 +}
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenPlugin.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenPlugin.kt
 new file mode 100644
-index 0000000..cb2622a
+index 0000000..9c927b4
 --- /dev/null
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenPlugin.kt
-@@ -0,0 +1,129 @@
+@@ -0,0 +1,148 @@
 +package io.github.ccch1mneyyy.dsh_app.phone.vscreen
 +
 +import android.content.Context
@@ -6070,6 +6123,7 @@ index 0000000..cb2622a
 +                val cmd = "am task move-task $taskId $target"
 +                val ok = io.github.ccch1mneyyy.dsh_app.phone.PhoneRegistry.injectDisplayInput?.invoke(cmd) == true
 +                io.github.ccch1mneyyy.dsh_app.wake.WakeTrace.log("window: move-task $cmd ok=$ok")
++                PhoneRegistry.lastEngineMoveMs = android.os.SystemClock.elapsedRealtime()
 +                result.success(ok)
 +            }
 +            "retask" -> {
@@ -6082,13 +6136,16 @@ index 0000000..cb2622a
 +                VirtualScreenOverlay.hide()
 +                // 关窗时先把屏里的应用搬回手机（内容不丢失、不被杀），再放开占屏。
 +                val target = PhoneRegistry.holdDisplayForWindow
++                // 球还在场（静默/后台屏）时不能放屏：放掉就相当于把屏里还活着的应用连屏销毁，
++                // 和"静默保活"直接冲突。球不在时才真的放开。
++                val releaseHold = !TransferBall.isWanted
 +                result.success(null)
 +                Thread {
 +                    runCatching {
 +                        val hand = PhoneRegistry.handBackToMain
 +                        hand?.invoke()
 +                    }
-+                    target?.invoke(false)
++                    if (releaseHold) target?.invoke(false)
 +                }.start()
 +            }
 +            "frame" -> {
@@ -6096,6 +6153,14 @@ index 0000000..cb2622a
 +                result.success(bytes != null && VirtualScreenOverlay.pushFrame(bytes))
 +            }
 +            "wantsFrames" -> result.success(VirtualScreenOverlay.wantsFrames())
++            // 胶囊用：引擎上一次自己搬屏/开屏离现在多少毫秒（判断是不是手动切的前台）。
++            "probe" -> result.success(
++                mapOf(
++                    "movedAgoMs" to (android.os.SystemClock.elapsedRealtime() - PhoneRegistry.lastEngineMoveMs),
++                    "shown" to VirtualScreenOverlay.shown,
++                    "taskId" to VirtualScreenOverlay.currentTaskId(),
++                ),
++            )
 +            // 虚拟屏上有没有前台应用：没有时窗口里的「返」「转」置灰（第十二节 2）。
 +            "state" -> {
 +                VirtualScreenOverlay.setHasApp(call.argument<Boolean>("hasApp") ?: true)
@@ -6116,7 +6181,14 @@ index 0000000..cb2622a
 +                    return
 +                }
 +                // 第十节 10: 只在主屏上真有可迁移应用时才露头（桌面、本 App 自己在前面时不出现）。
-+                TransferBall.setWanted(call.argument<Boolean>("on") == true, app)
++                val on = call.argument<Boolean>("on") == true
++                // 静默模式（不弹窗）没有窗口来占屏：一次操作收尾就把屏销毁，屏里的应用跟着被杀。
++                // 球在场就等于"虚拟屏上还有东西要看"，用它占住这块屏（第⑦项 静默保活）。
++                // 窗口开着时本来就占着屏，别在球收起时把它放掉。
++                if (on) PhoneRegistry.holdDisplayForWindow?.invoke(true)
++                else if (!VirtualScreenOverlay.shown) PhoneRegistry.holdDisplayForWindow?.invoke(false)
++                TransferBall.setWanted(on, app)
++                io.github.ccch1mneyyy.dsh_app.wake.WakeTrace.log("ball: on=$on hold=$on")
 +                result.success(true)
 +            }
 +            else -> result.notImplemented()
@@ -6266,6 +6338,23 @@ index cbcc8f1..0a50cdd 100644
          const val KIND_CHAT = "chat"
          const val KIND_SCREENSHOT = "screenshot"
  
+diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/speech/CallCapture.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/speech/CallCapture.kt
+index ed18339..a705bf4 100644
+--- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/speech/CallCapture.kt
++++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/speech/CallCapture.kt
+@@ -237,8 +237,10 @@ class CallCapture(
+         const val RATE = 16000
+         const val JOIN_MS = 300L
+         const val PREROLL_FRAMES = 15 // 300 ms
+-        // DeepSeek's recognizer takes at most 120 s; an utterance is cut well before.
+-        const val MAX_MS = 110_000L
++        // DeepSeek 的识别接口对音频有上限：嘈杂环境里人一直说、闸门不 END，整段就越攒越长，
++        // 服务端直接拒收（日志 11:59 "Audio exceeds 120 seconds"、11:5x byte limit）。
++        // 110 秒太接近上限，实际还是被拒；改成 10 秒收口，长句子按 10 秒一段分开识别。
++        const val MAX_MS = 10_000L
+ 
+         fun wav(pcm: ByteArray): ByteArray {
+             val header = ByteBuffer.allocate(44).order(ByteOrder.LITTLE_ENDIAN)
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/wake/WakeBootReceiver.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/wake/WakeBootReceiver.kt
 new file mode 100644
 index 0000000..be0fa26
@@ -81894,10 +81983,10 @@ index c089d19..a15b64d 100644
  
 diff --git a/app/lib/state/virtual_screen_state.dart b/app/lib/state/virtual_screen_state.dart
 new file mode 100644
-index 0000000..f4dbd17
+index 0000000..86c4e47
 --- /dev/null
 +++ b/app/lib/state/virtual_screen_state.dart
-@@ -0,0 +1,310 @@
+@@ -0,0 +1,340 @@
 +import 'dart:async';
 +
 +import 'package:flutter/services.dart';
@@ -81921,7 +82010,7 @@ index 0000000..f4dbd17
 +  const VirtualScreenSettings({
 +    this.fps = 15,
 +    this.quality = 80,
-+    this.target = VirtualScreenTarget.main,
++    this.target = VirtualScreenTarget.virtual,
 +    // 悬浮屏常开：后台任务一起来就摆出来，关了也记得住（下次不再自己弹）。
 +    this.window = true,
 +    // 允许手动操作：关着时画面只读（防误触打断 AI），开着时手指直接作用于虚拟屏。
@@ -81962,10 +82051,17 @@ index 0000000..f4dbd17
 +/// 你手动从球里打开查看：静默模式不再立刻把窗口关掉（11:2x）。
 +bool vscreenManualView = false;
 +
++/// 眼睛键把当前操作对象送进后台后置位：这条路径不许再自动弹窗
++/// （用户硬性要求：点眼睛不得弹出空的/黑屏悬浮窗；窗口出现必须有画面）。
++bool vscreenKeepBackground = false;
++
 +enum VirtualScreenTarget { main, background, virtual }
 +
 +final virtualScreenSettingsProvider =
 +    NotifierProvider<VirtualScreenSettingsController, VirtualScreenSettings>(VirtualScreenSettingsController.new);
++
++/// 球当前是否被我们要求在场（只在变化时下发，避免每帧都过桥）。
++bool _ballOn = false;
 +
 +class VirtualScreenSettingsController extends Notifier<VirtualScreenSettings> {
 +  static const _fpsKey = 'virtual_screen_fps';
@@ -82090,6 +82186,23 @@ index 0000000..f4dbd17
 +    return const VirtualWindowState();
 +  }
 +
++  /// 胶囊：问"我来操作 / AI 继续"。引擎自己刚搬过屏就不问（那是 AI 的动作）。
++  Future<void> _askUser(int taskId) async {
++    var movedAgo = 1 << 30;
++    try {
++      final probe = await const MethodChannel('dsh/virtual-screen')
++          .invokeMapMethod<String, dynamic>('probe');
++      movedAgo = (probe?['movedAgoMs'] as num?)?.toInt() ?? movedAgo;
++    } catch (_) {}
++    if (movedAgo < 2500) {
++      diagWake('prompt: skipped, engine moved ${movedAgo}ms ago');
++      return;
++    }
++    VirtualPrompt.taskId = taskId;
++    await const MethodChannel('dsh/virtual-screen').invokeMethod<void>('prompt', {'on': true});
++    diagWake('prompt: app left virtual screen → ask user (movedAgo=$movedAgo)');
++  }
++
 +  /// 跟着任务状态走：有后台任务、开关开着，就把它摆出来；任务没了就收起来。
 +  String? _lastSeenScreen;
 +
@@ -82101,13 +82214,16 @@ index 0000000..f4dbd17
 +    // 应用从虚拟屏被挪到主屏（用户手动切前台）→ 弹胶囊问"我来操作 / AI 继续"。
 +    final prev = _lastSeenScreen;
 +    _lastSeenScreen = status.lastScreen;
++    // 旧条件里还有 !status.task.active，但真机日志里手动切前台那一刻 task 一直是活跃的
++    // （12:39、12:46、12:51 三次 background→main 都是 task=1/2/4），所以胶囊从来没弹过。
++    // 现在改成：只要"从虚拟屏离开"就问，引擎自己搬的（2.5 秒内有搬屏/开屏）不问（第⑥项）。
++    // 文档六：AI 正在跑任务时被切走不弹；只有空闲时才算"你手动切到前台"。
 +    if (prev == 'background' &&
 +        status.lastScreen != 'background' &&
-+        (state.open || status.backgroundSilent) &&
-+        !status.task.active) {
-+      VirtualPrompt.taskId = firstBackgroundTaskId(status);
-+      const MethodChannel('dsh/virtual-screen').invokeMethod<void>('prompt', {'on': true});
-+      diagWake('prompt: app left virtual screen → ask user');
++        status.task.pendingCalls == 0 &&
++        (state.open || status.backgroundSilent)) {
++      final taskId = firstBackgroundTaskId(status);
++      if (taskId != null) unawaited(_askUser(taskId));
 +    }
 +    if (_busy) return;
 +    if (_suppressTask != null) {
@@ -82123,15 +82239,18 @@ index 0000000..f4dbd17
 +    // 窗口跟随"实际在用哪块屏"（用户 15:47）：AI 明确在主屏操作时窗口不出现；
 +    // 只有真的在虚拟屏上干活（或刚转进来）才显示。设置开关只是默认值。
 +    // 默认操作=后台屏时，窗口不自动弹（AI 在后台默默干活）；AI 明确要虚拟屏时会切 target。
-+    var silent = status.backgroundSilent ||
++    var silent = status.backgroundSilent || vscreenKeepBackground ||
 +        ref.read(virtualScreenSettingsProvider).target == VirtualScreenTarget.background;
 +    // AI 这次明确要"后台屏"：清掉手动查看，静默重新生效（11:3x）。
 +    if (status.backgroundSilent) vscreenManualView = false;
 +    if (vscreenManualView && !status.backgroundSilent) silent = false;
 +    final onVirtual = status.lastScreen == 'background' && !silent;
-+    // 静默模式也保留球：你手动点它就能看/回虚拟屏（11:2x）。
-+    if (silent && taskId != null) {
-+      unawaited(ref.read(virtualWindowProvider.notifier).setBall(true));
++    // 球的出现条件（文档 §五 + §九.2）：**有任务、且当前没有可见窗口**就常驻，
++    // 不管此刻在主屏还是后台屏——主屏操作时也留着球，随时能切回来。
++    final ballWanted = taskId != null && !state.open;
++    if (ballWanted != _ballOn) {
++      _ballOn = ballWanted;
++      unawaited(ref.read(virtualWindowProvider.notifier).setBall(ballWanted));
 +    }
 +    // 宽限期内一直算"该显示"，到期自然失效（不能读一次就清掉，否则第二次 sync 又关了）。
 +    // 窗口为什么开/为什么关：迁移、"明确主屏却弹窗"这类问题只靠这行日志能定案。
@@ -83473,10 +83592,10 @@ index 0000000..26e0742
 +final phoneTaskClockProvider = NotifierProvider<PhoneTaskClock, DateTime>(PhoneTaskClock.new);
 diff --git a/app/lib/ui/phone/virtual_screen_host.dart b/app/lib/ui/phone/virtual_screen_host.dart
 new file mode 100644
-index 0000000..18ecf8e
+index 0000000..e976664
 --- /dev/null
 +++ b/app/lib/ui/phone/virtual_screen_host.dart
-@@ -0,0 +1,352 @@
+@@ -0,0 +1,354 @@
 +import 'dart:async';
 +
 +import 'package:flutter/material.dart';
@@ -83583,10 +83702,12 @@ index 0000000..18ecf8e
 +      await ref.read(virtualWindowProvider.notifier).open(id);
 +      diagWake('prompt: ai continues');
 +    } else if (action == 'eyeHidden') {
-+      // 窗口已隐藏到后台：把球打开，给用户一个回来的入口。
++      // 窗口已隐藏/应用已进后台：这条路径不许自动弹窗，只留两键球。
++      vscreenKeepBackground = true;
 +      await ref.read(virtualWindowProvider.notifier).setBall(true);
 +    } else if (action == 'eye') {
 +      // 合并球上键：回到虚拟屏窗口（小窗形态）。手动查看压过静默（11:2x）。
++      vscreenKeepBackground = false;
 +      vscreenManualView = true;
 +      final id = firstBackgroundTaskId(ref.read(phoneProvider).status) ?? 0;
 +      ref.read(virtualWindowProvider.notifier).holdOpen();
