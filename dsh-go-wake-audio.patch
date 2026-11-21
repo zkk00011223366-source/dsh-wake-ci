@@ -1,7 +1,7 @@
-From 293b509d7c64ed44c59b39a24d824eaed8acc56d Mon Sep 17 00:00:00 2001
+From f6ba6eb63d3316e97273f6c99025ece49c5c89ae Mon Sep 17 00:00:00 2001
 From: wake-ci <ci@local>
-Date: Sat, 21 Nov 2026 10:32:32 +0800
-Subject: [PATCH] pb: ratio
+Date: Sat, 21 Nov 2026 10:42:58 +0800
+Subject: [PATCH] pb: voice channel
 
 ---
  .gitattributes                                |    3 +
@@ -81,7 +81,7 @@ Subject: [PATCH] pb: ratio
  app/lib/speech/call/active_call.dart          |  110 +
  app/lib/speech/call/chat_call.dart            |    3 +
  app/lib/speech/call/voice_call.dart           |   57 +-
- app/lib/speech/wake_reply.dart                |  163 ++
+ app/lib/speech/wake_reply.dart                |  171 ++
  app/lib/state/app_info.dart                   |    5 +
  app/lib/state/update_state.dart               |    9 +
  app/lib/state/virtual_screen_state.dart       |  266 +++
@@ -100,7 +100,7 @@ Subject: [PATCH] pb: ratio
  app/lib/ui/shell/call_overlay_host.dart       |   55 +
  app/lib/ui/shell/home_shell.dart              |    7 +
  app/lib/ui/shell/system_entry_host.dart       |   44 +
- app/lib/ui/speech/voice_call_page.dart        |  298 ++-
+ app/lib/ui/speech/voice_call_page.dart        |  300 ++-
  app/lib/ui/theme/app_icons.dart               |    4 +
  app/lib/ui/update/update_tiles.dart           |    5 +-
  app/lib/voice/wake_keywords.dart              |   50 +
@@ -110,7 +110,7 @@ Subject: [PATCH] pb: ratio
  docs/wake-word.md                             |  107 +
  dsh-go-wake.patch                             | 2065 +++++++++++++++++
  tooling/build-wake-apk.sh                     |   68 +
- 106 files changed, 12019 insertions(+), 524 deletions(-)
+ 106 files changed, 12029 insertions(+), 524 deletions(-)
  create mode 100644 .github/workflows/wake-apk.yml
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallForegroundService.kt
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallOverlay.kt
@@ -81310,10 +81310,10 @@ index d97ef1a..fd2c6b6 100644
            _voiceLevel = value;
 diff --git a/app/lib/speech/wake_reply.dart b/app/lib/speech/wake_reply.dart
 new file mode 100644
-index 0000000..52264fe
+index 0000000..235aaf9
 --- /dev/null
 +++ b/app/lib/speech/wake_reply.dart
-@@ -0,0 +1,163 @@
+@@ -0,0 +1,171 @@
 +// 唤醒回应「我在」：预合成缓存 + 本地播放（用户 16:53）。
 +//
 +// 需求：喊完**立刻**有声音，而且这句话用户可以在设置里自定义。
@@ -81338,6 +81338,7 @@ index 0000000..52264fe
 +import 'deepseek_speech.dart';
 +import '../companion/companion_voice.dart';
 +import 'speech_audio.dart';
++import 'call/voice_call.dart';
 +import 'speech_out.dart';
 +
 +/// FNV-1a：文本 → 稳定的短哈希（同一条文本每次启动都一样，才能复用缓存）。
@@ -81349,6 +81350,9 @@ index 0000000..52264fe
 +  }
 +  return h;
 +}
++
++/// 通话是否在进行中（由通话页注入；没有通话能力时永远是 false）。
++bool Function()? wakeCallActive;
 +
 +class WakeReplyVoice {
 +  WakeReplyVoice(this._audio, this._speech, this._speaker, this._settings)
@@ -81406,7 +81410,11 @@ index 0000000..52264fe
 +      if (await file.exists()) {
 +        final bytes = await file.readAsBytes();
 +        // call:false：不排在通话音频通道后面（那里要等语音预热，6 秒就是这么来的）。
-+        if (bytes.isNotEmpty && await _audio.open(id, call: false)) {
++        // 通话音色对比（10:4x）：通话中唤醒也用通话通道，避免"媒体通道 vs 通话通道"
++        // 造成的音色差异（AGC/路由不同听起来像两个人）。
++        final inCall = wakeCallActive?.call() ?? false;
++        diagWake('wake: play rate=24000 call=$inCall bytes=${bytes.length}');
++        if (bytes.isNotEmpty && await _audio.open(id, call: inCall)) {
 +          await _audio.write(id, bytes);
 +          await _audio.end(id);
 +          unawaited(done(true));
@@ -84129,7 +84137,7 @@ index 172e773..3f2fdd9 100644
          // The microphone opens only for an app on screen; the shortcut's
          // intent can arrive a beat before Flutter hears it is resumed.
 diff --git a/app/lib/ui/speech/voice_call_page.dart b/app/lib/ui/speech/voice_call_page.dart
-index 2f99689..b931a99 100644
+index 2f99689..b80b621 100644
 --- a/app/lib/ui/speech/voice_call_page.dart
 +++ b/app/lib/ui/speech/voice_call_page.dart
 @@ -17,6 +17,10 @@ import 'package:flutter/services.dart';
@@ -84239,7 +84247,7 @@ index 2f99689..b931a99 100644
    @override
    ConsumerState<VoiceCallPage> createState() => _VoiceCallPageState();
  }
-@@ -118,26 +161,56 @@ class _VoiceCallPageState extends ConsumerState<VoiceCallPage> with WidgetsBindi
+@@ -118,26 +161,58 @@ class _VoiceCallPageState extends ConsumerState<VoiceCallPage> with WidgetsBindi
    /// and the page comes in without its staggered rise.
    bool _still = false;
  
@@ -84276,6 +84284,8 @@ index 2f99689..b931a99 100644
 -    final bridge = ref.read(voiceBridgeProvider);
 -    _call = VoiceCallController(
 +    _voice = container.read(speechVoiceSettingsProvider) ?? voices.defaults;
++    // 告诉唤醒：现在有通话在用通话通道（音色/AGC 与通话一致）。
++    wakeCallActive = () => _call.phase != CallPhase.ended;
 +    final speaker = container.read(speechSpeakerProvider);
 +    final audio = container.read(speechAudioProvider);
 +    final deepseek = container.read(deepSeekSpeechProvider);
@@ -84306,7 +84316,7 @@ index 2f99689..b931a99 100644
        },
        voice: () => speechOutFor(
          _voice,
-@@ -146,7 +219,7 @@ class _VoiceCallPageState extends ConsumerState<VoiceCallPage> with WidgetsBindi
+@@ -146,7 +221,7 @@ class _VoiceCallPageState extends ConsumerState<VoiceCallPage> with WidgetsBindi
          speaker: speaker,
          call: true,
          levels: true,
@@ -84315,7 +84325,7 @@ index 2f99689..b931a99 100644
        ),
        // The saved ones, not the defaults shown while they load (a first call after launch).
        choices: () async {
-@@ -165,6 +238,9 @@ class _VoiceCallPageState extends ConsumerState<VoiceCallPage> with WidgetsBindi
+@@ -165,6 +240,9 @@ class _VoiceCallPageState extends ConsumerState<VoiceCallPage> with WidgetsBindi
          if ((await callSettings.ready()).cue && _call.cueStill) await playThinkingCue(audio);
        },
      )..addListener(_changed);
@@ -84325,7 +84335,7 @@ index 2f99689..b931a99 100644
      // Changed in 通话设置 (or anywhere) during the call: from the next sentence on.
      ref.listenManual(speechVoiceSettingsProvider, (_, _) => unawaited(_settleVoice()));
      ref.listenManual(voiceSettingsProvider, (_, _) => unawaited(_call.refreshRecognizer()));
-@@ -172,6 +248,19 @@ class _VoiceCallPageState extends ConsumerState<VoiceCallPage> with WidgetsBindi
+@@ -172,6 +250,19 @@ class _VoiceCallPageState extends ConsumerState<VoiceCallPage> with WidgetsBindi
      ref.listenManual(callSettingsProvider.select((s) => s.pause), (_, pause) => _call.setPause(pause));
      HapticFeedback.mediumImpact();
      _enter.forward();
@@ -84345,7 +84355,7 @@ index 2f99689..b931a99 100644
      unawaited(_start());
    }
  
-@@ -209,25 +298,59 @@ class _VoiceCallPageState extends ConsumerState<VoiceCallPage> with WidgetsBindi
+@@ -209,25 +300,59 @@ class _VoiceCallPageState extends ConsumerState<VoiceCallPage> with WidgetsBindi
  
    int _settling = 0;
  
@@ -84417,7 +84427,7 @@ index 2f99689..b931a99 100644
      } on Object {
        // Without live captions the call goes on as before.
        _live = null;
-@@ -265,6 +388,7 @@ class _VoiceCallPageState extends ConsumerState<VoiceCallPage> with WidgetsBindi
+@@ -265,6 +390,7 @@ class _VoiceCallPageState extends ConsumerState<VoiceCallPage> with WidgetsBindi
      switch (phase) {
        case CallPhase.listening when _since == null:
          _since = DateTime.now();
@@ -84425,7 +84435,7 @@ index 2f99689..b931a99 100644
          HapticFeedback.lightImpact();
          // Anonymous usage statistics: a call got through (the microphone is on).
          ref.read(usageStatsProvider.notifier).count(UsageCount.call);
-@@ -313,22 +437,117 @@ class _VoiceCallPageState extends ConsumerState<VoiceCallPage> with WidgetsBindi
+@@ -313,22 +439,117 @@ class _VoiceCallPageState extends ConsumerState<VoiceCallPage> with WidgetsBindi
  
    @override
    void didChangeAppLifecycleState(AppLifecycleState state) {
@@ -84548,7 +84558,7 @@ index 2f99689..b931a99 100644
    void _hangUp() {
      HapticFeedback.heavyImpact();
      _call.hangUp();
-@@ -645,6 +864,17 @@ class _VoiceCallPageState extends ConsumerState<VoiceCallPage> with WidgetsBindi
+@@ -645,6 +866,17 @@ class _VoiceCallPageState extends ConsumerState<VoiceCallPage> with WidgetsBindi
                          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                          crossAxisAlignment: CrossAxisAlignment.end,
                          children: [
@@ -84566,7 +84576,7 @@ index 2f99689..b931a99 100644
                            _rise(
                              0.4,
                              CallKey(
-@@ -658,7 +888,7 @@ class _VoiceCallPageState extends ConsumerState<VoiceCallPage> with WidgetsBindi
+@@ -658,7 +890,7 @@ class _VoiceCallPageState extends ConsumerState<VoiceCallPage> with WidgetsBindi
                              distance: 28,
                            ),
                            _rise(
