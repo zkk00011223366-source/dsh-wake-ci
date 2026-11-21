@@ -1,7 +1,7 @@
-From a68e84e196bb9c8c8300ab54264fdcf182bd9e28 Mon Sep 17 00:00:00 2001
+From 3d39fd9a6b48ebc7f6f18afc8c77e55e6ab0a683 Mon Sep 17 00:00:00 2001
 From: wake-ci <ci@local>
-Date: Sat, 21 Nov 2026 08:59:50 +0800
-Subject: [PATCH] pb: voice log
+Date: Sat, 21 Nov 2026 09:10:02 +0800
+Subject: [PATCH] pb: sensitivity
 
 ---
  .gitattributes                                |    3 +
@@ -96,7 +96,7 @@ Subject: [PATCH] pb: voice log
  app/lib/ui/phone/virtual_screen_host.dart     |  323 +++
  app/lib/ui/phone/virtual_screen_page.dart     |  114 +
  app/lib/ui/phone/virtual_screen_surface.dart  |  286 +++
- app/lib/ui/settings/voice_settings_page.dart  |  126 +
+ app/lib/ui/settings/voice_settings_page.dart  |  151 ++
  app/lib/ui/shell/call_overlay_host.dart       |   55 +
  app/lib/ui/shell/home_shell.dart              |    7 +
  app/lib/ui/shell/system_entry_host.dart       |   44 +
@@ -104,13 +104,13 @@ Subject: [PATCH] pb: voice log
  app/lib/ui/theme/app_icons.dart               |    4 +
  app/lib/ui/update/update_tiles.dart           |    5 +-
  app/lib/voice/wake_keywords.dart              |   50 +
- app/lib/voice/wake_settings.dart              |  118 +
- app/lib/voice/wake_word.dart                  |  847 +++++++
+ app/lib/voice/wake_settings.dart              |  131 ++
+ app/lib/voice/wake_word.dart                  |  848 +++++++
  app/pubspec.yaml                              |    4 +
  docs/wake-word.md                             |  107 +
  dsh-go-wake.patch                             | 2065 +++++++++++++++++
  tooling/build-wake-apk.sh                     |   68 +
- 106 files changed, 11779 insertions(+), 524 deletions(-)
+ 106 files changed, 11818 insertions(+), 524 deletions(-)
  create mode 100644 .github/workflows/wake-apk.yml
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallForegroundService.kt
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallOverlay.kt
@@ -83586,7 +83586,7 @@ index 0000000..adebc52
 +  }
 +}
 diff --git a/app/lib/ui/settings/voice_settings_page.dart b/app/lib/ui/settings/voice_settings_page.dart
-index 38418e6..d955ae0 100644
+index 38418e6..997bccc 100644
 --- a/app/lib/ui/settings/voice_settings_page.dart
 +++ b/app/lib/ui/settings/voice_settings_page.dart
 @@ -13,6 +13,9 @@ import '../../state/streaming_asr_state.dart' show SystemAsrReadiness, ohosStrea
@@ -83687,7 +83687,7 @@ index 38418e6..d955ae0 100644
      return AppPage.list(
        title: l10n.voiceSettingsTitle,
        children: [
-@@ -254,6 +331,55 @@ class _VoiceSettingsPageState extends ConsumerState<VoiceSettingsPage> {
+@@ -254,6 +331,80 @@ class _VoiceSettingsPageState extends ConsumerState<VoiceSettingsPage> {
              ),
            ],
          ),
@@ -83715,6 +83715,31 @@ index 38418e6..d955ae0 100644
 +              subtitle: l10n.speechWakeReplyHint,
 +              value: Text(wake.reply),
 +              onTap: () => unawaited(editWakeReply(context, ref, wake.reply)),
++            ),
++            // 唤醒能量门槛：嘈杂环境（电视/人声）调低更灵敏（09:05 需求）。
++            Padding(
++              padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
++              child: Column(
++                crossAxisAlignment: CrossAxisAlignment.start,
++                children: [
++                  Text('唤醒灵敏度（能量门槛）', style: Theme.of(context).textTheme.bodyLarge),
++                  Text(
++                    '越低越灵敏 · 当前 ${wake.energyDb.round()} dB（嘈杂环境建议 -55 ~ -60）',
++                    style: Theme.of(context).textTheme.bodySmall,
++                  ),
++                  Slider(
++                    key: const ValueKey('speech-wake-energy'),
++                    value: wake.energyDb.clamp(-70.0, -20.0),
++                    min: -70,
++                    max: -20,
++                    divisions: 10,
++                    label: '${wake.energyDb.round()} dB',
++                    onChanged: (v) => unawaited(ref
++                        .read(wakeSettingsProvider.notifier)
++                        .edit((saved) => saved.copyWith(energyDb: v))),
++                  ),
++                ],
++              ),
 +            ),
 +            SettingsSwitchTile(
 +              key: const ValueKey('speech-wake-chime'),
@@ -84431,10 +84456,10 @@ index 0000000..8a88271
 +}
 diff --git a/app/lib/voice/wake_settings.dart b/app/lib/voice/wake_settings.dart
 new file mode 100644
-index 0000000..1cdef99
+index 0000000..4bbab42
 --- /dev/null
 +++ b/app/lib/voice/wake_settings.dart
-@@ -0,0 +1,118 @@
+@@ -0,0 +1,131 @@
 +// 语音唤醒的开关与偏好（设置 › 语音 › 语音唤醒）。
 +//
 +// What listening does lives in voice/wake_word.dart; this file only holds what the person
@@ -84453,6 +84478,7 @@ index 0000000..1cdef99
 +    this.vibrate = true,
 +    this.freshChat = false,
 +    this.reply = defaultReply,
++    this.energyDb = defaultEnergyDb,
 +  });
 +
 +  /// 小志小志: what the phone answers to until the person types another phrase.
@@ -84460,6 +84486,10 @@ index 0000000..1cdef99
 +
 +  /// 唤醒后立刻说出的第一句话：用户可改，默认「我在」。
 +  static const defaultReply = '我在';
++
++  /// 唤醒能量门槛（dBFS）：越接近 0 越难触发，越低越灵敏。
++  /// 嘈杂环境（电视在响）调低到 -55 ~ -60；安静环境保持 -40 即可。
++  static const defaultEnergyDb = -40.0;
 +
 +  /// 常驻监听：the microphone foreground service runs with the screen off.
 +  final bool enabled;
@@ -84479,7 +84509,10 @@ index 0000000..1cdef99
 +  /// 唤醒回应：喊完立刻说的那句话（不等模型）。用户可在设置里自定。
 +  final String reply;
 +
-+  WakeSettings copyWith({bool? enabled, String? keyword, bool? chime, bool? vibrate, bool? freshChat, String? reply}) =>
++  /// 能量门槛：只在"靠能量判断有没有人说话"时使用，越低越灵敏。
++  final double energyDb;
++
++  WakeSettings copyWith({bool? enabled, String? keyword, bool? chime, bool? vibrate, bool? freshChat, String? reply, double? energyDb}) =>
 +      WakeSettings(
 +        enabled: enabled ?? this.enabled,
 +        keyword: keyword ?? this.keyword,
@@ -84487,6 +84520,7 @@ index 0000000..1cdef99
 +        vibrate: vibrate ?? this.vibrate,
 +        freshChat: freshChat ?? this.freshChat,
 +        reply: reply ?? this.reply,
++        energyDb: energyDb ?? this.energyDb,
 +      );
 +}
 +
@@ -84517,6 +84551,9 @@ index 0000000..1cdef99
 +        reply: json['reply'] is String && (json['reply'] as String).trim().isNotEmpty
 +            ? (json['reply'] as String).trim()
 +            : WakeSettings.defaultReply,
++        energyDb: json['energyDb'] is num
++            ? (json['energyDb'] as num).toDouble().clamp(-70.0, -20.0)
++            : WakeSettings.defaultEnergyDb,
 +      );
 +    } on Object {
 +      // Defaults for this run.
@@ -84547,6 +84584,7 @@ index 0000000..1cdef99
 +        'vibrate': next.vibrate,
 +        'freshChat': next.freshChat,
 +        'reply': next.reply,
++        'energyDb': next.energyDb,
 +      }),
 +    );
 +  }
@@ -84555,10 +84593,10 @@ index 0000000..1cdef99
 +final wakeSettingsProvider = NotifierProvider<WakeSettingsController, WakeSettings>(WakeSettingsController.new);
 diff --git a/app/lib/voice/wake_word.dart b/app/lib/voice/wake_word.dart
 new file mode 100644
-index 0000000..efa0433
+index 0000000..23c397e
 --- /dev/null
 +++ b/app/lib/voice/wake_word.dart
-@@ -0,0 +1,847 @@
+@@ -0,0 +1,848 @@
 +// 语音唤醒（常驻监听）: the switch, the recognizer and what a wake word does.
 +//
 +// Where each piece runs:
@@ -84989,7 +85027,8 @@ index 0000000..efa0433
 +    // has never matched), and it is held to a strict rule below so a conversation that
 +    // merely mentions 小安小安 no longer opens a call.
 +    if (spotter != null && stream != null) _feedSpotter(spotter, stream, bytes);
-+    if (_lastLevel > -40) {
++    // 能量门槛可调：嘈杂环境调低更灵敏（设置 › 语音 › 语音唤醒）。
++    if (_lastLevel > ref.read(wakeSettingsProvider).energyDb) {
 +      _inSpeech = true;
 +      _quietSamples = 0;
 +      _utterance.add(bytes);
