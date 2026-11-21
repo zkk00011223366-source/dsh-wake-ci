@@ -1,7 +1,7 @@
-From 1b2d69bee35b68f50e5271b0d33588d856299bfd Mon Sep 17 00:00:00 2001
+From 457af6f48831d3dc5c42eb3fda28d3d31f57508b Mon Sep 17 00:00:00 2001
 From: wake-ci <ci@local>
-Date: Sat, 21 Nov 2026 08:03:00 +0800
-Subject: [PATCH] pb: displayId
+Date: Sat, 21 Nov 2026 08:51:28 +0800
+Subject: [PATCH] pb: aspect
 
 ---
  .gitattributes                                |    3 +
@@ -38,7 +38,7 @@ Subject: [PATCH] pb: displayId
  .../dsh_app/phone/skills/PhoneSkillDraft.kt   |    2 +-
  .../dsh_app/phone/vscreen/TaskMover.kt        |   43 +
  .../dsh_app/phone/vscreen/TransferBall.kt     |  405 ++++
- .../phone/vscreen/VirtualScreenOverlay.kt     | 1609 +++++++++++++
+ .../phone/vscreen/VirtualScreenOverlay.kt     | 1617 +++++++++++++
  .../phone/vscreen/VirtualScreenPlugin.kt      |  118 +
  .../ccch1mneyyy/dsh_app/runtime/GuestSetup.kt |   47 +-
  .../dsh_app/shortcuts/EntryActivity.kt        |    3 +
@@ -109,7 +109,7 @@ Subject: [PATCH] pb: displayId
  docs/wake-word.md                             |  107 +
  dsh-go-wake.patch                             | 2065 +++++++++++++++++
  tooling/build-wake-apk.sh                     |   68 +
- 105 files changed, 11695 insertions(+), 524 deletions(-)
+ 105 files changed, 11703 insertions(+), 524 deletions(-)
  create mode 100644 .github/workflows/wake-apk.yml
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallForegroundService.kt
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallOverlay.kt
@@ -3776,10 +3776,10 @@ index 0000000..1174ba0
 +}
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenOverlay.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenOverlay.kt
 new file mode 100644
-index 0000000..071d489
+index 0000000..a697c09
 --- /dev/null
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenOverlay.kt
-@@ -0,0 +1,1609 @@
+@@ -0,0 +1,1617 @@
 +package io.github.ccch1mneyyy.dsh_app.phone.vscreen
 +
 +import android.annotation.SuppressLint
@@ -4383,10 +4383,18 @@ index 0000000..071d489
 +    /** 底边把手：14dp 高，完全落在卡片外面（不遮挡画面）。 */
 +    private fun gripHeight(px: Float): Int = (14 * px).roundToInt()
 +
-+    private fun aspect(): Float =
++    private fun aspect(): Float {
 +        if (displayWidth > 0 && displayHeight > 0) {
-+            displayHeight.toFloat() / displayWidth.toFloat()
-+        } else screenAspect()
++            var a = displayHeight.toFloat() / displayWidth.toFloat()
++            // 虚拟屏可能建成横屏（1600×720），而手机是竖屏：
++            // 直接用它的比例会把窗口算成横条（08:49 日志 1186×538）。按手机方向校正。
++            val phonePortrait = screenAspect() > 1f
++            if (phonePortrait && a < 1f) a = 1f / a
++            if (!phonePortrait && a > 1f) a = 1f / a
++            return a
++        }
++        return screenAspect()
++    }
 +
 +    /** 手机屏幕的比例（竖屏 高/宽）；横屏手机自然给出 宽/高。 */
 +    private fun screenAspect(): Float = try {
