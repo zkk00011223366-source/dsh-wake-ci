@@ -1,7 +1,7 @@
 == resources ==
 /dev/root       145G   49G   97G  34% /
                total        used        free      shared  buff/cache   available
-Mem:           15983        3571         190          49       12615       12411
+Mem:           15983        3405         355          49       12616       12577
 == tail ==
 
 ==> 依赖: flutter pub get
@@ -77,4 +77,29 @@ runtime verified: arm64 (arm64-v8a), schema 1, 5 files
 tawcroot: /home/runner/work/dsh-wake-ci/dsh-wake-ci/runtime/out-tawcroot
 → flutter build apk --release --flavor arm64 --target-platform android-arm64 --build-name 1.1.0 --build-number 11211546 --dart-define=DSH_APP_VERSION=1.1.0+11211546
 Flutter assets will be downloaded from https://storage.googleapis.com. Make sure you trust this source!
+Running Gradle task 'assembleArm64Release'...                   
+
+FAILURE: Build failed with an exception.
+
+* What went wrong:
+Could not resolve all artifacts for configuration 'classpath'.
+> Could not resolve org.jetbrains.kotlin:kotlin-stdlib-jdk7:2.2.10.
+  Required by:
+      settings file 'settings.gradle.kts' > org.jetbrains.kotlin:kotlin-stdlib:2.2.21
+   > Repository maven is disabled due to earlier error below:
+      > Could not resolve com.google.guava:failureaccess:1.0.2.
+         > Could not get resource 'https://maven.aliyun.com/repository/google/com/google/guava/failureaccess/1.0.2/failureaccess-1.0.2.pom'.
+            > Could not GET 'https://maven.aliyun.com/repository/google/com/google/guava/failureaccess/1.0.2/failureaccess-1.0.2.pom'. Received status code 502 from server: Bad Gateway
+> There are 10 more failures with identical causes.
+
+* Try:
+> Run with --stacktrace option to get the stack trace.
+> Run with --info or --debug option to get more log output.
+> Run with --scan to get full insights from a Build Scan (powered by Develocity).
+> Get more help at https://help.gradle.org.
+
+BUILD FAILED in 1m 47s
+Running Gradle task 'assembleArm64Release'...                     107.9s
+[!] Gradle threw an error while downloading artifacts from the network.
+Retrying Gradle Build: #1, wait time: 100ms
 Running Gradle task 'assembleArm64Release'...                   
