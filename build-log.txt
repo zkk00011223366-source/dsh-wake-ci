@@ -1,7 +1,7 @@
 == resources ==
-/dev/mapper/cow-root  145G   45G  100G  31% /
+/dev/root       145G   48G   98G  33% /
                total        used        free      shared  buff/cache   available
-Mem:           15700        2099         233          49       13752       13600
+Mem:           15983        1101         462          48       14812       14881
 == tail ==
 
 ==> 依赖: flutter pub get
@@ -61,20 +61,3 @@ Changed 1 dependency!
 Try `flutter pub outdated` for more information.
 
 ==> 文案: 合并 parts 并重新生成 L10n
-Flutter assets will be downloaded from https://storage.googleapis.com. Make sure you trust this source!
-Because l10n.yaml exists, the options defined there will be used instead.
-To use the command line arguments, delete the l10n.yaml file in the Flutter project.
-
-
-✓ 75 parts, 8355 keys
-✓ gen-l10n → lib/l10n/gen/
-
-==> 运行时: 已存在 runtime/out/arm64-v8a
-
-==> 打包: tooling/build-apk.sh -f arm64 --keep-daemon
-dsh-go 1.1.0 (11210944, 2026-11-21 09:44 UTC+8) · release · arm64
-runtime verified: arm64 (arm64-v8a), schema 1, 5 files
-tawcroot: /home/runner/work/dsh-wake-ci/dsh-wake-ci/runtime/out-tawcroot
-→ flutter build apk --release --flavor arm64 --target-platform android-arm64 --build-name 1.1.0 --build-number 11210944 --dart-define=DSH_APP_VERSION=1.1.0+11210944
-Flutter assets will be downloaded from https://storage.googleapis.com. Make sure you trust this source!
-Running Gradle task 'assembleArm64Release'...                   
