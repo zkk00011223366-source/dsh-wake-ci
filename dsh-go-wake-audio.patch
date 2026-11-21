@@ -1,7 +1,7 @@
-From c435aa6d80829d2ce82d0e45cff7435f89ad501a Mon Sep 17 00:00:00 2001
+From 142dda114bb8d1263399b6564fde27b2420ff6ab Mon Sep 17 00:00:00 2001
 From: wake-ci <ci@local>
-Date: Sat, 21 Nov 2026 09:38:26 +0800
-Subject: [PATCH] pb: eye-hide
+Date: Sat, 21 Nov 2026 09:44:14 +0800
+Subject: [PATCH] pb: prewarm
 
 ---
  .gitattributes                                |    3 +
@@ -81,7 +81,7 @@ Subject: [PATCH] pb: eye-hide
  app/lib/speech/call/active_call.dart          |  110 +
  app/lib/speech/call/chat_call.dart            |    3 +
  app/lib/speech/call/voice_call.dart           |   57 +-
- app/lib/speech/wake_reply.dart                |  151 ++
+ app/lib/speech/wake_reply.dart                |  163 ++
  app/lib/state/app_info.dart                   |    5 +
  app/lib/state/update_state.dart               |    9 +
  app/lib/state/virtual_screen_state.dart       |  266 +++
@@ -110,7 +110,7 @@ Subject: [PATCH] pb: eye-hide
  docs/wake-word.md                             |  107 +
  dsh-go-wake.patch                             | 2065 +++++++++++++++++
  tooling/build-wake-apk.sh                     |   68 +
- 106 files changed, 11932 insertions(+), 524 deletions(-)
+ 106 files changed, 11944 insertions(+), 524 deletions(-)
  create mode 100644 .github/workflows/wake-apk.yml
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallForegroundService.kt
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallOverlay.kt
@@ -81229,10 +81229,10 @@ index d97ef1a..fd2c6b6 100644
            _voiceLevel = value;
 diff --git a/app/lib/speech/wake_reply.dart b/app/lib/speech/wake_reply.dart
 new file mode 100644
-index 0000000..f311a46
+index 0000000..52264fe
 --- /dev/null
 +++ b/app/lib/speech/wake_reply.dart
-@@ -0,0 +1,151 @@
+@@ -0,0 +1,163 @@
 +// 唤醒回应「我在」：预合成缓存 + 本地播放（用户 16:53）。
 +//
 +// 需求：喊完**立刻**有声音，而且这句话用户可以在设置里自定义。
@@ -81252,6 +81252,7 @@ index 0000000..f311a46
 +
 +import '../companion/companion_voice_source.dart';
 +import 'speech_settings.dart';
++import '../voice/wake_settings.dart';
 +import '../voice/wake_word.dart' show diagWake;
 +import 'deepseek_speech.dart';
 +import '../companion/companion_voice.dart';
@@ -81376,13 +81377,24 @@ index 0000000..f311a46
 +}
 +
 +final wakeReplyVoiceProvider = Provider<WakeReplyVoice>((ref) {
-+  return WakeReplyVoice(
++  final voice = WakeReplyVoice(
 +    ref.watch(speechAudioProvider),
 +    ref.watch(deepSeekSpeechProvider),
 +    ref.watch(speechSpeakerProvider),
-+    // 和通话用同一个音色来源与音色名，跟随"海星 / 系统"（00:52）。
 +    ref.watch(speechVoiceSettingsProvider),
 +  );
++  // 设置了音色/语速就**立刻用新参数合成好**（09:42）：保存那一刻预合成，
++  // 唤醒时照旧直接播缓存，不用等。
++  void warm() {
++    final reply = ref.read(wakeSettingsProvider).reply;
++    if (reply.trim().isNotEmpty) unawaited(voice.prefetch(reply.trim()));
++  }
++
++  ref.listen(speechVoiceSettingsProvider, (_, __) => warm());
++  ref.listen(wakeSettingsProvider.select((s) => s.reply), (_, __) => warm());
++  // 首次拿到设置也补一次（避免启动时用默认音色合成）。
++  if (ref.read(speechVoiceSettingsProvider) != null) warm();
++  return voice;
 +});
 diff --git a/app/lib/state/app_info.dart b/app/lib/state/app_info.dart
 index 18b01c2..f532b20 100644
