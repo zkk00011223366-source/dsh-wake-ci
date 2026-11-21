@@ -1,7 +1,7 @@
 == resources ==
 /dev/root       145G   48G   98G  33% /
                total        used        free      shared  buff/cache   available
-Mem:           15982        1388         326          47       14659       14593
+Mem:           15983        1220         268          49       14888       14762
 == tail ==
 
 ==> 依赖: flutter pub get
@@ -72,5 +72,9 @@ To use the command line arguments, delete the l10n.yaml file in the Flutter proj
 ==> 运行时: 已存在 runtime/out/arm64-v8a
 
 ==> 打包: tooling/build-apk.sh -f arm64 --keep-daemon
-dsh-go 1.1.0 (11211000, 2026-11-21 10:00 UTC+8) · release · arm64
+dsh-go 1.1.0 (11211004, 2026-11-21 10:04 UTC+8) · release · arm64
 runtime verified: arm64 (arm64-v8a), schema 1, 5 files
+tawcroot: /home/runner/work/dsh-wake-ci/dsh-wake-ci/runtime/out-tawcroot
+→ flutter build apk --release --flavor arm64 --target-platform android-arm64 --build-name 1.1.0 --build-number 11211004 --dart-define=DSH_APP_VERSION=1.1.0+11211004
+Flutter assets will be downloaded from https://storage.googleapis.com. Make sure you trust this source!
+Running Gradle task 'assembleArm64Release'...                   
