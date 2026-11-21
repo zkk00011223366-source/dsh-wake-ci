@@ -1,7 +1,7 @@
-From 5c2443e447c5284ebf9de7089fb499a0fde20ab7 Mon Sep 17 00:00:00 2001
+From 99528a43566c1b9fc17dd0236a1b0261dac01f82 Mon Sep 17 00:00:00 2001
 From: ci <ci@local>
-Date: Sun, 22 Nov 2026 01:48:10 +0800
-Subject: [PATCH] =?UTF-8?q?pb:=20scene3k=20=E9=80=BB=E8=BE=91=E7=B1=BB?=
+Date: Sun, 22 Nov 2026 02:02:29 +0800
+Subject: [PATCH] =?UTF-8?q?pb:=20scene3l=20=E9=80=BB=E8=BE=91?=
 MIME-Version: 1.0
 Content-Type: text/plain; charset=UTF-8
 Content-Transfer-Encoding: 8bit
@@ -24,7 +24,7 @@ Content-Transfer-Encoding: 8bit
  .../ccch1mneyyy/dsh_app/phone/PhonePlugin.kt  |  319 +++
  .../dsh_app/phone/PhoneTaskSessions.kt        |   33 +-
  .../ccch1mneyyy/dsh_app/phone/PhoneTasks.kt   |   19 +
- .../dsh_app/phone/PhoneToolCatalog.kt         |   30 +-
+ .../dsh_app/phone/PhoneToolCatalog.kt         |   35 +-
  .../ccch1mneyyy/dsh_app/phone/SafetyGate.kt   |    4 +-
  .../dsh_app/phone/SingleInstanceApps.kt       |   27 +
  .../dsh_app/phone/a11y/ControlOverlay.kt      |   11 +-
@@ -117,7 +117,7 @@ Content-Transfer-Encoding: 8bit
  docs/wake-word.md                             |  107 +
  dsh-go-wake.patch                             | 2065 +++++++++++++++++
  tooling/build-wake-apk.sh                     |   68 +
- 110 files changed, 13447 insertions(+), 530 deletions(-)
+ 110 files changed, 13452 insertions(+), 530 deletions(-)
  create mode 100644 .github/workflows/wake-apk.yml
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallForegroundService.kt
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallOverlay.kt
@@ -2576,7 +2576,7 @@ index a09015e..08f65ac 100644
          grants.clear()
          visualScopes.clear(); visualGrants.clear(); visualLifecycle = lifecycle
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneToolCatalog.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneToolCatalog.kt
-index cbfb0de..9d6a56a 100644
+index cbfb0de..8fc282c 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneToolCatalog.kt
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneToolCatalog.kt
 @@ -24,6 +24,7 @@ object PhoneToolCatalog {
@@ -2596,7 +2596,7 @@ index cbfb0de..9d6a56a 100644
  
      val tools: List<Tool> = listOf(
          Tool(
-@@ -79,14 +80,17 @@ object PhoneToolCatalog {
+@@ -79,14 +80,21 @@ object PhoneToolCatalog {
          Tool(
              OPEN,
              // l10n:keep agent tool catalog
@@ -2612,11 +2612,15 @@ index cbfb0de..9d6a56a 100644
 +                // 三态，默认 auto：模型只有"用户明确要求某块屏"时才填 virtual/main，
 +                // 平时不传 = 按设置开关（之前用布尔值，模型几乎总会填，把开关盖掉了）。
 +                "background" to enum(listOf("auto", "virtual", "silent", "main"),
-+                    "默认 auto：按设置开关。只有用户明确说「用虚拟屏/用主屏」时才填 virtual 或 main"),
++                    "默认 auto：按设置开关。用户明确说「用虚拟屏/用主屏/用后台屏」时才填对应值。"
++                        + "virtual=用户明确说用虚拟屏：直接出现小窗（必须有画面），没有黄条；"
++                        + "silent=用户明确说用后台屏：不弹窗，屏幕上只有一条双键黄条（眼睛+切换），"
++                        + "条上眼睛=唤回小窗，条上切换=把应用搬回主屏、黄条变成单键；"
++                        + "main=用户明确说用主屏：与任务开始同步出现单键（切换键——切换到虚拟屏）黄色悬浮小条"),
              ),
              emptyList(),
          ),
-@@ -167,14 +171,16 @@ object PhoneToolCatalog {
+@@ -167,14 +175,17 @@ object PhoneToolCatalog {
          Tool(
              SCREEN,
              // l10n:keep agent tool catalog
@@ -2631,11 +2635,12 @@ index cbfb0de..9d6a56a 100644
 -                "background" to bool("读后台屏（不打扰模式）"),
 +                // 同上：默认 auto；用户明确要求读哪块屏时才填 virtual/main。
 +                "background" to enum(listOf("auto", "virtual", "silent", "main"),
-+                    "默认 auto：按设置开关。只有用户明确说「看虚拟屏/看主屏」时才填 virtual 或 main"),
++                    "默认 auto：按设置开关。用户明确说「看虚拟屏/看主屏/看后台屏」时才填 virtual/main/silent"
++                        + "（silent=后台屏，等于收起的虚拟屏，读屏仍然读那块屏）"),
              ),
              emptyList(),
          ),
-@@ -240,10 +246,10 @@ object PhoneToolCatalog {
+@@ -240,10 +251,10 @@ object PhoneToolCatalog {
          Tool(
              TAP_XY,
              // l10n:keep agent tool catalog
@@ -2648,7 +2653,7 @@ index cbfb0de..9d6a56a 100644
                  // l10n:keep agent tool catalog
                  "x" to int("横坐标（像素，从 0 开始）"),
                  // l10n:keep agent tool catalog
-@@ -267,6 +273,16 @@ object PhoneToolCatalog {
+@@ -267,6 +278,16 @@ object PhoneToolCatalog {
              linkedMapOf("reason" to str("要用户做什么，一句话")),
              listOf("reason"),
          ),
