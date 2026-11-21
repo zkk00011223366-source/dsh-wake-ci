@@ -1,7 +1,8 @@
-From 99528a43566c1b9fc17dd0236a1b0261dac01f82 Mon Sep 17 00:00:00 2001
+From 45fb5ce9889938571dad474a98edee2a8296c964 Mon Sep 17 00:00:00 2001
 From: ci <ci@local>
-Date: Sun, 22 Nov 2026 02:02:29 +0800
-Subject: [PATCH] =?UTF-8?q?pb:=20scene3l=20=E9=80=BB=E8=BE=91?=
+Date: Sun, 22 Nov 2026 02:49:05 +0800
+Subject: [PATCH] =?UTF-8?q?pb:=20scene3m=20=E8=AF=AD=E4=B9=89=E4=B8=A5?=
+ =?UTF-8?q?=E8=B0=A8?=
 MIME-Version: 1.0
 Content-Type: text/plain; charset=UTF-8
 Content-Transfer-Encoding: 8bit
@@ -10,7 +11,7 @@ Content-Transfer-Encoding: 8bit
  .gitattributes                                |    3 +
  .github/workflows/wake-apk.yml                |  192 ++
  app/android/app/build.gradle.kts              |    6 +-
- app/android/app/src/main/AndroidManifest.xml  |   30 +-
+ app/android/app/src/main/AndroidManifest.xml  |   36 +-
  .../ccch1mneyyy/dsh_app/MainActivity.kt       |   85 +-
  .../dsh_app/call/CallForegroundService.kt     |   94 +
  .../ccch1mneyyy/dsh_app/call/CallOverlay.kt   |  320 +++
@@ -19,9 +20,9 @@ Content-Transfer-Encoding: 8bit
  .../dsh_app/phone/PhoneAndroidShell.kt        |   10 +-
  .../dsh_app/phone/PhoneBackGuard.kt           |  146 ++
  .../dsh_app/phone/PhoneContracts.kt           |  103 +
- .../ccch1mneyyy/dsh_app/phone/PhoneControl.kt |   91 +-
+ .../ccch1mneyyy/dsh_app/phone/PhoneControl.kt |   98 +-
  .../ccch1mneyyy/dsh_app/phone/PhoneCore.kt    |  289 ++-
- .../ccch1mneyyy/dsh_app/phone/PhonePlugin.kt  |  319 +++
+ .../ccch1mneyyy/dsh_app/phone/PhonePlugin.kt  |  326 +++
  .../dsh_app/phone/PhoneTaskSessions.kt        |   33 +-
  .../ccch1mneyyy/dsh_app/phone/PhoneTasks.kt   |   19 +
  .../dsh_app/phone/PhoneToolCatalog.kt         |   35 +-
@@ -39,12 +40,14 @@ Content-Transfer-Encoding: 8bit
  .../phone/background/PrivilegedDisplayHost.kt |    6 +-
  .../phone/background/PrivilegedProtocol.kt    |   83 +-
  .../dsh_app/phone/skills/PhoneSkillDraft.kt   |    2 +-
+ .../phone/vscreen/PlaceholderActivity.kt      |   29 +
  .../dsh_app/phone/vscreen/PresentationHost.kt |   69 +
  .../phone/vscreen/SwitchPromptOverlay.kt      |  142 ++
  .../dsh_app/phone/vscreen/TaskMover.kt        |  123 +
- .../dsh_app/phone/vscreen/TransferBall.kt     |  456 ++++
- .../phone/vscreen/VirtualScreenOverlay.kt     | 1986 ++++++++++++++++
+ .../dsh_app/phone/vscreen/TransferBall.kt     |  452 ++++
+ .../phone/vscreen/VirtualScreenOverlay.kt     | 2003 ++++++++++++++++
  .../phone/vscreen/VirtualScreenPlugin.kt      |  223 ++
+ .../dsh_app/phone/vscreen/VscreenUi.kt        |   45 +
  .../ccch1mneyyy/dsh_app/runtime/GuestSetup.kt |   47 +-
  .../dsh_app/shortcuts/EntryActivity.kt        |    3 +
  .../dsh_app/shortcuts/ShortcutsPlugin.kt      |   13 +-
@@ -81,7 +84,7 @@ Content-Transfer-Encoding: 8bit
  app/lib/l10n/parts/speech_en.arb              |   21 +-
  app/lib/l10n/parts/speech_zh.arb              |   21 +-
  app/lib/links/launcher_entries.dart           |    7 +-
- app/lib/phone/phone_channel.dart              |  129 +-
+ app/lib/phone/phone_channel.dart              |  135 +-
  app/lib/phone/virtual_screen_window.dart      |  144 ++
  app/lib/speech/call/active_call.dart          |  110 +
  app/lib/speech/call/chat_call.dart            |    3 +
@@ -90,7 +93,7 @@ Content-Transfer-Encoding: 8bit
  app/lib/speech/wake_reply.dart                |  175 ++
  app/lib/state/app_info.dart                   |    5 +
  app/lib/state/update_state.dart               |    9 +
- app/lib/state/virtual_screen_state.dart       |  431 ++++
+ app/lib/state/virtual_screen_state.dart       |  454 ++++
  app/lib/ui/chat/chat_rows.dart                |    2 +
  app/lib/ui/chat/chat_screen.dart              |  108 +-
  app/lib/ui/chat/media/media_format.dart       |   16 +-
@@ -117,19 +120,21 @@ Content-Transfer-Encoding: 8bit
  docs/wake-word.md                             |  107 +
  dsh-go-wake.patch                             | 2065 +++++++++++++++++
  tooling/build-wake-apk.sh                     |   68 +
- 110 files changed, 13452 insertions(+), 530 deletions(-)
+ 112 files changed, 13588 insertions(+), 530 deletions(-)
  create mode 100644 .github/workflows/wake-apk.yml
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallForegroundService.kt
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallOverlay.kt
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallOverlayPlugin.kt
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneBackGuard.kt
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/SingleInstanceApps.kt
+ create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/PlaceholderActivity.kt
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/PresentationHost.kt
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/SwitchPromptOverlay.kt
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/TaskMover.kt
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/TransferBall.kt
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenOverlay.kt
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenPlugin.kt
+ create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VscreenUi.kt
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/wake/WakeBootReceiver.kt
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/wake/WakeCapture.kt
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/wake/WakeTrace.kt
@@ -391,7 +396,7 @@ index f2d6b7e..8b7286e 100644
          minSdk = 26
          // Target 28 like Termux, so the API 29+ exec restriction on app-private
 diff --git a/app/android/app/src/main/AndroidManifest.xml b/app/android/app/src/main/AndroidManifest.xml
-index 1473ba2..317471f 100644
+index 1473ba2..91327a3 100644
 --- a/app/android/app/src/main/AndroidManifest.xml
 +++ b/app/android/app/src/main/AndroidManifest.xml
 @@ -6,6 +6,8 @@
@@ -452,6 +457,19 @@ index 1473ba2..317471f 100644
          <!-- Chat artifacts: hands one file at a time to the app that opens it (files/FilesPlugin.kt). -->
          <provider
              android:name="androidx.core.content.FileProvider"
+@@ -348,6 +376,12 @@
+             android:name="com.google.mlkit.common.internal.MlKitInitProvider"
+             android:authorities="${applicationId}.mlkitinitprovider"
+             tools:node="remove" />
++        <activity
++            android:name=".phone.vscreen.PlaceholderActivity"
++            android:exported="false"
++            android:launchMode="singleTask"
++            android:excludeFromRecents="true"
++            android:theme="@android:style/Theme.NoTitleBar" />
+     </application>
+     <!-- Required to query activities that can process text, see:
+          https://developer.android.com/training/package-visibility and
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/MainActivity.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/MainActivity.kt
 index f7f9490..bd5d6a0 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/MainActivity.kt
@@ -1421,7 +1439,7 @@ index 612f94d..7417dd0 100644
      @Volatile var overlayGate: UserGate? = null
      @Volatile var notificationGate: UserGate? = null
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneControl.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneControl.kt
-index 2fc7cd5..d2a3e31 100644
+index 2fc7cd5..aada352 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneControl.kt
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneControl.kt
 @@ -201,6 +201,8 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
@@ -1452,7 +1470,7 @@ index 2fc7cd5..d2a3e31 100644
                  }
                  cleanupIo.execute { background.finishInterrupt() }
              }
-@@ -806,6 +809,10 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
+@@ -806,6 +809,17 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
              "notifications" to nm.areNotificationsEnabled(),
              "confirmationNotifications" to notificationGate.available(),
              "background" to backgroundStatus(),
@@ -1460,10 +1478,17 @@ index 2fc7cd5..d2a3e31 100644
 +            "lastScreen" to if (PhoneRegistry.lastScreen == PhoneScreen.BACKGROUND) "background" else "main",
 +            // AI 这次明确要的是"后台屏"（不弹窗）时，Dart 不要自动开窗（11:1x）。
 +            "backgroundSilent" to PhoneRegistry.backgroundSilent,
++            // 唯一判定点：窗口/黄条该长什么样由 VscreenUi 决定，Dart 只读不自己算。
++            "vscreenUi" to runCatching {
++                io.github.ccch1mneyyy.dsh_app.phone.vscreen.VscreenUi.decide(
++                    io.github.ccch1mneyyy.dsh_app.phone.vscreen.VirtualScreenOverlay.shown,
++                    why = "status",
++                )
++            }.getOrDefault(""),
              "a11yKeeper" to keeperStatus(),
              "task" to tasks.snapshot().toMap(),
              "taskInterruption" to taskJournal.status(),
-@@ -943,7 +950,14 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
+@@ -943,7 +957,14 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
      override fun shownControls(): TaskControls? =
          displaySelection.controls { task, owner, reason -> stopOwner(task, owner, reason) }
  
@@ -1479,7 +1504,7 @@ index 2fc7cd5..d2a3e31 100644
  
      override fun onAccessibilityChanged(connected: Boolean) = emitStatus()
  
-@@ -990,7 +1004,7 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
+@@ -990,7 +1011,7 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
          if (screen != PhoneScreen.BACKGROUND) return null
          background.endTask(owner.taskId)
          // l10n:keep agent stop reason
@@ -1488,7 +1513,7 @@ index 2fc7cd5..d2a3e31 100644
      }
  
      override fun a11yState(): A11yState = when {
-@@ -999,15 +1013,82 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
+@@ -999,15 +1020,82 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
          else -> A11yState.DISABLED
      }
  
@@ -2078,10 +2103,10 @@ index 6c70185..d47346e 100644
          private val WRITES = setOf(FOCUS_TEXT, PhoneToolCatalog.TAP, PhoneToolCatalog.TYPE, PhoneToolCatalog.TAP_XY, PhoneToolCatalog.OPEN)
          /** An uncertain effect call tightens draft eligibility; it does not prove input was dispatched. */
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhonePlugin.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhonePlugin.kt
-index 4a76535..18f444e 100644
+index 4a76535..5825c8d 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhonePlugin.kt
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhonePlugin.kt
-@@ -2,7 +2,11 @@ package io.github.ccch1mneyyy.dsh_app.phone
+@@ -2,7 +2,12 @@ package io.github.ccch1mneyyy.dsh_app.phone
  
  import io.github.ccch1mneyyy.dsh_app.i18n.AppStrings
  import io.github.ccch1mneyyy.dsh_app.R
@@ -2089,11 +2114,12 @@ index 4a76535..18f444e 100644
  import io.github.ccch1mneyyy.dsh_app.phone.background.BackgroundPreview
 +import io.github.ccch1mneyyy.dsh_app.phone.vscreen.VirtualScreenOverlay
 +import io.github.ccch1mneyyy.dsh_app.phone.vscreen.TransferBall
++import io.github.ccch1mneyyy.dsh_app.phone.vscreen.VscreenUi
 +import io.github.ccch1mneyyy.dsh_app.wake.WakeTrace
  import android.app.Activity
  import android.app.Application
  import android.content.Context
-@@ -67,6 +71,9 @@ class PhonePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
+@@ -67,6 +72,9 @@ class PhonePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
          val choices: List<PhoneSkillReplayApps.Choice>)
      private var skillInspection: SkillInspection? = null
      private var skillSelectionRequest = Any()
@@ -2103,7 +2129,7 @@ index 4a76535..18f444e 100644
      private val privilegedActions = PrivilegedActionGate()
  
      override fun onAttachedToEngine(binding: FlutterPlugin.FlutterPluginBinding) {
-@@ -77,6 +84,89 @@ class PhonePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
+@@ -77,6 +85,95 @@ class PhonePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
          promptOwner = Any()
          attached = true
          control.background.restoreKeptChannel()
@@ -2148,7 +2174,13 @@ index 4a76535..18f444e 100644
 +            val sliver = VirtualScreenOverlay.currentShape() == "SLIVER"
 +            // 键数只看账本：预览登记在任务搬回主屏后还挂着，只看它会一直给双键。
 +            val virtualTask = PhoneRegistry.vscreenTaskAlive?.invoke() ?: taskOnVirtual
-+            val state = if (windowShown && !sliver) "virtual" else if (virtualTask) "background" else "main"
++            // 唯一判定点：三处形态只认 VscreenUi（别再自己算 state）
++            val uiNow = VscreenUi.decide(windowShown && !sliver, why = "keys")
++            val state = when (uiNow) {
++                VscreenUi.WINDOW -> "virtual"
++                VscreenUi.BALL2 -> "background"
++                else -> "main"
++            }
 +            WakeTrace.log("ball: tap=$action state=$state")
 +            if (action == "eye" && state == "main") WakeTrace.log("ball: eye on main → 先置后台再搬，不弹窗")
 +            when (action) {
@@ -2193,7 +2225,7 @@ index 4a76535..18f444e 100644
          methods = MethodChannel(binding.binaryMessenger, "dsh/phone").also { it.setMethodCallHandler(this) }
          events = EventChannel(binding.binaryMessenger, "dsh/phone/events").also { it.setStreamHandler(this) }
          previewEvents = EventChannel(binding.binaryMessenger, "dsh/phone/preview").also { channel ->
-@@ -103,9 +193,144 @@ class PhonePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
+@@ -103,9 +200,144 @@ class PhonePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
          }
      }
  
@@ -2338,7 +2370,7 @@ index 4a76535..18f444e 100644
          skillSelectionRequest = Any()
          skillInspection = null
          skillClient?.let { control.skillReplaySelections.retireClient(it); control.skillDrafts.retireClient(it) }
-@@ -249,6 +474,100 @@ class PhonePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
+@@ -249,6 +481,100 @@ class PhonePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
                  result.success(if (removed) mapOf("kind" to "discarded") else replayRejected("stale"))
              }
              "setBackgroundPreview" -> result.success(control.preview.setEnabled(call.argument<Boolean>("enabled") == true))
@@ -3980,6 +4012,41 @@ index 2857cee..4138076 100644
                  append(n).append(". 在").append(screen).append("重新观察并确认应用 {{app_").append(n).append("}}；")
                  append(instruction(step, n)).append("。\n")
                  append("   核对 {{check_").append(n).append("}}，不能只凭工具返回正常判断业务完成。历史记录仅表明请求已交给驱动/系统并返回接受；")
+diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/PlaceholderActivity.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/PlaceholderActivity.kt
+new file mode 100644
+index 0000000..ace64d1
+--- /dev/null
++++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/PlaceholderActivity.kt
+@@ -0,0 +1,29 @@
++package io.github.ccch1mneyyy.dsh_app.phone.vscreen
++
++import android.app.Activity
++import android.graphics.Color
++import android.os.Bundle
++import android.view.Gravity
++import android.widget.TextView
++
++/**
++ * 虚拟屏的"桌面"占位页（照 Mika/Operit 的做法）。
++ *
++ * 虚拟屏是一块独立 display：里面没有 launcher、也没有任何 activity 时，合成器只能输出纯黑，
++ * 于是"主屏还没开应用就切到虚拟屏"必然是黑窗。这里给那块屏一个常驻的空白页，
++ * 让虚拟屏永远有内容可显示——空屏时看到的是它，而不是黑。
++ *
++ * 由特权侧在建屏成功后用 ActivityOptions.setLaunchDisplayId 起在目标 display 上。
++ */
++class PlaceholderActivity : Activity() {
++    override fun onCreate(savedInstanceState: Bundle?) {
++        super.onCreate(savedInstanceState)
++        setContentView(TextView(this).apply {
++            text = "虚拟屏"
++            gravity = Gravity.CENTER
++            setTextColor(0x66FFFFFF)
++            textSize = 15f
++            setBackgroundColor(Color.rgb(8, 10, 18))
++        })
++    }
++}
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/PresentationHost.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/PresentationHost.kt
 new file mode 100644
 index 0000000..660d427
@@ -4334,10 +4401,10 @@ index 0000000..b878c4c
 +}
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/TransferBall.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/TransferBall.kt
 new file mode 100644
-index 0000000..3c37851
+index 0000000..934fdf4
 --- /dev/null
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/TransferBall.kt
-@@ -0,0 +1,456 @@
+@@ -0,0 +1,452 @@
 +package io.github.ccch1mneyyy.dsh_app.phone.vscreen
 +
 +import android.annotation.SuppressLint
@@ -4575,12 +4642,8 @@ index 0000000..3c37851
 +        val windowShown = VirtualScreenOverlay.shown && !sliver
 +        // 用"虚拟屏里真有任务"这条账：预览登记在任务被切换键搬回主屏后还挂着，
 +        // 只看它会一直画双键（经验包之外的实测：设主屏给了双键条）。
-+        val alive = io.github.ccch1mneyyy.dsh_app.phone.PhoneRegistry
-+        val taskOnVirtual = (alive.vscreenTaskAlive?.invoke()
-+            ?: alive.backgroundAlive?.invoke()) == true
-+        // 需求四：设"后台屏"时开局就是双键（眼睛+切换），哪怕虚拟屏里还没有任务。
-+        val backgroundStart = alive.vscreenTarget == "background"
-+        return !windowShown && !taskOnVirtual && !backgroundStart
++        // 唯一判定点：主屏态才单键（其余双键/不挂条由 VscreenUi 决定）
++        return VscreenUi.decide(windowShown, why = "ball") == VscreenUi.BALL1
 +    }
 +
 +    /** 球此刻的矩形；给虚拟屏小窗错位用。 */
@@ -4796,10 +4859,10 @@ index 0000000..3c37851
 +}
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenOverlay.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenOverlay.kt
 new file mode 100644
-index 0000000..7cc60fd
+index 0000000..f56d3af
 --- /dev/null
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenOverlay.kt
-@@ -0,0 +1,1986 @@
+@@ -0,0 +1,2003 @@
 +package io.github.ccch1mneyyy.dsh_app.phone.vscreen
 +
 +import android.annotation.SuppressLint
@@ -5371,10 +5434,27 @@ index 0000000..7cc60fd
 +                }
 +                return@execute
 +            }
-+            val reply = try {
++            var reply = try {
 +                control.attachViewSurface(target, surface)
 +            } catch (_: Throwable) {
 +                mapOf("ok" to false, "reason" to "surfaceUnavailable")
++            }
++            // scopeBusy：owner scope 被预览轮询占着，attach 会被拒（真机窗口空/黑的直接原因）。
++            // 这不是失败，是"稍后再来"——重试三次，每次都留痕。
++            var retries = 0
++            while (reply["ok"] != true && reply["reason"] == "scopeBusy" && retries < 3 &&
++                gen == surfaceGen
++            ) {
++                Thread.sleep(200)
++                retries++
++                reply = try {
++                    control.attachViewSurface(target, surface)
++                } catch (_: Throwable) {
++                    reply
++                }
++                WakeTrace.log(
++                    "window: attach retry #$retries after scopeBusy ok=${reply["ok"]} " +
++                        "attached=${reply["attached"]} reason=${reply["reason"]}")
 +            }
 +            val attached = reply["ok"] == true && reply["attached"] == true
 +            WakeTrace.log("window: attach ok=$attached reply=$reply")
@@ -7013,6 +7093,57 @@ index 0000000..7ca0e3a
 +
 +    private companion object {
 +        const val CHANNEL = "dsh/virtual-screen"
++    }
++}
+diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VscreenUi.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VscreenUi.kt
+new file mode 100644
+index 0000000..26060e3
+--- /dev/null
++++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VscreenUi.kt
+@@ -0,0 +1,45 @@
++package io.github.ccch1mneyyy.dsh_app.phone.vscreen
++
++import io.github.ccch1mneyyy.dsh_app.phone.PhoneRegistry
++import io.github.ccch1mneyyy.dsh_app.wake.WakeTrace
++
++/**
++ * 三通道 → 界面形态的唯一判定点（真值表见交接第十一节）。
++ *
++ * 以前窗口显隐、黄条键数、键的行为分散在三处各算各的，改动互相打架。
++ * 现在只允许这里算：输入 channel / hasTask / shown，输出 window / ball2 / ball1 / none。
++ * 任何地方要决定"该出现什么"，只许调用 [decide]，不许自己判断。
++ */
++object VscreenUi {
++    const val WINDOW = "window"
++    const val BALL2 = "ball2"
++    const val BALL1 = "ball1"
++    const val NONE = "none"
++
++    /** 生效通道：virtual / silent / main（main 兼容旧的 background 命名）。 */
++    fun channel(): String = when (PhoneRegistry.vscreenTarget) {
++        "background" -> "silent"
++        "silent" -> "silent"
++        "main" -> "main"
++        else -> "virtual"
++    }
++
++    fun hasTask(): Boolean = PhoneRegistry.vscreenTaskAlive?.invoke() == true
++
++    /** 唯一判定：返回 ui 形态，并把命中的规则打进日志。 */
++    fun decide(shown: Boolean, why: String = ""): String {
++        val ch = channel()
++        val task = hasTask()
++        val ui = when {
++            shown -> WINDOW                                  // R7：窗口可见 → 窗口（不挂条）
++            ch == "virtual" && task -> WINDOW                // R1：虚拟屏 + 有任务 → 小窗
++            ch == "virtual" && !task -> NONE                 // R2：虚拟屏开局 → 等窗口，不挂条
++            ch == "silent" -> BALL2                          // R3：后台屏 → 双键条
++            ch == "main" && !task -> BALL1                   // R5：主屏开局 → 单键条
++            ch == "main" && task -> BALL2                    // R6：主屏但虚拟屏有任务 → 双键条
++            else -> NONE
++        }
++        WakeTrace.log("ui-rule: $why channel=$ch hasTask=$task shown=$shown -> $ui")
++        return ui
 +    }
 +}
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/runtime/GuestSetup.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/runtime/GuestSetup.kt
@@ -81960,7 +82091,7 @@ index d0e32a5..73484ed 100644
    final String text;
  
 diff --git a/app/lib/phone/phone_channel.dart b/app/lib/phone/phone_channel.dart
-index 61789e5..49a8a3c 100644
+index 61789e5..7affbe4 100644
 --- a/app/lib/phone/phone_channel.dart
 +++ b/app/lib/phone/phone_channel.dart
 @@ -226,7 +226,10 @@ class AdbStatus {
@@ -81983,36 +82114,39 @@ index 61789e5..49a8a3c 100644
        _ => null,
      };
    }
-@@ -597,6 +601,8 @@ class PhoneStatus {
+@@ -597,6 +601,9 @@ class PhoneStatus {
      this.notifications = false,
      this.confirmationNotifications,
      this.background = const PhoneBackgroundStatus(),
 +    this.lastScreen = 'main',
 +    this.backgroundSilent = false,
++    this.vscreenUi = '',
      this.task = const PhoneTaskStatus(),
      this.taskProtocol = 0,
      this.callerCapability,
-@@ -609,7 +615,9 @@ class PhoneStatus {
+@@ -609,7 +616,10 @@ class PhoneStatus {
  
    /// The native module isn't there (or failed to answer): "未就绪".
    const PhoneStatus.notReady([this.error])
 -    : ready = false,
 +    : lastScreen = 'main',
 +      backgroundSilent = false,
++      vscreenUi = '',
 +      ready = false,
        statusRevision = null,
        statusRevisionPresent = false,
        enabled = false,
-@@ -641,6 +649,8 @@ class PhoneStatus {
+@@ -641,6 +651,9 @@ class PhoneStatus {
      notifications: _flag(m['notifications']),
      confirmationNotifications: _maybeFlag(m['confirmationNotifications']),
      background: PhoneBackgroundStatus.fromMap(_map(m['background'])),
 +    lastScreen: m['lastScreen'] == 'background' ? 'background' : 'main',
 +    backgroundSilent: m['backgroundSilent'] == true,
++    vscreenUi: (m['vscreenUi'] as String?) ?? '',
      task: _selectedPhoneTask(m),
      taskProtocol: m['taskProtocol'] == 1 ? 1 : 0,
      callerCapability: PhoneCallerCapability.parse(m['callerCapability']),
-@@ -676,6 +686,13 @@ class PhoneStatus {
+@@ -676,6 +689,16 @@ class PhoneStatus {
    /// Null on older native modules; it does not replace the global switch.
    final bool? confirmationNotifications;
    final PhoneBackgroundStatus background;
@@ -82023,10 +82157,13 @@ index 61789e5..49a8a3c 100644
 +
 +  /// AI 本次指定"后台屏"（在虚拟屏里干活但不弹窗）。
 +  final bool backgroundSilent;
++
++  /// 原生唯一判定点给出的界面形态：window / ball2 / ball1 / none（空=旧版本）。
++  final String vscreenUi;
    final PhoneTaskStatus task;
    final int taskProtocol;
    final PhoneCallerCapability? callerCapability;
-@@ -847,6 +864,36 @@ class PhoneResult {
+@@ -847,6 +870,36 @@ class PhoneResult {
    final bool pending;
  }
  
@@ -82063,7 +82200,7 @@ index 61789e5..49a8a3c 100644
  /// Reply of `testScreen`: the main screen read once.
  class ScreenTestResult {
    const ScreenTestResult({required this.ok, this.text, this.reason});
-@@ -1355,6 +1402,84 @@ class PhoneChannel {
+@@ -1355,6 +1408,84 @@ class PhoneChannel {
      return controller.stream.map(PhonePreviewFrame.parse);
    }
  
@@ -82799,10 +82936,10 @@ index c089d19..a15b64d 100644
  
 diff --git a/app/lib/state/virtual_screen_state.dart b/app/lib/state/virtual_screen_state.dart
 new file mode 100644
-index 0000000..7e06f04
+index 0000000..a5a69a4
 --- /dev/null
 +++ b/app/lib/state/virtual_screen_state.dart
-@@ -0,0 +1,431 @@
+@@ -0,0 +1,454 @@
 +import 'dart:async';
 +
 +import 'package:flutter/services.dart';
@@ -83109,6 +83246,27 @@ index 0000000..7e06f04
 +        'silent=$silent onVirtual=$onVirtual '
 +        'flags(bgSilent=${status.backgroundSilent} keepBg=$vscreenKeepBackground '
 +        'target=$targetName manual=$vscreenManualView await=${vscreenAwaitPictureUntil != null})');
++    // 唯一判定点（原生 VscreenUi）已经给出结论：窗口 / ball2 / ball1 / none。
++    // 这里直接采纳，不再用 lastScreen / _ballOn 自己推——今晚 N7/N8/N11 全是重复推导惹的。
++    final ui = status.vscreenUi;
++    if (ui.isNotEmpty) {
++      final wantBall = ui == 'ball2' || ui == 'ball1';
++      if (wantBall && !_ballOn) {
++        _ballOn = true;
++        unawaited(ref.read(virtualWindowProvider.notifier).setBall(true));
++      } else if (!wantBall && _ballOn) {
++        _ballOn = false;
++        unawaited(ref.read(virtualWindowProvider.notifier).setBall(false));
++      }
++      if (ui == 'window') {
++        if (taskId != null && !state.open) unawaited(open(taskId));
++      } else if (state.open) {
++        unawaited(close());
++      }
++      diagWake('sync: 采纳 ui=$ui task=$taskId open=${state.open} ball=$_ballOn');
++      return;
++    }
++
 +    // 球上【切换】（主屏 → 虚拟屏）之后的等待：应用起来、虚拟屏有画面才开窗，最多等 5 秒。
 +    // 没起来 → 留着球、不开窗（绝不先给一个空的虚拟屏窗口）。截止时间过了就本次不再弹，
 +    // 再按一次【切换】或点眼睛（都会清掉这个标记）才恢复。
@@ -83151,8 +83309,10 @@ index 0000000..7e06f04
 +      // 需求四：设"虚拟屏"时**不许先冒黄条**。任务一起来就直接等窗口（AI 打开应用后
 +      // <2 秒窗口出现）；黄条只在主屏/后台屏两种设置下出现。
 +      // 只有 AI 真在虚拟屏上操作才不挂条；命令走主屏时必须给单键条。
++      // 只有"AI 还没开始在虚拟屏上操作"才不挂条；一旦 AI 已在虚拟屏（lastScreen=background），
++      // 条必须允许出现——否则用户按眼睛收起后，窗口没了、条也被压掉，屏幕上什么都不剩。
 +      if (targetName == VirtualScreenTarget.virtual.name &&
-+          status.lastScreen == 'background') {
++          status.lastScreen != 'background') {
 +        diagWake('ball: skipped（target=virtual，等窗口，不挂条）');
 +      } else {
 +        _ballOn = true;
