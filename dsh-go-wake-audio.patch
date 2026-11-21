@@ -1,7 +1,7 @@
-From c3660e978b518052bcb8038a4f2918baf15e7ace Mon Sep 17 00:00:00 2001
+From 78cf71adc0aaacdb679255459e037bd30793d30c Mon Sep 17 00:00:00 2001
 From: wake-ci <ci@local>
-Date: Sat, 21 Nov 2026 09:52:08 +0800
-Subject: [PATCH] pb: holes
+Date: Sat, 21 Nov 2026 09:55:03 +0800
+Subject: [PATCH] pb: retask
 
 ---
  .gitattributes                                |    3 +
@@ -77,7 +77,7 @@ Subject: [PATCH] pb: holes
  app/lib/l10n/parts/speech_zh.arb              |   21 +-
  app/lib/links/launcher_entries.dart           |    7 +-
  app/lib/phone/phone_channel.dart              |  123 +-
- app/lib/phone/virtual_screen_window.dart      |  139 ++
+ app/lib/phone/virtual_screen_window.dart      |  144 ++
  app/lib/speech/call/active_call.dart          |  110 +
  app/lib/speech/call/chat_call.dart            |    3 +
  app/lib/speech/call/voice_call.dart           |   57 +-
@@ -110,7 +110,7 @@ Subject: [PATCH] pb: holes
  docs/wake-word.md                             |  107 +
  dsh-go-wake.patch                             | 2065 +++++++++++++++++
  tooling/build-wake-apk.sh                     |   68 +
- 106 files changed, 11949 insertions(+), 524 deletions(-)
+ 106 files changed, 11954 insertions(+), 524 deletions(-)
  create mode 100644 .github/workflows/wake-apk.yml
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallForegroundService.kt
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallOverlay.kt
@@ -80823,10 +80823,10 @@ index 61789e5..ed59b04 100644
    Future<PhoneSkillReply> openSkillDraft(PhoneSkillCandidate candidate, {required bool confirmed}) =>
 diff --git a/app/lib/phone/virtual_screen_window.dart b/app/lib/phone/virtual_screen_window.dart
 new file mode 100644
-index 0000000..853a864
+index 0000000..adcf154
 --- /dev/null
 +++ b/app/lib/phone/virtual_screen_window.dart
-@@ -0,0 +1,139 @@
+@@ -0,0 +1,144 @@
 +import 'dart:async';
 +
 +import 'package:flutter/services.dart';
@@ -80856,6 +80856,11 @@ index 0000000..853a864
 +
 +  /// 开窗并开始推帧。[fps] 变了调用 [setFps]。
 +  Future<bool> open(int taskId, {int fps = 15}) async {
++    // 任务号变了（迁移后）：先关掉旧窗口，避免画面/预览还绑旧任务（09:53 复查）。
++    if (_openedTaskId != null && _openedTaskId != taskId) {
++      await close();
++    }
++    _openedTaskId = taskId;
 +    // 已经开着、且这次给的是"当前那块虚拟屏"（0）或同一个任务：保持原窗口不动。
 +    if (_open && taskId <= 0) return true;
 +    // 已经开着、只是任务号变了（迁移）：只换任务号，不重建窗口（否则画面闪一下）。
