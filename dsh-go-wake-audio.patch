@@ -1,7 +1,7 @@
-From 4a1a57558af1278b4aaf7291269576385f7ccaf3 Mon Sep 17 00:00:00 2001
+From 24dc3cf236cb9a5ebcf0a18488bc77b0e36b6099 Mon Sep 17 00:00:00 2001
 From: ci <ci@local>
-Date: Mon, 23 Nov 2026 03:34:27 +0800
-Subject: [PATCH] pb: scene4k
+Date: Mon, 23 Nov 2026 03:39:15 +0800
+Subject: [PATCH] pb: scene4l
 
 ---
  .gitattributes                                |    3 +
@@ -18,7 +18,7 @@ Subject: [PATCH] pb: scene4k
  .../dsh_app/phone/PhoneContracts.kt           |  186 ++
  .../ccch1mneyyy/dsh_app/phone/PhoneControl.kt |  100 +-
  .../ccch1mneyyy/dsh_app/phone/PhoneCore.kt    |  458 +++-
- .../ccch1mneyyy/dsh_app/phone/PhonePlugin.kt  |  424 ++++
+ .../ccch1mneyyy/dsh_app/phone/PhonePlugin.kt  |  424 +++
  .../dsh_app/phone/PhoneTaskSessions.kt        |   33 +-
  .../ccch1mneyyy/dsh_app/phone/PhoneTasks.kt   |   46 +
  .../dsh_app/phone/PhoneToolCatalog.kt         |   35 +-
@@ -50,10 +50,10 @@ Subject: [PATCH] pb: scene4k
  .../dsh_app/phone/vscreen/FrontExitPrompt.kt  |  236 ++
  .../phone/vscreen/PlaceholderActivity.kt      |   40 +
  .../dsh_app/phone/vscreen/PresentationHost.kt |   69 +
- .../phone/vscreen/SwitchPromptOverlay.kt      |  142 ++
+ .../phone/vscreen/SwitchPromptOverlay.kt      |  142 +
  .../dsh_app/phone/vscreen/TaskMover.kt        |  152 ++
  .../dsh_app/phone/vscreen/TransferBall.kt     |  460 ++++
- .../phone/vscreen/VirtualScreenOverlay.kt     | 2261 +++++++++++++++++
+ .../phone/vscreen/VirtualScreenOverlay.kt     | 2274 +++++++++++++++++
  .../phone/vscreen/VirtualScreenPlugin.kt      |  251 ++
  .../dsh_app/phone/vscreen/VscreenUi.kt        |  111 +
  .../ccch1mneyyy/dsh_app/runtime/GuestSetup.kt |   47 +-
@@ -132,7 +132,7 @@ Subject: [PATCH] pb: scene4k
  docs/wake-word.md                             |  107 +
  dsh-go-wake.patch                             | 2065 +++++++++++++++
  tooling/build-wake-apk.sh                     |   68 +
- 128 files changed, 16329 insertions(+), 553 deletions(-)
+ 128 files changed, 16342 insertions(+), 553 deletions(-)
  create mode 100644 .github/workflows/wake-apk.yml
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallForegroundService.kt
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallOverlay.kt
@@ -7263,10 +7263,10 @@ index 0000000..50b681e
 +}
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenOverlay.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenOverlay.kt
 new file mode 100644
-index 0000000..e6887eb
+index 0000000..26ccc11
 --- /dev/null
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenOverlay.kt
-@@ -0,0 +1,2261 @@
+@@ -0,0 +1,2274 @@
 +package io.github.ccch1mneyyy.dsh_app.phone.vscreen
 +
 +import io.github.ccch1mneyyy.dsh_app.phone.PhoneRegistry
@@ -7450,6 +7450,8 @@ index 0000000..e6887eb
 +
 +    private var lastFrameAt = 0L
 +    private var lastBitmap: Bitmap? = null
++    /** 已落盘的诊断帧数量（前 3 帧，见 pushFrame）。 */
++    private var frameDumpCount = 0
 +    /** 最近一张预览帧解出来的时刻；判黑只在帧足够新的时候做（不拿旧黑帧把窗口一直挡着）。 */
 +    private var lastBitmapAt = 0L
 +    /** 进全屏前虚拟屏的真实尺寸：退出全屏要还原（需求八）。 */
@@ -7521,6 +7523,7 @@ index 0000000..e6887eb
 +        lastBitmap?.recycle()
 +        lastBitmap = null
 +        lastBitmapAt = 0L
++        frameDumpCount = 0
 +        iconFont = loadIconFont(app)
 +        val px = app.resources.displayMetrics.density
 +        val area = area(app, manager)
@@ -7754,6 +7757,16 @@ index 0000000..e6887eb
 +            displayWidth = decoded.width
 +            displayHeight = decoded.height
 +            applyAspect()
++        }
++        // 诊断（用户 03:4x："虚拟屏里显示的是我手机当前界面"——这与"帧取自虚拟屏 ImageReader"
++        // 的代码事实冲突）。前 3 帧落盘成 PNG，直接看窗口里到底是什么内容。
++        if (frameDumpCount < 3) {
++            frameDumpCount++
++            runCatching {
++                val f = java.io.File("/sdcard/Download/DSH-Go/frame_dump_${frameDumpCount}.png")
++                java.io.FileOutputStream(f).use { decoded.compress(Bitmap.CompressFormat.PNG, 90, it) }
++                WakeTrace.log("frame: dump #$frameDumpCount ${decoded.width}x${decoded.height} -> ${f.name}")
++            }
 +        }
 +        val old = lastBitmap
 +        lastBitmap = decoded
