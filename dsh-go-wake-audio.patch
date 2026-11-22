@@ -1,7 +1,7 @@
-From acf29ba4abed7a6bf64ddce4fb898cb27dc1959a Mon Sep 17 00:00:00 2001
+From 94f65e9dbcd3b9a4acd908b99d0e8d307106cadf Mon Sep 17 00:00:00 2001
 From: ci <ci@local>
-Date: Sun, 22 Nov 2026 12:54:23 +0800
-Subject: [PATCH] pb: scene3t
+Date: Sun, 22 Nov 2026 13:34:38 +0800
+Subject: [PATCH] pb: scene3u
 
 ---
  .gitattributes                                |    3 +
@@ -39,7 +39,7 @@ Subject: [PATCH] pb: scene3t
  .../background/DisplayOrientationKeeper.kt    |  125 +
  .../background/DisplayOrientationWatch.kt     |  100 +
  .../dsh_app/phone/background/KeptTasks.kt     |   39 +
- .../phone/background/PrivilegedDisplayCore.kt |  777 ++++++-
+ .../phone/background/PrivilegedDisplayCore.kt |  805 ++++++-
  .../phone/background/PrivilegedDisplayHost.kt |    6 +-
  .../phone/background/PrivilegedProtocol.kt    |   83 +-
  .../dsh_app/phone/skills/PhoneSkillDraft.kt   |    2 +-
@@ -129,7 +129,7 @@ Subject: [PATCH] pb: scene3t
  docs/wake-word.md                             |  107 +
  dsh-go-wake.patch                             | 2065 +++++++++++++++++
  tooling/build-wake-apk.sh                     |   68 +
- 125 files changed, 15096 insertions(+), 550 deletions(-)
+ 125 files changed, 15124 insertions(+), 550 deletions(-)
  create mode 100644 .github/workflows/wake-apk.yml
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallForegroundService.kt
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallOverlay.kt
@@ -1468,7 +1468,7 @@ index 612f94d..f675526 100644
      @Volatile var overlayGate: UserGate? = null
      @Volatile var notificationGate: UserGate? = null
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneControl.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneControl.kt
-index 2fc7cd5..6e50642 100644
+index 2fc7cd5..35689c0 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneControl.kt
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneControl.kt
 @@ -201,6 +201,8 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
@@ -1599,7 +1599,7 @@ index 2fc7cd5..6e50642 100644
 +     */
 +    private fun installDisplayInputHook() {
 +        PhoneRegistry.injectDisplayInput = { command ->
-+            val allowed = command.startsWith("input -d ") || command.startsWith("am task move-task ")
++            val allowed = command.startsWith("input -d ") || command.startsWith("am display move-stack ")
 +            if (!allowed) false else {
 +                val ex = androidShell()
 +                runCatching {
@@ -4142,7 +4142,7 @@ index 0000000..c1dcef9
 +    fun logSize() = Log.i(TAG, "vscreen: task-finish kept-total=$size")
 +}
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/PrivilegedDisplayCore.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/PrivilegedDisplayCore.kt
-index c7ed0f7..87c8470 100644
+index c7ed0f7..26d5066 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/PrivilegedDisplayCore.kt
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/PrivilegedDisplayCore.kt
 @@ -11,6 +11,7 @@ package io.github.ccch1mneyyy.dsh_app.phone.background
@@ -4308,7 +4308,7 @@ index c7ed0f7..87c8470 100644
          if (op == Proto.OP_LAUNCH && expected != null) {
              val shown = TargetIdentity.shown(response.get(Proto.PKG), response.get(Proto.TARGET_UID))
              val actualDisplay = display?.display
-@@ -729,57 +809,505 @@ class PrivilegedDisplayCore internal constructor(
+@@ -729,57 +809,530 @@ class PrivilegedDisplayCore internal constructor(
      private fun displayId(): Int = display?.display?.displayId ?: throw Fault("displayMissing")
      private fun requireDisplay() { if (display == null) throw Fault("displayMissing") }
  
@@ -4462,19 +4462,13 @@ index c7ed0f7..87c8470 100644
 +        // A1 启动优先：主屏上那份只有"用户正在用"时才搬——搬一份正在用的会打断他，而另启一份会双开
 +        // （DRM/全屏应用在主屏渲染黑 → 用户看到"主屏全黑 + 一个小窗"）。
 +        // 只是躺在后台的主屏任务不抢：直接在虚拟屏启动一份新的；启动不成再由调用方回来搬（增强）。
-+        // singleTask/singleInstance 的应用（腾讯视频这类）不能靠"另启一份"：新实例会被系统当成
-+        // 同一个任务，旧那份在主屏就把它顶回主屏——用户看到的就是"开在虚拟屏，一会儿自己跳走"。
-+        // 这类应用只要主屏上有任务，就必须搬。
-+        if (singleTaskApp(pkg)) {
-+            io.github.ccch1mneyyy.dsh_app.wake.WakeTrace.log(
-+                "vscreen: move-first pkg=$pkg mainTask=$onMain reason=singleTask")
-+            return moveMainIntoHere(pkg, response)
-+        }
-+        if (!mainTaskInUse(onMain)) {
-+            io.github.ccch1mneyyy.dsh_app.wake.WakeTrace.log(
-+                "vscreen: launch-first pkg=$pkg mainTask=$onMain reason=background")
-+            return false
-+        }
++        // 主屏上有这份任务就**一律搬**，不再"看着像后台就另启"：
++        // 实测（微信 13:24）mainTask=798 在后台时走了 launch，结果主屏一条 #798 + 虚拟屏一条 #807
++        // = 双开（§九 明令禁止），而且新任务起来账本没有 taskId → hasTask=false → 窗口不开。
++        // 只有主屏根本没有这份任务时才启动。
++        io.github.ccch1mneyyy.dsh_app.wake.WakeTrace.log(
++            "vscreen: move-first pkg=$pkg mainTask=$onMain reason=" +
++                (if (singleTaskApp(pkg)) "singleTask" else "hasTaskOnMain"))
 +        return moveMainIntoHere(pkg, response)
 +    }
 +
@@ -4502,12 +4496,42 @@ index c7ed0f7..87c8470 100644
 +            Log.w("DshDisplay", "vscreen: resume kept task $keptId still hidden after moving it back")
 +        }
 +        KeptTasks.forget(keptId)
++        focusOnDisplay(keptId, here, pkg)
 +        response.putInt(Proto.TASK_ID, keptId)
 +        response.putString(Proto.TASK_PKG, pkg)
 +        response.putBoolean("resumed", true)
 +        io.github.ccch1mneyyy.dsh_app.wake.WakeTrace.log(
 +            "vscreen: resume kept pkg=$pkg taskId=$keptId displayId=$here ok=true")
 +        return true
++    }
++
++    /**
++     * 搬进虚拟屏之后把这条任务置前（executor 实测：搬完 mFocusedApp=null，屏里没有前台，
++     * surface 就没帧 → 读屏"画面尚未就绪"）。做法：setFocusedTask，再把任务在同一块屏上
++     * 重排到最前（moveRootTaskToDisplay 到同一块屏 = reorder），回读 top==taskId 才算成功。
++     * 判据：`vscreen: focused after move ok=… pkg=… display=…`
++     */
++    private fun focusOnDisplay(taskId: Int, displayId: Int, pkg: String): Boolean {
++        runCatching {
++            taskManager.javaClass.methods.firstOrNull { it.name == "setFocusedTask" && it.parameterTypes.size == 1 }
++                ?.invoke(taskManager, taskId)
++        }
++        val deadline = SystemClock.uptimeMillis() + 800
++        while (true) {
++            runCatching { moveTaskMethod?.invoke(taskManager, taskId, displayId) }
++            val top = runCatching { rootTaskInfos(displayId).firstOrNull()?.let { taskRow(it)?.first } }.getOrNull()
++            if (top == taskId) {
++                io.github.ccch1mneyyy.dsh_app.wake.WakeTrace.log(
++                    "vscreen: focused after move ok=true pkg=$pkg display=$displayId")
++                return true
++            }
++            if (SystemClock.uptimeMillis() >= deadline) {
++                io.github.ccch1mneyyy.dsh_app.wake.WakeTrace.log(
++                    "vscreen: focused after move ok=false pkg=$pkg display=$displayId top=$top")
++                return false
++            }
++            sleepChecked(120)
++        }
 +    }
 +
 +    /** 启动入口是不是 singleTask / singleInstance（这类应用另启一份会被旧任务顶回主屏）。 */
@@ -4533,6 +4557,7 @@ index c7ed0f7..87c8470 100644
 +            response.putBoolean("moved", true)
 +            io.github.ccch1mneyyy.dsh_app.wake.WakeTrace.log(
 +                "vscreen: move pkg=$pkg taskId=$onMain displayId=$here ok=true")
++            focusOnDisplay(onMain, here, pkg)
 +            return true
 +        }
 +        response.putInt(Proto.TASK_ID, onMain)
@@ -4778,9 +4803,9 @@ index c7ed0f7..87c8470 100644
 +            rollbackDisplayAttempt()
 +            // SecurityException 原样上抛：调用方据此决定要不要去掉可信标志重开。
 +            throw if (e is Fault || e is SecurityException) e else Fault("displayUnsupported")
-+        }
-+    }
-+
+         }
+     }
+ 
 +    /**
 +     * A throwing newInstance returns no reader: nothing is left to close.
 +     * An Honor/Qualcomm GraphicsBuffer on this phone answers the first allocation with an
@@ -4806,9 +4831,9 @@ index c7ed0f7..87c8470 100644
 +            releasingDisplayId?.let { DisplayHandles.forget(it) }
 +            display = null; reader = null; pendingReader = null
 +            releasingDisplayId = null; displayCreationAttempted = false
-         }
-     }
- 
++        }
++    }
++
 +    /**
 +     * 建屏标志（照 Mika 的 displayFlags）。[trusted] 为 false 时去掉只对可信屏可用的几项：
 +     * 有的系统里 shell 没有 ADD_TRUSTED_DISPLAY，带上 TRUSTED 会被系统直接拒；OWN_DISPLAY_GROUP、
@@ -4835,7 +4860,7 @@ index c7ed0f7..87c8470 100644
      private fun resolveLaunch(pkg: String, expected: PhoneAppIdentity?): Intent {
          val pm = privileged.packageManager
          val intent = runCatching { pm.getLaunchIntentForPackage(pkg) }.getOrNull() ?: throw Fault("notLaunchable")
-@@ -821,6 +1349,44 @@ class PrivilegedDisplayCore internal constructor(
+@@ -821,6 +1374,44 @@ class PrivilegedDisplayCore internal constructor(
      }
  
      /** (displayId, packages of that task) rows of one running-task read. */
@@ -4880,7 +4905,7 @@ index c7ed0f7..87c8470 100644
      private fun taskRows(): List<Pair<Int, Set<String>>>? {
          val field = taskDisplayIdField ?: return null
          @Suppress("DEPRECATION")
-@@ -906,8 +1472,115 @@ class PrivilegedDisplayCore internal constructor(
+@@ -906,8 +1497,118 @@ class PrivilegedDisplayCore internal constructor(
          if (readerAllocationUncertain) throw Fault("releaseUnconfirmed")
      }
  
@@ -4906,6 +4931,9 @@ index c7ed0f7..87c8470 100644
 +        for (row in rows) {
 +            val taskId = taskRow(row)?.first ?: continue
 +            val pkg = taskRow(row)?.second
++            // 桌面/我们自己的占位页不用交回（executor 的最小改动集里同样跳过 home）：
++            // 把它们挪到主屏只会在用户屏幕上多出一个空桌面任务。
++            if (pkg != null && (pkg in homePackages || pkg == context.packageName)) continue
 +            if (!keepBehind(row)) { failed++; continue }
 +            moved++
 +            movedIds += taskId
@@ -4996,7 +5024,7 @@ index c7ed0f7..87c8470 100644
          closeTreeConnection()
          visualObservation = null
          stopPreview()
-@@ -925,11 +1598,20 @@ class PrivilegedDisplayCore internal constructor(
+@@ -925,11 +1626,20 @@ class PrivilegedDisplayCore internal constructor(
              closeReaders()
          } else {
              val displayId = releasingDisplayId ?: throw Fault("releaseUnconfirmed")
@@ -5018,7 +5046,7 @@ index c7ed0f7..87c8470 100644
              closeReaders()
              val deadline = SystemClock.uptimeMillis() + 1_000
              // The display itself is already released. A ROM whose task query is unreadable cannot
-@@ -944,6 +1626,7 @@ class PrivilegedDisplayCore internal constructor(
+@@ -944,6 +1654,7 @@ class PrivilegedDisplayCore internal constructor(
      }
  
      private fun clearResourceState() {
@@ -5026,7 +5054,7 @@ index c7ed0f7..87c8470 100644
          display = null; owner = null; strictOwner = false; selfCheckOwner = false
          targetSequence = null; targetSnapshot = null; targetMain = null
          releasingDisplayId = null; displayCreationAttempted = false; displayApiReleased = false; probeDisplay = false
-@@ -1166,7 +1849,15 @@ class PrivilegedDisplayCore internal constructor(
+@@ -1166,7 +1877,15 @@ class PrivilegedDisplayCore internal constructor(
      private class CaptureResult(val jpeg: ByteArray, val raw: BackgroundPreviewState.RawFrame?, val local: ImageObservation?, val targetMatched: Boolean? = null)
  
      /** Null means only absent/black frames; other capture failures remain distinguishable. */
@@ -5043,7 +5071,7 @@ index c7ed0f7..87c8470 100644
          val ir = lock.withLock {
              if (pendingReader != null || readerAllocationUncertain) throw Fault("releasePending")
              val vd = display ?: throw Fault("displayMissing")
-@@ -2025,6 +2716,32 @@ class PrivilegedDisplayCore internal constructor(
+@@ -2025,6 +2744,32 @@ class PrivilegedDisplayCore internal constructor(
          if (waitForFinish && !accepted) throw Fault("inputRejected")
      }
  
@@ -5076,7 +5104,7 @@ index c7ed0f7..87c8470 100644
      private fun setImePolicyHide(displayId: Int) {
          val sm = Class.forName("android.os.ServiceManager")
          val binder = sm.getMethod("getService", String::class.java).invoke(null, "window") as IBinder
-@@ -2079,9 +2796,13 @@ class PrivilegedDisplayCore internal constructor(
+@@ -2079,9 +2824,13 @@ class PrivilegedDisplayCore internal constructor(
  
      companion object {
          private val PACKAGE = Regex("[a-zA-Z][a-zA-Z0-9_]*(\\.[a-zA-Z0-9_]+)+")
@@ -8308,7 +8336,7 @@ index 0000000..34f79b2
 +}
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenPlugin.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenPlugin.kt
 new file mode 100644
-index 0000000..7ca0e3a
+index 0000000..10be2e1
 --- /dev/null
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenPlugin.kt
 @@ -0,0 +1,223 @@
@@ -8415,7 +8443,7 @@ index 0000000..7ca0e3a
 +                        fun tryAm(): TaskMover.MoveOutcome = runCatching {
 +                            val move = PhoneRegistry.moveDisplayTask
 +                            if (move != null) move(taskId.toInt(), target) else {
-+                                val cmd = "am task move-task $taskId $target"
++                                val cmd = "am display move-stack $taskId $target"
 +                                val amOk = PhoneRegistry.injectDisplayInput?.invoke(cmd) == true
 +                                TaskMover.MoveOutcome(amOk, null, cmd, if (amOk) null else "noHook")
 +                            }
