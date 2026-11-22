@@ -1,7 +1,7 @@
-From 22038505a7c01eb78d46852361b911f4af6e897f Mon Sep 17 00:00:00 2001
+From ff5fef39817193aeec6a64d3ecf1df2c212ca88e Mon Sep 17 00:00:00 2001
 From: ci <ci@local>
-Date: Sun, 22 Nov 2026 12:24:12 +0800
-Subject: [PATCH] pb: scene3r
+Date: Sun, 22 Nov 2026 12:37:18 +0800
+Subject: [PATCH] pb: scene3s
 
 ---
  .gitattributes                                |    3 +
@@ -39,17 +39,18 @@ Subject: [PATCH] pb: scene3r
  .../background/DisplayOrientationKeeper.kt    |  125 +
  .../background/DisplayOrientationWatch.kt     |  100 +
  .../dsh_app/phone/background/KeptTasks.kt     |   39 +
- .../phone/background/PrivilegedDisplayCore.kt |  719 +++++-
+ .../phone/background/PrivilegedDisplayCore.kt |  755 +++++-
  .../phone/background/PrivilegedDisplayHost.kt |    6 +-
  .../phone/background/PrivilegedProtocol.kt    |   83 +-
  .../dsh_app/phone/skills/PhoneSkillDraft.kt   |    2 +-
  .../phone/vscreen/DisplayFrameGeometry.kt     |   21 +
+ .../dsh_app/phone/vscreen/FrameMath.kt        |   60 +
  .../phone/vscreen/PlaceholderActivity.kt      |   29 +
  .../dsh_app/phone/vscreen/PresentationHost.kt |   69 +
  .../phone/vscreen/SwitchPromptOverlay.kt      |  142 ++
- .../dsh_app/phone/vscreen/TaskMover.kt        |  150 ++
+ .../dsh_app/phone/vscreen/TaskMover.kt        |  152 ++
  .../dsh_app/phone/vscreen/TransferBall.kt     |  452 ++++
- .../phone/vscreen/VirtualScreenOverlay.kt     | 2018 ++++++++++++++++
+ .../phone/vscreen/VirtualScreenOverlay.kt     | 2040 ++++++++++++++++
  .../phone/vscreen/VirtualScreenPlugin.kt      |  223 ++
  .../dsh_app/phone/vscreen/VscreenUi.kt        |   64 +
  .../ccch1mneyyy/dsh_app/runtime/GuestSetup.kt |   47 +-
@@ -71,6 +72,7 @@ Subject: [PATCH] pb: scene3r
  .../phone/background/DisplayAwakeTest.kt      |  105 +
  .../background/DisplayOrientationTest.kt      |   48 +
  .../phone/vscreen/DisplayFrameGeometryTest.kt |   39 +
+ .../dsh_app/phone/vscreen/FrameMathTest.kt    |   45 +
  app/assets/kws/LICENSE.txt                    |   20 +
  app/assets/kws/NOTICE.txt                     |    4 +
  app/assets/kws/decoder.int8.onnx              |  Bin 0 -> 181069 bytes
@@ -127,7 +129,7 @@ Subject: [PATCH] pb: scene3r
  docs/wake-word.md                             |  107 +
  dsh-go-wake.patch                             | 2065 +++++++++++++++++
  tooling/build-wake-apk.sh                     |   68 +
- 123 files changed, 14896 insertions(+), 550 deletions(-)
+ 125 files changed, 15061 insertions(+), 550 deletions(-)
  create mode 100644 .github/workflows/wake-apk.yml
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallForegroundService.kt
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallOverlay.kt
@@ -142,6 +144,7 @@ Subject: [PATCH] pb: scene3r
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/DisplayOrientationWatch.kt
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/KeptTasks.kt
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/DisplayFrameGeometry.kt
+ create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/FrameMath.kt
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/PlaceholderActivity.kt
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/PresentationHost.kt
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/SwitchPromptOverlay.kt
@@ -158,6 +161,7 @@ Subject: [PATCH] pb: scene3r
  create mode 100644 app/android/app/src/test/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/DisplayAwakeTest.kt
  create mode 100644 app/android/app/src/test/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/DisplayOrientationTest.kt
  create mode 100644 app/android/app/src/test/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/DisplayFrameGeometryTest.kt
+ create mode 100644 app/android/app/src/test/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/FrameMathTest.kt
  create mode 100644 app/assets/kws/LICENSE.txt
  create mode 100644 app/assets/kws/NOTICE.txt
  create mode 100644 app/assets/kws/decoder.int8.onnx
@@ -4125,7 +4129,7 @@ index 0000000..c1dcef9
 +    fun logSize() = Log.i(TAG, "vscreen: task-finish kept-total=$size")
 +}
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/PrivilegedDisplayCore.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/PrivilegedDisplayCore.kt
-index c7ed0f7..27f3733 100644
+index c7ed0f7..1c7ec51 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/PrivilegedDisplayCore.kt
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/PrivilegedDisplayCore.kt
 @@ -11,6 +11,7 @@ package io.github.ccch1mneyyy.dsh_app.phone.background
@@ -4291,7 +4295,7 @@ index c7ed0f7..27f3733 100644
          if (op == Proto.OP_LAUNCH && expected != null) {
              val shown = TargetIdentity.shown(response.get(Proto.PKG), response.get(Proto.TARGET_UID))
              val actualDisplay = display?.display
-@@ -729,57 +809,456 @@ class PrivilegedDisplayCore internal constructor(
+@@ -729,57 +809,492 @@ class PrivilegedDisplayCore internal constructor(
      private fun displayId(): Int = display?.display?.displayId ?: throw Fault("displayMissing")
      private fun requireDisplay() { if (display == null) throw Fault("displayMissing") }
  
@@ -4376,18 +4380,34 @@ index c7ed0f7..27f3733 100644
 +        return false
 +    }
 +
-+    /** null when the task really moved; else the stable reason the move did not happen. */
++    /**
++     * null when the task really moved; else the stable reason the move did not happen.
++     * 反射拿不到/被拒时退回 `am display move-stack <taskId> <displayId>`——这台 ROM 上真机能用
++     * （用户实测：腾讯视频整条任务从 Display #0 搬到 #176，同进程同 Activity，播放状态不重建）。
++     * 注意不是 `am task move-task`：那条在这台 ROM 上不存在（exit=255 unknown command）。
++     */
 +    private fun moveRootTask(taskId: Int, displayId: Int): String? {
-+        val move = moveTaskMethod ?: return "noMoveApi"
-+        return try {
-+            if (move.invoke(taskManager, taskId, displayId) as? Boolean ?: true) null else "moveRejected"
-+        } catch (e: InvocationTargetException) {
-+            when (e.cause) {
-+                is SecurityException -> "systemOperationDenied"
-+                is IllegalArgumentException -> "noTask"
-+                else -> "moveRejected"
++        val reflection = moveTaskMethod?.let { move ->
++            try {
++                if (move.invoke(taskManager, taskId, displayId) as? Boolean ?: true) null else "moveRejected"
++            } catch (e: InvocationTargetException) {
++                when (e.cause) {
++                    is SecurityException -> "systemOperationDenied"
++                    is IllegalArgumentException -> "noTask"
++                    else -> "moveRejected"
++                }
 +            }
-+        }
++        } ?: "noMoveApi"
++        if (reflection == null) return null
++        val code = runCatching {
++            val process = ProcessBuilder("am", "display", "move-stack", taskId.toString(), displayId.toString())
++                .redirectErrorStream(true).start()
++            process.waitFor(6, TimeUnit.SECONDS)
++            process.exitValue()
++        }.getOrDefault(-1)
++        io.github.ccch1mneyyy.dsh_app.wake.WakeTrace.log(
++            "vscreen: move-stack task=$taskId display=$displayId code=$code (reflection said $reflection)")
++        return if (code == 0) null else reflection
 +    }
 +
 +    /**
@@ -4416,6 +4436,14 @@ index c7ed0f7..27f3733 100644
 +        // A1 启动优先：主屏上那份只有"用户正在用"时才搬——搬一份正在用的会打断他，而另启一份会双开
 +        // （DRM/全屏应用在主屏渲染黑 → 用户看到"主屏全黑 + 一个小窗"）。
 +        // 只是躺在后台的主屏任务不抢：直接在虚拟屏启动一份新的；启动不成再由调用方回来搬（增强）。
++        // singleTask/singleInstance 的应用（腾讯视频这类）不能靠"另启一份"：新实例会被系统当成
++        // 同一个任务，旧那份在主屏就把它顶回主屏——用户看到的就是"开在虚拟屏，一会儿自己跳走"。
++        // 这类应用只要主屏上有任务，就必须搬。
++        if (singleTaskApp(pkg)) {
++            io.github.ccch1mneyyy.dsh_app.wake.WakeTrace.log(
++                "vscreen: move-first pkg=$pkg mainTask=$onMain reason=singleTask")
++            return moveMainIntoHere(pkg, response)
++        }
 +        if (!mainTaskInUse(onMain)) {
 +            io.github.ccch1mneyyy.dsh_app.wake.WakeTrace.log(
 +                "vscreen: launch-first pkg=$pkg mainTask=$onMain reason=background")
@@ -4455,6 +4483,18 @@ index c7ed0f7..27f3733 100644
 +            "vscreen: resume kept pkg=$pkg taskId=$keptId displayId=$here ok=true")
 +        return true
 +    }
++
++    /** 启动入口是不是 singleTask / singleInstance（这类应用另启一份会被旧任务顶回主屏）。 */
++    private fun singleTaskApp(pkg: String): Boolean = runCatching {
++        singleTaskCache.getOrPut(pkg) {
++            val info = privileged.packageManager.getLaunchIntentForPackage(pkg)
++                ?.let { privileged.packageManager.resolveActivity(it, 0)?.activityInfo }
++            info != null && (info.launchMode == android.content.pm.ActivityInfo.LAUNCH_SINGLE_TASK ||
++                info.launchMode == android.content.pm.ActivityInfo.LAUNCH_SINGLE_INSTANCE)
++        }
++    }.getOrDefault(false)
++
++    private val singleTaskCache = java.util.concurrent.ConcurrentHashMap<String, Boolean>()
 +
 +    /** 把主屏上那份 [pkg] 的任务搬进这块屏；成功 true。搬不动的原因写回 response 让 App 再试一次。 */
 +    private fun moveMainIntoHere(pkg: String, response: Bundle): Boolean {
@@ -4712,9 +4752,9 @@ index c7ed0f7..27f3733 100644
 +            rollbackDisplayAttempt()
 +            // SecurityException 原样上抛：调用方据此决定要不要去掉可信标志重开。
 +            throw if (e is Fault || e is SecurityException) e else Fault("displayUnsupported")
-         }
-     }
- 
++        }
++    }
++
 +    /**
 +     * A throwing newInstance returns no reader: nothing is left to close.
 +     * An Honor/Qualcomm GraphicsBuffer on this phone answers the first allocation with an
@@ -4740,9 +4780,9 @@ index c7ed0f7..27f3733 100644
 +            releasingDisplayId?.let { DisplayHandles.forget(it) }
 +            display = null; reader = null; pendingReader = null
 +            releasingDisplayId = null; displayCreationAttempted = false
-+        }
-+    }
-+
+         }
+     }
+ 
 +    /**
 +     * 建屏标志（照 Mika 的 displayFlags）。[trusted] 为 false 时去掉只对可信屏可用的几项：
 +     * 有的系统里 shell 没有 ADD_TRUSTED_DISPLAY，带上 TRUSTED 会被系统直接拒；OWN_DISPLAY_GROUP、
@@ -4769,7 +4809,7 @@ index c7ed0f7..27f3733 100644
      private fun resolveLaunch(pkg: String, expected: PhoneAppIdentity?): Intent {
          val pm = privileged.packageManager
          val intent = runCatching { pm.getLaunchIntentForPackage(pkg) }.getOrNull() ?: throw Fault("notLaunchable")
-@@ -821,6 +1300,44 @@ class PrivilegedDisplayCore internal constructor(
+@@ -821,6 +1336,44 @@ class PrivilegedDisplayCore internal constructor(
      }
  
      /** (displayId, packages of that task) rows of one running-task read. */
@@ -4814,7 +4854,7 @@ index c7ed0f7..27f3733 100644
      private fun taskRows(): List<Pair<Int, Set<String>>>? {
          val field = taskDisplayIdField ?: return null
          @Suppress("DEPRECATION")
-@@ -906,8 +1423,107 @@ class PrivilegedDisplayCore internal constructor(
+@@ -906,8 +1459,107 @@ class PrivilegedDisplayCore internal constructor(
          if (readerAllocationUncertain) throw Fault("releaseUnconfirmed")
      }
  
@@ -4922,7 +4962,7 @@ index c7ed0f7..27f3733 100644
          closeTreeConnection()
          visualObservation = null
          stopPreview()
-@@ -925,11 +1541,20 @@ class PrivilegedDisplayCore internal constructor(
+@@ -925,11 +1577,20 @@ class PrivilegedDisplayCore internal constructor(
              closeReaders()
          } else {
              val displayId = releasingDisplayId ?: throw Fault("releaseUnconfirmed")
@@ -4944,7 +4984,7 @@ index c7ed0f7..27f3733 100644
              closeReaders()
              val deadline = SystemClock.uptimeMillis() + 1_000
              // The display itself is already released. A ROM whose task query is unreadable cannot
-@@ -1166,7 +1791,15 @@ class PrivilegedDisplayCore internal constructor(
+@@ -1166,7 +1827,15 @@ class PrivilegedDisplayCore internal constructor(
      private class CaptureResult(val jpeg: ByteArray, val raw: BackgroundPreviewState.RawFrame?, val local: ImageObservation?, val targetMatched: Boolean? = null)
  
      /** Null means only absent/black frames; other capture failures remain distinguishable. */
@@ -4961,7 +5001,7 @@ index c7ed0f7..27f3733 100644
          val ir = lock.withLock {
              if (pendingReader != null || readerAllocationUncertain) throw Fault("releasePending")
              val vd = display ?: throw Fault("displayMissing")
-@@ -2025,6 +2658,32 @@ class PrivilegedDisplayCore internal constructor(
+@@ -2025,6 +2694,32 @@ class PrivilegedDisplayCore internal constructor(
          if (waitForFinish && !accepted) throw Fault("inputRejected")
      }
  
@@ -4994,7 +5034,7 @@ index c7ed0f7..27f3733 100644
      private fun setImePolicyHide(displayId: Int) {
          val sm = Class.forName("android.os.ServiceManager")
          val binder = sm.getMethod("getService", String::class.java).invoke(null, "window") as IBinder
-@@ -2079,9 +2738,13 @@ class PrivilegedDisplayCore internal constructor(
+@@ -2079,9 +2774,13 @@ class PrivilegedDisplayCore internal constructor(
  
      companion object {
          private val PACKAGE = Regex("[a-zA-Z][a-zA-Z0-9_]*(\\.[a-zA-Z0-9_]+)+")
@@ -5237,6 +5277,72 @@ index 0000000..c38b023
 +    /** 按短边限制预览：横竖屏保持相近的像素量，避免横屏只剩一条低分辨率画面。 */
 +    fun previewWidth(shortSide: Int): Int =
 +        if (width > height) maxOf(1, (width.toLong() * shortSide / height).toInt()) else shortSide
++}
+diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/FrameMath.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/FrameMath.kt
+new file mode 100644
+index 0000000..656af3e
+--- /dev/null
++++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/FrameMath.kt
+@@ -0,0 +1,60 @@
++package io.github.ccch1mneyyy.dsh_app.phone.vscreen
++
++import kotlin.math.abs
++
++/**
++ * 画面粗判（照 Mika 的 FrameMath）:只用像素读取函数,不依赖安卓类(可在 JVM 上测)。
++ * [pixel] 返回 (x, y) 处的 ARGB 颜色值。
++ */
++object FrameMath {
++    const val GRID_W = 12
++    const val GRID_H = 24
++    private const val CELL_SAMPLES = 4
++    private const val CELL_DELTA = 16
++    private const val MIN_CELLS = 3
++    private const val PAGE_SHARE = 0.25
++    private const val BLACK_SAMPLES = 24
++    private const val BLACK_LEVEL = 8
++
++    /** 把画面切成 [GRID_W]×[GRID_H] 格,每格取 4×4 个点的平均亮度。 */
++    fun lumaGrid(width: Int, height: Int, pixel: (Int, Int) -> Int): IntArray {
++        val out = IntArray(GRID_W * GRID_H)
++        val cw = width / GRID_W
++        val ch = height / GRID_H
++        if (cw == 0 || ch == 0) return out
++        for (gy in 0 until GRID_H) for (gx in 0 until GRID_W) {
++            var sum = 0L
++            for (sy in 0 until CELL_SAMPLES) for (sx in 0 until CELL_SAMPLES) {
++                sum += luma(pixel(gx * cw + sx * cw / CELL_SAMPLES, gy * ch + sy * ch / CELL_SAMPLES))
++            }
++            out[gy * GRID_W + gx] = (sum / (CELL_SAMPLES * CELL_SAMPLES)).toInt()
++        }
++        return out
++    }
++
++    /** 有足够多的格子明显变亮或变暗才算画面变了,光标闪烁这类小变化不算。 */
++    fun differs(a: IntArray?, b: IntArray?): Boolean {
++        if (a == null || b == null || a.size != b.size) return false
++        return a.indices.count { abs(a[it] - b[it]) > CELL_DELTA } >= MIN_CELLS
++    }
++
++    /** 至少 [PAGE_SHARE] 的格子变了:换了一整页(或整屏在动),不是头像动图、光标、进度圈这类局部变化。 */
++    fun pageChanged(a: IntArray?, b: IntArray?): Boolean {
++        if (a == null || b == null || a.size != b.size) return false
++        return a.indices.count { abs(a[it] - b[it]) > CELL_DELTA } >= a.size * PAGE_SHARE
++    }
++
++    /** 均匀取样的点里至少 99.5% 每个通道都 ≤ [BLACK_LEVEL] 才算全黑。 */
++    fun isBlack(width: Int, height: Int, pixel: (Int, Int) -> Int): Boolean {
++        if (width <= 1 || height <= 1) return false
++        var dark = 0
++        val total = BLACK_SAMPLES * BLACK_SAMPLES
++        for (gy in 0 until BLACK_SAMPLES) for (gx in 0 until BLACK_SAMPLES) {
++            val p = pixel(gx * (width - 1) / (BLACK_SAMPLES - 1), gy * (height - 1) / (BLACK_SAMPLES - 1))
++            if ((p shr 16 and 0xff) <= BLACK_LEVEL && (p shr 8 and 0xff) <= BLACK_LEVEL && (p and 0xff) <= BLACK_LEVEL) dark++
++        }
++        return dark * 1000 >= total * 995
++    }
++
++    private fun luma(p: Int) = ((p shr 16 and 0xff) * 3 + (p shr 8 and 0xff) * 6 + (p and 0xff)) / 10
 +}
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/PlaceholderActivity.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/PlaceholderActivity.kt
 new file mode 100644
@@ -5498,10 +5604,10 @@ index 0000000..847cfe4
 +}
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/TaskMover.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/TaskMover.kt
 new file mode 100644
-index 0000000..2c251e3
+index 0000000..19aecfe
 --- /dev/null
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/TaskMover.kt
-@@ -0,0 +1,150 @@
+@@ -0,0 +1,152 @@
 +package io.github.ccch1mneyyy.dsh_app.phone.vscreen
 +
 +import android.content.Context
@@ -5617,7 +5723,9 @@ index 0000000..2c251e3
 +    fun moveViaShell(shell: PhoneShellExecutor?, taskId: Int, displayId: Int): MoveOutcome {
 +        if (taskId <= 0 || displayId < 0) return MoveOutcome(false, null, "", "invalidArguments")
 +        val runner = shell ?: return MoveOutcome(false, null, "", "noShell")
-+        val command = "am task move-task $taskId $displayId"
++        // 这台 ROM 没有 `am task move-task`（exit=255 unknown command），真机可用的是
++        // `am display move-stack <taskId> <displayId>`（用户实测：整条任务换屏、不重开）。
++        val command = "am display move-stack $taskId $displayId"
 +        val out = try {
 +            runner.execute(0L, command, 6_000L, { true }) { _, _ -> Decision.ALLOW_ONCE }
 +        } catch (t: Throwable) {
@@ -6112,10 +6220,10 @@ index 0000000..934fdf4
 +}
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenOverlay.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenOverlay.kt
 new file mode 100644
-index 0000000..826a074
+index 0000000..34f79b2
 --- /dev/null
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenOverlay.kt
-@@ -0,0 +1,2018 @@
+@@ -0,0 +1,2040 @@
 +package io.github.ccch1mneyyy.dsh_app.phone.vscreen
 +
 +import io.github.ccch1mneyyy.dsh_app.phone.PhoneRegistry
@@ -6283,6 +6391,8 @@ index 0000000..826a074
 +
 +    private var lastFrameAt = 0L
 +    private var lastBitmap: Bitmap? = null
++    /** 最近一张预览帧解出来的时刻；判黑只在帧足够新的时候做（不拿旧黑帧把窗口一直挡着）。 */
++    private var lastBitmapAt = 0L
 +    /** 进全屏前虚拟屏的真实尺寸：退出全屏要还原（需求八）。 */
 +    private var restoreW = 0
 +    private var restoreH = 0
@@ -6529,6 +6639,7 @@ index 0000000..826a074
 +        }
 +        val old = lastBitmap
 +        lastBitmap = decoded
++        lastBitmapAt = SystemClock.elapsedRealtime()
 +        target.setImageBitmap(decoded)
 +        if (!revealed) main.post { reveal(root) }
 +        target.visibility = if (eyeHidden || !screenOn) View.GONE else View.VISIBLE
@@ -6756,8 +6867,14 @@ index 0000000..826a074
 +                main.postDelayed({
 +                    // 眼睛/切换连着按时窗口会换：只给"还是这个窗口"的那次 reveal。
 +                    if (box != null && root === box && liveSurface) {
-+                        WakeTrace.log("window: reveal after live=true")
-+                        reveal(box)
++                        // C2：抓到帧先判黑（12×24 取样、99.5% 阈值），黑帧不揭窗——
++                        // 以前只"等 1.2 秒猜"，用户先看到一块黑的。没有新帧时按"不是黑"算。
++                        if (frameIsBlack()) {
++                            WakeTrace.log("window: frame black=true, stay hidden")
++                        } else {
++                            WakeTrace.log("window: reveal after live=true")
++                            reveal(box)
++                        }
 +                    } else {
 +                        WakeTrace.log("window: not live yet, stay hidden")
 +                    }
@@ -6875,6 +6992,19 @@ index 0000000..826a074
 +    /** Shows the live surface or the preview frames, whichever this window has. */
 +    /** 已经有画面（直显或缩略图）：提示条就该让位。 */
 +    private fun hasPicture(): Boolean = liveSurface || lastBitmap != null
++    /**
++     * 这张预览帧是不是全黑（照 Mika FrameMath.isBlack：12→24 均匀取样、99.5% 的点各通道 ≤8）。
++     * 只认 1.5 秒内的新帧：拿一张旧的黑暗帧去挡揭窗，会让窗口永远出不来。
++     */
++    private fun frameIsBlack(): Boolean {
++        val bmp = lastBitmap ?: return false
++        if (bmp.isRecycled || bmp.width <= 1 || bmp.height <= 1) return false
++        if (SystemClock.elapsedRealtime() - lastBitmapAt > 1_500) return false
++        return runCatching {
++            FrameMath.isBlack(bmp.width, bmp.height) { x, y -> bmp.getPixel(x, y) }
++        }.getOrDefault(false)
++    }
++
 +
 +    private fun applyLive() {
 +        val surface = picture ?: return
@@ -9580,6 +9710,57 @@ index 0000000..c1c2dd1
 +    fun previewFollowsShortSide() {
 +        assertEquals(360, DisplayFrameGeometry(720, 1600, 0).previewWidth(360))
 +        assertEquals(800, DisplayFrameGeometry(1600, 720, 0).previewWidth(360))
++    }
++}
+diff --git a/app/android/app/src/test/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/FrameMathTest.kt b/app/android/app/src/test/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/FrameMathTest.kt
+new file mode 100644
+index 0000000..f0d8831
+--- /dev/null
++++ b/app/android/app/src/test/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/FrameMathTest.kt
+@@ -0,0 +1,45 @@
++package io.github.ccch1mneyyy.dsh_app.phone.vscreen
++
++import org.junit.Assert.assertFalse
++import org.junit.Assert.assertTrue
++import org.junit.Test
++
++/** 判黑/判变的边界：均匀取样、99.5% 阈值、变化格数下限。 */
++class FrameMathTest {
++    private fun solid(argb: Int): (Int, Int) -> Int = { _, _ -> argb }
++
++    @Test
++    fun allBlackFrameIsBlack() {
++        assertTrue(FrameMath.isBlack(720, 1600, solid(0xFF000000.toInt())))
++    }
++
++    @Test
++    fun oneBrightPointIsEnoughToNotBeBlack() {
++        // 24×24 取样共 576 点，99.5% ≈ 573.1：允许 2 个点不黑，第 3 个就翻。
++        val bright = (0 until 3).toSet()
++        var i = 0
++        val pixel: (Int, Int) -> Int = { _, _ -> if (i++ in bright) 0xFFFFFFFF.toInt() else 0xFF000000.toInt() }
++        assertFalse(FrameMath.isBlack(100, 100, pixel))
++    }
++
++    @Test
++    fun invalidSizeIsNeverBlack() {
++        assertFalse(FrameMath.isBlack(1, 1, solid(0xFF000000.toInt())))
++    }
++
++    @Test
++    fun smallLocalChangeIsNotAPageChange() {
++        val a = IntArray(FrameMath.GRID_W * FrameMath.GRID_H) { 10 }
++        val b = a.copyOf().also { it[0] = 200 }
++        assertFalse(FrameMath.differs(a, b))
++        assertFalse(FrameMath.pageChanged(a, b))
++    }
++
++    @Test
++    fun wholePageChangeIsDetected() {
++        val a = IntArray(FrameMath.GRID_W * FrameMath.GRID_H) { 10 }
++        val b = IntArray(FrameMath.GRID_W * FrameMath.GRID_H) { 200 }
++        assertTrue(FrameMath.differs(a, b))
++        assertTrue(FrameMath.pageChanged(a, b))
 +    }
 +}
 diff --git a/app/assets/kws/LICENSE.txt b/app/assets/kws/LICENSE.txt
