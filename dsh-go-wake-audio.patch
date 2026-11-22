@@ -1,7 +1,7 @@
-From 592b952868667f9f5b6a39264626dd2c0d99254b Mon Sep 17 00:00:00 2001
+From d340f9702e07722c35487d89dd8d8f36042868ef Mon Sep 17 00:00:00 2001
 From: ci <ci@local>
-Date: Sun, 22 Nov 2026 23:01:20 +0800
-Subject: [PATCH] pb: scene4b
+Date: Sun, 22 Nov 2026 23:35:41 +0800
+Subject: [PATCH] pb: scene4c
 
 ---
  .gitattributes                                |    3 +
@@ -52,7 +52,7 @@ Subject: [PATCH] pb: scene4b
  .../phone/vscreen/SwitchPromptOverlay.kt      |  142 ++
  .../dsh_app/phone/vscreen/TaskMover.kt        |  152 ++
  .../dsh_app/phone/vscreen/TransferBall.kt     |  456 ++++
- .../phone/vscreen/VirtualScreenOverlay.kt     | 2216 +++++++++++++++++
+ .../phone/vscreen/VirtualScreenOverlay.kt     | 2227 +++++++++++++++++
  .../phone/vscreen/VirtualScreenPlugin.kt      |  229 ++
  .../dsh_app/phone/vscreen/VscreenUi.kt        |  106 +
  .../ccch1mneyyy/dsh_app/runtime/GuestSetup.kt |   47 +-
@@ -131,7 +131,7 @@ Subject: [PATCH] pb: scene4b
  docs/wake-word.md                             |  107 +
  dsh-go-wake.patch                             | 2065 +++++++++++++++
  tooling/build-wake-apk.sh                     |   68 +
- 127 files changed, 15715 insertions(+), 552 deletions(-)
+ 127 files changed, 15726 insertions(+), 552 deletions(-)
  create mode 100644 .github/workflows/wake-apk.yml
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallForegroundService.kt
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallOverlay.kt
@@ -6701,10 +6701,10 @@ index 0000000..40187c2
 +}
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenOverlay.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenOverlay.kt
 new file mode 100644
-index 0000000..26850e7
+index 0000000..5f459e5
 --- /dev/null
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenOverlay.kt
-@@ -0,0 +1,2216 @@
+@@ -0,0 +1,2227 @@
 +package io.github.ccch1mneyyy.dsh_app.phone.vscreen
 +
 +import io.github.ccch1mneyyy.dsh_app.phone.PhoneRegistry
@@ -6838,6 +6838,7 @@ index 0000000..26850e7
 +     */
 +    private val forceFrameMode = true
 +    private var manualDisabledLogged = false
++    private var frameModeLogged = false
 +
 +    /** 虚拟屏的 displayId 与真实像素尺寸：shell 注入（input -d）要用。 */
 +    private var displayId = 0
@@ -7298,6 +7299,16 @@ index 0000000..26850e7
 +    private fun applyFitTransform() = Unit
 +
 +    private fun requestSurface(app: Context, surface: Surface?, gen: Int) {
++        // 帧模式闸：必须在函数入口拦，覆盖所有调用点。
++        // 真机 23:33 证据：只拦一个调用点时，"surface ready" 回调仍从另一处进来接面，
++        // 结果 attach 失败 → no picture in 5s → 收窗，帧模式形同未开。
++        if (forceFrameMode) {
++            if (!frameModeLogged) {
++                frameModeLogged = true
++                WakeTrace.log("window: frame mode, skip direct surface (entry guard)")
++            }
++            return
++        }
 +        if (gen != surfaceGen) return
 +        if (surface != null) lastSurface = surface
 +        val id = taskId
