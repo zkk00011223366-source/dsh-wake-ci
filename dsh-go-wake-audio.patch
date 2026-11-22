@@ -1,13 +1,13 @@
-From 678fdd170894f78b5e10617bf93a166351f4e394 Mon Sep 17 00:00:00 2001
+From 8efcb89cdda1bc09d71768c5078423480d17fddf Mon Sep 17 00:00:00 2001
 From: ci <ci@local>
-Date: Sun, 22 Nov 2026 03:41:57 +0800
-Subject: [PATCH] pb: scene3o
+Date: Sun, 22 Nov 2026 11:33:53 +0800
+Subject: [PATCH] pb: scene3p
 
 ---
  .gitattributes                                |    3 +
  .github/workflows/wake-apk.yml                |  192 ++
  app/android/app/build.gradle.kts              |    6 +-
- app/android/app/src/main/AndroidManifest.xml  |   36 +-
+ app/android/app/src/main/AndroidManifest.xml  |   39 +-
  .../ccch1mneyyy/dsh_app/MainActivity.kt       |   85 +-
  .../dsh_app/call/CallForegroundService.kt     |   94 +
  .../ccch1mneyyy/dsh_app/call/CallOverlay.kt   |  320 +++
@@ -32,9 +32,13 @@ Subject: [PATCH] pb: scene3o
  .../phone/background/BackgroundPolicy.kt      |    8 +-
  .../background/BackgroundProbeActivity.kt     |    4 +-
  .../phone/background/BackgroundTree.kt        |    4 +-
+ .../dsh_app/phone/background/CoalescedScan.kt |   31 +
  .../dsh_app/phone/background/DisplayAwake.kt  |  154 ++
- .../phone/background/DisplayHandles.kt        |   28 +
- .../phone/background/PrivilegedDisplayCore.kt |  441 +++-
+ .../phone/background/DisplayHandles.kt        |   31 +
+ .../phone/background/DisplayOrientation.kt    |   37 +
+ .../background/DisplayOrientationKeeper.kt    |  125 +
+ .../background/DisplayOrientationWatch.kt     |  100 +
+ .../phone/background/PrivilegedDisplayCore.kt |  500 +++-
  .../phone/background/PrivilegedDisplayHost.kt |    6 +-
  .../phone/background/PrivilegedProtocol.kt    |   83 +-
  .../dsh_app/phone/skills/PhoneSkillDraft.kt   |    2 +-
@@ -63,6 +67,7 @@ Subject: [PATCH] pb: scene3o
  .../res/xml/phone_accessibility_service.xml   |    3 +-
  .../app/src/main/res/xml/shortcuts.xml        |   18 +-
  .../phone/background/DisplayAwakeTest.kt      |  105 +
+ .../background/DisplayOrientationTest.kt      |   48 +
  app/assets/kws/LICENSE.txt                    |   20 +
  app/assets/kws/NOTICE.txt                     |    4 +
  app/assets/kws/decoder.int8.onnx              |  Bin 0 -> 181069 bytes
@@ -92,7 +97,7 @@ Subject: [PATCH] pb: scene3o
  app/lib/speech/wake_reply.dart                |  175 ++
  app/lib/state/app_info.dart                   |    5 +
  app/lib/state/update_state.dart               |    9 +
- app/lib/state/virtual_screen_state.dart       |  454 ++++
+ app/lib/state/virtual_screen_state.dart       |  456 ++++
  app/lib/ui/chat/chat_rows.dart                |    2 +
  app/lib/ui/chat/chat_screen.dart              |  108 +-
  app/lib/ui/chat/media/media_format.dart       |   16 +-
@@ -119,15 +124,19 @@ Subject: [PATCH] pb: scene3o
  docs/wake-word.md                             |  107 +
  dsh-go-wake.patch                             | 2065 +++++++++++++++++
  tooling/build-wake-apk.sh                     |   68 +
- 115 files changed, 14010 insertions(+), 550 deletions(-)
+ 120 files changed, 14418 insertions(+), 550 deletions(-)
  create mode 100644 .github/workflows/wake-apk.yml
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallForegroundService.kt
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallOverlay.kt
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallOverlayPlugin.kt
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneBackGuard.kt
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/SingleInstanceApps.kt
+ create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/CoalescedScan.kt
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/DisplayAwake.kt
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/DisplayHandles.kt
+ create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/DisplayOrientation.kt
+ create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/DisplayOrientationKeeper.kt
+ create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/DisplayOrientationWatch.kt
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/PlaceholderActivity.kt
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/PresentationHost.kt
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/SwitchPromptOverlay.kt
@@ -142,6 +151,7 @@ Subject: [PATCH] pb: scene3o
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/wake/WakeWordPlugin.kt
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/wake/WakeWordService.kt
  create mode 100644 app/android/app/src/test/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/DisplayAwakeTest.kt
+ create mode 100644 app/android/app/src/test/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/DisplayOrientationTest.kt
  create mode 100644 app/assets/kws/LICENSE.txt
  create mode 100644 app/assets/kws/NOTICE.txt
  create mode 100644 app/assets/kws/decoder.int8.onnx
@@ -398,7 +408,7 @@ index f2d6b7e..8b7286e 100644
          minSdk = 26
          // Target 28 like Termux, so the API 29+ exec restriction on app-private
 diff --git a/app/android/app/src/main/AndroidManifest.xml b/app/android/app/src/main/AndroidManifest.xml
-index 1473ba2..91327a3 100644
+index 1473ba2..8165d1d 100644
 --- a/app/android/app/src/main/AndroidManifest.xml
 +++ b/app/android/app/src/main/AndroidManifest.xml
 @@ -6,6 +6,8 @@
@@ -459,13 +469,16 @@ index 1473ba2..91327a3 100644
          <!-- Chat artifacts: hands one file at a time to the app that opens it (files/FilesPlugin.kt). -->
          <provider
              android:name="androidx.core.content.FileProvider"
-@@ -348,6 +376,12 @@
+@@ -348,6 +376,15 @@
              android:name="com.google.mlkit.common.internal.MlKitInitProvider"
              android:authorities="${applicationId}.mlkitinitprovider"
              tools:node="remove" />
++        <!-- 虚拟屏的占位桌面。对外开放只为让特权侧（shell）按组件名把它开到虚拟屏上：
++             调用方必须持有 INTERACT_ACROSS_USERS_FULL，shell 有，普通 App 没有；没有 intent-filter。 -->
 +        <activity
 +            android:name=".phone.vscreen.PlaceholderActivity"
-+            android:exported="false"
++            android:exported="true"
++            android:permission="android.permission.INTERACT_ACROSS_USERS_FULL"
 +            android:launchMode="singleTask"
 +            android:excludeFromRecents="true"
 +            android:theme="@android:style/Theme.NoTitleBar" />
@@ -3436,6 +3449,43 @@ index 830cb25..5652796 100644
              appLabel?.let { append(" · ").append(it) }
              // l10n:keep model screen format and matchers
              append(" · ").append(if (portrait) "竖屏" else "横屏")
+diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/CoalescedScan.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/CoalescedScan.kt
+new file mode 100644
+index 0000000..e8f326d
+--- /dev/null
++++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/CoalescedScan.kt
+@@ -0,0 +1,31 @@
++package io.github.ccch1mneyyy.dsh_app.phone.background
++
++/** 一批事件只排一次扫描；后来的事件不推迟已排好的扫描，连续事件也能及时处理。（照 Mika） */
++internal class CoalescedScan(
++    private val schedule: (Runnable) -> Unit,
++    private val cancel: (Runnable) -> Unit,
++    private val scan: () -> Unit,
++) {
++    private val lock = Any()
++    private var queued = false
++    private var closed = false
++    private val work = Runnable {
++        synchronized(lock) {
++            if (closed) return@Runnable
++            queued = false
++        }
++        scan()
++    }
++
++    fun request() = synchronized(lock) {
++        if (!closed && !queued) {
++            queued = true
++            schedule(work)
++        }
++    }
++
++    fun close() = synchronized(lock) {
++        closed = true
++        cancel(work)
++    }
++}
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/DisplayAwake.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/DisplayAwake.kt
 new file mode 100644
 index 0000000..89a08f2
@@ -3598,10 +3648,10 @@ index 0000000..89a08f2
 +}
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/DisplayHandles.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/DisplayHandles.kt
 new file mode 100644
-index 0000000..a722fa7
+index 0000000..3c72dc5
 --- /dev/null
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/DisplayHandles.kt
-@@ -0,0 +1,28 @@
+@@ -0,0 +1,31 @@
 +package io.github.ccch1mneyyy.dsh_app.phone.background
 +
 +import android.hardware.display.VirtualDisplay
@@ -3629,9 +3679,292 @@ index 0000000..a722fa7
 +    fun forget(displayId: Int) {
 +        synchronized(handles) { handles.remove(displayId) }
 +    }
++
++    /** 现在按住的所有屏（副本）：方向同步按它逐块纠正。 */
++    fun snapshot(): Map<Int, VirtualDisplay> = synchronized(handles) { handles.toMap() }
++}
+diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/DisplayOrientation.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/DisplayOrientation.kt
+new file mode 100644
+index 0000000..8f082b5
+--- /dev/null
++++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/DisplayOrientation.kt
+@@ -0,0 +1,37 @@
++package io.github.ccch1mneyyy.dsh_app.phone.background
++
++import android.content.pm.ActivityInfo
++
++/** 后台屏不抢主屏焦点时，系统可能把横屏 Activity 缩在竖屏顶部。按系统报告的应用窗口比例纠正屏方向。（照 Mika） */
++internal object DisplayOrientation {
++    fun rotation(
++        bufferWidth: Int,
++        bufferHeight: Int,
++        current: Int,
++        appWidth: Int,
++        appHeight: Int,
++        requestedOrientation: Int = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED,
++    ): Int? {
++        if (bufferWidth == bufferHeight) return null
++        val appLandscape = when {
++            appWidth > 0 && appHeight > 0 && appWidth != appHeight -> appWidth > appHeight
++            else -> requestedLandscape(requestedOrientation) ?: return null
++        }
++        val naturalLandscape = bufferWidth > bufferHeight
++        val currentLandscape = if (current % 2 == 0) naturalLandscape else !naturalLandscape
++        if (currentLandscape == appLandscape) return null
++        return if (naturalLandscape == appLandscape) 0 else 1
++    }
++
++    private fun requestedLandscape(orientation: Int): Boolean? = when (orientation) {
++        ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE,
++        ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE,
++        ActivityInfo.SCREEN_ORIENTATION_REVERSE_LANDSCAPE,
++        ActivityInfo.SCREEN_ORIENTATION_USER_LANDSCAPE -> true
++        ActivityInfo.SCREEN_ORIENTATION_PORTRAIT,
++        ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT,
++        ActivityInfo.SCREEN_ORIENTATION_REVERSE_PORTRAIT,
++        ActivityInfo.SCREEN_ORIENTATION_USER_PORTRAIT -> false
++        else -> null
++    }
++}
+diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/DisplayOrientationKeeper.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/DisplayOrientationKeeper.kt
+new file mode 100644
+index 0000000..c1ff27d
+--- /dev/null
++++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/DisplayOrientationKeeper.kt
+@@ -0,0 +1,125 @@
++package io.github.ccch1mneyyy.dsh_app.phone.background
++
++import android.annotation.SuppressLint
++import android.content.pm.ActivityInfo
++import android.util.Log
++import android.view.Display
++import java.util.concurrent.ConcurrentHashMap
++
++/**
++ * 方向同步的进程级入口（照 Mika 的 ensureOrientationWatch + syncDisplayOrientations）。
++ *
++ * STEAL_TOP_FOCUS_DISABLED 保住主屏焦点，但有的系统因此不再采纳后台 Activity 的转屏请求：
++ * 横屏应用会被缩在竖屏顶部。这里只在有自己的虚拟屏时开一个方向监听，只纠正自己那些屏的方向。
++ * 锁里只拍屏的快照；查任务、读字段、freezeDisplayRotation 和退回的 `wm` 命令都在锁外，
++ * 不挡建屏、放屏和启动。
++ */
++@SuppressLint("PrivateApi")
++internal object DisplayOrientationKeeper {
++    private const val TAG = "DshDisplay"
++    private const val MAX_TASKS = 100
++    private const val CMD_TIMEOUT_S = 10L
++
++    /** 任务请求的方向（onTaskRequestedOrientationChanged）；方向读不到时拿它兜。 */
++    private val requested = ConcurrentHashMap<Int, Int>()
++
++    private val taskManager by lazy {
++        Class.forName("android.app.ActivityTaskManager").getMethod("getService").invoke(null)!!
++    }
++    private val taskInfo by lazy { Class.forName("android.app.TaskInfo") }
++
++    @Volatile private var watch: DisplayOrientationWatch? = null
++
++    /** 建屏之后调：还有屏就开监听（已经开着就复用，多出来的那份关掉）。 */
++    fun ensure() {
++        if (watch != null) return
++        val created = runCatching {
++            DisplayOrientationWatch(
++                taskManager,
++                active = { DisplayHandles.snapshot().isNotEmpty() },
++                onRequestedOrientation = { taskId, orientation -> requested[taskId] = orientation },
++                onTaskRemoved = { taskId -> requested.remove(taskId) },
++                sync = ::sync,
++            )
++        }.onFailure { Log.w(TAG, "vscreen: orientation watcher unavailable ${it.javaClass.simpleName}") }
++            .getOrNull() ?: return
++        val spare = synchronized(this) {
++            if (watch == null) { watch = created; null } else created
++        }
++        spare?.close()
++    }
++
++    /** 放屏之后调：已经没有屏了就关监听，别再让它在后台扫任务。 */
++    fun release() {
++        if (DisplayHandles.snapshot().isNotEmpty()) return
++        val closing = synchronized(this) { watch.also { watch = null } }
++        closing?.close()
++        if (closing != null) requested.clear()
++    }
++
++    /**
++     * 按各屏最上面任务的应用窗口比例纠正屏方向。
++     * 判据：`vscreen: orientation synced to <屏宽>x<屏高> displayId=… rotation=…`
++     */
++    private fun sync() {
++        val ours = DisplayHandles.snapshot()
++        if (ours.isEmpty()) return
++        val displayIdField = taskInfo.getField("displayId")
++        val top = allTasks().groupBy { displayIdField.getInt(it) }
++        for ((id, display) in ours) runCatching {
++            val task = top[id]?.firstOrNull() ?: return@runCatching
++            val taskId = taskInfo.getField("taskId").getInt(task)
++            val compat = runCatching { taskInfo.getField("appCompatTaskInfo").get(task) }.getOrNull() ?: task
++            val cls = compat.javaClass
++            // 安卓 15 起另有明确的 letterbox 标志；14 的宽高只在部分 letterbox 模式下填充。
++            if (!runCatching { cls.getField("topActivityBoundsLetterboxed").getBoolean(compat) }.getOrDefault(true))
++                return@runCatching
++            val appWidth = runCatching { cls.getField("topActivityLetterboxWidth").getInt(compat) }.getOrDefault(0)
++            val appHeight = runCatching { cls.getField("topActivityLetterboxHeight").getInt(compat) }.getOrDefault(0)
++            val mode = display.display.mode
++            val rotation = DisplayOrientation.rotation(
++                mode.physicalWidth, mode.physicalHeight, display.display.rotation, appWidth, appHeight,
++                requested[taskId] ?: ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED,
++            ) ?: return@runCatching
++            // 快照之后这块屏可能已经放掉了
++            if (DisplayHandles.snapshot()[id] == null) return@runCatching
++            val frozen = runCatching {
++                val wm = Class.forName("android.view.WindowManagerGlobal")
++                    .getMethod("getWindowManagerService").invoke(null)!!
++                val method = wm.javaClass.methods.first { it.name == "freezeDisplayRotation" }
++                if (method.parameterTypes.size == 3) method.invoke(wm, id, rotation, "dsh")
++                else method.invoke(wm, id, rotation)
++            }.isSuccess
++            if (!frozen) sh("wm", "user-rotation", "-d", id.toString(), "lock", rotation.toString())
++            Log.i(
++                TAG,
++                "vscreen: orientation synced to ${mode.physicalWidth}x${mode.physicalHeight} " +
++                    "displayId=$id rotation=$rotation letterbox=${appWidth}x$appHeight",
++            )
++        }.onFailure { Log.w(TAG, "vscreen: orientation sync failed on display $id ${it.javaClass.simpleName}") }
++    }
++
++    /** 全部任务（各屏都算）；读不到就是空表，方向那一条自己会跳过。 */
++    private fun allTasks(): List<Any> {
++        val methods = taskManager.javaClass.methods.filter { it.name == "getTasks" }
++        val withDisplay = methods.firstOrNull { it.parameterTypes.size == 4 }
++        val tasks = if (withDisplay != null) {
++            withDisplay.invoke(taskManager, MAX_TASKS, false, false, Display.INVALID_DISPLAY)
++        } else {
++            methods.first { it.parameterTypes.size == 3 }.invoke(taskManager, MAX_TASKS, false, false)
++        } as List<*>
++        return tasks.filterNotNull()
++    }
++
++    /** 跑一条 shell 命令，返回退出码（超时 -1）。只用于 `wm` 这一条兜底。 */
++    private fun sh(vararg cmd: String): Int {
++        val process = runCatching { ProcessBuilder(*cmd).redirectErrorStream(true).start() }.getOrNull() ?: return -1
++        return runCatching {
++            if (!process.waitFor(CMD_TIMEOUT_S, java.util.concurrent.TimeUnit.SECONDS)) {
++                process.destroyForcibly()
++                return@runCatching -1
++            }
++            process.exitValue()
++        }.getOrDefault(-1)
++    }
++}
+diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/DisplayOrientationWatch.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/DisplayOrientationWatch.kt
+new file mode 100644
+index 0000000..73d8898
+--- /dev/null
++++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/DisplayOrientationWatch.kt
+@@ -0,0 +1,100 @@
++package io.github.ccch1mneyyy.dsh_app.phone.background
++
++import android.annotation.SuppressLint
++import android.os.Binder
++import android.os.Handler
++import android.os.HandlerThread
++import android.os.IBinder
++import android.os.Parcel
++import android.util.Log
++
++/**
++ * 只在有虚拟屏时监听任务方向、窗口大小变化；不读应用内容，不改变任务焦点。（照 Mika）
++ * 注册不上任务监听时退回每 [POLL_MS] 扫一次，只在 [active]（还有我们的屏）为真时扫；
++ * 屏放完后由 [close] 停下，[active] 变假时轮询也自己停。
++ */
++@SuppressLint("PrivateApi")
++internal class DisplayOrientationWatch(
++    private val taskManager: Any,
++    private val active: () -> Boolean,
++    private val onRequestedOrientation: (taskId: Int, orientation: Int) -> Unit = { _, _ -> },
++    private val onTaskRemoved: (taskId: Int) -> Unit = {},
++    private val sync: () -> Unit,
++) {
++    private val thread = HandlerThread("dsh-display-orientation").apply { start() }
++    private val handler = Handler(thread.looper)
++    @Volatile private var closed = false
++    private val scan = CoalescedScan(
++        schedule = { handler.postDelayed(it, 50) },
++        cancel = { handler.removeCallbacks(it) },
++        scan = { runCatching(sync).onFailure { Log.w(TAG, "vscreen: orientation scan failed", it) } },
++    )
++    private val requestedOrientationTransactions = setOfNotNull(
++        transactionCode("onActivityRequestedOrientationChanged"),
++        transactionCode("onTaskRequestedOrientationChanged"),
++    )
++    private val taskRemovedTransaction = transactionCode("onTaskRemoved")
++    private val signal = object : Binder() {
++        init { attachInterface(null, TASK_LISTENER) }
++        override fun onTransact(code: Int, data: Parcel, reply: Parcel?, flags: Int): Boolean {
++            if (code in requestedOrientationTransactions) {
++                runCatching {
++                    data.enforceInterface(TASK_LISTENER)
++                    onRequestedOrientation(data.readInt(), data.readInt())
++                }.onFailure { Log.w(TAG, "vscreen: orientation callback rejected", it) }
++                scan.request()
++                return true
++            }
++            if (code == taskRemovedTransaction) {
++                runCatching {
++                    data.enforceInterface(TASK_LISTENER)
++                    onTaskRemoved(data.readInt())
++                }.onFailure { Log.w(TAG, "vscreen: task removal callback rejected", it) }
++                scan.request()
++                return true
++            }
++            if (code in FIRST_CALL_TRANSACTION..LAST_CALL_TRANSACTION) {
++                scan.request()
++                return true
++            }
++            return super.onTransact(code, data, reply, flags)
++        }
++    }
++    private val listener = runCatching {
++        Class.forName("android.app.ITaskStackListener\$Stub")
++            .getMethod("asInterface", IBinder::class.java).invoke(null, signal)
++    }.getOrNull()
++    private val listening = listener != null && runCatching {
++        taskManager.javaClass.methods.first { it.name == "registerTaskStackListener" }.invoke(taskManager, listener)
++    }.isSuccess
++    private val poll = object : Runnable {
++        override fun run() {
++            if (closed || !active()) return
++            scan.request()
++            handler.postDelayed(this, POLL_MS)
++        }
++    }
++
++    init { if (listening) scan.request() else handler.post(poll) }
++
++    fun close() {
++        closed = true
++        scan.close()
++        if (listening) runCatching {
++            taskManager.javaClass.methods.first { it.name == "unregisterTaskStackListener" }.invoke(taskManager, listener)
++        }
++        handler.removeCallbacksAndMessages(null)
++        thread.quitSafely()
++    }
++
++    private companion object {
++        const val TAG = "DshDisplay"
++        const val POLL_MS = 500L
++        const val TASK_LISTENER = "android.app.ITaskStackListener"
++
++        fun transactionCode(callback: String): Int? = runCatching {
++            Class.forName("android.app.ITaskStackListener\$Stub")
++                .getDeclaredField("TRANSACTION_$callback").apply { isAccessible = true }.getInt(null)
++        }.getOrNull()
++    }
 +}
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/PrivilegedDisplayCore.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/PrivilegedDisplayCore.kt
-index c7ed0f7..6873679 100644
+index c7ed0f7..869755c 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/PrivilegedDisplayCore.kt
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/PrivilegedDisplayCore.kt
 @@ -11,6 +11,7 @@ package io.github.ccch1mneyyy.dsh_app.phone.background
@@ -3642,7 +3975,15 @@ index c7ed0f7..6873679 100644
  import android.app.KeyguardManager
  import android.app.PendingIntent
  import android.app.UiAutomation
-@@ -42,6 +43,7 @@ import android.view.InputEvent
+@@ -34,6 +35,7 @@ import android.os.Process
+ import android.os.SystemClock
+ import android.os.Trace
+ import io.github.ccch1mneyyy.dsh_app.phone.PhoneAppIdentity
++import io.github.ccch1mneyyy.dsh_app.phone.vscreen.PlaceholderActivity
+ import android.text.InputType
+ import android.util.SparseArray
+ import android.view.Display
+@@ -42,6 +44,7 @@ import android.view.InputEvent
  import android.view.KeyCharacterMap
  import android.view.KeyEvent
  import android.view.MotionEvent
@@ -3650,7 +3991,15 @@ index c7ed0f7..6873679 100644
  import android.view.ViewConfiguration
  import android.view.accessibility.AccessibilityNodeInfo
  import android.view.accessibility.AccessibilityWindowInfo
-@@ -89,6 +91,8 @@ class PrivilegedDisplayCore internal constructor(
+@@ -59,6 +62,7 @@ import java.util.UUID
+ import java.util.concurrent.atomic.AtomicBoolean
+ import java.util.concurrent.ExecutorService
+ import java.util.concurrent.RejectedExecutionException
++import java.util.concurrent.TimeUnit
+ import java.util.concurrent.locks.ReentrantLock
+ import kotlin.concurrent.withLock
+ 
+@@ -89,6 +93,8 @@ class PrivilegedDisplayCore internal constructor(
      private val taskDisplayIdField by lazy {
          runCatching { ActivityManager.RunningTaskInfo::class.java.getField("displayId") }.getOrNull()
      }
@@ -3659,7 +4008,7 @@ index c7ed0f7..6873679 100644
  
      private val lock = ReentrantLock()
      private val preview = BackgroundPreviewState()
-@@ -97,6 +101,9 @@ class PrivilegedDisplayCore internal constructor(
+@@ -97,6 +103,9 @@ class PrivilegedDisplayCore internal constructor(
      @Volatile private var owner: String? = hosted?.owner
      @Volatile private var display: VirtualDisplay? = null
      @Volatile private var reader: ImageReader? = null
@@ -3669,7 +4018,7 @@ index c7ed0f7..6873679 100644
      private var pendingReader: ImageReader? = null
      private var readerAllocationUncertain = false
      private var width = 0
-@@ -121,6 +128,25 @@ class PrivilegedDisplayCore internal constructor(
+@@ -121,6 +130,25 @@ class PrivilegedDisplayCore internal constructor(
          Class.forName("android.app.IActivityTaskManager").getMethod("getAllRootTaskInfosOnDisplay", Int::class.javaPrimitiveType)
      }
      private val rootTaskInfoType by lazy { Class.forName("android.app.ActivityTaskManager\$RootTaskInfo") }
@@ -3695,7 +4044,7 @@ index c7ed0f7..6873679 100644
  
      private fun rootTaskInfos(displayId: Int): List<Any> {
          val result = try {
-@@ -301,7 +327,7 @@ class PrivilegedDisplayCore internal constructor(
+@@ -301,7 +329,7 @@ class PrivilegedDisplayCore internal constructor(
          if (op == Proto.OP_REPLAY_NAVIGATION && hosted == null)
              throw Fault("identityChanged")
          if (owner != null && owner != ownerId) throw Fault("identityChanged")
@@ -3704,7 +4053,7 @@ index c7ed0f7..6873679 100644
              if (request.get(Proto.RELEASE_RECEIPT) !is Int || request.getInt(Proto.RELEASE_RECEIPT) != 1) throw Fault("invalidArguments")
              if (lastReleasedOwner == ownerId) throw Fault("identityChanged")
              if (owner == null) {
-@@ -315,6 +341,31 @@ class PrivilegedDisplayCore internal constructor(
+@@ -315,6 +343,31 @@ class PrivilegedDisplayCore internal constructor(
          if (strictOwner && displayApiReleased) throw Fault("releasePending")
          if (strictOwner && (readerAllocationUncertain || display == null && (displayCreationAttempted || reader != null || pendingReader != null))) throw Fault("releaseUnconfirmed")
          if (keyguard?.isKeyguardLocked == true) throw Fault("locked")
@@ -3736,7 +4085,7 @@ index c7ed0f7..6873679 100644
          val pkg = request.getString(Proto.PKG).orEmpty()
          if (!PACKAGE.matches(pkg)) throw Fault("invalidArguments")
          val opening = op == Proto.OP_CREATE || op == Proto.OP_LAUNCH
-@@ -340,7 +391,20 @@ class PrivilegedDisplayCore internal constructor(
+@@ -340,7 +393,20 @@ class PrivilegedDisplayCore internal constructor(
                  // A task keeps the screen it opened first; its driver always asks for the same viewport.
                  if (display == null) createDisplay(request)
                  response.putInt(Proto.DISPLAY_ID, displayId())
@@ -3758,7 +4107,7 @@ index c7ed0f7..6873679 100644
                  sleepChecked(300)
                  observe(openedPackage(request, pkg), request.getBoolean(Proto.WANT_IMAGE), response, localVisual = localVisual)
              }
-@@ -729,57 +793,363 @@ class PrivilegedDisplayCore internal constructor(
+@@ -729,57 +795,392 @@ class PrivilegedDisplayCore internal constructor(
      private fun displayId(): Int = display?.display?.displayId ?: throw Fault("displayMissing")
      private fun requireDisplay() { if (display == null) throw Fault("displayMissing") }
  
@@ -3910,29 +4259,54 @@ index c7ed0f7..6873679 100644
 +     * come along — it is a relaunch, not a move.
 +     */
 +    /**
-+     * 在虚拟屏上起"桌面"，让空屏不黑（照 Mika：Intent.ACTION_MAIN + CATEGORY_HOME +
-+     * PendingIntent 带 launchDisplayId —— 与 [launchPackage] 同一条发送路径）。
++     * 在虚拟屏上起"桌面"，让空屏不黑（照 Mika：先 CATEGORY_HOME，起不来再用我们自己的占位页）。
++     *
++     * 与 [launchPackage] 同一条发送路径（PendingIntent + ActivityOptions.launchDisplayId）：
++     * 刚建好的屏不保证 DisplayManager 立刻查得到，所以这里不再"先 getDisplay 再判断"——
++     * 以前那一步查不到就直接 return，一句日志都没有，看起来就像"桌面 ready=0"。
 +     * 失败只记日志：桌面起不来不该让建屏失败。
 +     */
 +    private fun launchDesktop(displayId: Int) {
-+        val manager = privileged.getSystemService(DisplayManager::class.java) ?: return
-+        val display = runCatching { manager.getDisplay(displayId) }.getOrNull() ?: return
-+        val intent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME)
++        val vd = display ?: return
++        val home = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME)
 +            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_MULTIPLE_TASK)
-+        val options = ActivityOptions.makeBasic().apply { launchDisplayId = displayId }
++        if (launchOnDisplay(displayId, vd, home, "home")) return
++        // 系统桌面（有的 ROM 的 launcher 不认虚拟屏）起不来：用我们自己的占位页，至少不是黑屏。
++        val own = Intent().setComponent(
++            ComponentName(context.packageName, PlaceholderActivity::class.java.name),
++        ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
++        if (launchOnDisplay(displayId, vd, own, "placeholder")) return
++        Log.w("DshDisplay", "vscreen: desktop failed displayId=$displayId")
++    }
++
++    /** 把 [intent] 发到 [displayId]；这块屏上真的起了任务才算成功（判据日志就在这里打）。 */
++    private fun launchOnDisplay(displayId: Int, vd: VirtualDisplay, intent: Intent, via: String): Boolean {
 +        var pending: PendingIntent? = null
-+        try {
++        val sent = runCatching {
++            val options = ActivityOptions.makeBasic().apply { launchDisplayId = displayId }
 +            pending = PendingIntent.getActivity(
-+                privileged.createDisplayContext(display), displayId, intent,
++                privileged.createDisplayContext(vd.display), displayId, intent,
 +                PendingIntent.FLAG_ONE_SHOT or PendingIntent.FLAG_IMMUTABLE,
 +            )
-+            pending.send(privileged, 0, null, null, null, null, options.toBundle())
-+            Log.i("DshDisplay", "vscreen: desktop ready displayId=$displayId via=home")
-+        } catch (t: Throwable) {
-+            Log.w("DshDisplay", "vscreen: desktop failed displayId=$displayId ${t.javaClass.simpleName}")
-+        } finally {
-+            pending?.let { runCatching { it.cancel() } }
++            pending!!.send(privileged, 0, null, null, null, null, options.toBundle())
 +        }
++        pending?.let { runCatching { it.cancel() } }
++        if (sent.isFailure) {
++            Log.w(
++                "DshDisplay",
++                "vscreen: desktop launch failed displayId=$displayId via=$via ${sent.exceptionOrNull()?.javaClass?.simpleName}",
++            )
++            return false
++        }
++        val deadline = SystemClock.uptimeMillis() + 800
++        while (SystemClock.uptimeMillis() < deadline) {
++            if (runCatching { rootTaskInfos(displayId).isNotEmpty() }.getOrDefault(false)) {
++                Log.i("DshDisplay", "vscreen: desktop ready displayId=$displayId via=$via")
++                return true
++            }
++            sleepChecked(80)
++        }
++        return false
 +    }
 +
 +    private fun relaunchOn(pkg: String, displayId: Int) {
@@ -4068,6 +4442,10 @@ index c7ed0f7..6873679 100644
 +            DisplayHandles.put(vd)
              if (vd.display.displayId <= Display.DEFAULT_DISPLAY) throw Fault("displayUnsupported")
              width = w; height = h
++            // 屏内全屏窗口模式（照 Mika）：这块屏上的任务一律铺满，不摆分屏/自由窗口。
++            setFullscreenWindowingMode(vd.display.displayId)
++            // 方向监听（照 Mika）：保住了主屏焦点，就得自己纠正这块屏的方向。
++            DisplayOrientationKeeper.ensure()
              // Keep the virtual display's keyboard off the main screen: IME policy HIDE.
              runCatching { setImePolicyHide(vd.display.displayId) }
 +            // 空屏也要有内容：在这块屏上起系统桌面（Mika 的 CATEGORY_HOME 做法）。
@@ -4143,7 +4521,7 @@ index c7ed0f7..6873679 100644
      private fun resolveLaunch(pkg: String, expected: PhoneAppIdentity?): Intent {
          val pm = privileged.packageManager
          val intent = runCatching { pm.getLaunchIntentForPackage(pkg) }.getOrNull() ?: throw Fault("notLaunchable")
-@@ -908,6 +1278,7 @@ class PrivilegedDisplayCore internal constructor(
+@@ -908,6 +1309,7 @@ class PrivilegedDisplayCore internal constructor(
  
      private fun releasePhysical(): Boolean {
          coordinateObservation = null
@@ -4151,7 +4529,7 @@ index c7ed0f7..6873679 100644
          closeTreeConnection()
          visualObservation = null
          stopPreview()
-@@ -925,11 +1296,15 @@ class PrivilegedDisplayCore internal constructor(
+@@ -925,11 +1327,17 @@ class PrivilegedDisplayCore internal constructor(
              closeReaders()
          } else {
              val displayId = releasingDisplayId ?: throw Fault("releaseUnconfirmed")
@@ -4165,10 +4543,12 @@ index c7ed0f7..6873679 100644
                  displayApiReleased = true
              }
 +            DisplayHandles.forget(displayId)
++            // 已经没有屏了就把方向监听关掉，别让它在后台扫任务。
++            DisplayOrientationKeeper.release()
              closeReaders()
              val deadline = SystemClock.uptimeMillis() + 1_000
              // The display itself is already released. A ROM whose task query is unreadable cannot
-@@ -1166,7 +1541,15 @@ class PrivilegedDisplayCore internal constructor(
+@@ -1166,7 +1574,15 @@ class PrivilegedDisplayCore internal constructor(
      private class CaptureResult(val jpeg: ByteArray, val raw: BackgroundPreviewState.RawFrame?, val local: ImageObservation?, val targetMatched: Boolean? = null)
  
      /** Null means only absent/black frames; other capture failures remain distinguishable. */
@@ -4185,7 +4565,40 @@ index c7ed0f7..6873679 100644
          val ir = lock.withLock {
              if (pendingReader != null || readerAllocationUncertain) throw Fault("releasePending")
              val vd = display ?: throw Fault("displayMissing")
-@@ -2079,9 +2462,11 @@ class PrivilegedDisplayCore internal constructor(
+@@ -2025,6 +2441,32 @@ class PrivilegedDisplayCore internal constructor(
+         if (waitForFinish && !accepted) throw Fault("inputRejected")
+     }
+ 
++    /**
++     * 这块屏上的任务一律按"全屏窗口模式"摆（照 Mika）。小窗只显示这一块屏，
++     * 屏里再分屏就变成"小窗里还有两个半屏"，全屏按钮也铺不满。
++     * 走 IWindowManager.setWindowingMode(displayId, 1)；拿不到 binder 接口时退回 `wm set-display-windowing-mode`。
++     */
++    private fun setFullscreenWindowingMode(displayId: Int) {
++        val probe = runCatching {
++            val wm = Class.forName("android.view.WindowManagerGlobal")
++                .getMethod("getWindowManagerService").invoke(null)!!
++            // WindowConfiguration.WINDOWING_MODE_FULLSCREEN = 1（隐藏常量）
++            wm.javaClass.getMethod("setWindowingMode", Int::class.javaPrimitiveType, Int::class.javaPrimitiveType)
++                .invoke(wm, displayId, 1)
++        }
++        if (probe.isSuccess) {
++            Log.i("DshDisplay", "vscreen: windowing mode set displayId=$displayId ok=true")
++            return
++        }
++        val code = runCatching {
++            val process = ProcessBuilder("wm", "set-display-windowing-mode", "-d", displayId.toString(), "1")
++                .redirectErrorStream(true).start()
++            process.waitFor(3, TimeUnit.SECONDS)
++            process.exitValue()
++        }.getOrDefault(-1)
++        Log.w("DshDisplay", "vscreen: windowing mode set displayId=$displayId ok=${code == 0} via=wm code=$code")
++    }
++
+     private fun setImePolicyHide(displayId: Int) {
+         val sm = Class.forName("android.os.ServiceManager")
+         val binder = sm.getMethod("getService", String::class.java).invoke(null, "window") as IBinder
+@@ -2079,9 +2521,11 @@ class PrivilegedDisplayCore internal constructor(
  
      companion object {
          private val PACKAGE = Regex("[a-zA-Z][a-zA-Z0-9_]*(\\.[a-zA-Z0-9_]+)+")
@@ -7487,7 +7900,7 @@ index 0000000..7ca0e3a
 +}
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VscreenUi.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VscreenUi.kt
 new file mode 100644
-index 0000000..0b56782
+index 0000000..763a634
 --- /dev/null
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VscreenUi.kt
 @@ -0,0 +1,47 @@
@@ -7530,8 +7943,8 @@ index 0000000..0b56782
 +            ch == "virtual" && task -> WINDOW                // R1：虚拟屏 + 有任务 → 小窗
 +            ch == "virtual" && !task -> NONE                 // R2：虚拟屏开局 → 等窗口，不挂条
 +            ch == "silent" -> BALL2                          // R3：后台屏 → 双键条
-+            ch == "main" && !task -> BALL1                   // R5：主屏开局 → 单键条
-+            ch == "main" && task -> BALL2                    // R6：主屏但虚拟屏有任务 → 双键条
++            // R5：单键条严格跟"主屏通道"绑定——只要有主屏任务就出单键，不等虚拟屏状态
++            ch == "main" -> BALL1
 +            else -> NONE
 +        }
 +        WakeTrace.log("ui-rule: $why channel=$ch hasTask=$task shown=$shown -> $ui")
@@ -8586,6 +8999,60 @@ index 0000000..b76b8ab
 +        m!!
 +        assertEquals(4, m.parameterCount)
 +        assertEquals(Int::class.javaPrimitiveType, m.parameterTypes[0])
++    }
++}
+diff --git a/app/android/app/src/test/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/DisplayOrientationTest.kt b/app/android/app/src/test/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/DisplayOrientationTest.kt
+new file mode 100644
+index 0000000..f8a53ff
+--- /dev/null
++++ b/app/android/app/src/test/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/DisplayOrientationTest.kt
+@@ -0,0 +1,48 @@
++package io.github.ccch1mneyyy.dsh_app.phone.background
++
++import android.content.pm.ActivityInfo
++import org.junit.Assert.assertEquals
++import org.junit.Assert.assertNull
++import org.junit.Test
++
++class DisplayOrientationTest {
++    @Test fun landscapeLetterboxTurnsPortraitDisplay() {
++        assertEquals(1, DisplayOrientation.rotation(720, 1600, 0, 720, 324))
++    }
++    @Test fun portraitLetterboxTurnsItBack() {
++        assertEquals(0, DisplayOrientation.rotation(720, 1600, 1, 324, 720))
++    }
++    @Test fun alreadyMatchingAxesLeaveSystemRotationAlone() {
++        for (rotation in listOf(1, 3)) assertNull(DisplayOrientation.rotation(720, 1600, rotation, 1600, 720))
++        for (rotation in listOf(0, 2)) assertNull(DisplayOrientation.rotation(720, 1600, rotation, 720, 1600))
++    }
++    @Test fun naturalLandscapeAndInvalidWindowsAreHandled() {
++        assertEquals(1, DisplayOrientation.rotation(1600, 720, 0, 324, 720))
++        assertNull(DisplayOrientation.rotation(720, 1600, 0, -1, -1))
++        assertNull(DisplayOrientation.rotation(720, 1600, 0, 500, 500))
++    }
++    @Test fun fixedActivityOrientationFillsMissingWindowGeometry() {
++        for (orientation in listOf(ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE,
++            ActivityInfo.SCREEN_ORIENTATION_REVERSE_LANDSCAPE, ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE,
++            ActivityInfo.SCREEN_ORIENTATION_USER_LANDSCAPE)) {
++            assertEquals(1, DisplayOrientation.rotation(720, 1600, 0, -1, -1, orientation))
++            assertNull(DisplayOrientation.rotation(720, 1600, 1, -1, -1, orientation))
++        }
++        for (orientation in listOf(ActivityInfo.SCREEN_ORIENTATION_PORTRAIT,
++            ActivityInfo.SCREEN_ORIENTATION_REVERSE_PORTRAIT, ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT,
++            ActivityInfo.SCREEN_ORIENTATION_USER_PORTRAIT)) {
++            assertEquals(0, DisplayOrientation.rotation(720, 1600, 1, -1, -1, orientation))
++            assertNull(DisplayOrientation.rotation(720, 1600, 0, -1, -1, orientation))
++        }
++    }
++    @Test fun unconstrainedActivityOrientationDoesNotInventRotation() {
++        for (orientation in listOf(ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED,
++            ActivityInfo.SCREEN_ORIENTATION_FULL_SENSOR, ActivityInfo.SCREEN_ORIENTATION_LOCKED)) {
++            assertNull(DisplayOrientation.rotation(720, 1600, 0, -1, -1, orientation))
++        }
++    }
++    @Test fun realWindowGeometryTakesPrecedenceOverUnconstrainedRequest() {
++        assertEquals(1, DisplayOrientation.rotation(720, 1600, 0, 720, 324,
++            ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED))
 +    }
 +}
 diff --git a/app/assets/kws/LICENSE.txt b/app/assets/kws/LICENSE.txt
@@ -83439,10 +83906,10 @@ index c089d19..a15b64d 100644
  
 diff --git a/app/lib/state/virtual_screen_state.dart b/app/lib/state/virtual_screen_state.dart
 new file mode 100644
-index 0000000..a5a69a4
+index 0000000..7958894
 --- /dev/null
 +++ b/app/lib/state/virtual_screen_state.dart
-@@ -0,0 +1,454 @@
+@@ -0,0 +1,456 @@
 +import 'dart:async';
 +
 +import 'package:flutter/services.dart';
@@ -83754,11 +84221,13 @@ index 0000000..a5a69a4
 +    final ui = status.vscreenUi;
 +    if (ui.isNotEmpty) {
 +      final wantBall = ui == 'ball2' || ui == 'ball1';
-+      if (wantBall && !_ballOn) {
-+        _ballOn = true;
-+        unawaited(ref.read(virtualWindowProvider.notifier).setBall(true));
-+      } else if (!wantBall && _ballOn) {
-+        _ballOn = false;
++      // 必须无条件下发：原生"眼睛键"会自己把球叫出来（setWanted(true)），Dart 的 _ballOn
++      // 并不知道；以前用 _ballOn 做门，收到 ui=none 时以为"本来没球"就不关 → 任务结束黄条还挂着。
++      if (wantBall != _ballOn) {
++        _ballOn = wantBall;
++        unawaited(ref.read(virtualWindowProvider.notifier).setBall(wantBall));
++      } else if (!wantBall) {
++        // 兜底再下发一次 false：原生侧可能被强制叫出来过（幂等，不会闪）
 +        unawaited(ref.read(virtualWindowProvider.notifier).setBall(false));
 +      }
 +      if (ui == 'window') {
