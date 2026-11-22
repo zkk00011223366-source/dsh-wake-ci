@@ -1,7 +1,7 @@
-From 57d743f1d5aa9f0ad39335faa5ebba2420fbfbfe Mon Sep 17 00:00:00 2001
+From 7e3b33d1a19f382d1757bd7b1fba107897d8f3aa Mon Sep 17 00:00:00 2001
 From: ci <ci@local>
-Date: Sun, 22 Nov 2026 19:13:46 +0800
-Subject: [PATCH] pb: scene3x
+Date: Sun, 22 Nov 2026 20:03:00 +0800
+Subject: [PATCH] pb: scene3y
 
 ---
  .gitattributes                                |    3 +
@@ -15,12 +15,12 @@ Subject: [PATCH] pb: scene3x
  .../dsh_app/notify/NotifyPlugin.kt            |    5 +-
  .../dsh_app/phone/PhoneAndroidShell.kt        |   10 +-
  .../dsh_app/phone/PhoneBackGuard.kt           |  146 ++
- .../dsh_app/phone/PhoneContracts.kt           |  139 ++
+ .../dsh_app/phone/PhoneContracts.kt           |  144 ++
  .../ccch1mneyyy/dsh_app/phone/PhoneControl.kt |  100 +-
- .../ccch1mneyyy/dsh_app/phone/PhoneCore.kt    |  411 +++-
- .../ccch1mneyyy/dsh_app/phone/PhonePlugin.kt  |  357 +++
+ .../ccch1mneyyy/dsh_app/phone/PhoneCore.kt    |  420 +++-
+ .../ccch1mneyyy/dsh_app/phone/PhonePlugin.kt  |  362 +++
  .../dsh_app/phone/PhoneTaskSessions.kt        |   33 +-
- .../ccch1mneyyy/dsh_app/phone/PhoneTasks.kt   |   30 +
+ .../ccch1mneyyy/dsh_app/phone/PhoneTasks.kt   |   32 +
  .../dsh_app/phone/PhoneToolCatalog.kt         |   35 +-
  .../ccch1mneyyy/dsh_app/phone/SafetyGate.kt   |    4 +-
  .../dsh_app/phone/SingleInstanceApps.kt       |   27 +
@@ -28,7 +28,7 @@ Subject: [PATCH] pb: scene3x
  .../dsh_app/phone/a11y/PhoneA11yService.kt    |   20 +
  .../phone/background/BackgroundControl.kt     |  117 +-
  .../phone/background/BackgroundCoordinates.kt |    2 +
- .../phone/background/BackgroundDisplay.kt     |  251 +-
+ .../phone/background/BackgroundDisplay.kt     |  259 +-
  .../phone/background/BackgroundPolicy.kt      |    8 +-
  .../background/BackgroundProbeActivity.kt     |    4 +-
  .../phone/background/BackgroundTree.kt        |    4 +-
@@ -39,7 +39,7 @@ Subject: [PATCH] pb: scene3x
  .../background/DisplayOrientationKeeper.kt    |  125 +
  .../background/DisplayOrientationWatch.kt     |  100 +
  .../dsh_app/phone/background/KeptTasks.kt     |   39 +
- .../phone/background/PrivilegedDisplayCore.kt |  862 ++++++-
+ .../phone/background/PrivilegedDisplayCore.kt |  907 ++++++-
  .../phone/background/PrivilegedDisplayHost.kt |    6 +-
  .../phone/background/PrivilegedProtocol.kt    |   83 +-
  .../dsh_app/phone/skills/PhoneSkillDraft.kt   |    2 +-
@@ -51,8 +51,8 @@ Subject: [PATCH] pb: scene3x
  .../phone/vscreen/SwitchPromptOverlay.kt      |  142 ++
  .../dsh_app/phone/vscreen/TaskMover.kt        |  152 ++
  .../dsh_app/phone/vscreen/TransferBall.kt     |  456 ++++
- .../phone/vscreen/VirtualScreenOverlay.kt     | 2131 +++++++++++++++++
- .../phone/vscreen/VirtualScreenPlugin.kt      |  223 ++
+ .../phone/vscreen/VirtualScreenOverlay.kt     | 2156 +++++++++++++++++
+ .../phone/vscreen/VirtualScreenPlugin.kt      |  229 ++
  .../dsh_app/phone/vscreen/VscreenUi.kt        |   96 +
  .../ccch1mneyyy/dsh_app/runtime/GuestSetup.kt |   47 +-
  .../dsh_app/shortcuts/EntryActivity.kt        |    3 +
@@ -130,7 +130,7 @@ Subject: [PATCH] pb: scene3x
  docs/wake-word.md                             |  107 +
  dsh-go-wake.patch                             | 2065 ++++++++++++++++
  tooling/build-wake-apk.sh                     |   68 +
- 126 files changed, 15456 insertions(+), 551 deletions(-)
+ 126 files changed, 15561 insertions(+), 551 deletions(-)
  create mode 100644 .github/workflows/wake-apk.yml
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallForegroundService.kt
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallOverlay.kt
@@ -1350,7 +1350,7 @@ index 0000000..175e47b
 +    }
 +}
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneContracts.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneContracts.kt
-index 612f94d..a2bf1e4 100644
+index 612f94d..42976e0 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneContracts.kt
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneContracts.kt
 @@ -220,6 +220,13 @@ interface PhoneDriver {
@@ -1367,7 +1367,7 @@ index 612f94d..a2bf1e4 100644
  }
  
  data class ConfirmRequest(
-@@ -346,13 +353,145 @@ interface ControlListener {
+@@ -346,13 +353,150 @@ interface ControlListener {
      fun onAccessibilityChanged(connected: Boolean) {}
  }
  
@@ -1486,6 +1486,11 @@ index 612f94d..a2bf1e4 100644
 +     * 收尾链看到"刚 open 完"就放弃交回，记 handback skipped reason=open-recent。
 +     */
 +    @Volatile var vscreenOpenDoneAt: Long = 0L
++    /**
++     * 任务自然结束后要"保住屏与应用"（v3 §17 / Operit 急救包 B 案）：
++     * 用户在看剧时 AI 干完活，屏不能释放、应用不能被搬走；只有点【✕】才清（届时置 false）。
++     */
++    @Volatile var vscreenKeepAfterTask: Boolean = false
 +    /**
 +     * 最近一次"用户点眼睛收起"的时刻（3w 第 4 条）。v2 §2#6：眼睛只改可见性，
 +     * 不许迁任务、不许释放屏。收尾链（handBackToMain / release）看到这个时间戳在 [EYE_GRACE_MS] 内
@@ -1675,7 +1680,7 @@ index 2fc7cd5..35689c0 100644
      }
  
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneCore.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneCore.kt
-index 6c70185..cd3db1e 100644
+index 6c70185..18027fb 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneCore.kt
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneCore.kt
 @@ -1,9 +1,12 @@
@@ -1882,7 +1887,7 @@ index 6c70185..cd3db1e 100644
          safety.checkOpen(app.packageName, app.label)?.let {
              return Out(it.message, error = true, app = app.label, summary = ui.get("phone_log_open_app", "打开 %1\$s", app.packageName), decision = "refused:${it.rule}") // l10n:keep test default
          }
-@@ -558,30 +623,45 @@ class PhoneCore(
+@@ -558,30 +623,48 @@ class PhoneCore(
              } catch (e: Throwable) { skillTrace.fail(ticket); throw e }
              return afterSystem(owner, scope, result, summary)
          }
@@ -1900,6 +1905,9 @@ index 6c70185..cd3db1e 100644
 +        // 明确要求"权限弹窗必须落在虚拟屏"，系统做不到 → 改为不让它弹）。
 +        grantBeforeVirtualOpen(app.packageName, owner)
          val mainFront = runCatching { env.driver(PhoneScreen.MAIN, owner)?.foregroundPackage() }.getOrNull()
++        io.github.ccch1mneyyy.dsh_app.wake.WakeTrace.log(
++            "open: main step=grant front=" +
++                (runCatching { env.driver(PhoneScreen.MAIN, owner)?.foregroundPackage() }.getOrNull() ?: "unknown"))
 +        // 写到 wake-debug.log：录屏后能核对"到底开在哪块屏、开完结果是什么"。
 +        io.github.ccch1mneyyy.dsh_app.wake.WakeTrace.log(
 +            "open: app=${app.packageName} target=virtual mainFront=$mainFront")
@@ -1936,7 +1944,7 @@ index 6c70185..cd3db1e 100644
              driver.open(app.identity) {
                  if (!current(owner) || openRefusal.get() != null) false else {
                      safety.checkOpen(app.packageName, app.label)?.let { openRefusal.compareAndSet(null, it) }
-@@ -589,17 +669,104 @@ class PhoneCore(
+@@ -589,17 +672,110 @@ class PhoneCore(
                  }
              }
          }
@@ -1963,6 +1971,9 @@ index 6c70185..cd3db1e 100644
                  decision = "refused:${refused.rule}") // l10n:keep test default
          }
          call.backgroundOpenConfirmed = res.backgroundOpenConfirmed
++        io.github.ccch1mneyyy.dsh_app.wake.WakeTrace.log(
++            "open: main step=launch front=" +
++                (runCatching { env.driver(PhoneScreen.MAIN, owner)?.foregroundPackage() }.getOrNull() ?: "unknown"))
 +        io.github.ccch1mneyyy.dsh_app.phone.PhoneRegistry.vscreenOpenDone = true
 +        io.github.ccch1mneyyy.dsh_app.phone.PhoneRegistry.vscreenOpenDoneAt =
 +            android.os.SystemClock.elapsedRealtime()
@@ -1983,6 +1994,9 @@ index 6c70185..cd3db1e 100644
 +                summary = ui.get("phone_log_open_background", "虚拟屏打开 %1\$s", app.packageName), decision = "open-main-stolen") // l10n:keep test default
 +        }
 +        if (res.ok) keepOnVirtual(app.packageName, driver, owner)
++        io.github.ccch1mneyyy.dsh_app.wake.WakeTrace.log(
++            "open: main step=post1s front=" +
++                (runCatching { env.driver(PhoneScreen.MAIN, owner)?.foregroundPackage() }.getOrNull() ?: "unknown"))
          if (!current(owner)) return stoppedOut("open")
 +        if (res.ok && !verifyOpenedOnVirtual(app.packageName, driver)) {
 +            val failed = ui.get("phone_open_verify_failed", "「%1\$s」没有留在虚拟屏，已收起窗口。", app.label) // l10n:keep test default
@@ -2043,7 +2057,7 @@ index 6c70185..cd3db1e 100644
      }
  
      /** The handler is a dispatch fact. Only the following read describes the actual foreground UI. */
-@@ -816,8 +983,145 @@ class PhoneCore(
+@@ -816,8 +992,145 @@ class PhoneCore(
          return Either.Right(d)
      }
  
@@ -2189,7 +2203,7 @@ index 6c70185..cd3db1e 100644
      /** Admission uses the same argument coercion and routing as the actual tool body. */
      fun requiredScreens(name: String, args: Map<String, Any?>): Either<String, List<PhoneScreen>> {
          return requiredScreens(name, Args(args))
-@@ -825,10 +1129,11 @@ class PhoneCore(
+@@ -825,10 +1138,11 @@ class PhoneCore(
  
      private fun requiredScreens(name: String, a: Args): Either<String, List<PhoneScreen>> {
          return when (name) {
@@ -2204,7 +2218,7 @@ index 6c70185..cd3db1e 100644
              // Arbitrary system commands take the main/global unknown-app lease, without reading a screen.
              PhoneToolCatalog.INTENT, PhoneToolCatalog.ANDROID_SHELL -> Either.Right(listOf(PhoneScreen.MAIN))
              PhoneToolCatalog.HANDOFF -> Either.Right(if (lastScreen == PhoneScreen.BACKGROUND)
-@@ -852,7 +1157,7 @@ class PhoneCore(
+@@ -852,7 +1166,7 @@ class PhoneCore(
          if (id == null) return Either.Left("缺少 $parameterName（屏幕号，如 s7）。先调用 screen 拿到屏幕号。")
          return PhoneScreen.ofScreenId(id)?.let { Either.Right(it) }
              // l10n:keep agent tool result
@@ -2213,7 +2227,7 @@ index 6c70185..cd3db1e 100644
      }
  
      private fun locked(summary: String) =
-@@ -871,21 +1176,29 @@ class PhoneCore(
+@@ -871,21 +1185,29 @@ class PhoneCore(
  
      private fun screen(a: Args, owner: PhoneTasks.Owner): Out {
          if (!current(owner)) return stoppedOut("screen")
@@ -2249,7 +2263,7 @@ index 6c70185..cd3db1e 100644
          return Out(
              // l10n:keep agent tool result
              if (refused) "没有读取这个屏幕的内容。" else "",
-@@ -897,6 +1210,40 @@ class PhoneCore(
+@@ -897,6 +1219,40 @@ class PhoneCore(
          )
      }
  
@@ -2290,7 +2304,7 @@ index 6c70185..cd3db1e 100644
      private fun collect(a: Args, owner: PhoneTasks.Owner): Out {
          if (!current(owner)) return stoppedOut("collect")
          val sid = a.str("screen")
-@@ -1362,6 +1709,7 @@ class PhoneCore(
+@@ -1362,6 +1718,7 @@ class PhoneCore(
          summary = summary, decision = "stopped")
  
      companion object {
@@ -2298,7 +2312,7 @@ index 6c70185..cd3db1e 100644
          internal const val REPLAY = "replay"
          internal const val FOCUS_TEXT = "focus_text"
  
-@@ -1370,6 +1718,9 @@ class PhoneCore(
+@@ -1370,6 +1727,9 @@ class PhoneCore(
          const val PAUSE_WAIT_MS = 600_000L
          const val HANDOFF_MS = 600_000L
  
@@ -2309,7 +2323,7 @@ index 6c70185..cd3db1e 100644
          private val WRITES = setOf(FOCUS_TEXT, PhoneToolCatalog.TAP, PhoneToolCatalog.TYPE, PhoneToolCatalog.TAP_XY, PhoneToolCatalog.OPEN)
          /** An uncertain effect call tightens draft eligibility; it does not prove input was dispatched. */
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhonePlugin.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhonePlugin.kt
-index 4a76535..d5eb514 100644
+index 4a76535..0776b0a 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhonePlugin.kt
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhonePlugin.kt
 @@ -2,7 +2,12 @@ package io.github.ccch1mneyyy.dsh_app.phone
@@ -2452,7 +2466,7 @@ index 4a76535..d5eb514 100644
          methods = MethodChannel(binding.binaryMessenger, "dsh/phone").also { it.setMethodCallHandler(this) }
          events = EventChannel(binding.binaryMessenger, "dsh/phone/events").also { it.setStreamHandler(this) }
          previewEvents = EventChannel(binding.binaryMessenger, "dsh/phone/preview").also { channel ->
-@@ -103,9 +221,154 @@ class PhonePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
+@@ -103,9 +221,156 @@ class PhonePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
          }
      }
  
@@ -2569,13 +2583,15 @@ index 4a76535..d5eb514 100644
 +            WakeTrace.log("vscreen: swap target none -> keep bar (no real app on main)")
 +            return
 +        }
-+        var reply = runCatching { display?.moveMainTaskToVirtual() }.getOrNull()
++        // 主屏→虚拟屏 已下线（v3 §5）：到这里说明没有可搬的真实应用，明确拒绝。
++        WakeTrace.log("vscreen: move refused reason=virtual-target-removed from=swap")
++        var reply = mapOf<String, Any?>("ok" to false, "reason" to "virtual-target-removed")
 +            ?: mapOf("ok" to false, "reason" to "noDisplay")
 +        WakeTrace.log("ball: move reply1=$reply")
 +        // 系统第一次常回 noTask（此刻最前面的可能是我们自己的悬浮窗）——等一下再搬一次。
 +        if (reply["ok"] != true) {
 +            Thread.sleep(800)
-+            val second = runCatching { display?.moveMainTaskToVirtual() }.getOrNull() ?: reply
++            val second = reply
 +            WakeTrace.log("ball: move retry reply=$second")
 +            if (second["ok"] == true) reply = second
 +        }
@@ -2607,7 +2623,7 @@ index 4a76535..d5eb514 100644
          skillSelectionRequest = Any()
          skillInspection = null
          skillClient?.let { control.skillReplaySelections.retireClient(it); control.skillDrafts.retireClient(it) }
-@@ -249,6 +512,100 @@ class PhonePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
+@@ -249,6 +514,103 @@ class PhonePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
                  result.success(if (removed) mapOf("kind" to "discarded") else replayRejected("stale"))
              }
              "setBackgroundPreview" -> result.success(control.preview.setEnabled(call.argument<Boolean>("enabled") == true))
@@ -2699,7 +2715,10 @@ index 4a76535..d5eb514 100644
 +                    !valid -> result.success(mapOf("ok" to false, "reason" to "invalidArguments"))
 +                    target == null && toMain == false -> async(result) {
 +                        val driver = control.driver(PhoneScreen.BACKGROUND) as? BackgroundDisplay
-+                        driver?.moveMainTaskToVirtual() ?: mapOf("ok" to false, "reason" to "noTarget")
++                        run {
++                            WakeTrace.log("vscreen: move refused reason=virtual-target-removed from=ball")
++                            mapOf<String, Any?>("ok" to false, "reason" to "virtual-target-removed")
++                        }
 +                    }
 +                    target == null -> result.success(mapOf("ok" to false, "reason" to "noTarget"))
 +                    else -> async(result) { control.background.handOverTask(target!!, toMain!!) }
@@ -2799,7 +2818,7 @@ index 3fd6e48..6a2410f 100644
          // An implementation memory bound, not a measured throughput limit. Never evict a fence.
          const val MAX_RUNS_PER_LAUNCH = 256
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneTasks.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneTasks.kt
-index a09015e..cc28674 100644
+index a09015e..219c482 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneTasks.kt
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneTasks.kt
 @@ -73,6 +73,9 @@ class PhoneTasks(
@@ -2812,7 +2831,7 @@ index a09015e..cc28674 100644
      private val listeners = CopyOnWriteArrayList<(Snapshot) -> Unit>()
  
      fun addListener(l: (Snapshot) -> Unit) {
-@@ -237,6 +240,17 @@ class PhoneTasks(
+@@ -237,6 +240,19 @@ class PhoneTasks(
              if (!active && !stopped) return null
              if (active) endLocked() else lifecycle++
              stoppedUntil = 0L
@@ -2827,10 +2846,12 @@ index a09015e..cc28674 100644
 +                    "vscreen: task-end channel=$endedChannel -> none")
 +            }
 +            runCatching { io.github.ccch1mneyyy.dsh_app.phone.vscreen.TransferBall.setWanted(false) }
++            // 自然结束：保住屏与应用（点 ✕ 才清）。
++            io.github.ccch1mneyyy.dsh_app.phone.PhoneRegistry.vscreenKeepAfterTask = true
              stopReason = null
              interrupted = false
              owner = Owner(taskId, lifecycle, false)
-@@ -261,8 +275,23 @@ class PhoneTasks(
+@@ -261,8 +277,23 @@ class PhoneTasks(
          Owner(taskId, lifecycle, false)
      }
  
@@ -2854,7 +2875,7 @@ index a09015e..cc28674 100644
      /** Result bookkeeping must not adopt the task that replaced its call. Keep [action] short. */
      fun runIfCurrent(owner: Owner, action: () -> Unit): Boolean = synchronized(lock) {
          if (!currentLocked(owner)) return false
-@@ -527,6 +556,7 @@ class PhoneTasks(
+@@ -527,6 +558,7 @@ class PhoneTasks(
      private fun endLocked() {
          lifecycle++
          active = false
@@ -3237,7 +3258,7 @@ index f6b83a0..2eb59f3 100644
          val result = receipt.takeIf { accepted && screen == screenId }
          clear()
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/BackgroundDisplay.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/BackgroundDisplay.kt
-index bc1810a..85faae0 100644
+index bc1810a..02d6c16 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/BackgroundDisplay.kt
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/BackgroundDisplay.kt
 @@ -22,6 +22,7 @@ import io.github.ccch1mneyyy.dsh_app.phone.a11y.LocalOcrResult
@@ -3525,13 +3546,21 @@ index bc1810a..85faae0 100644
      }
  
      /**
-@@ -573,8 +766,36 @@ class BackgroundDisplay internal constructor(
+@@ -573,8 +766,44 @@ class BackgroundDisplay internal constructor(
  
      override fun foregroundPackage(): String? = currentTarget?.packageName
  
 +    /** open 后应用自己跳回主屏时把主屏最上面的任务拉回这块屏（第②项）。 */
-+    override fun pullTopMainTaskBack(): Map<String, Any?>? =
-+        runCatching { moveMainTaskToVirtual() }.getOrNull()
++    /**
++     * 主屏→虚拟屏 已下线（用户拍板：通道不再互相迁移，只保留【虚拟屏→主屏】）。
++     * 以前这里会在 open 之后把主屏任务拉进虚拟屏，是"应用突然从主屏消失/被搬走"的旁路之一。
++     * 保留函数签名避免牵连调用方，但一律拒绝并留痕，便于发现还有谁在走反方向。
++     */
++    override fun pullTopMainTaskBack(): Map<String, Any?>? {
++        io.github.ccch1mneyyy.dsh_app.wake.WakeTrace.log(
++            "vscreen: move refused reason=virtual-target-removed from=pullTopMainTaskBack")
++        return null
++    }
 +
 +    /**
 +     * 悬浮窗还开着时先不放屏：任务结束调用 release() 时只做标记，等窗口关掉再真正释放。
@@ -3562,7 +3591,7 @@ index bc1810a..85faae0 100644
          val acknowledged = try {
              resourceIo.release { pinned -> OwnerScopeProtocol.release(pinned, ownerToken) }
          } catch (_: Exception) { false }
-@@ -659,7 +880,7 @@ class BackgroundDisplay internal constructor(
+@@ -659,7 +888,7 @@ class BackgroundDisplay internal constructor(
              clearSnapshot()
              val now = response.getString(Proto.FG_PKG)
              // l10n:keep agent target identity
@@ -3571,7 +3600,7 @@ index bc1810a..85faae0 100644
              return ActionResult(false, Reasons.withDetail(message, detail), staleSnapshot = true)
          }
          if (!ok) clearSnapshot()
-@@ -693,13 +914,13 @@ class BackgroundDisplay internal constructor(
+@@ -693,13 +922,13 @@ class BackgroundDisplay internal constructor(
          if (response.getBoolean(Proto.SECURE)) {
              lastScreenId = id; lastElements = emptyList(); previousLabels = emptySet()
              // l10n:keep agent screen protocol
@@ -3587,7 +3616,7 @@ index bc1810a..85faae0 100644
              return@commitObservation ScreenSnapshot(id, text, appLabel, pkg, secure = false, poorTree = true, readPackages = setOf(pkg))
          }
          val elements = buildElements(response, markNew)
-@@ -789,14 +1010,14 @@ class BackgroundDisplay internal constructor(
+@@ -789,14 +1018,14 @@ class BackgroundDisplay internal constructor(
          if (opened.packageName == shown.packageName) return ""
          val name = appLabel?.let { "「$it」（${shown.packageName}）" } ?: shown.packageName
          // l10n:keep agent target identity
@@ -3604,7 +3633,7 @@ index bc1810a..85faae0 100644
          // l10n:keep agent target identity
          "closed" -> "；${openedTarget?.packageName} 已经退出，需要时重新打开"
          else -> ""
-@@ -810,7 +1031,7 @@ class BackgroundDisplay internal constructor(
+@@ -810,7 +1039,7 @@ class BackgroundDisplay internal constructor(
          val id = "b${++counter}"
          lastScreenId = id; lastElements = emptyList(); previousLabels = emptySet()
          // l10n:keep agent target identity
@@ -3613,7 +3642,7 @@ index bc1810a..85faae0 100644
              // l10n:keep agent target identity
              "。可以用 open 重新打开应用。", null, null)
      }
-@@ -821,7 +1042,7 @@ class BackgroundDisplay internal constructor(
+@@ -821,7 +1050,7 @@ class BackgroundDisplay internal constructor(
          val id = "b${++counter}"
          lastScreenId = id; lastElements = emptyList()
          // l10n:keep agent screen protocol
@@ -4238,7 +4267,7 @@ index 0000000..c1dcef9
 +    fun logSize() = Log.i(TAG, "vscreen: task-finish kept-total=$size")
 +}
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/PrivilegedDisplayCore.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/PrivilegedDisplayCore.kt
-index c7ed0f7..5ddc139 100644
+index c7ed0f7..f9ebbbc 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/PrivilegedDisplayCore.kt
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/PrivilegedDisplayCore.kt
 @@ -11,6 +11,7 @@ package io.github.ccch1mneyyy.dsh_app.phone.background
@@ -4404,7 +4433,7 @@ index c7ed0f7..5ddc139 100644
          if (op == Proto.OP_LAUNCH && expected != null) {
              val shown = TargetIdentity.shown(response.get(Proto.PKG), response.get(Proto.TARGET_UID))
              val actualDisplay = display?.display
-@@ -729,57 +809,540 @@ class PrivilegedDisplayCore internal constructor(
+@@ -729,57 +809,579 @@ class PrivilegedDisplayCore internal constructor(
      private fun displayId(): Int = display?.display?.displayId ?: throw Fault("displayMissing")
      private fun requireDisplay() { if (display == null) throw Fault("displayMissing") }
  
@@ -4713,6 +4742,31 @@ index c7ed0f7..5ddc139 100644
 +        Log.w("DshDisplay", "vscreen: desktop failed displayId=$displayId")
 +    }
 +
++    /**
++     * 哨兵看护（照 Operit 的 guard_prewarm）：每 5 秒确认这块屏在系统里还活着。
++     * 真机上出现过"屏突然没了、任务全死、下一条 release 找不到 display"——以前只能等用户下次操作才发现。
++     * 只观测与记录，不擅自重建（重建要用户重新发指令，避免抢跑乱开屏）。
++     * 判据：vscreen: display vanished id=… afterMs=… / vscreen: display alive id=… （每 60 秒一次心跳）
++     */
++    private fun startDisplayWatchdog(displayId: Int) {
++        val startedAt = SystemClock.uptimeMillis()
++        runCatching {
++            java.util.concurrent.Executors.newSingleThreadScheduledExecutor { r ->
++                Thread(r, "dsh-display-watchdog").apply { isDaemon = true }
++            }.scheduleWithFixedDelay({
++                val alive = runCatching { displays.getDisplay(displayId) != null }.getOrDefault(true)
++                if (!alive) {
++                    io.github.ccch1mneyyy.dsh_app.wake.WakeTrace.log(
++                        "vscreen: display vanished id=$displayId afterMs=${SystemClock.uptimeMillis() - startedAt}")
++                    throw java.util.concurrent.CancellationException("display gone")
++                }
++            }, 5, 5, java.util.concurrent.TimeUnit.SECONDS)
++        }.onFailure {
++            io.github.ccch1mneyyy.dsh_app.wake.WakeTrace.log(
++                "vscreen: watchdog start failed id=$displayId ${it.javaClass.simpleName}")
++        }
++    }
++
 +    /** 把 [intent] 发到 [displayId]；这块屏上真的起了任务才算成功（判据日志就在这里打）。 */
 +    private fun launchOnDisplay(displayId: Int, vd: VirtualDisplay, intent: Intent, via: String): Boolean {
 +        var pending: PendingIntent? = null
@@ -4829,6 +4883,19 @@ index c7ed0f7..5ddc139 100644
  
      private fun createDisplay(request: Bundle, probe: Boolean = false) {
 -        val shortSide = request.getInt(Proto.SHORT_SIDE, 720).coerceIn(360, 1080)
++        // 僵尸层清理（照 Operit 急救包"清僵尸层"）：建屏前把强引用表里"系统已不存在"的句柄摘掉，
++        // 有残留就留一行证据。SurfaceFlinger 里出现过 3 个 name="dsh-background" 的幽灵层，
++        // 会让下一次建屏撞 deviceUnavailable —— 这里至少保证我们自己的表不会越积越多。
++        runCatching {
++            val stale = DisplayHandles.snapshot().filterKeys { id ->
++                runCatching { displays.getDisplay(id) == null }.getOrDefault(false)
++            }
++            stale.keys.forEach { DisplayHandles.forget(it) }
++            if (stale.isNotEmpty()) {
++                io.github.ccch1mneyyy.dsh_app.wake.WakeTrace.log(
++                    "vscreen: ghost swept n=${stale.size} ids=${stale.keys}")
++            }
++        }
 +        val shortSide = request.getInt(Proto.SHORT_SIDE, 720).coerceIn(360, 1440)
 +        // 密度跟随手机：720/320dpi 会让微信等应用判定为大屏（平板布局），移回主屏也变形。
 +        val density = request.getInt(Proto.DENSITY, 320).coerceIn(120, 640)
@@ -4898,6 +4965,7 @@ index c7ed0f7..5ddc139 100644
 +            runCatching { launchDesktop(vd.display.displayId) }
 +            // 自成一组的屏要人替它报用户操作，否则到息屏时间就睡（照 Mika 的 pokeDisplay，每 4 秒）。
 +            DisplayAwakeKeeper.start(vd.display.displayId, useFlags, if (trusted) ownGroupFlag else 0)
++            startDisplayWatchdog(vd.display.displayId)
          } catch (e: Throwable) {
 -            // Undo this attempt (nothing was launched on it) so it does not hold back the next
 -            // open. Only a handle that would not close stays, for the owner's release to settle.
@@ -4966,7 +5034,7 @@ index c7ed0f7..5ddc139 100644
      private fun resolveLaunch(pkg: String, expected: PhoneAppIdentity?): Intent {
          val pm = privileged.packageManager
          val intent = runCatching { pm.getLaunchIntentForPackage(pkg) }.getOrNull() ?: throw Fault("notLaunchable")
-@@ -821,6 +1384,44 @@ class PrivilegedDisplayCore internal constructor(
+@@ -821,6 +1423,44 @@ class PrivilegedDisplayCore internal constructor(
      }
  
      /** (displayId, packages of that task) rows of one running-task read. */
@@ -5011,7 +5079,7 @@ index c7ed0f7..5ddc139 100644
      private fun taskRows(): List<Pair<Int, Set<String>>>? {
          val field = taskDisplayIdField ?: return null
          @Suppress("DEPRECATION")
-@@ -882,7 +1483,14 @@ class PrivilegedDisplayCore internal constructor(
+@@ -882,7 +1522,14 @@ class PrivilegedDisplayCore internal constructor(
          val deadline = SystemClock.uptimeMillis() + 4000
          while (foregroundPackage() != pkg) {
              if (SystemClock.uptimeMillis() >= deadline) {
@@ -5027,7 +5095,7 @@ index c7ed0f7..5ddc139 100644
                  val placement = taskRows()?.let { TargetIdentity.placement(pkg, display.display.displayId, it) }
                  throw Fault(if (placement == TargetIdentity.Placement.OTHER_DISPLAY) "targetLeftDisplay" else "launchUnconfirmed")
              }
-@@ -906,8 +1514,134 @@ class PrivilegedDisplayCore internal constructor(
+@@ -906,8 +1553,140 @@ class PrivilegedDisplayCore internal constructor(
          if (readerAllocationUncertain) throw Fault("releaseUnconfirmed")
      }
  
@@ -5041,6 +5109,12 @@ index c7ed0f7..5ddc139 100644
 +    private fun handBackToMain(displayId: Int) {
 +        // 3w 第 4 条：刚点过眼睛就别把任务搬回主屏（v2 §2#6）。实测 15:21 眼睛之后
 +        // 仍出现 move-stack … display=0，就是这里干的；进程虽然没死，但任务被搬走了。
++        // B 案（v3 §17）：任务自然结束后屏与应用都要留着，绝不搬回主屏。
++        if (io.github.ccch1mneyyy.dsh_app.phone.PhoneRegistry.vscreenKeepAfterTask) {
++            io.github.ccch1mneyyy.dsh_app.wake.WakeTrace.log(
++                "vscreen: handback skipped displayId=$displayId reason=task-ended-keep")
++            return
++        }
 +        val hiddenAt = io.github.ccch1mneyyy.dsh_app.phone.PhoneRegistry.vscreenEyeHiddenAt
 +        // 同一条闸的第二种来源：刚 open 完就被收尾链搬回主屏（实测 17:37 open 后 +3 秒）。
 +        val openedAt = io.github.ccch1mneyyy.dsh_app.phone.PhoneRegistry.vscreenOpenDoneAt
@@ -5162,7 +5236,7 @@ index c7ed0f7..5ddc139 100644
          closeTreeConnection()
          visualObservation = null
          stopPreview()
-@@ -925,11 +1659,42 @@ class PrivilegedDisplayCore internal constructor(
+@@ -925,11 +1704,42 @@ class PrivilegedDisplayCore internal constructor(
              closeReaders()
          } else {
              val displayId = releasingDisplayId ?: throw Fault("releaseUnconfirmed")
@@ -5192,7 +5266,7 @@ index c7ed0f7..5ddc139 100644
                  displayApiReleased = true
 +                io.github.ccch1mneyyy.dsh_app.wake.WakeTrace.log(
 +                    "vscreen: release surface cleared=$cleared displayId=$displayId")
-+            }
+             }
 +            DisplayHandles.forget(displayId)
 +            // 3w 第 8 条：释放自证。executor 报"屏释放后仍有空壳 display，会随次数累积"，
 +            // 这里把"系统还剩几块屏 / 我们表里还按着几块"一起打出来，下次就能判是不是真泄漏。
@@ -5200,13 +5274,13 @@ index c7ed0f7..5ddc139 100644
 +                io.github.ccch1mneyyy.dsh_app.wake.WakeTrace.log(
 +                    "vscreen: release verified displays=${displays.displays.size} " +
 +                        "tracked=${DisplayHandles.snapshot().size}")
-             }
++            }
 +            // 已经没有屏了就把方向监听关掉，别让它在后台扫任务。
 +            DisplayOrientationKeeper.release()
              closeReaders()
              val deadline = SystemClock.uptimeMillis() + 1_000
              // The display itself is already released. A ROM whose task query is unreadable cannot
-@@ -944,6 +1709,7 @@ class PrivilegedDisplayCore internal constructor(
+@@ -944,6 +1754,7 @@ class PrivilegedDisplayCore internal constructor(
      }
  
      private fun clearResourceState() {
@@ -5214,7 +5288,7 @@ index c7ed0f7..5ddc139 100644
          display = null; owner = null; strictOwner = false; selfCheckOwner = false
          targetSequence = null; targetSnapshot = null; targetMain = null
          releasingDisplayId = null; displayCreationAttempted = false; displayApiReleased = false; probeDisplay = false
-@@ -1166,7 +1932,15 @@ class PrivilegedDisplayCore internal constructor(
+@@ -1166,7 +1977,15 @@ class PrivilegedDisplayCore internal constructor(
      private class CaptureResult(val jpeg: ByteArray, val raw: BackgroundPreviewState.RawFrame?, val local: ImageObservation?, val targetMatched: Boolean? = null)
  
      /** Null means only absent/black frames; other capture failures remain distinguishable. */
@@ -5231,7 +5305,7 @@ index c7ed0f7..5ddc139 100644
          val ir = lock.withLock {
              if (pendingReader != null || readerAllocationUncertain) throw Fault("releasePending")
              val vd = display ?: throw Fault("displayMissing")
-@@ -2025,6 +2799,32 @@ class PrivilegedDisplayCore internal constructor(
+@@ -2025,6 +2844,32 @@ class PrivilegedDisplayCore internal constructor(
          if (waitForFinish && !accepted) throw Fault("inputRejected")
      }
  
@@ -5264,7 +5338,7 @@ index c7ed0f7..5ddc139 100644
      private fun setImePolicyHide(displayId: Int) {
          val sm = Class.forName("android.os.ServiceManager")
          val binder = sm.getMethod("getService", String::class.java).invoke(null, "window") as IBinder
-@@ -2079,9 +2879,13 @@ class PrivilegedDisplayCore internal constructor(
+@@ -2079,9 +2924,13 @@ class PrivilegedDisplayCore internal constructor(
  
      companion object {
          private val PACKAGE = Regex("[a-zA-Z][a-zA-Z0-9_]*(\\.[a-zA-Z0-9_]+)+")
@@ -6522,10 +6596,10 @@ index 0000000..40187c2
 +}
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenOverlay.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenOverlay.kt
 new file mode 100644
-index 0000000..e36436f
+index 0000000..629e2eb
 --- /dev/null
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenOverlay.kt
-@@ -0,0 +1,2131 @@
+@@ -0,0 +1,2156 @@
 +package io.github.ccch1mneyyy.dsh_app.phone.vscreen
 +
 +import io.github.ccch1mneyyy.dsh_app.phone.PhoneRegistry
@@ -6878,6 +6952,9 @@ index 0000000..e36436f
 +        // （OWN_CONTENT_ONLY + canHostTasks=false），账本 hasTask=false → 收尾 → 释放 → 应用被杀。
 +        // requestSurface(app, null, gen) 走的就是 attachViewSurface(target, null) 那条"交回 reader"的路。
 +        context?.let { app -> runCatching { requestSurface(app, null, surfaceGen) } }
++        // 判据：这一步把输出面交回 reader，虚拟屏继续合成、应用不会被系统请回主屏。
++        // 拆掉的只是 SurfaceView 那条直连（下次点条会重新 attach），display 本身不断流。
++        WakeTrace.log("window: surface handed to reader display=$displayId (display keeps compositing)")
 +        // 3w 第 4 条：这是一次"显式通道切换"，不是任务结束。收尾链据此不交回任务、不释放屏。
 +        io.github.ccch1mneyyy.dsh_app.phone.PhoneRegistry.vscreenEyeHiddenAt =
 +            android.os.SystemClock.elapsedRealtime()
@@ -7174,6 +7251,18 @@ index 0000000..e36436f
 +                // 直连接上不等于画好了：给应用 1.2 秒把第一帧画进 surface，
 +                // 这期间窗口保留占位文字，别变成一块全透明。
 +                paintedAt = SystemClock.elapsedRealtime() + 1200
++                // 换面超时回退（照 Operit 急救包 A+C）：接面成功后 800ms 还没有新帧，
++                // 说明应用没往这块新面里画。这时把输出交回 reader（帧流继续），窗口至少还有画面，
++                // 后台再重试接面。判据：window: attach timeout, fallback=reader
++                val attachAt = SystemClock.elapsedRealtime()
++                val boxAtAttach = root
++                main.postDelayed({
++                    val noNewFrame = lastBitmapAt == 0L || lastBitmapAt < attachAt
++                    if (boxAtAttach != null && root === boxAtAttach && !revealed && noNewFrame) {
++                        WakeTrace.log("window: attach timeout, fallback=reader")
++                        runCatching { control.attachViewSurface(target, null) }
++                    }
++                }, 800)
 +                // 画面比例（用户 13:4x 截图）：surface 之前是"窗口多大就多大"（385x860），
 +                // 虚拟屏却按 720x1600 往里画，系统只能 1:1 从左上角裁一块 —— 小窗被裁、
 +                // 全屏左边一条、右边全黑。把 surface 固定成虚拟屏的真实尺寸，让系统缩放
@@ -7200,7 +7289,15 @@ index 0000000..e36436f
 +                    }
 +                }, wait)
 +            }
-+            else if (surface != null) scheduleSurfaceRetry(app, gen)
++            else if (surface != null) {
++                // 保帧兜底（照 Operit 急救包 A 案）：接面失败时不给你一块黑窗——
++                // 若手里还有上一张预览帧，就把它"定格"显示出来，同时后台继续重试接面。
++                if (lastBitmap != null && !revealed) {
++                    WakeTrace.log("window: frame held last (attach failed, showing last frame)")
++                    main.post { reveal(root) }
++                }
++                scheduleSurfaceRetry(app, gen)
++            }
 +            main.post {
 +                applyAspect()
 +                applyLive()
@@ -8277,6 +8374,8 @@ index 0000000..e36436f
 +            "vscreen: close source=window display=$displayId -> stop|clear -> release")
 +        // 关屏后这块屏不再代表任何通道，界面按 none 收干净（条在下面 hideWindowOnly 里统一处理）。
 +        io.github.ccch1mneyyy.dsh_app.phone.PhoneRegistry.vscreenTarget = "none"
++        // 点【✕】= 关屏：解除"任务结束后保住屏"的旗标，后面才会真正交回主屏并释放。
++        io.github.ccch1mneyyy.dsh_app.phone.PhoneRegistry.vscreenKeepAfterTask = false
 +        // 带上窗口实际绑定的任务号：不带号时原生找不到"当前任务"，停止会静默失败（10:1x）。
 +        val id = previewTaskId.takeIf { it > 0 } ?: taskId
 +        hide()
@@ -8659,10 +8758,10 @@ index 0000000..e36436f
 +}
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenPlugin.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenPlugin.kt
 new file mode 100644
-index 0000000..10be2e1
+index 0000000..42d3db9
 --- /dev/null
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenPlugin.kt
-@@ -0,0 +1,223 @@
+@@ -0,0 +1,229 @@
 +package io.github.ccch1mneyyy.dsh_app.phone.vscreen
 +
 +import android.content.Context
@@ -8763,7 +8862,13 @@ index 0000000..10be2e1
 +                    var ok = engineOk
 +                    var how = "via=engine"
 +                    if (!engineOk) {
-+                        fun tryAm(): TaskMover.MoveOutcome = runCatching {
++                        fun tryAm(): TaskMover.MoveOutcome =
++                            if (target != 0) {
++                                // 反方向已下线（v3 §5）：只允许搬回主屏(0)
++                                io.github.ccch1mneyyy.dsh_app.wake.WakeTrace.log(
++                                    "vscreen: move refused reason=virtual-target-removed from=plugin target=$target")
++                                TaskMover.MoveOutcome(false, null, "target=$target", "virtual-target-removed")
++                            } else runCatching {
 +                            val move = PhoneRegistry.moveDisplayTask
 +                            if (move != null) move(taskId.toInt(), target) else {
 +                                val cmd = "am display move-stack $taskId $target"
