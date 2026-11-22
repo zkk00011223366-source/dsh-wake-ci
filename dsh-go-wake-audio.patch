@@ -1,7 +1,7 @@
-From 7eb4aec3c6296178bdafb35a86868728a3f8a6e5 Mon Sep 17 00:00:00 2001
+From e2f1c76e5b68aab1f21391a28195ff27c40b9541 Mon Sep 17 00:00:00 2001
 From: ci <ci@local>
-Date: Mon, 23 Nov 2026 06:34:03 +0800
-Subject: [PATCH] pb: scene4w
+Date: Mon, 23 Nov 2026 06:39:54 +0800
+Subject: [PATCH] pb: scene4x
 
 ---
  .gitattributes                                |    3 +
@@ -52,7 +52,7 @@ Subject: [PATCH] pb: scene4w
  .../phone/vscreen/SwitchPromptOverlay.kt      |  142 +
  .../dsh_app/phone/vscreen/TaskMover.kt        |  152 ++
  .../dsh_app/phone/vscreen/TransferBall.kt     |  460 ++++
- .../phone/vscreen/VirtualScreenOverlay.kt     | 2427 +++++++++++++++++
+ .../phone/vscreen/VirtualScreenOverlay.kt     | 2430 +++++++++++++++++
  .../phone/vscreen/VirtualScreenPlugin.kt      |  249 ++
  .../dsh_app/phone/vscreen/VscreenUi.kt        |  111 +
  .../ccch1mneyyy/dsh_app/runtime/GuestSetup.kt |   47 +-
@@ -131,7 +131,7 @@ Subject: [PATCH] pb: scene4w
  docs/wake-word.md                             |  107 +
  dsh-go-wake.patch                             | 2065 ++++++++++++++
  tooling/build-wake-apk.sh                     |   68 +
- 127 files changed, 16563 insertions(+), 557 deletions(-)
+ 127 files changed, 16566 insertions(+), 557 deletions(-)
  create mode 100644 .github/workflows/wake-apk.yml
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallForegroundService.kt
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallOverlay.kt
@@ -7349,10 +7349,10 @@ index 00000000..45ceccd0
 +}
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenOverlay.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenOverlay.kt
 new file mode 100644
-index 00000000..e0b65f20
+index 00000000..66804593
 --- /dev/null
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenOverlay.kt
-@@ -0,0 +1,2427 @@
+@@ -0,0 +1,2430 @@
 +package io.github.ccch1mneyyy.dsh_app.phone.vscreen
 +
 +import io.github.ccch1mneyyy.dsh_app.phone.PhoneRegistry
@@ -8505,6 +8505,9 @@ index 00000000..e0b65f20
 +            WakeTrace.log(
 +                "window: size-check box=${b?.width}x${b?.height} " +
 +                    "content=${content?.width}x${content?.height} lp=${params?.width}x${params?.height}")
++            // 窗口尺寸定了再算一遍侧栏让宽：形态切换时窗口宽度也变了，
++            // 只在 applyShape 里算一次会漏掉（4x）。
++            runCatching { params?.let { applyRailSide(area.screenW, it.x, it.width) } }
 +            // 窗口尺寸定了再算适配：画面完整放进窗口。
 +            applyFitTransform()
 +        }, 120)
@@ -8764,49 +8767,49 @@ index 00000000..e0b65f20
 +    private fun applyRailSide(screenW: Int, x: Int, w: Int) {
 +        val rail = railView ?: return
 +        val p = rail.layoutParams as? FrameLayout.LayoutParams ?: return
-+        // px 在这棵树里不是局部变量：密度从 rail 自己的资源里取（原补丁假设了一个外部 px，
-+        // 直接引用会编译不过 —— 这是补丁与本树的唯一差异点）。
 +        val density = rail.context.resources.displayMetrics.density
-+        // 参考系 = **屏幕中间线**（用户 04:4x）：窗口中心在左半屏 → 栏贴窗口右内边（END）；
-+        // 在右半屏 → 栏贴左内边（START）。24dp 死区内保持现状防抖。
-+        // 横竖屏同理：screenW 取自 area()，它读的是 currentWindowMetrics（随旋转变化），
-+        // 旋转后由 registerDisplayListener 里的 DisplayListener 重新调用本函数。
 +        val half = screenW / 2f
 +        val cx = x + w / 2f
 +        val dead = 24f * density
 +        val wantEnd = if (Math.abs(cx - half) <= dead) railSide == "end" else cx < half
-+        // 设计文档 §二：紧贴窗口内边、**间距 0**。原来这里写 4dp，会把建栏时的 0 覆盖回去。
-+        val margin = 0
-+        val right = if (wantEnd) margin else 0
-+        val left = if (wantEnd) 0 else margin
 +        val gravity = (if (wantEnd) Gravity.END else Gravity.START) or Gravity.CENTER_VERTICAL
-+        if (p.gravity == gravity && p.rightMargin == right && p.leftMargin == left) return
-+        p.gravity = gravity
-+        p.rightMargin = right
-+        p.leftMargin = left
-+        rail.layoutParams = p
-+        railSide = if (wantEnd) "end" else "start"
-+        rail.background = railFrame(density, endSide = wantEnd)
-+        // 【画面让宽跟着栏走】栏在右 → 画面右让；栏在左 → 画面左让。
-+        // 这样栏永远落在"画面外面那一条"，且两者左右相接、零间距（用户 05:3x）。
++        // 【4x】栏自己的参数只在换边时才改。以前这里早退把"画面让宽"一起跳过了：
++        // 建栏时 gravity 已经是 END、边距 0，第一轮就命中早退 → content 永远不内缩 →
++        // 栏画在整窗宽的画面上面，看起来就是"侧栏在虚拟屏里面"（真机 06:29 size-check
++        // box=861x1917 content=861x1917，而展开态画面应让出 46dp=161px）。
++        if (p.gravity != gravity || p.rightMargin != 0 || p.leftMargin != 0) {
++            p.gravity = gravity
++            p.rightMargin = 0
++            p.leftMargin = 0
++            rail.layoutParams = p
++            rail.background = railFrame(density, endSide = wantEnd)
++        }
++        val side = if (wantEnd) "end" else "start"
++        val sideChanged = side != railSide
++        railSide = side
++        // 画面让宽：栏在右 → 画面右让；栏在左 → 画面左让。和"栏有没有换边"无关，
++        // 每次都要保证（形态从 SMALL 变 EXPAND 时也得让）。
++        val rw = if (shape == Shape.EXPAND) (RAIL_W_DP * density).roundToInt() else 0
 +        runCatching {
 +            val c = content
 +            if (c != null) {
 +                val cp = c.layoutParams as? FrameLayout.LayoutParams
 +                if (cp != null) {
-+                    val rw = if (shape == Shape.EXPAND) (RAIL_W_DP * density).roundToInt() else 0
 +                    val right = if (wantEnd) rw else 0
 +                    val left = if (wantEnd) 0 else rw
 +                    if (cp.rightMargin != right || cp.leftMargin != left) {
 +                        cp.rightMargin = right
 +                        cp.leftMargin = left
 +                        c.layoutParams = cp
++                        WakeTrace.log(
++                            "window: rail inset side=$side rw=${rw / density}dp content=${c.width}x${c.height}")
 +                    }
 +                }
 +            }
 +        }
-+        WakeTrace.log("window: rail inset side=$railSide rw=${if (shape == Shape.EXPAND) RAIL_W_DP else 0}dp")
-+        WakeTrace.log("window: rail side=$railSide cx=${cx.toInt()} half=${half.toInt()}")
++        if (sideChanged) {
++            WakeTrace.log("window: rail side=$side cx=${cx.toInt()} half=${half.toInt()}")
++        }
 +    }
 +
 +    /** 窗口此刻在屏幕上的矩形；给切换球错位用。 */
