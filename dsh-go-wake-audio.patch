@@ -1,7 +1,7 @@
-From 46a27b77bc44bf11479be30706ae996370e98d4e Mon Sep 17 00:00:00 2001
+From 2f9179d14aa36f9ea0403fa6026a71ed3ccbe7b3 Mon Sep 17 00:00:00 2001
 From: ci <ci@local>
-Date: Mon, 23 Nov 2026 04:26:44 +0800
-Subject: [PATCH] pb: scene4n
+Date: Mon, 23 Nov 2026 04:34:46 +0800
+Subject: [PATCH] pb: scene4o
 
 ---
  .gitattributes                                |    3 +
@@ -29,7 +29,7 @@ Subject: [PATCH] pb: scene4n
  .../dsh_app/phone/a11y/PhoneA11yService.kt    |   20 +
  .../phone/background/BackgroundControl.kt     |  130 +-
  .../phone/background/BackgroundCoordinates.kt |    2 +
- .../phone/background/BackgroundDisplay.kt     |  259 +-
+ .../phone/background/BackgroundDisplay.kt     |  266 +-
  .../phone/background/BackgroundPolicy.kt      |    8 +-
  .../background/BackgroundProbeActivity.kt     |    4 +-
  .../phone/background/BackgroundTree.kt        |    4 +-
@@ -52,7 +52,7 @@ Subject: [PATCH] pb: scene4n
  .../phone/vscreen/SwitchPromptOverlay.kt      |  142 +
  .../dsh_app/phone/vscreen/TaskMover.kt        |  152 ++
  .../dsh_app/phone/vscreen/TransferBall.kt     |  460 ++++
- .../phone/vscreen/VirtualScreenOverlay.kt     | 2320 +++++++++++++++++
+ .../phone/vscreen/VirtualScreenOverlay.kt     | 2306 +++++++++++++++++
  .../phone/vscreen/VirtualScreenPlugin.kt      |  251 ++
  .../dsh_app/phone/vscreen/VscreenUi.kt        |  111 +
  .../ccch1mneyyy/dsh_app/runtime/GuestSetup.kt |   47 +-
@@ -131,7 +131,7 @@ Subject: [PATCH] pb: scene4n
  docs/wake-word.md                             |  107 +
  dsh-go-wake.patch                             | 2065 +++++++++++++++
  tooling/build-wake-apk.sh                     |   68 +
- 127 files changed, 16313 insertions(+), 553 deletions(-)
+ 127 files changed, 16306 insertions(+), 553 deletions(-)
  create mode 100644 .github/workflows/wake-apk.yml
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallForegroundService.kt
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallOverlay.kt
@@ -3467,7 +3467,7 @@ index f6b83a0a..2eb59f32 100644
          val result = receipt.takeIf { accepted && screen == screenId }
          clear()
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/BackgroundDisplay.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/BackgroundDisplay.kt
-index bc1810a3..02d6c16c 100644
+index bc1810a3..c60dedf6 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/BackgroundDisplay.kt
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/BackgroundDisplay.kt
 @@ -22,6 +22,7 @@ import io.github.ccch1mneyyy.dsh_app.phone.a11y.LocalOcrResult
@@ -3548,7 +3548,7 @@ index bc1810a3..02d6c16c 100644
                  putBoolean(Proto.LOCAL_VISUAL, true)
                  putInt(Proto.WANT_IMAGE, 0)
              }
-@@ -126,7 +159,19 @@ class BackgroundDisplay internal constructor(
+@@ -126,7 +159,26 @@ class BackgroundDisplay internal constructor(
                  }) { Reasons.of("deviceUnavailable") }
              }
              onResourceReady(active)
@@ -3564,12 +3564,19 @@ index bc1810a3..02d6c16c 100644
 +            lastOpenTaskId = response.getInt(Proto.TASK_ID, 0)
 +            lastOpenDisplayId = (response.get(Proto.DISPLAY_ID) as? Int) ?: 0
 +            lastOpenPkgDisplay = (response.get("pkgDisplay") as? Int) ?: 0
++            // 【账本】open 成功 = 这个 owner 现在活在虚拟屏上，必须清掉"在主机上"的旧标记。
++            // 真机 04:30 现场：04:01 任务被搬回主屏时 markOnMain 置了标记，04:30 搬回虚拟屏后没人清，
++            // 于是 VsreenTaskMark.isOnMain=true → vscreenTaskAlive=false → hasTask=false
++            // → ui-rule 恒判 none → 窗口/黄条全被收掉，用户看到"都跑后台去了"（实际应用还在虚拟屏上跑）。
++            if (response.getBoolean(Proto.OK)) {
++                io.github.ccch1mneyyy.dsh_app.phone.VsreenTaskMark.markOnVirtual(ownerToken)
++            }
 +            lastOpenMoveRefused = response.getString("moveRefused")
 +            val result = toResult(response, target, "已在虚拟屏打开") // l10n:keep agent screen protocol
              result.copy(backgroundOpenConfirmed = result.ok && TargetIdentity.backgroundOpenConfirmed(target,
                  response.get(Proto.OK), response.get(Proto.BACKGROUND_OPEN_EVIDENCE), response.get(Proto.DISPLAY_ID),
                  response.get(Proto.TARGET_IDENTITY_VERSION), response.get(Proto.PKG), response.get(Proto.TARGET_UID)))
-@@ -165,6 +210,11 @@ class BackgroundDisplay internal constructor(
+@@ -165,6 +217,11 @@ class BackgroundDisplay internal constructor(
              throw e
          }
          requireObservation(response.getBoolean(Proto.OK), response.getString(Proto.ERROR), response.getString(Proto.ERROR_DETAIL))
@@ -3581,7 +3588,7 @@ index bc1810a3..02d6c16c 100644
          val shown = shownApp(response) ?: return emptySnapshot(response)
          // Local OCR follows the app actually read, under that app's own permission.
          val local = if (requestLocalText) readLocalText(response, shown, ocrEpoch, started) else null
-@@ -345,7 +395,7 @@ class BackgroundDisplay internal constructor(
+@@ -345,7 +402,7 @@ class BackgroundDisplay internal constructor(
          val peer = resourceIo.peer()
          if (step.relation != relation || target == null || peer == null || !navigationSupported ||
              target.packageName != step.app.packageName || target.uid != step.app.uid || !existingReplayTarget(target))
@@ -3590,7 +3597,7 @@ index bc1810a3..02d6c16c 100644
          val request = navigationRequest(step, null)
          val parsed = checkNotNull(BackgroundNavigationProtocol.request(request.keySet(), request::get))
          val response = dispatch({ navigationCurrent(target, peer) }) {
-@@ -449,10 +499,10 @@ class BackgroundDisplay internal constructor(
+@@ -449,10 +506,10 @@ class BackgroundDisplay internal constructor(
          val started = if (afterVisualSupported) SystemClock.uptimeMillis() else 0L
          val epoch = localOcr?.enabledEpoch()
          // l10n:keep agent screen protocol
@@ -3603,7 +3610,7 @@ index bc1810a3..02d6c16c 100644
          }
          // Explicit element ids are checked by PhoneCore before perform; collect owns its internal scrolls.
          if (action is PhoneAction.Scroll && action.elementId == null && action.screenId != lastScreenId) {
-@@ -502,7 +552,150 @@ class BackgroundDisplay internal constructor(
+@@ -502,7 +559,150 @@ class BackgroundDisplay internal constructor(
              dispatch(allowed) { OwnerScopeProtocol.execute(channel(), ownerToken, request, it) }
          } catch (error: Exception) { clearSnapshot(); throw error }
              ?: return ActionResult(false, PhoneTasks.STOPPED_MESSAGE)
@@ -3755,7 +3762,7 @@ index bc1810a3..02d6c16c 100644
      }
  
      /**
-@@ -573,8 +766,44 @@ class BackgroundDisplay internal constructor(
+@@ -573,8 +773,44 @@ class BackgroundDisplay internal constructor(
  
      override fun foregroundPackage(): String? = currentTarget?.packageName
  
@@ -3800,7 +3807,7 @@ index bc1810a3..02d6c16c 100644
          val acknowledged = try {
              resourceIo.release { pinned -> OwnerScopeProtocol.release(pinned, ownerToken) }
          } catch (_: Exception) { false }
-@@ -659,7 +888,7 @@ class BackgroundDisplay internal constructor(
+@@ -659,7 +895,7 @@ class BackgroundDisplay internal constructor(
              clearSnapshot()
              val now = response.getString(Proto.FG_PKG)
              // l10n:keep agent target identity
@@ -3809,7 +3816,7 @@ index bc1810a3..02d6c16c 100644
              return ActionResult(false, Reasons.withDetail(message, detail), staleSnapshot = true)
          }
          if (!ok) clearSnapshot()
-@@ -693,13 +922,13 @@ class BackgroundDisplay internal constructor(
+@@ -693,13 +929,13 @@ class BackgroundDisplay internal constructor(
          if (response.getBoolean(Proto.SECURE)) {
              lastScreenId = id; lastElements = emptyList(); previousLabels = emptySet()
              // l10n:keep agent screen protocol
@@ -3825,7 +3832,7 @@ index bc1810a3..02d6c16c 100644
              return@commitObservation ScreenSnapshot(id, text, appLabel, pkg, secure = false, poorTree = true, readPackages = setOf(pkg))
          }
          val elements = buildElements(response, markNew)
-@@ -789,14 +1018,14 @@ class BackgroundDisplay internal constructor(
+@@ -789,14 +1025,14 @@ class BackgroundDisplay internal constructor(
          if (opened.packageName == shown.packageName) return ""
          val name = appLabel?.let { "「$it」（${shown.packageName}）" } ?: shown.packageName
          // l10n:keep agent target identity
@@ -3842,7 +3849,7 @@ index bc1810a3..02d6c16c 100644
          // l10n:keep agent target identity
          "closed" -> "；${openedTarget?.packageName} 已经退出，需要时重新打开"
          else -> ""
-@@ -810,7 +1039,7 @@ class BackgroundDisplay internal constructor(
+@@ -810,7 +1046,7 @@ class BackgroundDisplay internal constructor(
          val id = "b${++counter}"
          lastScreenId = id; lastElements = emptyList(); previousLabels = emptySet()
          // l10n:keep agent target identity
@@ -3851,7 +3858,7 @@ index bc1810a3..02d6c16c 100644
              // l10n:keep agent target identity
              "。可以用 open 重新打开应用。", null, null)
      }
-@@ -821,7 +1050,7 @@ class BackgroundDisplay internal constructor(
+@@ -821,7 +1057,7 @@ class BackgroundDisplay internal constructor(
          val id = "b${++counter}"
          lastScreenId = id; lastElements = emptyList()
          // l10n:keep agent screen protocol
@@ -6333,7 +6340,7 @@ index 00000000..fba46794
 +}
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/PresentationHost.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/PresentationHost.kt
 new file mode 100644
-index 00000000..660d4275
+index 00000000..a0c550da
 --- /dev/null
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/PresentationHost.kt
 @@ -0,0 +1,69 @@
@@ -6358,7 +6365,7 @@ index 00000000..660d4275
 + *
 + * 用法：
 + *   val host = PresentationHost(context, virtualDisplay) { contentView -> … }
-+ *   host.show(viewGroup)   // 挂到悬浮窗容器上
++ *   host.show(viewGroup)   // 挂到虚拟屏窗口的容器上
 + *   host.dismiss()         // 卸载
 + */
 +class PresentationHost(
@@ -6380,7 +6387,7 @@ index 00000000..660d4275
 +        setBackgroundColor(Color.rgb(8, 10, 18))
 +    }
 +
-+    /** 在 [display] 上显示整块虚拟屏。[radiusPx] 与悬浮窗圆角保持一致。 */
++    /** 在 [display] 上显示整块虚拟屏。[radiusPx] 与虚拟屏窗口圆角保持一致。 */
 +    fun show(parent: ViewGroup, radiusPx: Float) {
 +        dismiss()
 +        val shell = contentShell(radiusPx)
@@ -6714,7 +6721,7 @@ index 00000000..19aecfea
 +}
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/TransferBall.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/TransferBall.kt
 new file mode 100644
-index 00000000..50b681e9
+index 00000000..ad26ed08
 --- /dev/null
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/TransferBall.kt
 @@ -0,0 +1,460 @@
@@ -6804,7 +6811,7 @@ index 00000000..50b681e9
 +    private val watch = object : Runnable {
 +        override fun run() {
 +            // 球只跟"任务"绑定，不跟"前台应用"绑定（用户 15:3x 实测：球的显隐会跟着
-+            // AI 的悬浮窗一起变，就是因为在读主屏前台包名）。显隐完全由上层按任务算好后
++            // AI 的虚拟屏窗口一起变，就是因为在读主屏前台包名）。显隐完全由上层按任务算好后
 +            // 通过 setWanted 下发，这里只负责把它画出来或收起来。
 +            val context = appContext ?: return
 +            // 窗口可见时不许挂黄条：验收要求"窗口可见就没有球"。wanted 留住，
@@ -7180,10 +7187,10 @@ index 00000000..50b681e9
 +}
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenOverlay.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenOverlay.kt
 new file mode 100644
-index 00000000..8a13fe31
+index 00000000..33e2cdc9
 --- /dev/null
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenOverlay.kt
-@@ -0,0 +1,2320 @@
+@@ -0,0 +1,2306 @@
 +package io.github.ccch1mneyyy.dsh_app.phone.vscreen
 +
 +import io.github.ccch1mneyyy.dsh_app.phone.PhoneRegistry
@@ -7262,8 +7269,6 @@ index 00000000..8a13fe31
 +    private const val KEY_ASPECT = "aspect"
 +
 +    private const val SLIVER_W = 16f
-+    /** 侧边栏宽度（端到端留白，含 44dp 热区）。展开态画面右侧让出这一段。 */
-+    private const val RAIL_WIDTH_DP = 48f
 +    private const val SLIVER_H = 56f
 +    private const val SMALL_W = 110f
 +    private const val EXPAND_W = 200f
@@ -8343,23 +8348,11 @@ index 00000000..8a13fe31
 +        // INVISIBLE, not GONE: a GONE SurfaceView destroys its surface, and the display would
 +        // have to be re-attached every time the window parks.
 +        content?.visibility = if (next == Shape.SLIVER) View.INVISIBLE else View.VISIBLE
-+        // 【侧边栏】v3.4（用户 04:2x）：键区必须与画面分离——展开态给右侧留出栏宽，
-+        // 画面不铺到栏下面，点键也不会落到画面/应用上（防误触）。
-+        // 小窗态没有键，画面铺满。
-+        runCatching {
-+            val c = content
-+            if (c != null) {
-+                val p = c.layoutParams as? FrameLayout.LayoutParams
-+                if (p != null) {
-+                    val railW = if (next == Shape.EXPAND) (RAIL_WIDTH_DP * px).roundToInt() else 0
-+                    if (p.rightMargin != railW) {
-+                        p.rightMargin = railW
-+                        c.layoutParams = p
-+                    }
-+                }
-+            }
-+            if (railView != null) railView?.setBackgroundColor(if (next == Shape.EXPAND) 0xE6141A22.toInt() else 0)
-+        }
++        // 【撤销】这里曾按我自己发明的"侧边栏分离"给画面让出 48dp 并把栏底涂成不透明。
++        // 那是胡编的：《设计参数-侧边栏与虚拟屏.md》§二 明确写的是
++        //   宽度 46dp / 高度等于窗口高度 / 紧贴窗口内边 / **条框透明仅 1px 描边**
++        // 条框是透明的，不该由我改成不透明，也不该擅自改动画面宽度。
++        // 侧边栏按该文档 §二 实现，另开一条改动做，不夹在这里。
 +        // 小窗只有画面：一颗键都不放（用户 16:40 要求）。点一下变大，键才出来。
 +        backKey?.visibility = if (next == Shape.EXPAND) View.VISIBLE else View.GONE
 +        // 底部一排（⇄ 切主屏 / ⛶ 全屏与回中窗）：展开和全屏都有；小窗、竖条没有（用户 19:25）。
@@ -8588,9 +8581,9 @@ index 00000000..8a13fe31
 +        }
 +
 +    /** 还原：回到标准小窗（1.0×），档位清零——避免"越按越小/越按越大"累积漂移。 */
-+    /** 还原：回 L0（默认悬浮窗尺寸）。 */
++    /** 还原：v3.4 起为"回到初始的虚拟屏"，见下方 zoomReset()。 */
 +    /**
-+     * 【↺ 还原】v3.4 语义变更（用户 04:2x 拍板）：**直接还原到未展开态（悬浮窗 SMALL）**，
++     * 【↺ 还原】v3.4 语义变更（用户 04:2x 拍板）：**直接还原到初始的虚拟屏（SMALL）**，
 +     * 不再只是把缩放回 L0。展开态内的放大/缩小只由 + / − 调整。
 +     * 判据：`window: reset -> small`，随后 `window: shape=SMALL`（七颗键同时隐藏）。
 +     */
@@ -9506,7 +9499,7 @@ index 00000000..8a13fe31
 +}
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenPlugin.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenPlugin.kt
 new file mode 100644
-index 00000000..52076942
+index 00000000..8f4fece7
 --- /dev/null
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenPlugin.kt
 @@ -0,0 +1,251 @@
@@ -9523,7 +9516,7 @@ index 00000000..52076942
 +import io.flutter.plugin.common.MethodChannel
 +
 +/**
-+ * 虚拟屏 悬浮窗 的通道。
++ * 虚拟屏窗口（初始的虚拟屏 / 展开的虚拟屏）的通道。
 + *
 + *   dsh/virtual-screen  show { taskId } -> bool · hide · frame { bytes } -> bool
 + *   dsh/virtual-screen  wantsFrames -> bool
