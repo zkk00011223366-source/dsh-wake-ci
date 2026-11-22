@@ -1,7 +1,7 @@
-From 7e3b33d1a19f382d1757bd7b1fba107897d8f3aa Mon Sep 17 00:00:00 2001
+From f5398ce1f792372fd6e74d155a35a2b6cce2a82e Mon Sep 17 00:00:00 2001
 From: ci <ci@local>
-Date: Sun, 22 Nov 2026 20:03:00 +0800
-Subject: [PATCH] pb: scene3y
+Date: Sun, 22 Nov 2026 20:51:12 +0800
+Subject: [PATCH] pb: scene3z
 
 ---
  .gitattributes                                |    3 +
@@ -15,15 +15,16 @@ Subject: [PATCH] pb: scene3y
  .../dsh_app/notify/NotifyPlugin.kt            |    5 +-
  .../dsh_app/phone/PhoneAndroidShell.kt        |   10 +-
  .../dsh_app/phone/PhoneBackGuard.kt           |  146 ++
- .../dsh_app/phone/PhoneContracts.kt           |  144 ++
+ .../dsh_app/phone/PhoneContracts.kt           |  155 ++
  .../ccch1mneyyy/dsh_app/phone/PhoneControl.kt |  100 +-
- .../ccch1mneyyy/dsh_app/phone/PhoneCore.kt    |  420 +++-
+ .../ccch1mneyyy/dsh_app/phone/PhoneCore.kt    |  455 +++-
  .../ccch1mneyyy/dsh_app/phone/PhonePlugin.kt  |  362 +++
  .../dsh_app/phone/PhoneTaskSessions.kt        |   33 +-
  .../ccch1mneyyy/dsh_app/phone/PhoneTasks.kt   |   32 +
  .../dsh_app/phone/PhoneToolCatalog.kt         |   35 +-
  .../ccch1mneyyy/dsh_app/phone/SafetyGate.kt   |    4 +-
  .../dsh_app/phone/SingleInstanceApps.kt       |   27 +
+ .../dsh_app/phone/SystemActions.kt            |    7 +-
  .../dsh_app/phone/a11y/ControlOverlay.kt      |   11 +-
  .../dsh_app/phone/a11y/PhoneA11yService.kt    |   20 +
  .../phone/background/BackgroundControl.kt     |  117 +-
@@ -43,7 +44,7 @@ Subject: [PATCH] pb: scene3y
  .../phone/background/PrivilegedDisplayHost.kt |    6 +-
  .../phone/background/PrivilegedProtocol.kt    |   83 +-
  .../dsh_app/phone/skills/PhoneSkillDraft.kt   |    2 +-
- .../phone/vscreen/CloseActionReceiver.kt      |   62 +
+ .../phone/vscreen/CloseActionReceiver.kt      |   73 +
  .../phone/vscreen/DisplayFrameGeometry.kt     |   21 +
  .../dsh_app/phone/vscreen/FrameMath.kt        |   60 +
  .../phone/vscreen/PlaceholderActivity.kt      |   29 +
@@ -130,7 +131,7 @@ Subject: [PATCH] pb: scene3y
  docs/wake-word.md                             |  107 +
  dsh-go-wake.patch                             | 2065 ++++++++++++++++
  tooling/build-wake-apk.sh                     |   68 +
- 126 files changed, 15561 insertions(+), 551 deletions(-)
+ 127 files changed, 15624 insertions(+), 552 deletions(-)
  create mode 100644 .github/workflows/wake-apk.yml
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallForegroundService.kt
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallOverlay.kt
@@ -1350,7 +1351,7 @@ index 0000000..175e47b
 +    }
 +}
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneContracts.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneContracts.kt
-index 612f94d..42976e0 100644
+index 612f94d..32683ae 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneContracts.kt
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneContracts.kt
 @@ -220,6 +220,13 @@ interface PhoneDriver {
@@ -1367,7 +1368,7 @@ index 612f94d..42976e0 100644
  }
  
  data class ConfirmRequest(
-@@ -346,13 +353,150 @@ interface ControlListener {
+@@ -346,13 +353,161 @@ interface ControlListener {
      fun onAccessibilityChanged(connected: Boolean) {}
  }
  
@@ -1514,6 +1515,17 @@ index 612f94d..42976e0 100644
 +     * 之前这两个动作回给 Dart，App 在后台时没人接，点了没反应（问题#3）。
 +     */
 +    @Volatile var ballAction: ((String) -> Boolean)? = null
++
++    /**
++     * 主屏 open 的 launch flags 档位（真机 A/B 用，DEBUG_VS 可切）。
++     * false = 现状：NEW_TASK | RESET_TASK_IF_NEEDED。
++     * true  = 只加 NEW_TASK，不重置目标任务栈。
++     * 只在 SystemActions.prepareLaunch（主屏/系统启动）上生效，虚拟屏启动不走这里。
++     */
++    @Volatile var launchNoResetTask: Boolean = false
++
++    /** 主屏 open 的时间线探针（step=post1s/post3s）。默认关，免得每次打开多等 3 秒。 */
++    @Volatile var mainOpenTimelineProbe: Boolean = false
 +
      /** Overlay gate when the accessibility service runs, else the notification gate. */
      @Volatile var overlayGate: UserGate? = null
@@ -1680,7 +1692,7 @@ index 2fc7cd5..35689c0 100644
      }
  
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneCore.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneCore.kt
-index 6c70185..18027fb 100644
+index 6c70185..e5e1430 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneCore.kt
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneCore.kt
 @@ -1,9 +1,12 @@
@@ -1878,7 +1890,7 @@ index 6c70185..18027fb 100644
          if (env.isLocked()) return locked("open")
          val plan = checkNotNull(call.launch)
          if (url != null) {
-@@ -543,6 +606,8 @@ class PhoneCore(
+@@ -543,12 +606,15 @@ class PhoneCore(
          // An explicit package is still subject to app rules even when its handler UID is unknown.
          val app = (plan.target as? SystemTarget.Known)?.app
              ?: checkNotNull(call.requestedApp)
@@ -1887,8 +1899,21 @@ index 6c70185..18027fb 100644
          safety.checkOpen(app.packageName, app.label)?.let {
              return Out(it.message, error = true, app = app.label, summary = ui.get("phone_log_open_app", "打开 %1\$s", app.packageName), decision = "refused:${it.rule}") // l10n:keep test default
          }
-@@ -558,30 +623,48 @@ class PhoneCore(
+         if (!background) {
+             if (!tasks.isCurrent(owner) || Thread.currentThread().isInterrupted) return stoppedOut("open")
+             val summary = ui.get("phone_log_open_app", "打开 %1\$s", app.packageName) // l10n:keep test default
++            mainOpenProbe("grant", app.packageName, owner)
+             confirmSystem(plan, scope, owner, summary)?.let { return it }
+             val ticket = skillTrace.beginOpen(owner, PhoneScreen.MAIN)
+             val result = try {
+@@ -556,32 +622,54 @@ class PhoneCore(
+                     skillTrace.finish(ticket, it.ok, false, false)
+                 }
              } catch (e: Throwable) { skillTrace.fail(ticket); throw e }
++            // 必须在 launchSystem 返回之后打：放在它之前等于又测了一次"启动前"，
++            // 与 step=grant 没有区分度，回答不了"是不是 launch 把前台压走了"。
++            mainOpenProbe("launch", app.packageName, owner)
++            mainOpenTimeline(app.packageName, owner)
              return afterSystem(owner, scope, result, summary)
          }
 -        val driver = env.driver(PhoneScreen.BACKGROUND, owner)
@@ -1944,7 +1969,7 @@ index 6c70185..18027fb 100644
              driver.open(app.identity) {
                  if (!current(owner) || openRefusal.get() != null) false else {
                      safety.checkOpen(app.packageName, app.label)?.let { openRefusal.compareAndSet(null, it) }
-@@ -589,17 +672,110 @@ class PhoneCore(
+@@ -589,17 +677,140 @@ class PhoneCore(
                  }
              }
          }
@@ -2032,6 +2057,36 @@ index 6c70185..18027fb 100644
 +                (outcome?.line ?: "ok=false reason=shellUnavailable"))
 +    }
 +
++    /**
++     * 主屏"先回桌面"取证（总表 §9-1）。判据：
++     * `open: main step=grant|launch|post1s|post3s front=… task=… pkg=… flags=…`
++     *
++     * front 来自主屏无障碍驱动读到的前台包名，读不到写 unknown。
++     * task 普通进程读不到别家任务的 taskId，恒写 `-`；要真值必须扩 IPC，另开一包。
++     * flags 记录本次实际用的档位，用来确认 A/B 切换真的生效。
++     */
++    private fun mainOpenProbe(step: String, pkg: String, owner: PhoneTasks.Owner) {
++        val front = runCatching { env.driver(PhoneScreen.MAIN, owner)?.foregroundPackage() }.getOrNull()
++        val flags = if (io.github.ccch1mneyyy.dsh_app.phone.PhoneRegistry.launchNoResetTask) "plain" else "reset"
++        io.github.ccch1mneyyy.dsh_app.wake.WakeTrace.log(
++            "open: main step=$step front=${front ?: "unknown"} task=- pkg=$pkg flags=$flags")
++    }
++    /**
++     * 时间线档探针：只有 `DEBUG_VS --es op probe --es value on` 时才跑。
++     * 默认关——开了每次主屏打开会多等 3 秒，那是取证成本，不该进常态。
++     */
++    private fun mainOpenTimeline(pkg: String, owner: PhoneTasks.Owner) {
++        if (!io.github.ccch1mneyyy.dsh_app.phone.PhoneRegistry.mainOpenTimelineProbe) return
++        try {
++            for ((step, delay) in listOf("post1s" to 1000L, "post3s" to 2000L)) {
++                env.sleep(delay)
++                if (!current(owner)) return
++                mainOpenProbe(step, pkg, owner)
++            }
++        } catch (_: InterruptedException) {
++            Thread.currentThread().interrupt()
++        }
++    }
 +    /** 虚拟屏里启动前预授权：失败静默（没有 shell 通道时权限弹窗仍会出现）。 */
 +    private fun grantBeforeVirtualOpen(pkg: String, owner: PhoneTasks.Owner) {
 +        val shell = env.androidShell() ?: return
@@ -2057,7 +2112,7 @@ index 6c70185..18027fb 100644
      }
  
      /** The handler is a dispatch fact. Only the following read describes the actual foreground UI. */
-@@ -816,8 +992,145 @@ class PhoneCore(
+@@ -816,8 +1027,145 @@ class PhoneCore(
          return Either.Right(d)
      }
  
@@ -2203,7 +2258,7 @@ index 6c70185..18027fb 100644
      /** Admission uses the same argument coercion and routing as the actual tool body. */
      fun requiredScreens(name: String, args: Map<String, Any?>): Either<String, List<PhoneScreen>> {
          return requiredScreens(name, Args(args))
-@@ -825,10 +1138,11 @@ class PhoneCore(
+@@ -825,10 +1173,11 @@ class PhoneCore(
  
      private fun requiredScreens(name: String, a: Args): Either<String, List<PhoneScreen>> {
          return when (name) {
@@ -2218,7 +2273,7 @@ index 6c70185..18027fb 100644
              // Arbitrary system commands take the main/global unknown-app lease, without reading a screen.
              PhoneToolCatalog.INTENT, PhoneToolCatalog.ANDROID_SHELL -> Either.Right(listOf(PhoneScreen.MAIN))
              PhoneToolCatalog.HANDOFF -> Either.Right(if (lastScreen == PhoneScreen.BACKGROUND)
-@@ -852,7 +1166,7 @@ class PhoneCore(
+@@ -852,7 +1201,7 @@ class PhoneCore(
          if (id == null) return Either.Left("缺少 $parameterName（屏幕号，如 s7）。先调用 screen 拿到屏幕号。")
          return PhoneScreen.ofScreenId(id)?.let { Either.Right(it) }
              // l10n:keep agent tool result
@@ -2227,7 +2282,7 @@ index 6c70185..18027fb 100644
      }
  
      private fun locked(summary: String) =
-@@ -871,21 +1185,29 @@ class PhoneCore(
+@@ -871,21 +1220,29 @@ class PhoneCore(
  
      private fun screen(a: Args, owner: PhoneTasks.Owner): Out {
          if (!current(owner)) return stoppedOut("screen")
@@ -2263,7 +2318,7 @@ index 6c70185..18027fb 100644
          return Out(
              // l10n:keep agent tool result
              if (refused) "没有读取这个屏幕的内容。" else "",
-@@ -897,6 +1219,40 @@ class PhoneCore(
+@@ -897,6 +1254,40 @@ class PhoneCore(
          )
      }
  
@@ -2304,7 +2359,7 @@ index 6c70185..18027fb 100644
      private fun collect(a: Args, owner: PhoneTasks.Owner): Out {
          if (!current(owner)) return stoppedOut("collect")
          val sid = a.str("screen")
-@@ -1362,6 +1718,7 @@ class PhoneCore(
+@@ -1362,6 +1753,7 @@ class PhoneCore(
          summary = summary, decision = "stopped")
  
      companion object {
@@ -2312,7 +2367,7 @@ index 6c70185..18027fb 100644
          internal const val REPLAY = "replay"
          internal const val FOCUS_TEXT = "focus_text"
  
-@@ -1370,6 +1727,9 @@ class PhoneCore(
+@@ -1370,6 +1762,9 @@ class PhoneCore(
          const val PAUSE_WAIT_MS = 600_000L
          const val HANDOFF_MS = 600_000L
  
@@ -3026,6 +3081,24 @@ index 0000000..c5fe721
 +        else -> null
 +    }
 +}
+diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/SystemActions.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/SystemActions.kt
+index d98fd4d..c1183b4 100644
+--- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/SystemActions.kt
++++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/SystemActions.kt
+@@ -161,7 +161,12 @@ class SystemActions(private val app: Context) : SystemApi {
+         if (intent == null) prepareFailed() else {
+             // Launcher Intents need not match CATEGORY_DEFAULT. Keep the PM's exact launcher.
+             intent.setPackage(app.packageName)
+-            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED)
++            // 主屏“先回桌面”A/B：DEBUG_VS --es op launchflags --es value plain 可关掉重置位。
++            // 默认仍是现状；取证结束后把这里改回常量即可。
++            intent.addFlags(
++                if (io.github.ccch1mneyyy.dsh_app.phone.PhoneRegistry.launchNoResetTask)
++                    Intent.FLAG_ACTIVITY_NEW_TASK
++                else Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED)
+             prepare(intent, AppStrings.get(this.app, R.string.phone_notice_open_app, app.label),
+                 flags = 0, allowChoice = false)
+         }
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/a11y/ControlOverlay.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/a11y/ControlOverlay.kt
 index 5c017e4..b9ce9e1 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/a11y/ControlOverlay.kt
@@ -5557,10 +5630,10 @@ index 2857cee..4138076 100644
                  append("   核对 {{check_").append(n).append("}}，不能只凭工具返回正常判断业务完成。历史记录仅表明请求已交给驱动/系统并返回接受；")
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/CloseActionReceiver.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/CloseActionReceiver.kt
 new file mode 100644
-index 0000000..45ab07b
+index 0000000..033bf8b
 --- /dev/null
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/CloseActionReceiver.kt
-@@ -0,0 +1,62 @@
+@@ -0,0 +1,73 @@
 +package io.github.ccch1mneyyy.dsh_app.phone.vscreen
 +
 +import android.content.BroadcastReceiver
@@ -5609,6 +5682,17 @@ index 0000000..45ab07b
 +            "eye", "swap" -> runCatching { PhoneRegistry.ballAction?.invoke(op) == true }.getOrDefault(false)
 +            "show", "hide", "close" -> runCatching {
 +                PhoneRegistry.vscreenUiApply?.invoke(if (op == "hide" || op == "close") "none" else "window")
++                true
++            }.getOrDefault(false)
++            // 主屏“先回桌面”取证用（真机 A/B）：
++            //   am broadcast -a …DEBUG_VS --es op launchflags --es value plain|reset
++            //   am broadcast -a …DEBUG_VS --es op probe --es value on|off
++            "launchflags" -> runCatching {
++                PhoneRegistry.launchNoResetTask = intent.getStringExtra("value").equals("plain", ignoreCase = true)
++                true
++            }.getOrDefault(false)
++            "probe" -> runCatching {
++                PhoneRegistry.mainOpenTimelineProbe = intent.getStringExtra("value").equals("on", ignoreCase = true)
 +                true
 +            }.getOrDefault(false)
 +            else -> false
