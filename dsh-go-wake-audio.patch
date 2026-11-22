@@ -1,7 +1,7 @@
-From 205bb666f519269a15b54c8cb0f4529abc179ac4 Mon Sep 17 00:00:00 2001
+From 3134754d68b865ca9ea67fce16c5d67d8c606081 Mon Sep 17 00:00:00 2001
 From: ci <ci@local>
-Date: Mon, 23 Nov 2026 05:31:10 +0800
-Subject: [PATCH] pb: scene4t
+Date: Mon, 23 Nov 2026 05:39:24 +0800
+Subject: [PATCH] pb: scene4u
 
 ---
  .gitattributes                                |    3 +
@@ -52,7 +52,7 @@ Subject: [PATCH] pb: scene4t
  .../phone/vscreen/SwitchPromptOverlay.kt      |  142 +
  .../dsh_app/phone/vscreen/TaskMover.kt        |  152 ++
  .../dsh_app/phone/vscreen/TransferBall.kt     |  460 ++++
- .../phone/vscreen/VirtualScreenOverlay.kt     | 2395 +++++++++++++++++
+ .../phone/vscreen/VirtualScreenOverlay.kt     | 2422 +++++++++++++++++
  .../phone/vscreen/VirtualScreenPlugin.kt      |  251 ++
  .../dsh_app/phone/vscreen/VscreenUi.kt        |  111 +
  .../ccch1mneyyy/dsh_app/runtime/GuestSetup.kt |   47 +-
@@ -116,7 +116,7 @@ Subject: [PATCH] pb: scene4t
  app/lib/ui/phone/virtual_screen_host.dart     |  397 +++
  app/lib/ui/phone/virtual_screen_page.dart     |  114 +
  app/lib/ui/phone/virtual_screen_surface.dart  |  286 ++
- app/lib/ui/settings/voice_settings_page.dart  |  151 ++
+ app/lib/ui/settings/voice_settings_page.dart  |  151 +
  app/lib/ui/shell/call_overlay_host.dart       |   55 +
  app/lib/ui/shell/home_shell.dart              |    7 +
  app/lib/ui/shell/system_entry_host.dart       |   44 +
@@ -131,7 +131,7 @@ Subject: [PATCH] pb: scene4t
  docs/wake-word.md                             |  107 +
  dsh-go-wake.patch                             | 2065 ++++++++++++++
  tooling/build-wake-apk.sh                     |   68 +
- 127 files changed, 16473 insertions(+), 554 deletions(-)
+ 127 files changed, 16500 insertions(+), 554 deletions(-)
  create mode 100644 .github/workflows/wake-apk.yml
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallForegroundService.kt
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallOverlay.kt
@@ -6809,7 +6809,7 @@ index 00000000..19aecfea
 +}
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/TransferBall.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/TransferBall.kt
 new file mode 100644
-index 00000000..ad26ed08
+index 00000000..45ceccd0
 --- /dev/null
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/TransferBall.kt
 @@ -0,0 +1,460 @@
@@ -6857,8 +6857,8 @@ index 00000000..ad26ed08
 +    private const val PREFS = "transfer_ball"
 +    private const val KEY_SIDE = "side"
 +    private const val KEY_FRACTION = "fraction"
-+    private const val SLIVER_W = 16f
-+    private const val SLIVER_H = 56f
++    private const val SLIVER_W = 20f
++    private const val SLIVER_H = 200f
 +    private const val BALL = 44f
 +
 +    /** §14: the ball folds back on its own after this long. */
@@ -7275,10 +7275,10 @@ index 00000000..ad26ed08
 +}
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenOverlay.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenOverlay.kt
 new file mode 100644
-index 00000000..d200b74c
+index 00000000..4eda1bf0
 --- /dev/null
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenOverlay.kt
-@@ -0,0 +1,2395 @@
+@@ -0,0 +1,2422 @@
 +package io.github.ccch1mneyyy.dsh_app.phone.vscreen
 +
 +import io.github.ccch1mneyyy.dsh_app.phone.PhoneRegistry
@@ -7356,8 +7356,10 @@ index 00000000..d200b74c
 +    private const val KEY_ZOOM = "zoom"
 +    private const val KEY_ASPECT = "aspect"
 +
-+    private const val SLIVER_W = 16f
-+    private const val SLIVER_H = 56f
++    private const val SLIVER_W = 20f
++    /** 侧边栏宽度（用户 05:3x：栏在画面右侧外面，左边贴着画面右边）。 */
++    private const val RAIL_W_DP = 46f
++    private const val SLIVER_H = 200f
 +    private const val SMALL_W = 110f
 +    private const val EXPAND_W = 200f
 +
@@ -8374,7 +8376,8 @@ index 00000000..d200b74c
 +        if (shape == Shape.SLIVER) {
 +            return (SLIVER_W * px).roundToInt() to (SLIVER_H * px).roundToInt()
 +        }
-+        val target = if (shape == Shape.SMALL) SMALL_W else EXPAND_W
++        // 展开态：宽度额外加出侧栏（栏在画面右侧外面，用户 05:3x）
++        val target = if (shape == Shape.SMALL) SMALL_W else EXPAND_W + RAIL_W_DP
 +        val a = aspect()
 +        var w = target * z
 +        var h = w * a
@@ -8488,11 +8491,11 @@ index 00000000..d200b74c
 +        // INVISIBLE, not GONE: a GONE SurfaceView destroys its surface, and the display would
 +        // have to be re-attached every time the window parks.
 +        content?.visibility = if (next == Shape.SLIVER) View.INVISIBLE else View.VISIBLE
-+        // 【撤销】这里曾按我自己发明的"侧边栏分离"给画面让出 48dp 并把栏底涂成不透明。
-+        // 那是胡编的：《设计参数-侧边栏与虚拟屏.md》§二 明确写的是
-+        //   宽度 46dp / 高度等于窗口高度 / 紧贴窗口内边 / **条框透明仅 1px 描边**
-+        // 条框是透明的，不该由我改成不透明，也不该擅自改动画面宽度。
-+        // 侧边栏按该文档 §二 实现，另开一条改动做，不夹在这里。
++        // 【侧边栏在画面外面】用户 05:3x 明确：栏的左边要贴着画面的右边、栏不在画面里。
++        // 做法：窗口宽度在展开态额外加出栏宽，画面右让 RAIL_W_DP，栏就落在画面右侧那条空档里。
++        // 画面让出栏宽这件事放在 applyRailSide 里做——因为栏会左右换边，
++        // 让哪一侧必须跟着栏走（栏在右→让右，栏在左→让左），单向写死会把画面盖住。
++        runCatching { applyRailSide(area.screenW, at.x, w) }
 +        // 小窗只有画面：一颗键都不放（用户 16:40 要求）。点一下变大，键才出来。
 +        backKey?.visibility = if (next == Shape.EXPAND) View.VISIBLE else View.GONE
 +        // 底部一排（⇄ 切主屏 / ⛶ 全屏与回中窗）：展开和全屏都有；小窗、竖条没有（用户 19:25）。
@@ -8502,6 +8505,11 @@ index 00000000..d200b74c
 +        closeKey?.visibility = if (next == Shape.EXPAND) View.VISIBLE else View.GONE
 +        fullscreenKey?.visibility = if (next == Shape.EXPAND) View.VISIBLE else View.GONE
 +        transferKey?.visibility = if (next == Shape.EXPAND) View.VISIBLE else View.GONE
++        // 【初始态必须一颗键都没有】用户 05:4x："初始屏没被展开之前的状态是什么按键都没有的，
++        // 只保留画面 / 按住拖动 / 展开 / 贴边 / 点击展开。"
++        // 上面只逐颗隐藏了 ✕👁🔊⇄，**漏了 + − ↺**（它们在栏里但不在那张清单里），
++        // 所以初始态一直残留三颗缩放键。这里直接把整个侧栏一起藏，一次管住七颗。
++        railView?.visibility = if (next == Shape.EXPAND) View.VISIBLE else View.GONE
 +        // 有大画面了就不再挂提示：它是“还没开始”的说明，盖在应用上面既不礼貌也看不清。
 +        hint?.visibility = if (next == Shape.EXPAND && !hasPicture()) View.VISIBLE else View.GONE
 +
@@ -8700,6 +8708,25 @@ index 00000000..d200b74c
 +        rail.layoutParams = p
 +        railSide = if (wantEnd) "end" else "start"
 +        rail.background = railFrame(density, endSide = wantEnd)
++        // 【画面让宽跟着栏走】栏在右 → 画面右让；栏在左 → 画面左让。
++        // 这样栏永远落在"画面外面那一条"，且两者左右相接、零间距（用户 05:3x）。
++        runCatching {
++            val c = content
++            if (c != null) {
++                val cp = c.layoutParams as? FrameLayout.LayoutParams
++                if (cp != null) {
++                    val rw = if (shape == Shape.EXPAND) (RAIL_W_DP * density).roundToInt() else 0
++                    val right = if (wantEnd) rw else 0
++                    val left = if (wantEnd) 0 else rw
++                    if (cp.rightMargin != right || cp.leftMargin != left) {
++                        cp.rightMargin = right
++                        cp.leftMargin = left
++                        c.layoutParams = cp
++                    }
++                }
++            }
++        }
++        WakeTrace.log("window: rail inset side=$railSide rw=${if (shape == Shape.EXPAND) RAIL_W_DP else 0}dp")
 +        WakeTrace.log("window: rail side=$railSide cx=${cx.toInt()} half=${half.toInt()}")
 +    }
 +
@@ -9100,7 +9127,7 @@ index 00000000..d200b74c
 +        }
 +        rail.setOnTouchListener { _, _ -> true }
 +        val railParams = FrameLayout.LayoutParams(
-+            (46 * px).roundToInt(), FrameLayout.LayoutParams.MATCH_PARENT,
++            (RAIL_W_DP * px).roundToInt(), FrameLayout.LayoutParams.MATCH_PARENT,
 +            Gravity.END or Gravity.CENTER_VERTICAL,
 +        ).apply {
 +            rightMargin = 0            // 紧贴窗口内边（文档 §二：间距 0）
