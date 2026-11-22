@@ -1,7 +1,7 @@
-From 2757f96a29f4f29a62b8317acbd8095644022898 Mon Sep 17 00:00:00 2001
+From 6bc285afae2d91a88a45a3f3397d6b42093b229e Mon Sep 17 00:00:00 2001
 From: ci <ci@local>
-Date: Mon, 23 Nov 2026 06:45:29 +0800
-Subject: [PATCH] pb: scene4y
+Date: Mon, 23 Nov 2026 06:47:18 +0800
+Subject: [PATCH] pb: scene4z
 
 ---
  .gitattributes                                |    3 +
@@ -31,6 +31,7 @@ Subject: [PATCH] pb: scene4y
  .../phone/background/BackgroundCoordinates.kt |    2 +
  .../phone/background/BackgroundDisplay.kt     |  266 +-
  .../phone/background/BackgroundPolicy.kt      |    8 +-
+ .../phone/background/BackgroundPreview.kt     |   10 +-
  .../background/BackgroundProbeActivity.kt     |    4 +-
  .../phone/background/BackgroundTree.kt        |    4 +-
  .../dsh_app/phone/background/CoalescedScan.kt |   31 +
@@ -131,7 +132,7 @@ Subject: [PATCH] pb: scene4y
  docs/wake-word.md                             |  107 +
  dsh-go-wake.patch                             | 2065 ++++++++++++++
  tooling/build-wake-apk.sh                     |   68 +
- 127 files changed, 16567 insertions(+), 557 deletions(-)
+ 128 files changed, 16576 insertions(+), 558 deletions(-)
  create mode 100644 .github/workflows/wake-apk.yml
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallForegroundService.kt
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallOverlay.kt
@@ -3916,6 +3917,34 @@ index f49daeeb..86f536de 100644
          companion object {
              fun parse(value: Any?): Viewport? = entries.firstOrNull { it.preset == value }
          }
+diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/BackgroundPreview.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/BackgroundPreview.kt
+index e02e008d..c0505df7 100644
+--- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/BackgroundPreview.kt
++++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/BackgroundPreview.kt
+@@ -47,6 +47,11 @@ class BackgroundPreview(
+     private var supported = false
+     private var scheduled = false
+     private var lastPollAt: Long? = null
++    /** 预览轮询间隔：5fps 太卡（用户 06:5x），改 10fps。 */
++    private companion object {
++        const val POLL_MS = 100L
++    }
++
+     private val tick = Runnable { scheduled = false; poll() }
+     private val cleanupTick = Runnable { cleanupScheduled = false; drainOff() }
+ 
+@@ -119,7 +124,10 @@ class BackgroundPreview(
+     private fun schedule() {
+         if (current == null || current === unsupported || busy || scheduled || pendingOff.isNotEmpty()) return
+         scheduled = true
+-        val wait = lastPollAt?.let { (it + 200 - SystemClock.uptimeMillis()).coerceAtLeast(0) } ?: 0
++        // 【4z】轮询间隔 200ms（5fps，官方 v1.3.0 的口径）在真机上就是"卡成 PPT"的直接原因：
++        // 窗口里看到的是 5 张/秒的静帧。降到 100ms（10fps，与 Mika 上限一致）。
++        // 单帧没做完时 busy=true 会跳过本次排期，所以不会堆请求，最差就是回到 5fps。
++        val wait = lastPollAt?.let { (it + POLL_MS - SystemClock.uptimeMillis()).coerceAtLeast(0) } ?: 0
+         main.postDelayed(tick, wait)
+     }
+ 
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/BackgroundProbeActivity.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/BackgroundProbeActivity.kt
 index 6f0a4508..58c6ea17 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/BackgroundProbeActivity.kt
