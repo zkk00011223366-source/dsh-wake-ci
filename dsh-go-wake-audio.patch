@@ -1,7 +1,7 @@
-From 24dc3cf236cb9a5ebcf0a18488bc77b0e36b6099 Mon Sep 17 00:00:00 2001
+From 5ad90c1fb3cc402821a8a3b3ca4bd59377e0addd Mon Sep 17 00:00:00 2001
 From: ci <ci@local>
-Date: Mon, 23 Nov 2026 03:39:15 +0800
-Subject: [PATCH] pb: scene4l
+Date: Mon, 23 Nov 2026 04:06:29 +0800
+Subject: [PATCH] pb: scene4m
 
 ---
  .gitattributes                                |    3 +
@@ -18,7 +18,7 @@ Subject: [PATCH] pb: scene4l
  .../dsh_app/phone/PhoneContracts.kt           |  186 ++
  .../ccch1mneyyy/dsh_app/phone/PhoneControl.kt |  100 +-
  .../ccch1mneyyy/dsh_app/phone/PhoneCore.kt    |  458 +++-
- .../ccch1mneyyy/dsh_app/phone/PhonePlugin.kt  |  424 +++
+ .../ccch1mneyyy/dsh_app/phone/PhonePlugin.kt  |  422 +++
  .../dsh_app/phone/PhoneTaskSessions.kt        |   33 +-
  .../ccch1mneyyy/dsh_app/phone/PhoneTasks.kt   |   46 +
  .../dsh_app/phone/PhoneToolCatalog.kt         |   35 +-
@@ -27,7 +27,7 @@ Subject: [PATCH] pb: scene4l
  .../dsh_app/phone/SystemActions.kt            |    7 +-
  .../dsh_app/phone/a11y/ControlOverlay.kt      |   11 +-
  .../dsh_app/phone/a11y/PhoneA11yService.kt    |   20 +
- .../phone/background/BackgroundControl.kt     |  117 +-
+ .../phone/background/BackgroundControl.kt     |  130 +-
  .../phone/background/BackgroundCoordinates.kt |    2 +
  .../phone/background/BackgroundDisplay.kt     |  259 +-
  .../phone/background/BackgroundPolicy.kt      |    8 +-
@@ -132,7 +132,7 @@ Subject: [PATCH] pb: scene4l
  docs/wake-word.md                             |  107 +
  dsh-go-wake.patch                             | 2065 +++++++++++++++
  tooling/build-wake-apk.sh                     |   68 +
- 128 files changed, 16342 insertions(+), 553 deletions(-)
+ 128 files changed, 16353 insertions(+), 553 deletions(-)
  create mode 100644 .github/workflows/wake-apk.yml
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallForegroundService.kt
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallOverlay.kt
@@ -191,7 +191,7 @@ Subject: [PATCH] pb: scene4l
  create mode 100644 tooling/build-wake-apk.sh
 
 diff --git a/.gitattributes b/.gitattributes
-index 52e3e08..3e877c7 100644
+index 52e3e08a..3e877c7e 100644
 --- a/.gitattributes
 +++ b/.gitattributes
 @@ -1,2 +1,5 @@
@@ -202,7 +202,7 @@ index 52e3e08..3e877c7 100644
 +*.sh text eol=lf
 diff --git a/.github/workflows/wake-apk.yml b/.github/workflows/wake-apk.yml
 new file mode 100644
-index 0000000..018dd3f
+index 00000000..018dd3f6
 --- /dev/null
 +++ b/.github/workflows/wake-apk.yml
 @@ -0,0 +1,192 @@
@@ -399,7 +399,7 @@ index 0000000..018dd3f
 +            echo 'first (its local data goes; back it up).'
 +          } >> "$GITHUB_STEP_SUMMARY"
 diff --git a/app/android/app/build.gradle.kts b/app/android/app/build.gradle.kts
-index f2d6b7e..8b7286e 100644
+index f2d6b7e7..8b7286ea 100644
 --- a/app/android/app/build.gradle.kts
 +++ b/app/android/app/build.gradle.kts
 @@ -35,6 +35,10 @@ fun buildMinuteVersionCode(): Int {
@@ -423,7 +423,7 @@ index f2d6b7e..8b7286e 100644
          minSdk = 26
          // Target 28 like Termux, so the API 29+ exec restriction on app-private
 diff --git a/app/android/app/src/main/AndroidManifest.xml b/app/android/app/src/main/AndroidManifest.xml
-index 1473ba2..acc340a 100644
+index 1473ba24..acc340ad 100644
 --- a/app/android/app/src/main/AndroidManifest.xml
 +++ b/app/android/app/src/main/AndroidManifest.xml
 @@ -6,6 +6,8 @@
@@ -513,7 +513,7 @@ index 1473ba2..acc340a 100644
      <!-- Required to query activities that can process text, see:
           https://developer.android.com/training/package-visibility and
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/MainActivity.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/MainActivity.kt
-index f7f9490..bd5d6a0 100644
+index f7f94904..bd5d6a01 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/MainActivity.kt
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/MainActivity.kt
 @@ -8,6 +8,7 @@ import android.content.res.Configuration
@@ -656,7 +656,7 @@ index f7f9490..bd5d6a0 100644
          /** 设置 › 性能 › 刷新率; the Flutter side owns the stored choice. */
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallForegroundService.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallForegroundService.kt
 new file mode 100644
-index 0000000..90a77cf
+index 00000000..90a77cf0
 --- /dev/null
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallForegroundService.kt
 @@ -0,0 +1,94 @@
@@ -756,7 +756,7 @@ index 0000000..90a77cf
 +}
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallOverlay.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallOverlay.kt
 new file mode 100644
-index 0000000..7c5ca73
+index 00000000..7c5ca73c
 --- /dev/null
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallOverlay.kt
 @@ -0,0 +1,320 @@
@@ -1082,7 +1082,7 @@ index 0000000..7c5ca73
 +}
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallOverlayPlugin.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallOverlayPlugin.kt
 new file mode 100644
-index 0000000..0a7a277
+index 00000000..0a7a277b
 --- /dev/null
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallOverlayPlugin.kt
 @@ -0,0 +1,70 @@
@@ -1157,7 +1157,7 @@ index 0000000..0a7a277
 +    }
 +}
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/notify/NotifyPlugin.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/notify/NotifyPlugin.kt
-index 12b600d..63d16e0 100644
+index 12b600d4..63d16e02 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/notify/NotifyPlugin.kt
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/notify/NotifyPlugin.kt
 @@ -70,7 +70,10 @@ class NotifyPlugin :
@@ -1173,7 +1173,7 @@ index 12b600d..63d16e0 100644
  
      override fun onDetachedFromActivityForConfigChanges() = onDetachedFromActivity()
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneAndroidShell.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneAndroidShell.kt
-index bb9c803..aa39cdc 100644
+index bb9c8031..aa39cdcd 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneAndroidShell.kt
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneAndroidShell.kt
 @@ -14,6 +14,14 @@ object PhoneAndroidShell {
@@ -1202,7 +1202,7 @@ index bb9c803..aa39cdc 100644
                      ui.get("phone_shell_confirm",
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneBackGuard.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneBackGuard.kt
 new file mode 100644
-index 0000000..175e47b
+index 00000000..175e47b7
 --- /dev/null
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneBackGuard.kt
 @@ -0,0 +1,146 @@
@@ -1353,7 +1353,7 @@ index 0000000..175e47b
 +    }
 +}
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneContracts.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneContracts.kt
-index 612f94d..cc3e72b 100644
+index 612f94d1..cc3e72bc 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneContracts.kt
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneContracts.kt
 @@ -220,6 +220,13 @@ interface PhoneDriver {
@@ -1564,7 +1564,7 @@ index 612f94d..cc3e72b 100644
      @Volatile var overlayGate: UserGate? = null
      @Volatile var notificationGate: UserGate? = null
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneControl.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneControl.kt
-index 2fc7cd5..35689c0 100644
+index 2fc7cd59..35689c03 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneControl.kt
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneControl.kt
 @@ -201,6 +201,8 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
@@ -1725,7 +1725,7 @@ index 2fc7cd5..35689c0 100644
      }
  
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneCore.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneCore.kt
-index 6c70185..b6de49d 100644
+index 6c701851..b6de49d5 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneCore.kt
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneCore.kt
 @@ -1,9 +1,12 @@
@@ -2414,7 +2414,7 @@ index 6c70185..b6de49d 100644
          private val WRITES = setOf(FOCUS_TEXT, PhoneToolCatalog.TAP, PhoneToolCatalog.TYPE, PhoneToolCatalog.TAP_XY, PhoneToolCatalog.OPEN)
          /** An uncertain effect call tightens draft eligibility; it does not prove input was dispatched. */
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhonePlugin.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhonePlugin.kt
-index 4a76535..367ee41 100644
+index 4a76535f..8dd7bc8a 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhonePlugin.kt
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhonePlugin.kt
 @@ -2,7 +2,14 @@ package io.github.ccch1mneyyy.dsh_app.phone
@@ -2442,7 +2442,7 @@ index 4a76535..367ee41 100644
      private val privilegedActions = PrivilegedActionGate()
  
      override fun onAttachedToEngine(binding: FlutterPlugin.FlutterPluginBinding) {
-@@ -77,6 +87,173 @@ class PhonePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
+@@ -77,6 +87,171 @@ class PhonePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
          promptOwner = Any()
          attached = true
          control.background.restoreKeptChannel()
@@ -2529,14 +2529,12 @@ index 4a76535..367ee41 100644
 +                else -> {
 +                    runCatching { TransferBall.setWanted(false, ctx) }
 +                    TransferBall.hide()
-+                    // 【僵尸窗】ui-rule 判 none = 屏幕上不该留任何东西。以前这里只收黄条，
-+                    // 从不关悬浮窗本身：窗口没画面（alpha=0）又带 FLAG_NOT_TOUCHABLE，用户连点都点不掉，
-+                    // 只能看着一块半透明黑块赖在屏幕上（真机 03:0x 现场）。
-+                    // 谁置位/谁清除：show() 建窗，这里（判定 none 时）关掉。
-+                    if (VirtualScreenOverlay.shown) {
-+                        runCatching { VirtualScreenOverlay.hide() }
-+                        WakeTrace.log("ball: sync-applied ui=none -> close zombie window")
-+                    }
++                    // 【已撤销】这里曾经在 ui-rule 判 none 时直接关悬浮窗，用来清理"没画面的僵尸窗"。
++                    // 真机 04:01 证明这个判据是错的：hasTask 账本常常是 false（open 走 reuseOrMove
++                    // 时不登记），于是 ui-rule 一直判 none，窗口刚 reveal 出来 1.05 秒就被这里关掉
++                    // （日志：`window: revealed` 14.423 → `close zombie window` 15.478）。
++                    // 僵尸窗现在由"帧模式下不再创建 SurfaceView"从根上解决（没画面时窗口本来就全透明、
++                    // 且 FLAG_NOT_TOUCHABLE 不吃触摸），不需要这条激进兜底。
 +                }
 +            }
 +            WakeTrace.log("ball: sync-applied ui=$ui visible=${TransferBall.currentSide() != null}")
@@ -2616,7 +2614,7 @@ index 4a76535..367ee41 100644
          methods = MethodChannel(binding.binaryMessenger, "dsh/phone").also { it.setMethodCallHandler(this) }
          events = EventChannel(binding.binaryMessenger, "dsh/phone/events").also { it.setStreamHandler(this) }
          previewEvents = EventChannel(binding.binaryMessenger, "dsh/phone/preview").also { channel ->
-@@ -103,9 +280,159 @@ class PhonePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
+@@ -103,9 +278,159 @@ class PhonePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
          }
      }
  
@@ -2776,7 +2774,7 @@ index 4a76535..367ee41 100644
          skillSelectionRequest = Any()
          skillInspection = null
          skillClient?.let { control.skillReplaySelections.retireClient(it); control.skillDrafts.retireClient(it) }
-@@ -249,6 +576,103 @@ class PhonePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
+@@ -249,6 +574,103 @@ class PhonePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
                  result.success(if (removed) mapOf("kind" to "discarded") else replayRejected("stale"))
              }
              "setBackgroundPreview" -> result.success(control.preview.setEnabled(call.argument<Boolean>("enabled") == true))
@@ -2881,7 +2879,7 @@ index 4a76535..367ee41 100644
                  val selected = call.argument<String>("mode").orEmpty()
                  val enabled = call.argument<Boolean>("enabled") == true
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneTaskSessions.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneTaskSessions.kt
-index 3fd6e48..6a2410f 100644
+index 3fd6e482..6a2410fc 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneTaskSessions.kt
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneTaskSessions.kt
 @@ -1,5 +1,6 @@
@@ -2971,7 +2969,7 @@ index 3fd6e48..6a2410f 100644
          // An implementation memory bound, not a measured throughput limit. Never evict a fence.
          const val MAX_RUNS_PER_LAUNCH = 256
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneTasks.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneTasks.kt
-index a09015e..56e99ad 100644
+index a09015e7..56e99ad4 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneTasks.kt
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneTasks.kt
 @@ -73,6 +73,9 @@ class PhoneTasks(
@@ -3051,7 +3049,7 @@ index a09015e..56e99ad 100644
          grants.clear()
          visualScopes.clear(); visualGrants.clear(); visualLifecycle = lifecycle
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneToolCatalog.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneToolCatalog.kt
-index cbfb0de..8fc282c 100644
+index cbfb0de3..8fc282c1 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneToolCatalog.kt
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneToolCatalog.kt
 @@ -24,6 +24,7 @@ object PhoneToolCatalog {
@@ -3146,7 +3144,7 @@ index cbfb0de..8fc282c 100644
              DIAGNOSTICS,
              // l10n:keep agent tool catalog
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/SafetyGate.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/SafetyGate.kt
-index e50373c..5e1126b 100644
+index e50373c8..5e1126bb 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/SafetyGate.kt
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/SafetyGate.kt
 @@ -113,7 +113,9 @@ enum class ConfirmMode(val wire: String) {
@@ -3162,7 +3160,7 @@ index e50373c..5e1126b 100644
       * The word that makes tapping [label] sensitive, or null. Delegates to [SensitiveWords] (shared
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/SingleInstanceApps.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/SingleInstanceApps.kt
 new file mode 100644
-index 0000000..c5fe721
+index 00000000..c5fe7218
 --- /dev/null
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/SingleInstanceApps.kt
 @@ -0,0 +1,27 @@
@@ -3194,7 +3192,7 @@ index 0000000..c5fe721
 +    }
 +}
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/SystemActions.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/SystemActions.kt
-index d98fd4d..c1183b4 100644
+index d98fd4d3..c1183b42 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/SystemActions.kt
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/SystemActions.kt
 @@ -161,7 +161,12 @@ class SystemActions(private val app: Context) : SystemApi {
@@ -3212,7 +3210,7 @@ index d98fd4d..c1183b4 100644
                  flags = 0, allowChoice = false)
          }
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/a11y/ControlOverlay.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/a11y/ControlOverlay.kt
-index 5c017e4..b9ce9e1 100644
+index 5c017e4e..b9ce9e15 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/a11y/ControlOverlay.kt
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/a11y/ControlOverlay.kt
 @@ -654,7 +654,16 @@ internal class ControlOverlay(private val service: AccessibilityService) : UserG
@@ -3234,7 +3232,7 @@ index 5c017e4..b9ce9e1 100644
      }
  
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/a11y/PhoneA11yService.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/a11y/PhoneA11yService.kt
-index 8aa204b..298fc3a 100644
+index 8aa204bc..298fc3a9 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/a11y/PhoneA11yService.kt
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/a11y/PhoneA11yService.kt
 @@ -19,8 +19,10 @@ import android.os.Build
@@ -3274,7 +3272,7 @@ index 8aa204b..298fc3a 100644
          super.onConfigurationChanged(newConfig)
          overlay?.onConfigurationChanged()
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/BackgroundControl.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/BackgroundControl.kt
-index 79cae46..9a7eba6 100644
+index 79cae468..cf8bb7f8 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/BackgroundControl.kt
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/BackgroundControl.kt
 @@ -13,6 +13,8 @@ import android.net.Network
@@ -3429,8 +3427,28 @@ index 79cae46..9a7eba6 100644
                          localOcr = ocr,
                          localOcrAllowed = { target -> localOcrAllowed(target) },
                          onResourceReady = { publishPreviewTarget(record, it) },
+@@ -762,6 +875,19 @@ class BackgroundControl private constructor(context: Context) {
+         }
+         if (previewChanged) onPreviewChanged()
+         for (record in captured) {
++            // 任务自然结束时"屏与应用要保留"（v3.2 §5.1，用户定：只有点【✕】才清）。
++            // 这里是 App 进程里唯一真正放屏的入口，而 vscreenKeepAfterTask 就在同一个进程里设置——
++            // 用它做闸，比之前那条跨进程钩子可靠（真机 04:01 实证：finishScope 在 .861 设了旗标、
++            // holdDisplayForWindow 也调了，.992 收尾链照样把任务搬回主屏，说明钩子没落到这个 driver 上）。
++            // 谁清除：点【✕】(VirtualScreenOverlay.endTask) 置 false，之后再走到这里就会真正释放。
++            if (io.github.ccch1mneyyy.dsh_app.phone.PhoneRegistry.vscreenKeepAfterTask) {
++                // 不 release、也不 complete：记录留在 slot 里（已 sealed），
++                // 点【✕】时 keepAfterTask 置 false，再走一遍 endTask 就会真正释放——
++                // seal() 会把这些已 sealed 的记录再返回一次，所以不会泄漏。
++                io.github.ccch1mneyyy.dsh_app.wake.WakeTrace.log(
++                    "vscreen: release deferred reason=keepAfterTask taskId=${record.owner.taskId}")
++                continue
++            }
+             if (!record.driver.release()) discardPeer(record.peer)
+             taskResource.complete(record)
+         }
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/BackgroundCoordinates.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/BackgroundCoordinates.kt
-index f6b83a0..2eb59f3 100644
+index f6b83a0a..2eb59f32 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/BackgroundCoordinates.kt
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/BackgroundCoordinates.kt
 @@ -147,6 +147,8 @@ internal class BackgroundCoordinateImage {
@@ -3443,7 +3461,7 @@ index f6b83a0..2eb59f3 100644
          val result = receipt.takeIf { accepted && screen == screenId }
          clear()
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/BackgroundDisplay.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/BackgroundDisplay.kt
-index bc1810a..02d6c16 100644
+index bc1810a3..02d6c16c 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/BackgroundDisplay.kt
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/BackgroundDisplay.kt
 @@ -22,6 +22,7 @@ import io.github.ccch1mneyyy.dsh_app.phone.a11y.LocalOcrResult
@@ -3837,7 +3855,7 @@ index bc1810a..02d6c16 100644
      companion object {
          // l10n:keep agent coordinate protocol
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/BackgroundPolicy.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/BackgroundPolicy.kt
-index f49daee..86f536d 100644
+index f49daeeb..86f536de 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/BackgroundPolicy.kt
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/BackgroundPolicy.kt
 @@ -7,7 +7,13 @@ package io.github.ccch1mneyyy.dsh_app.phone.background
@@ -3856,7 +3874,7 @@ index f49daee..86f536d 100644
              fun parse(value: Any?): Viewport? = entries.firstOrNull { it.preset == value }
          }
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/BackgroundProbeActivity.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/BackgroundProbeActivity.kt
-index 6f0a450..58c6ea1 100644
+index 6f0a4508..58c6ea17 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/BackgroundProbeActivity.kt
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/BackgroundProbeActivity.kt
 @@ -140,8 +140,8 @@ class BackgroundProbeActivity : Activity() {
@@ -3871,7 +3889,7 @@ index 6f0a450..58c6ea1 100644
      const val NONCE = "nonce"
      const val DISPLAY = "display"
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/BackgroundTree.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/BackgroundTree.kt
-index 830cb25..5652796 100644
+index 830cb253..56527963 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/BackgroundTree.kt
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/BackgroundTree.kt
 @@ -123,7 +123,7 @@ object BackgroundTree {
@@ -3894,7 +3912,7 @@ index 830cb25..5652796 100644
              append(" · ").append(if (portrait) "竖屏" else "横屏")
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/CoalescedScan.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/CoalescedScan.kt
 new file mode 100644
-index 0000000..e8f326d
+index 00000000..e8f326d2
 --- /dev/null
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/CoalescedScan.kt
 @@ -0,0 +1,31 @@
@@ -3931,7 +3949,7 @@ index 0000000..e8f326d
 +}
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/DisplayAwake.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/DisplayAwake.kt
 new file mode 100644
-index 0000000..89a08f2
+index 00000000..89a08f21
 --- /dev/null
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/DisplayAwake.kt
 @@ -0,0 +1,154 @@
@@ -4091,7 +4109,7 @@ index 0000000..89a08f2
 +}
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/DisplayHandles.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/DisplayHandles.kt
 new file mode 100644
-index 0000000..3c72dc5
+index 00000000..3c72dc5c
 --- /dev/null
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/DisplayHandles.kt
 @@ -0,0 +1,31 @@
@@ -4128,7 +4146,7 @@ index 0000000..3c72dc5
 +}
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/DisplayOrientation.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/DisplayOrientation.kt
 new file mode 100644
-index 0000000..8f082b5
+index 00000000..8f082b55
 --- /dev/null
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/DisplayOrientation.kt
 @@ -0,0 +1,37 @@
@@ -4171,7 +4189,7 @@ index 0000000..8f082b5
 +}
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/DisplayOrientationKeeper.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/DisplayOrientationKeeper.kt
 new file mode 100644
-index 0000000..c1ff27d
+index 00000000..c1ff27d8
 --- /dev/null
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/DisplayOrientationKeeper.kt
 @@ -0,0 +1,125 @@
@@ -4302,7 +4320,7 @@ index 0000000..c1ff27d
 +}
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/DisplayOrientationWatch.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/DisplayOrientationWatch.kt
 new file mode 100644
-index 0000000..73d8898
+index 00000000..73d88989
 --- /dev/null
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/DisplayOrientationWatch.kt
 @@ -0,0 +1,100 @@
@@ -4408,7 +4426,7 @@ index 0000000..73d8898
 +}
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/KeptTasks.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/KeptTasks.kt
 new file mode 100644
-index 0000000..c1dcef9
+index 00000000..c1dcef97
 --- /dev/null
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/KeptTasks.kt
 @@ -0,0 +1,39 @@
@@ -4452,7 +4470,7 @@ index 0000000..c1dcef9
 +    fun logSize() = Log.i(TAG, "vscreen: task-finish kept-total=$size")
 +}
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/PrivilegedDisplayCore.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/PrivilegedDisplayCore.kt
-index c7ed0f7..fd50c22 100644
+index c7ed0f7a..fd50c22e 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/PrivilegedDisplayCore.kt
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/PrivilegedDisplayCore.kt
 @@ -11,6 +11,7 @@ package io.github.ccch1mneyyy.dsh_app.phone.background
@@ -5755,7 +5773,7 @@ index c7ed0f7..fd50c22 100644
              "back" to KeyEvent.KEYCODE_BACK, "home" to KeyEvent.KEYCODE_HOME,
              "enter" to KeyEvent.KEYCODE_ENTER, "delete" to KeyEvent.KEYCODE_DEL,
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/PrivilegedDisplayHost.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/PrivilegedDisplayHost.kt
-index aa3faff..4731fbf 100644
+index aa3faff3..4731fbf8 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/PrivilegedDisplayHost.kt
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/PrivilegedDisplayHost.kt
 @@ -70,7 +70,9 @@ internal class PrivilegedDisplayHost(private val context: Context) {
@@ -5779,7 +5797,7 @@ index aa3faff..4731fbf 100644
          }
      }
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/PrivilegedProtocol.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/PrivilegedProtocol.kt
-index 4c327b1..eac0b06 100644
+index 4c327b1e..eac0b06a 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/PrivilegedProtocol.kt
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/PrivilegedProtocol.kt
 @@ -19,7 +19,7 @@ object Proto {
@@ -5942,7 +5960,7 @@ index 4c327b1..eac0b06 100644
          else -> "不打扰模式暂不可用，请检查授权、服务和设备支持情况"
      }
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/skills/PhoneSkillDraft.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/skills/PhoneSkillDraft.kt
-index 2857cee..4138076 100644
+index 2857ceef..41380764 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/skills/PhoneSkillDraft.kt
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/skills/PhoneSkillDraft.kt
 @@ -33,7 +33,7 @@ object PhoneSkillDraft {
@@ -5956,7 +5974,7 @@ index 2857cee..4138076 100644
                  append("   核对 {{check_").append(n).append("}}，不能只凭工具返回正常判断业务完成。历史记录仅表明请求已交给驱动/系统并返回接受；")
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/CloseActionReceiver.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/CloseActionReceiver.kt
 new file mode 100644
-index 0000000..033bf8b
+index 00000000..033bf8b4
 --- /dev/null
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/CloseActionReceiver.kt
 @@ -0,0 +1,73 @@
@@ -6035,7 +6053,7 @@ index 0000000..033bf8b
 +}
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/DisplayFrameGeometry.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/DisplayFrameGeometry.kt
 new file mode 100644
-index 0000000..c38b023
+index 00000000..c38b0231
 --- /dev/null
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/DisplayFrameGeometry.kt
 @@ -0,0 +1,21 @@
@@ -6062,7 +6080,7 @@ index 0000000..c38b023
 +}
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/FrameMath.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/FrameMath.kt
 new file mode 100644
-index 0000000..656af3e
+index 00000000..656af3e0
 --- /dev/null
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/FrameMath.kt
 @@ -0,0 +1,60 @@
@@ -6128,7 +6146,7 @@ index 0000000..656af3e
 +}
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/FrontExitPrompt.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/FrontExitPrompt.kt
 new file mode 100644
-index 0000000..fba4679
+index 00000000..fba46794
 --- /dev/null
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/FrontExitPrompt.kt
 @@ -0,0 +1,236 @@
@@ -6370,7 +6388,7 @@ index 0000000..fba4679
 +}
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/PlaceholderActivity.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/PlaceholderActivity.kt
 new file mode 100644
-index 0000000..9b1081e
+index 00000000..9b1081e0
 --- /dev/null
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/PlaceholderActivity.kt
 @@ -0,0 +1,40 @@
@@ -6416,7 +6434,7 @@ index 0000000..9b1081e
 +}
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/PresentationHost.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/PresentationHost.kt
 new file mode 100644
-index 0000000..660d427
+index 00000000..660d4275
 --- /dev/null
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/PresentationHost.kt
 @@ -0,0 +1,69 @@
@@ -6491,7 +6509,7 @@ index 0000000..660d427
 +}
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/SwitchPromptOverlay.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/SwitchPromptOverlay.kt
 new file mode 100644
-index 0000000..847cfe4
+index 00000000..847cfe43
 --- /dev/null
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/SwitchPromptOverlay.kt
 @@ -0,0 +1,142 @@
@@ -6639,7 +6657,7 @@ index 0000000..847cfe4
 +}
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/TaskMover.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/TaskMover.kt
 new file mode 100644
-index 0000000..19aecfe
+index 00000000..19aecfea
 --- /dev/null
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/TaskMover.kt
 @@ -0,0 +1,152 @@
@@ -6797,7 +6815,7 @@ index 0000000..19aecfe
 +}
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/TransferBall.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/TransferBall.kt
 new file mode 100644
-index 0000000..50b681e
+index 00000000..50b681e9
 --- /dev/null
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/TransferBall.kt
 @@ -0,0 +1,460 @@
@@ -7263,7 +7281,7 @@ index 0000000..50b681e
 +}
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenOverlay.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenOverlay.kt
 new file mode 100644
-index 0000000..26ccc11
+index 00000000..26ccc112
 --- /dev/null
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenOverlay.kt
 @@ -0,0 +1,2274 @@
@@ -9543,7 +9561,7 @@ index 0000000..26ccc11
 +}
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenPlugin.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenPlugin.kt
 new file mode 100644
-index 0000000..5207694
+index 00000000..52076942
 --- /dev/null
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenPlugin.kt
 @@ -0,0 +1,251 @@
@@ -9800,7 +9818,7 @@ index 0000000..5207694
 +}
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VscreenUi.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VscreenUi.kt
 new file mode 100644
-index 0000000..eb4d03d
+index 00000000..eb4d03dd
 --- /dev/null
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VscreenUi.kt
 @@ -0,0 +1,111 @@
@@ -9916,7 +9934,7 @@ index 0000000..eb4d03d
 +    }
 +}
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/runtime/GuestSetup.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/runtime/GuestSetup.kt
-index 3e902fe..b0e3eb6 100644
+index 3e902fed..b0e3eb66 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/runtime/GuestSetup.kt
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/runtime/GuestSetup.kt
 @@ -9,6 +9,7 @@ import android.content.Context
@@ -9996,7 +10014,7 @@ index 3e902fe..b0e3eb6 100644
          }
      }
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/shortcuts/EntryActivity.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/shortcuts/EntryActivity.kt
-index d2e531f..31abe61 100644
+index d2e531f3..31abe619 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/shortcuts/EntryActivity.kt
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/shortcuts/EntryActivity.kt
 @@ -62,6 +62,8 @@ class EntryActivity : Activity() {
@@ -10017,7 +10035,7 @@ index d2e531f..31abe61 100644
              ACTION_SCREENSHOT -> ShortcutsPlugin.KIND_SCREENSHOT
              else -> null
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/shortcuts/ShortcutsPlugin.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/shortcuts/ShortcutsPlugin.kt
-index cbcc8f1..0a50cdd 100644
+index cbcc8f18..0a50cddf 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/shortcuts/ShortcutsPlugin.kt
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/shortcuts/ShortcutsPlugin.kt
 @@ -139,6 +139,11 @@ class ShortcutsPlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHa
@@ -10055,7 +10073,7 @@ index cbcc8f1..0a50cdd 100644
          const val KIND_SCREENSHOT = "screenshot"
  
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/speech/CallCapture.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/speech/CallCapture.kt
-index ed18339..a705bf4 100644
+index ed18339a..a705bf44 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/speech/CallCapture.kt
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/speech/CallCapture.kt
 @@ -237,8 +237,10 @@ class CallCapture(
@@ -10073,7 +10091,7 @@ index ed18339..a705bf4 100644
              val header = ByteBuffer.allocate(44).order(ByteOrder.LITTLE_ENDIAN)
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/wake/WakeBootReceiver.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/wake/WakeBootReceiver.kt
 new file mode 100644
-index 0000000..be0fa26
+index 00000000..be0fa269
 --- /dev/null
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/wake/WakeBootReceiver.kt
 @@ -0,0 +1,29 @@
@@ -10108,7 +10126,7 @@ index 0000000..be0fa26
 +}
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/wake/WakeCapture.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/wake/WakeCapture.kt
 new file mode 100644
-index 0000000..6f623e8
+index 00000000..6f623e89
 --- /dev/null
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/wake/WakeCapture.kt
 @@ -0,0 +1,172 @@
@@ -10286,7 +10304,7 @@ index 0000000..6f623e8
 +}
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/wake/WakeTrace.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/wake/WakeTrace.kt
 new file mode 100644
-index 0000000..024ef57
+index 00000000..024ef57c
 --- /dev/null
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/wake/WakeTrace.kt
 @@ -0,0 +1,39 @@
@@ -10331,7 +10349,7 @@ index 0000000..024ef57
 +}
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/wake/WakeWordPlugin.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/wake/WakeWordPlugin.kt
 new file mode 100644
-index 0000000..830376c
+index 00000000..830376ca
 --- /dev/null
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/wake/WakeWordPlugin.kt
 @@ -0,0 +1,131 @@
@@ -10468,7 +10486,7 @@ index 0000000..830376c
 +}
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/wake/WakeWordService.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/wake/WakeWordService.kt
 new file mode 100644
-index 0000000..fa77de9
+index 00000000..fa77de97
 --- /dev/null
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/wake/WakeWordService.kt
 @@ -0,0 +1,216 @@
@@ -10689,7 +10707,7 @@ index 0000000..fa77de9
 +        (context.applicationContext ?: context).getSharedPreferences(PREFS, Context.MODE_PRIVATE)
 +}
 diff --git a/app/android/app/src/main/res/values-zh/i18n_strings.xml b/app/android/app/src/main/res/values-zh/i18n_strings.xml
-index df3c1bf..b0cb805 100644
+index df3c1bff..b0cb8053 100644
 --- a/app/android/app/src/main/res/values-zh/i18n_strings.xml
 +++ b/app/android/app/src/main/res/values-zh/i18n_strings.xml
 @@ -111,6 +111,16 @@
@@ -10736,7 +10754,7 @@ index df3c1bf..b0cb805 100644
      <string name="phone_log_collect">收集 %1$s#%2$d</string>
      <string name="phone_log_scroll">滚动 %1$s %2$s</string>
 diff --git a/app/android/app/src/main/res/values-zh/phone_a11y_strings.xml b/app/android/app/src/main/res/values-zh/phone_a11y_strings.xml
-index 900c471..0d978b8 100644
+index 900c471c..0d978b8c 100644
 --- a/app/android/app/src/main/res/values-zh/phone_a11y_strings.xml
 +++ b/app/android/app/src/main/res/values-zh/phone_a11y_strings.xml
 @@ -27,10 +27,10 @@
@@ -10754,7 +10772,7 @@ index 900c471..0d978b8 100644
      <string name="overlay_steer_rejected">未发送。任务已不能接受这条插话，文字已保留。</string>
      <string name="overlay_preview_in_use">正在预览另一任务</string>
 diff --git a/app/android/app/src/main/res/values-zh/phone_background_setup_strings.xml b/app/android/app/src/main/res/values-zh/phone_background_setup_strings.xml
-index a549c2b..7389a43 100644
+index a549c2bd..7389a43c 100644
 --- a/app/android/app/src/main/res/values-zh/phone_background_setup_strings.xml
 +++ b/app/android/app/src/main/res/values-zh/phone_background_setup_strings.xml
 @@ -1,6 +1,6 @@
@@ -10766,7 +10784,7 @@ index a549c2b..7389a43 100644
      <string name="background_setup_bind_timeout">连接 Shizuku 服务超时，请确认它正在运行后重连。</string>
      <string name="background_setup_unbind_wait">旧连接尚未释放，请稍后重连。</string>
 diff --git a/app/android/app/src/main/res/values-zh/phone_task_strings.xml b/app/android/app/src/main/res/values-zh/phone_task_strings.xml
-index d05796f..56572b8 100644
+index d05796fd..56572b8e 100644
 --- a/app/android/app/src/main/res/values-zh/phone_task_strings.xml
 +++ b/app/android/app/src/main/res/values-zh/phone_task_strings.xml
 @@ -1,4 +1,4 @@
@@ -10776,7 +10794,7 @@ index d05796f..56572b8 100644
 +    <string name="phone_background_cleanup_busy">虚拟屏正在收尾，请稍后重试。</string>
  </resources>
 diff --git a/app/android/app/src/main/res/values/i18n_strings.xml b/app/android/app/src/main/res/values/i18n_strings.xml
-index f4c452d..66c0db1 100644
+index f4c452da..66c0db1e 100644
 --- a/app/android/app/src/main/res/values/i18n_strings.xml
 +++ b/app/android/app/src/main/res/values/i18n_strings.xml
 @@ -116,6 +116,16 @@
@@ -10797,7 +10815,7 @@ index f4c452d..66c0db1 100644
      <string name="pet_label">Pet</string>
      <string name="pet_open_channel">Open from pet</string>
 diff --git a/app/android/app/src/main/res/xml/phone_accessibility_service.xml b/app/android/app/src/main/res/xml/phone_accessibility_service.xml
-index 1617f97..72f31ad 100644
+index 1617f97d..72f31ad1 100644
 --- a/app/android/app/src/main/res/xml/phone_accessibility_service.xml
 +++ b/app/android/app/src/main/res/xml/phone_accessibility_service.xml
 @@ -8,9 +8,10 @@
@@ -10813,7 +10831,7 @@ index 1617f97..72f31ad 100644
      android:notificationTimeout="100"
      android:description="@string/phone_a11y_description"
 diff --git a/app/android/app/src/main/res/xml/shortcuts.xml b/app/android/app/src/main/res/xml/shortcuts.xml
-index 3540cb2..8a4282e 100644
+index 3540cb26..8a4282ec 100644
 --- a/app/android/app/src/main/res/xml/shortcuts.xml
 +++ b/app/android/app/src/main/res/xml/shortcuts.xml
 @@ -2,7 +2,8 @@
@@ -10856,7 +10874,7 @@ index 3540cb2..8a4282e 100644
  </shortcuts>
 diff --git a/app/android/app/src/test/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/DisplayAwakeTest.kt b/app/android/app/src/test/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/DisplayAwakeTest.kt
 new file mode 100644
-index 0000000..b76b8ab
+index 00000000..b76b8abe
 --- /dev/null
 +++ b/app/android/app/src/test/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/DisplayAwakeTest.kt
 @@ -0,0 +1,105 @@
@@ -10967,7 +10985,7 @@ index 0000000..b76b8ab
 +}
 diff --git a/app/android/app/src/test/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/DisplayOrientationTest.kt b/app/android/app/src/test/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/DisplayOrientationTest.kt
 new file mode 100644
-index 0000000..f8a53ff
+index 00000000..f8a53ff8
 --- /dev/null
 +++ b/app/android/app/src/test/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/DisplayOrientationTest.kt
 @@ -0,0 +1,48 @@
@@ -11021,7 +11039,7 @@ index 0000000..f8a53ff
 +}
 diff --git a/app/android/app/src/test/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/DisplayFrameGeometryTest.kt b/app/android/app/src/test/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/DisplayFrameGeometryTest.kt
 new file mode 100644
-index 0000000..c1c2dd1
+index 00000000..c1c2dd1a
 --- /dev/null
 +++ b/app/android/app/src/test/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/DisplayFrameGeometryTest.kt
 @@ -0,0 +1,39 @@
@@ -11066,7 +11084,7 @@ index 0000000..c1c2dd1
 +}
 diff --git a/app/android/app/src/test/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/FrameMathTest.kt b/app/android/app/src/test/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/FrameMathTest.kt
 new file mode 100644
-index 0000000..f0d8831
+index 00000000..f0d88316
 --- /dev/null
 +++ b/app/android/app/src/test/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/FrameMathTest.kt
 @@ -0,0 +1,45 @@
@@ -11117,7 +11135,7 @@ index 0000000..f0d8831
 +}
 diff --git a/app/assets/kws/LICENSE.txt b/app/assets/kws/LICENSE.txt
 new file mode 100644
-index 0000000..956c74d
+index 00000000..956c74de
 --- /dev/null
 +++ b/app/assets/kws/LICENSE.txt
 @@ -0,0 +1,20 @@
@@ -11144,7 +11162,7 @@ index 0000000..956c74d
 \ No newline at end of file
 diff --git a/app/assets/kws/NOTICE.txt b/app/assets/kws/NOTICE.txt
 new file mode 100644
-index 0000000..d2e961d
+index 00000000..d2e961d7
 --- /dev/null
 +++ b/app/assets/kws/NOTICE.txt
 @@ -0,0 +1,4 @@
@@ -83696,7 +83714,7 @@ HcmV?d00001
 
 diff --git a/app/assets/kws/tokens.txt b/app/assets/kws/tokens.txt
 new file mode 100644
-index 0000000..5880fbf
+index 00000000..5880fbff
 --- /dev/null
 +++ b/app/assets/kws/tokens.txt
 @@ -0,0 +1,227 @@
@@ -83928,7 +83946,7 @@ index 0000000..5880fbf
 +#28 225
 +#29 226
 diff --git a/app/lib/app.dart b/app/lib/app.dart
-index 1b1e7de..ec5aedb 100644
+index 1b1e7de5..ec5aedb5 100644
 --- a/app/lib/app.dart
 +++ b/app/lib/app.dart
 @@ -5,6 +5,8 @@ import 'package:flutter/material.dart';
@@ -83967,7 +83985,7 @@ index 1b1e7de..ec5aedb 100644
        theme: _light,
 diff --git a/app/lib/app_navigator.dart b/app/lib/app_navigator.dart
 new file mode 100644
-index 0000000..8e1a253
+index 00000000..8e1a253a
 --- /dev/null
 +++ b/app/lib/app_navigator.dart
 @@ -0,0 +1,4 @@
@@ -83976,7 +83994,7 @@ index 0000000..8e1a253
 +/// 全局导航键：通话悬浮球等"不挂在某个页面下"的入口用它在任何界面 push/pop。
 +final GlobalKey<NavigatorState> appNavigatorKey = GlobalKey<NavigatorState>();
 diff --git a/app/lib/l10n/app_en.arb b/app/lib/l10n/app_en.arb
-index e1de712..7f6016a 100644
+index e1de7125..7f6016a8 100644
 --- a/app/lib/l10n/app_en.arb
 +++ b/app/lib/l10n/app_en.arb
 @@ -563,6 +563,7 @@
@@ -84043,7 +84061,7 @@ index e1de712..7f6016a 100644
    "starPromptBody": "DSH Go is free and open source. If it’s made your phone a little nicer to use, please give it a Star — it means so much to this little whale!",
    "starPromptPlea": "Pretty please~ It really matters!!",
 diff --git a/app/lib/l10n/app_zh.arb b/app/lib/l10n/app_zh.arb
-index ec1a316..bc26861 100644
+index ec1a316d..bc268613 100644
 --- a/app/lib/l10n/app_zh.arb
 +++ b/app/lib/l10n/app_zh.arb
 @@ -1062,6 +1062,7 @@
@@ -84199,7 +84217,7 @@ index ec1a316..bc26861 100644
    "@starPromptTitle": {
      "description": "The star prompt's first line. hours is the whole hours of use so far, rounded down; 0 is half an hour (the first ask comes after 30 minutes). The word joiner keeps the ~ on the line of the word before it.",
 diff --git a/app/lib/l10n/gen/app_localizations.dart b/app/lib/l10n/gen/app_localizations.dart
-index 05ad2de..1e4c7ff 100644
+index 05ad2de7..1e4c7ffb 100644
 --- a/app/lib/l10n/gen/app_localizations.dart
 +++ b/app/lib/l10n/gen/app_localizations.dart
 @@ -3470,6 +3470,12 @@ abstract class L10n {
@@ -84512,7 +84530,7 @@ index 05ad2de..1e4c7ff 100644
    ///
    /// In zh, this message translates to:
 diff --git a/app/lib/l10n/gen/app_localizations_en.dart b/app/lib/l10n/gen/app_localizations_en.dart
-index 546fef8..20abe2e 100644
+index 546fef86..20abe2e2 100644
 --- a/app/lib/l10n/gen/app_localizations_en.dart
 +++ b/app/lib/l10n/gen/app_localizations_en.dart
 @@ -1925,6 +1925,9 @@ class L10nEn extends L10n {
@@ -84638,7 +84656,7 @@ index 546fef8..20abe2e 100644
    String starPromptTitle(int hours) {
      String _temp0 = intl.Intl.pluralLogic(
 diff --git a/app/lib/l10n/gen/app_localizations_zh.dart b/app/lib/l10n/gen/app_localizations_zh.dart
-index c66b20d..c9a6aa2 100644
+index c66b20de..c9a6aa22 100644
 --- a/app/lib/l10n/gen/app_localizations_zh.dart
 +++ b/app/lib/l10n/gen/app_localizations_zh.dart
 @@ -1827,6 +1827,9 @@ class L10nZh extends L10n {
@@ -84860,7 +84878,7 @@ index c66b20d..c9a6aa2 100644
    String starPromptTitle(int hours) {
      String _temp0 = intl.Intl.pluralLogic(
 diff --git a/app/lib/l10n/parts/android_shell_en.arb b/app/lib/l10n/parts/android_shell_en.arb
-index 9592bae..68a9156 100644
+index 9592bae3..68a9156c 100644
 --- a/app/lib/l10n/parts/android_shell_en.arb
 +++ b/app/lib/l10n/parts/android_shell_en.arb
 @@ -80,5 +80,6 @@
@@ -84872,7 +84890,7 @@ index 9592bae..68a9156 100644
 +  "androidShellNoConfirm": "Don't confirm each command (at your own risk)"
  }
 diff --git a/app/lib/l10n/parts/android_shell_zh.arb b/app/lib/l10n/parts/android_shell_zh.arb
-index 104780b..a2b020d 100644
+index 104780b5..a2b020d2 100644
 --- a/app/lib/l10n/parts/android_shell_zh.arb
 +++ b/app/lib/l10n/parts/android_shell_zh.arb
 @@ -80,5 +80,6 @@
@@ -84884,7 +84902,7 @@ index 104780b..a2b020d 100644
 +  "androidShellNoConfirm": "不再逐条确认（风险自负）"
  }
 diff --git a/app/lib/l10n/parts/phone_en.arb b/app/lib/l10n/parts/phone_en.arb
-index 47d0cdf..07b1f84 100644
+index 47d0cdf6..07b1f843 100644
 --- a/app/lib/l10n/parts/phone_en.arb
 +++ b/app/lib/l10n/parts/phone_en.arb
 @@ -253,6 +253,9 @@
@@ -84909,7 +84927,7 @@ index 47d0cdf..07b1f84 100644
 +  "phoneVirtualFpsValue": "2–10 fps; lower saves power"
  }
 diff --git a/app/lib/l10n/parts/phone_zh.arb b/app/lib/l10n/parts/phone_zh.arb
-index 4d61a2d..94a6064 100644
+index 4d61a2d3..94a60645 100644
 --- a/app/lib/l10n/parts/phone_zh.arb
 +++ b/app/lib/l10n/parts/phone_zh.arb
 @@ -162,7 +162,7 @@
@@ -85022,7 +85040,7 @@ index 4d61a2d..94a6064 100644
 +  "phoneVirtualFpsValue": "2–10 fps，越低越省电"
  }
 diff --git a/app/lib/l10n/parts/speech_en.arb b/app/lib/l10n/parts/speech_en.arb
-index 1b20cf2..b3e9d07 100644
+index 1b20cf24..b3e9d07d 100644
 --- a/app/lib/l10n/parts/speech_en.arb
 +++ b/app/lib/l10n/parts/speech_en.arb
 @@ -113,6 +113,7 @@
@@ -85059,7 +85077,7 @@ index 1b20cf2..b3e9d07 100644
 +  "speechWakeFreshChatHint": "Off: continue the last one; on: a fresh conversation every time (wake word and AI key alike)"
  }
 diff --git a/app/lib/l10n/parts/speech_zh.arb b/app/lib/l10n/parts/speech_zh.arb
-index 3822fa2..64fcbe0 100644
+index 3822fa20..64fcbe07 100644
 --- a/app/lib/l10n/parts/speech_zh.arb
 +++ b/app/lib/l10n/parts/speech_zh.arb
 @@ -113,6 +113,7 @@
@@ -85096,7 +85114,7 @@ index 3822fa2..64fcbe0 100644
 +  "speechWakeFreshChatHint": "关：接着上次那个对话；开：每次都新建一个（唤醒词和 AI 键共用）"
  }
 diff --git a/app/lib/links/launcher_entries.dart b/app/lib/links/launcher_entries.dart
-index d0e32a5..73484ed 100644
+index d0e32a53..73484ed0 100644
 --- a/app/lib/links/launcher_entries.dart
 +++ b/app/lib/links/launcher_entries.dart
 @@ -31,6 +31,8 @@ sealed class LauncherEntry {
@@ -85121,7 +85139,7 @@ index d0e32a5..73484ed 100644
    final String text;
  
 diff --git a/app/lib/phone/phone_channel.dart b/app/lib/phone/phone_channel.dart
-index 61789e5..7affbe4 100644
+index 61789e5d..7affbe46 100644
 --- a/app/lib/phone/phone_channel.dart
 +++ b/app/lib/phone/phone_channel.dart
 @@ -226,7 +226,10 @@ class AdbStatus {
@@ -85317,7 +85335,7 @@ index 61789e5..7affbe4 100644
    Future<PhoneSkillReply> openSkillDraft(PhoneSkillCandidate candidate, {required bool confirmed}) =>
 diff --git a/app/lib/phone/virtual_screen_window.dart b/app/lib/phone/virtual_screen_window.dart
 new file mode 100644
-index 0000000..adcf154
+index 00000000..adcf1544
 --- /dev/null
 +++ b/app/lib/phone/virtual_screen_window.dart
 @@ -0,0 +1,144 @@
@@ -85467,7 +85485,7 @@ index 0000000..adcf154
 +}
 diff --git a/app/lib/speech/call/active_call.dart b/app/lib/speech/call/active_call.dart
 new file mode 100644
-index 0000000..b30cbf8
+index 00000000..b30cbf83
 --- /dev/null
 +++ b/app/lib/speech/call/active_call.dart
 @@ -0,0 +1,110 @@
@@ -85582,7 +85600,7 @@ index 0000000..b30cbf8
 +  }
 +}
 diff --git a/app/lib/speech/call/chat_call.dart b/app/lib/speech/call/chat_call.dart
-index b9b8ffa..0c4f229 100644
+index b9b8ffab..0c4f229c 100644
 --- a/app/lib/speech/call/chat_call.dart
 +++ b/app/lib/speech/call/chat_call.dart
 @@ -9,6 +9,7 @@ import 'package:dsh_client/dsh_client.dart';
@@ -85610,7 +85628,7 @@ index b9b8ffa..0c4f229 100644
      _idle?.cancel();
      if (!_replies.isClosed) _replies.add(CallReply(_last, done: true));
 diff --git a/app/lib/speech/call/thinking_cue.dart b/app/lib/speech/call/thinking_cue.dart
-index a361bf5..a7f48c0 100644
+index a361bf55..a7f48c05 100644
 --- a/app/lib/speech/call/thinking_cue.dart
 +++ b/app/lib/speech/call/thinking_cue.dart
 @@ -32,9 +32,10 @@ Uint8List thinkingCuePcm({int rate = 24000}) {
@@ -85626,7 +85644,7 @@ index a361bf5..a7f48c0 100644
    await audio.end(id);
  }
 diff --git a/app/lib/speech/call/voice_call.dart b/app/lib/speech/call/voice_call.dart
-index d97ef1a..fd2c6b6 100644
+index d97ef1a0..fd2c6b69 100644
 --- a/app/lib/speech/call/voice_call.dart
 +++ b/app/lib/speech/call/voice_call.dart
 @@ -20,6 +20,7 @@ import 'dart:async';
@@ -85749,7 +85767,7 @@ index d97ef1a..fd2c6b6 100644
            _voiceLevel = value;
 diff --git a/app/lib/speech/wake_reply.dart b/app/lib/speech/wake_reply.dart
 new file mode 100644
-index 0000000..4f13796
+index 00000000..4f137961
 --- /dev/null
 +++ b/app/lib/speech/wake_reply.dart
 @@ -0,0 +1,175 @@
@@ -85929,7 +85947,7 @@ index 0000000..4f13796
 +  return voice;
 +});
 diff --git a/app/lib/state/app_info.dart b/app/lib/state/app_info.dart
-index 18b01c2..f532b20 100644
+index 18b01c2e..f532b20a 100644
 --- a/app/lib/state/app_info.dart
 +++ b/app/lib/state/app_info.dart
 @@ -8,6 +8,11 @@ import '../l10n/l10n.dart';
@@ -85945,7 +85963,7 @@ index 18b01c2..f532b20 100644
    static String get displayVersion {
      final parts = version.split('+');
 diff --git a/app/lib/state/update_state.dart b/app/lib/state/update_state.dart
-index c089d19..a15b64d 100644
+index c089d192..a15b64da 100644
 --- a/app/lib/state/update_state.dart
 +++ b/app/lib/state/update_state.dart
 @@ -359,6 +359,15 @@ class AppUpdateController extends Notifier<AppUpdateState> {
@@ -85966,7 +85984,7 @@ index c089d19..a15b64d 100644
  
 diff --git a/app/lib/state/virtual_screen_state.dart b/app/lib/state/virtual_screen_state.dart
 new file mode 100644
-index 0000000..7958894
+index 00000000..79588945
 --- /dev/null
 +++ b/app/lib/state/virtual_screen_state.dart
 @@ -0,0 +1,456 @@
@@ -86427,7 +86445,7 @@ index 0000000..7958894
 +  return all.isEmpty ? null : all.first.id;
 +}
 diff --git a/app/lib/ui/chat/chat_rows.dart b/app/lib/ui/chat/chat_rows.dart
-index 0702d0a..d5e8951 100644
+index 0702d0ae..d5e89519 100644
 --- a/app/lib/ui/chat/chat_rows.dart
 +++ b/app/lib/ui/chat/chat_rows.dart
 @@ -448,6 +448,8 @@ List<ChatRow> deriveRows({
@@ -86440,7 +86458,7 @@ index 0702d0a..d5e8951 100644
          // 不知道属于哪一轮时,一条用户消息就是一轮的分界。
          close(cut: turn == null ? null : item.seq, artifactsBefore: item.seq);
 diff --git a/app/lib/ui/chat/chat_screen.dart b/app/lib/ui/chat/chat_screen.dart
-index 46d2fd3..5f8f824 100644
+index 46d2fd32..5f8f8240 100644
 --- a/app/lib/ui/chat/chat_screen.dart
 +++ b/app/lib/ui/chat/chat_screen.dart
 @@ -28,6 +28,9 @@ import '../../state/streaming_pcm_state.dart';
@@ -86606,7 +86624,7 @@ index 46d2fd3..5f8f824 100644
                                    Card(
                                      child: Padding(
 diff --git a/app/lib/ui/chat/media/media_format.dart b/app/lib/ui/chat/media/media_format.dart
-index 2a34ba3..f146fdc 100644
+index 2a34ba31..f146fdcb 100644
 --- a/app/lib/ui/chat/media/media_format.dart
 +++ b/app/lib/ui/chat/media/media_format.dart
 @@ -4,6 +4,7 @@
@@ -86637,7 +86655,7 @@ index 2a34ba3..f146fdc 100644
 +  };
 +}
 diff --git a/app/lib/ui/phone/android_shell_page.dart b/app/lib/ui/phone/android_shell_page.dart
-index 1214058..167d646 100644
+index 1214058f..167d6461 100644
 --- a/app/lib/ui/phone/android_shell_page.dart
 +++ b/app/lib/ui/phone/android_shell_page.dart
 @@ -2,6 +2,7 @@ import 'dart:async';
@@ -86702,7 +86720,7 @@ index 1214058..167d646 100644
                title: l10n.androidShellStatus,
                subtitle: _loading
 diff --git a/app/lib/ui/phone/background_preview.dart b/app/lib/ui/phone/background_preview.dart
-index 173f148..475ff4b 100644
+index 173f148a..475ff4b2 100644
 --- a/app/lib/ui/phone/background_preview.dart
 +++ b/app/lib/ui/phone/background_preview.dart
 @@ -1,13 +1,13 @@
@@ -87002,7 +87020,7 @@ index 173f148..475ff4b 100644
 +  _ => '任务迁移没成功，应用还在原处。',
 +};
 diff --git a/app/lib/ui/phone/dnd_mode_page.dart b/app/lib/ui/phone/dnd_mode_page.dart
-index 3a23e52..8bea0b8 100644
+index 3a23e526..8bea0b8a 100644
 --- a/app/lib/ui/phone/dnd_mode_page.dart
 +++ b/app/lib/ui/phone/dnd_mode_page.dart
 @@ -16,8 +16,8 @@ import '../common/row_marks.dart';
@@ -87242,7 +87260,7 @@ index 3a23e52..8bea0b8 100644
                margin: _groupMargin,
                title: l10n.phoneDndRequirements,
 diff --git a/app/lib/ui/phone/phone_control_screen.dart b/app/lib/ui/phone/phone_control_screen.dart
-index fc641e2..5d22fc9 100644
+index fc641e25..5d22fc94 100644
 --- a/app/lib/ui/phone/phone_control_screen.dart
 +++ b/app/lib/ui/phone/phone_control_screen.dart
 @@ -16,6 +16,7 @@ import '../../state/phone_overlay_prefs.dart';
@@ -87255,7 +87273,7 @@ index fc641e2..5d22fc9 100644
  import '../common/brief_notice.dart';
 diff --git a/app/lib/ui/phone/phone_task_card.dart b/app/lib/ui/phone/phone_task_card.dart
 new file mode 100644
-index 0000000..26e0742
+index 00000000..26e07421
 --- /dev/null
 +++ b/app/lib/ui/phone/phone_task_card.dart
 @@ -0,0 +1,430 @@
@@ -87691,7 +87709,7 @@ index 0000000..26e0742
 +final phoneTaskClockProvider = NotifierProvider<PhoneTaskClock, DateTime>(PhoneTaskClock.new);
 diff --git a/app/lib/ui/phone/virtual_screen_host.dart b/app/lib/ui/phone/virtual_screen_host.dart
 new file mode 100644
-index 0000000..7f66331
+index 00000000..7f66331d
 --- /dev/null
 +++ b/app/lib/ui/phone/virtual_screen_host.dart
 @@ -0,0 +1,397 @@
@@ -88094,7 +88112,7 @@ index 0000000..7f66331
 +}
 diff --git a/app/lib/ui/phone/virtual_screen_page.dart b/app/lib/ui/phone/virtual_screen_page.dart
 new file mode 100644
-index 0000000..15060b4
+index 00000000..15060b44
 --- /dev/null
 +++ b/app/lib/ui/phone/virtual_screen_page.dart
 @@ -0,0 +1,114 @@
@@ -88214,7 +88232,7 @@ index 0000000..15060b4
 +}
 diff --git a/app/lib/ui/phone/virtual_screen_surface.dart b/app/lib/ui/phone/virtual_screen_surface.dart
 new file mode 100644
-index 0000000..adebc52
+index 00000000..adebc521
 --- /dev/null
 +++ b/app/lib/ui/phone/virtual_screen_surface.dart
 @@ -0,0 +1,286 @@
@@ -88505,7 +88523,7 @@ index 0000000..adebc52
 +  }
 +}
 diff --git a/app/lib/ui/settings/voice_settings_page.dart b/app/lib/ui/settings/voice_settings_page.dart
-index 38418e6..997bccc 100644
+index 38418e6a..997bcccd 100644
 --- a/app/lib/ui/settings/voice_settings_page.dart
 +++ b/app/lib/ui/settings/voice_settings_page.dart
 @@ -13,6 +13,9 @@ import '../../state/streaming_asr_state.dart' show SystemAsrReadiness, ohosStrea
@@ -88689,7 +88707,7 @@ index 38418e6..997bccc 100644
    }
 diff --git a/app/lib/ui/shell/call_overlay_host.dart b/app/lib/ui/shell/call_overlay_host.dart
 new file mode 100644
-index 0000000..a7cb046
+index 00000000..a7cb0466
 --- /dev/null
 +++ b/app/lib/ui/shell/call_overlay_host.dart
 @@ -0,0 +1,55 @@
@@ -88749,7 +88767,7 @@ index 0000000..a7cb046
 +  Widget build(BuildContext context) => const SizedBox.shrink();
 +}
 diff --git a/app/lib/ui/shell/home_shell.dart b/app/lib/ui/shell/home_shell.dart
-index 9a236c7..005e9e7 100644
+index 9a236c71..005e9e7e 100644
 --- a/app/lib/ui/shell/home_shell.dart
 +++ b/app/lib/ui/shell/home_shell.dart
 @@ -34,6 +34,8 @@ import '../plugins/plugins_screen.dart';
@@ -88774,7 +88792,7 @@ index 9a236c7..005e9e7 100644
                        const ForumLinkHost(),
                        // DS Bot: keeps its feed and notifications alive with the shell.
 diff --git a/app/lib/ui/shell/system_entry_host.dart b/app/lib/ui/shell/system_entry_host.dart
-index 172e773..3f2fdd9 100644
+index 172e773b..3f2fdd94 100644
 --- a/app/lib/ui/shell/system_entry_host.dart
 +++ b/app/lib/ui/shell/system_entry_host.dart
 @@ -37,9 +37,15 @@ import '../../state/compose_inbox.dart';
@@ -88839,7 +88857,7 @@ index 172e773..3f2fdd9 100644
          // The microphone opens only for an app on screen; the shortcut's
          // intent can arrive a beat before Flutter hears it is resumed.
 diff --git a/app/lib/ui/speech/voice_call_page.dart b/app/lib/ui/speech/voice_call_page.dart
-index 2f99689..7841de0 100644
+index 2f99689f..7841de0c 100644
 --- a/app/lib/ui/speech/voice_call_page.dart
 +++ b/app/lib/ui/speech/voice_call_page.dart
 @@ -17,6 +17,10 @@ import 'package:flutter/services.dart';
@@ -89294,7 +89312,7 @@ index 2f99689..7841de0 100644
                                key: const ValueKey('call-hang-up'),
                                icon: AppIcons.hangUp,
 diff --git a/app/lib/ui/theme/app_icons.dart b/app/lib/ui/theme/app_icons.dart
-index 0d611ff..a10a74e 100644
+index 0d611ff7..a10a74ef 100644
 --- a/app/lib/ui/theme/app_icons.dart
 +++ b/app/lib/ui/theme/app_icons.dart
 @@ -384,6 +384,10 @@ abstract final class AppIcons {
@@ -89309,7 +89327,7 @@ index 0d611ff..a10a74e 100644
    static const callTranscript = DshGlyphs.article;
  
 diff --git a/app/lib/ui/update/update_tiles.dart b/app/lib/ui/update/update_tiles.dart
-index 1bb918d..540577b 100644
+index 1bb918d6..540577b5 100644
 --- a/app/lib/ui/update/update_tiles.dart
 +++ b/app/lib/ui/update/update_tiles.dart
 @@ -21,8 +21,11 @@ class AppUpdateTiles extends ConsumerWidget {
@@ -89327,7 +89345,7 @@ index 1bb918d..540577b 100644
      final tint = this.tint;
 diff --git a/app/lib/voice/wake_keywords.dart b/app/lib/voice/wake_keywords.dart
 new file mode 100644
-index 0000000..8a88271
+index 00000000..8a882710
 --- /dev/null
 +++ b/app/lib/voice/wake_keywords.dart
 @@ -0,0 +1,50 @@
@@ -89383,7 +89401,7 @@ index 0000000..8a88271
 +}
 diff --git a/app/lib/voice/wake_settings.dart b/app/lib/voice/wake_settings.dart
 new file mode 100644
-index 0000000..4bbab42
+index 00000000..4bbab424
 --- /dev/null
 +++ b/app/lib/voice/wake_settings.dart
 @@ -0,0 +1,131 @@
@@ -89520,7 +89538,7 @@ index 0000000..4bbab42
 +final wakeSettingsProvider = NotifierProvider<WakeSettingsController, WakeSettings>(WakeSettingsController.new);
 diff --git a/app/lib/voice/wake_word.dart b/app/lib/voice/wake_word.dart
 new file mode 100644
-index 0000000..4013a74
+index 00000000..4013a748
 --- /dev/null
 +++ b/app/lib/voice/wake_word.dart
 @@ -0,0 +1,856 @@
@@ -90381,7 +90399,7 @@ index 0000000..4013a74
 +  }
 +}
 diff --git a/app/pubspec.lock b/app/pubspec.lock
-index d2ab114..5ad801d 100644
+index d2ab1143..5ad801da 100644
 --- a/app/pubspec.lock
 +++ b/app/pubspec.lock
 @@ -809,6 +809,14 @@ packages:
@@ -90400,7 +90418,7 @@ index d2ab114..5ad801d 100644
      dependency: transitive
      description:
 diff --git a/app/pubspec.yaml b/app/pubspec.yaml
-index 182116d..f248ad1 100644
+index 182116db..f248ad17 100644
 --- a/app/pubspec.yaml
 +++ b/app/pubspec.yaml
 @@ -52,6 +52,8 @@ dependencies:
@@ -90423,7 +90441,7 @@ index 182116d..f248ad1 100644
      # generated by tool/make_whale_sprites.py.
 diff --git a/docs/wake-word.md b/docs/wake-word.md
 new file mode 100644
-index 0000000..3ff7806
+index 00000000..3ff7806a
 --- /dev/null
 +++ b/docs/wake-word.md
 @@ -0,0 +1,107 @@
@@ -90536,7 +90554,7 @@ index 0000000..3ff7806
 +- 唤醒词用通用流式模型做子串匹配，不是 sherpa 的 `KeywordSpotter`（需要另外的 kws 模型）。安静环境下 2 字词的误触发率看模型，长一点的词更稳。
 diff --git a/dsh-go-wake.patch b/dsh-go-wake.patch
 new file mode 100644
-index 0000000..617c898
+index 00000000..617c898b
 --- /dev/null
 +++ b/dsh-go-wake.patch
 @@ -0,0 +1,2065 @@
@@ -92607,7 +92625,7 @@ index 0000000..617c898
 +
 diff --git a/tooling/build-wake-apk.sh b/tooling/build-wake-apk.sh
 new file mode 100644
-index 0000000..1d7f139
+index 00000000..1d7f139d
 --- /dev/null
 +++ b/tooling/build-wake-apk.sh
 @@ -0,0 +1,68 @@
