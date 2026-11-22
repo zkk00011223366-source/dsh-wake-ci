@@ -1,7 +1,7 @@
-From 8fe0cb64029d134611907be655b8455412b98445 Mon Sep 17 00:00:00 2001
+From e9a21c6063ef1757650d17c6810e191e4a10f44c Mon Sep 17 00:00:00 2001
 From: ci <ci@local>
-Date: Mon, 23 Nov 2026 05:43:24 +0800
-Subject: [PATCH] pb: scene4u
+Date: Mon, 23 Nov 2026 06:05:32 +0800
+Subject: [PATCH] pb: scene4v
 
 ---
  .gitattributes                                |    3 +
@@ -40,7 +40,7 @@ Subject: [PATCH] pb: scene4u
  .../background/DisplayOrientationKeeper.kt    |  125 +
  .../background/DisplayOrientationWatch.kt     |  100 +
  .../dsh_app/phone/background/KeptTasks.kt     |   39 +
- .../phone/background/PrivilegedDisplayCore.kt | 1105 +++++++-
+ .../phone/background/PrivilegedDisplayCore.kt | 1148 +++++++-
  .../phone/background/PrivilegedDisplayHost.kt |    6 +-
  .../phone/background/PrivilegedProtocol.kt    |   83 +-
  .../dsh_app/phone/skills/PhoneSkillDraft.kt   |    2 +-
@@ -131,7 +131,7 @@ Subject: [PATCH] pb: scene4u
  docs/wake-word.md                             |  107 +
  dsh-go-wake.patch                             | 2065 ++++++++++++++
  tooling/build-wake-apk.sh                     |   68 +
- 127 files changed, 16505 insertions(+), 554 deletions(-)
+ 127 files changed, 16545 insertions(+), 557 deletions(-)
  create mode 100644 .github/workflows/wake-apk.yml
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallForegroundService.kt
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallOverlay.kt
@@ -4513,7 +4513,7 @@ index 00000000..c1dcef97
 +    fun logSize() = Log.i(TAG, "vscreen: task-finish kept-total=$size")
 +}
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/PrivilegedDisplayCore.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/PrivilegedDisplayCore.kt
-index c7ed0f7a..d6d5125c 100644
+index c7ed0f7a..67652123 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/PrivilegedDisplayCore.kt
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/PrivilegedDisplayCore.kt
 @@ -11,6 +11,7 @@ package io.github.ccch1mneyyy.dsh_app.phone.background
@@ -4681,7 +4681,7 @@ index c7ed0f7a..d6d5125c 100644
          if (op == Proto.OP_LAUNCH && expected != null) {
              val shown = TargetIdentity.shown(response.get(Proto.PKG), response.get(Proto.TARGET_UID))
              val actualDisplay = display?.display
-@@ -729,57 +817,642 @@ class PrivilegedDisplayCore internal constructor(
+@@ -729,57 +817,655 @@ class PrivilegedDisplayCore internal constructor(
      private fun displayId(): Int = display?.display?.displayId ?: throw Fault("displayMissing")
      private fun requireDisplay() { if (display == null) throw Fault("displayMissing") }
  
@@ -5325,7 +5325,20 @@ index c7ed0f7a..d6d5125c 100644
 +        // Mika 的屏同样带 OWN_CONTENT_ONLY，但它不靠 launchDisplayId 让任务留下（它 launch 后不校验、
 +        // 真正搬动一律走 moveRootTaskToDisplay 显式搬），所以没被这条挡住。
 +        // 我们以"任务要真的活在这块屏上"为目标，因此**一律不带 OWN_CONTENT_ONLY**。
-+        val names = BASE_FLAG_NAMES - "OWN_CONTENT_ONLY"
++        // 【4v】镜像主屏的根因（真机 05:55 `dumpsys SurfaceFlinger` 实证）：
++        //     Display 258 name="dsh-background"
++        //       └─ Display 0 name="内置屏幕"(MirrorRoot)
++        //          └─ (Mirroring) Display 0
++        // 不带 OWN_CONTENT_ONLY 的虚拟屏在 SurfaceFlinger 里被挂上主屏的 MirrorRoot，
++        // 于是"屏里没任务"时输出面照样有画面＝手机当前界面的实时镜像，连我们自己的悬浮窗
++        // 也一起拍进去（用户说的"无限套娃"）；更糟的是 hasPicture() 永远为真，窗与条
++        // 在没有真画面时也会出现（违反需求 §6.2 / §4.4）。
++        // 而拿掉 OWN_CONTENT_ONLY 想换的 canHostTasks=true 并没有发生：dumpsys 里 257/258
++        // 两块屏照样 `canHostTasks false`。Mika 的屏一直带 OWN_CONTENT_ONLY（ShellService
++        // FLAG_PUBLIC|FLAG_OWN_CONTENT_ONLY|…）且从不镜像。所以这里恢复它：屏只显示自己的内容。
++        // 代价：任务不再靠 launchDisplayId 直接落屏，由 waitForPackageOnDisplay 在落错屏时
++        // 用 moveRootTask 显式搬进来（Mika 同一条路，本机实测可搬）。
++        val names = BASE_FLAG_NAMES
 +        val base = try {
 +            names.fold(0) { bits, name -> bits or displayFlag(name) }
 +        } catch (_: ReflectiveOperationException) { throw Fault("displayUnsupported") }
@@ -5345,7 +5358,7 @@ index c7ed0f7a..d6d5125c 100644
      private fun resolveLaunch(pkg: String, expected: PhoneAppIdentity?): Intent {
          val pm = privileged.packageManager
          val intent = runCatching { pm.getLaunchIntentForPackage(pkg) }.getOrNull() ?: throw Fault("notLaunchable")
-@@ -821,6 +1494,44 @@ class PrivilegedDisplayCore internal constructor(
+@@ -821,6 +1507,44 @@ class PrivilegedDisplayCore internal constructor(
      }
  
      /** (displayId, packages of that task) rows of one running-task read. */
@@ -5390,7 +5403,7 @@ index c7ed0f7a..d6d5125c 100644
      private fun taskRows(): List<Pair<Int, Set<String>>>? {
          val field = taskDisplayIdField ?: return null
          @Suppress("DEPRECATION")
-@@ -862,8 +1573,29 @@ class PrivilegedDisplayCore internal constructor(
+@@ -862,8 +1586,29 @@ class PrivilegedDisplayCore internal constructor(
  
      private fun launchPackage(pkg: String, intent: Intent) {
          val display = this.display ?: throw Fault("displayMissing")
@@ -5421,10 +5434,11 @@ index c7ed0f7a..d6d5125c 100644
          // A shell/UserService is not an ActivityManager-attached app process: a PendingIntent
          // avoids Context.startActivity's caller check (Phase, after Aether).
          var pending: PendingIntent? = null
-@@ -879,10 +1611,103 @@ class PrivilegedDisplayCore internal constructor(
+@@ -879,17 +1624,134 @@ class PrivilegedDisplayCore internal constructor(
          // Wait for the target on the owned display. Any app it brought up there instead is reported
          // by the read that follows; only a screen still empty, or a target that went to another
          // display, means the open did not happen here.
+-        val deadline = SystemClock.uptimeMillis() + 4000
 +        waitForPackageOnDisplay(pkg, display)
 +        sampleWhere(pkg)
 +        probeFirstFrame(display.display.displayId)
@@ -5511,10 +5525,21 @@ index c7ed0f7a..d6d5125c 100644
 +    }
 +
 +    private fun waitForPackageOnDisplay(pkg: String, display: VirtualDisplay) {
-         val deadline = SystemClock.uptimeMillis() + 4000
++        val start = SystemClock.uptimeMillis()
++        val deadline = start + 4000
++        var relocateTried = false
          while (foregroundPackage() != pkg) {
-             if (SystemClock.uptimeMillis() >= deadline) {
+-            if (SystemClock.uptimeMillis() >= deadline) {
 -                if (foregroundTask() != null) return
++            val now = SystemClock.uptimeMillis()
++            // 【4v】恢复 OWN_CONTENT_ONLY 后，`launchDisplayId` 有可能被系统判"这块屏不装任务"，
++            // 把任务摆到主屏上（就是 canHostTasks=false 的老症状）。Mika 不依赖 launchDisplayId：
++            // 启动之后显式搬。这里在 1.2 秒时试一次，搬成功这次 open 就算成立。
++            if (!relocateTried && now - start >= 1200) {
++                relocateTried = true
++                if (tryRelocateInto(pkg, display.display.displayId)) return
++            }
++            if (now >= deadline) {
 +                // 落屏校验（真机 17:37）：屏上"有任务"不等于"目标应用在这个屏上"——
 +                // 占位页在屏上、计算器落在主屏时，旧写法仍报 ok=true，用户看到的就是黑块。
 +                // 只认任务表事实：这个包必须真的在本次这块虚拟屏上。
@@ -5522,11 +5547,33 @@ index c7ed0f7a..d6d5125c 100644
 +                if (landed == display.display.displayId) return
 +                io.github.ccch1mneyyy.dsh_app.wake.WakeTrace.log(
 +                    "open: landed pkg=$pkg expected=${display.display.displayId} actual=$landed -> FAIL")
-+                throw Fault("launchLandedOnMain")
                  val placement = taskRows()?.let { TargetIdentity.placement(pkg, display.display.displayId, it) }
-                 throw Fault(if (placement == TargetIdentity.Placement.OTHER_DISPLAY) "targetLeftDisplay" else "launchUnconfirmed")
+-                throw Fault(if (placement == TargetIdentity.Placement.OTHER_DISPLAY) "targetLeftDisplay" else "launchUnconfirmed")
++                throw Fault(if (placement == TargetIdentity.Placement.OTHER_DISPLAY) "targetLeftDisplay" else "launchLandedOnMain")
              }
-@@ -906,8 +1731,140 @@ class PrivilegedDisplayCore internal constructor(
+             sleepChecked(120)
+         }
+     }
+ 
++    /**
++     * 启动落在主屏时把它显式搬进虚拟屏（Mika 的做法：不靠 launchDisplayId，启动后 moveRootTask）。
++     * 判据：`open: relocate pkg=… task=… to=… ok=…`。搬不动就返回 false，由调用方照旧报失败。
++     */
++    private fun tryRelocateInto(pkg: String, target: Int): Boolean {
++        val landed = displayOfPackageInTasks(pkg)
++        if (landed != Display.DEFAULT_DISPLAY) return false
++        val task = taskWithPackage(Display.DEFAULT_DISPLAY, pkg) ?: return false
++        val refusal = moveRootTask(task, target)
++        val ok = refusal == null && awaitOnDisplay(pkg, target)
++        io.github.ccch1mneyyy.dsh_app.wake.WakeTrace.log(
++            "open: relocate pkg=$pkg task=$task to=$target ok=$ok reason=${refusal ?: "-"}")
++        return ok
++    }
++
+     /** Legacy success shape stays unchanged; failed physical cleanup retains its original handles. */
+     private fun releaseAll() = lock.withLock {
+         if (strictOwner) throw Fault("releaseReceiptRequired")
+@@ -906,8 +1768,140 @@ class PrivilegedDisplayCore internal constructor(
          if (readerAllocationUncertain) throw Fault("releaseUnconfirmed")
      }
  
@@ -5667,7 +5714,7 @@ index c7ed0f7a..d6d5125c 100644
          closeTreeConnection()
          visualObservation = null
          stopPreview()
-@@ -925,11 +1882,42 @@ class PrivilegedDisplayCore internal constructor(
+@@ -925,11 +1919,42 @@ class PrivilegedDisplayCore internal constructor(
              closeReaders()
          } else {
              val displayId = releasingDisplayId ?: throw Fault("releaseUnconfirmed")
@@ -5711,7 +5758,7 @@ index c7ed0f7a..d6d5125c 100644
              closeReaders()
              val deadline = SystemClock.uptimeMillis() + 1_000
              // The display itself is already released. A ROM whose task query is unreadable cannot
-@@ -944,6 +1932,7 @@ class PrivilegedDisplayCore internal constructor(
+@@ -944,6 +1969,7 @@ class PrivilegedDisplayCore internal constructor(
      }
  
      private fun clearResourceState() {
@@ -5719,7 +5766,7 @@ index c7ed0f7a..d6d5125c 100644
          display = null; owner = null; strictOwner = false; selfCheckOwner = false
          targetSequence = null; targetSnapshot = null; targetMain = null
          releasingDisplayId = null; displayCreationAttempted = false; displayApiReleased = false; probeDisplay = false
-@@ -1166,7 +2155,15 @@ class PrivilegedDisplayCore internal constructor(
+@@ -1166,7 +2192,15 @@ class PrivilegedDisplayCore internal constructor(
      private class CaptureResult(val jpeg: ByteArray, val raw: BackgroundPreviewState.RawFrame?, val local: ImageObservation?, val targetMatched: Boolean? = null)
  
      /** Null means only absent/black frames; other capture failures remain distinguishable. */
@@ -5736,7 +5783,7 @@ index c7ed0f7a..d6d5125c 100644
          val ir = lock.withLock {
              if (pendingReader != null || readerAllocationUncertain) throw Fault("releasePending")
              val vd = display ?: throw Fault("displayMissing")
-@@ -1359,8 +2356,23 @@ class PrivilegedDisplayCore internal constructor(
+@@ -1359,8 +2393,23 @@ class PrivilegedDisplayCore internal constructor(
                  } finally { image.close() }
                  // All Image/buffer access ends before releaseAll can close its ImageReader.
              } finally { lock.unlock() }
@@ -5761,7 +5808,7 @@ index c7ed0f7a..d6d5125c 100644
                  bitmap = Bitmap.createBitmap(raw.width, raw.height, Bitmap.Config.ARGB_8888)
                  bitmap!!.copyPixelsFromBuffer(ByteBuffer.wrap(raw.pixels))
              }
-@@ -2025,6 +3037,32 @@ class PrivilegedDisplayCore internal constructor(
+@@ -2025,6 +3074,32 @@ class PrivilegedDisplayCore internal constructor(
          if (waitForFinish && !accepted) throw Fault("inputRejected")
      }
  
@@ -5794,7 +5841,7 @@ index c7ed0f7a..d6d5125c 100644
      private fun setImePolicyHide(displayId: Int) {
          val sm = Class.forName("android.os.ServiceManager")
          val binder = sm.getMethod("getService", String::class.java).invoke(null, "window") as IBinder
-@@ -2079,9 +3117,14 @@ class PrivilegedDisplayCore internal constructor(
+@@ -2079,9 +3154,14 @@ class PrivilegedDisplayCore internal constructor(
  
      companion object {
          private val PACKAGE = Regex("[a-zA-Z][a-zA-Z0-9_]*(\\.[a-zA-Z0-9_]+)+")
