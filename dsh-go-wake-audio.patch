@@ -1,7 +1,7 @@
-From 1469af8f762da8ea60b660cee80480d93bda09ac Mon Sep 17 00:00:00 2001
+From ce48cdfc199040e27a0f83b8939a35d4ded9e34a Mon Sep 17 00:00:00 2001
 From: ci <ci@local>
-Date: Mon, 23 Nov 2026 07:14:43 +0800
-Subject: [PATCH] pb: scene4aa
+Date: Mon, 23 Nov 2026 07:18:19 +0800
+Subject: [PATCH] pb: scene4aa3
 
 ---
  .gitattributes                                |    3 +
@@ -45,14 +45,14 @@ Subject: [PATCH] pb: scene4aa
  .../phone/background/PrivilegedDisplayHost.kt |    6 +-
  .../phone/background/PrivilegedProtocol.kt    |   83 +-
  .../dsh_app/phone/skills/PhoneSkillDraft.kt   |    2 +-
- .../phone/vscreen/CloseActionReceiver.kt      |   73 +
+ .../phone/vscreen/CloseActionReceiver.kt      |   79 +
  .../phone/vscreen/DisplayFrameGeometry.kt     |   21 +
  .../dsh_app/phone/vscreen/FrameMath.kt        |   60 +
  .../dsh_app/phone/vscreen/FrontExitPrompt.kt  |  236 ++
  .../dsh_app/phone/vscreen/PresentationHost.kt |   69 +
  .../phone/vscreen/SwitchPromptOverlay.kt      |  142 +
  .../dsh_app/phone/vscreen/TaskMover.kt        |  152 +
- .../dsh_app/phone/vscreen/TransferBall.kt     |  461 ++++
+ .../dsh_app/phone/vscreen/TransferBall.kt     |  480 ++++
  .../phone/vscreen/VirtualScreenOverlay.kt     | 2445 +++++++++++++++++
  .../phone/vscreen/VirtualScreenPlugin.kt      |  249 ++
  .../dsh_app/phone/vscreen/VscreenUi.kt        |  111 +
@@ -132,7 +132,7 @@ Subject: [PATCH] pb: scene4aa
  docs/wake-word.md                             |  107 +
  dsh-go-wake.patch                             | 2065 ++++++++++++++
  tooling/build-wake-apk.sh                     |   68 +
- 128 files changed, 16625 insertions(+), 559 deletions(-)
+ 128 files changed, 16650 insertions(+), 559 deletions(-)
  create mode 100644 .github/workflows/wake-apk.yml
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallForegroundService.kt
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallOverlay.kt
@@ -6154,10 +6154,10 @@ index 2857ceef..41380764 100644
                  append("   核对 {{check_").append(n).append("}}，不能只凭工具返回正常判断业务完成。历史记录仅表明请求已交给驱动/系统并返回接受；")
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/CloseActionReceiver.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/CloseActionReceiver.kt
 new file mode 100644
-index 00000000..033bf8b4
+index 00000000..cda8e94a
 --- /dev/null
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/CloseActionReceiver.kt
-@@ -0,0 +1,73 @@
+@@ -0,0 +1,79 @@
 +package io.github.ccch1mneyyy.dsh_app.phone.vscreen
 +
 +import android.content.BroadcastReceiver
@@ -6214,6 +6214,12 @@ index 00000000..033bf8b4
 +            "launchflags" -> runCatching {
 +                PhoneRegistry.launchNoResetTask = intent.getStringExtra("value").equals("plain", ignoreCase = true)
 +                true
++            }.getOrDefault(false)
++            // 黄条长度运行时微调（真机用，不必重新出包）：
++            //   am broadcast -a io.github.ccch1mneyyy.dsh_app.DEBUG_VS --es op ball --es value 112
++            "ball" -> runCatching {
++                val dp = intent.getStringExtra("value")?.toFloatOrNull()
++                if (dp == null) false else { TransferBall.setSliverHeightDp(dp); true }
 +            }.getOrDefault(false)
 +            "probe" -> runCatching {
 +                PhoneRegistry.mainOpenTimelineProbe = intent.getStringExtra("value").equals("on", ignoreCase = true)
@@ -6949,10 +6955,10 @@ index 00000000..19aecfea
 +}
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/TransferBall.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/TransferBall.kt
 new file mode 100644
-index 00000000..4a205d7f
+index 00000000..6c4622a9
 --- /dev/null
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/TransferBall.kt
-@@ -0,0 +1,461 @@
+@@ -0,0 +1,480 @@
 +package io.github.ccch1mneyyy.dsh_app.phone.vscreen
 +
 +import android.annotation.SuppressLint
@@ -6998,8 +7004,10 @@ index 00000000..4a205d7f
 +    private const val KEY_SIDE = "side"
 +    private const val KEY_FRACTION = "fraction"
 +    private const val SLIVER_W = 20f
-+    // 长度按用户 06:4x 要求缩短 1/4：200 → 150dp。宽度不变（20dp）。
-+    private const val SLIVER_H = 150f
++    // 长度按用户 06:4x 要求缩短 1/4：200 → 150dp；07:2x 用户定：长度取当时的 1/3（150 → 50dp）。宽度不变（20dp）。
++    private const val SLIVER_H = 50f
++    /** 运行时长度（dp）。DEBUG_VS op=ball value=<dp> 可调，不必重新出包。 */
++    @Volatile private var sliverHeightDp = SLIVER_H
 +    private const val BALL = 44f
 +
 +    /** §14: the ball folds back on its own after this long. */
@@ -7228,7 +7236,24 @@ index 00000000..4a205d7f
 +    private fun sizeOf(expanded: Boolean, px: Float): Pair<Int, Int> =
 +        // 合并球：竖排两个键，所以展开态是 44×84dp 的胶囊（不是正方形）。
 +        if (expanded) (44 * px).roundToInt() to (84 * px).roundToInt()
-+        else (SLIVER_W * px).roundToInt() to (SLIVER_H * px).roundToInt()
++        else (SLIVER_W * px).roundToInt() to (sliverHeightDp * px).roundToInt()
++
++    /** 运行时改条长（dp）。给真机微调用：`DEBUG_VS --es op ball --es value 120`。 */
++    fun setSliverHeightDp(dp: Float) {
++        sliverHeightDp = dp.coerceIn(40f, 400f)
++        val app = appContext ?: return
++        val px = app.resources.displayMetrics.density
++        val (w, h) = sizeOf(false, px)
++        val view = root ?: return
++        val manager = wm ?: return
++        val lp = params ?: return
++        if (open) return
++        val area = area(app, manager)
++        val at = EdgeSnap.position(dock, w, h, area, (10 * px).roundToInt())
++        lp.width = w; lp.height = h; lp.x = at.x; lp.y = at.y
++        runCatching { manager.updateViewLayout(view, lp) }
++        io.github.ccch1mneyyy.dsh_app.wake.WakeTrace.log("ball: length=${sliverHeightDp}dp size=${w}x$h")
++    }
 +
 +    private fun setOpen(expanded: Boolean) {
 +        // 只有展开态显示两个图标；收成边条时只剩黄色条。
