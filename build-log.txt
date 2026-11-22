@@ -1,7 +1,7 @@
 == resources ==
-/dev/root       145G   51G   94G  36% /
+/dev/root       145G   52G   94G  36% /
                total        used        free      shared  buff/cache   available
-Mem:           15983        3913         296          49       12167       12069
+Mem:           15983        6003         243          49       10130        9979
 == tail ==
 
 ==> 依赖: flutter pub get
@@ -154,3 +154,4 @@ Preparing "Install Android SDK Platform 34 (revision 3)".
 Installing Android SDK Platform 34 in /home/runner/dev/android-sdk/platforms/android-34
 "Install Android SDK Platform 34 (revision 3)" complete.
 "Install Android SDK Platform 34 (revision 3)" finished.
+Flutter assets will be downloaded from https://storage.googleapis.com. Make sure you trust this source!
