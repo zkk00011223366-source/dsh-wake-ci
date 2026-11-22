@@ -1,6 +1,6 @@
-From 3134754d68b865ca9ea67fce16c5d67d8c606081 Mon Sep 17 00:00:00 2001
+From 8fe0cb64029d134611907be655b8455412b98445 Mon Sep 17 00:00:00 2001
 From: ci <ci@local>
-Date: Mon, 23 Nov 2026 05:39:24 +0800
+Date: Mon, 23 Nov 2026 05:43:24 +0800
 Subject: [PATCH] pb: scene4u
 
 ---
@@ -52,7 +52,7 @@ Subject: [PATCH] pb: scene4u
  .../phone/vscreen/SwitchPromptOverlay.kt      |  142 +
  .../dsh_app/phone/vscreen/TaskMover.kt        |  152 ++
  .../dsh_app/phone/vscreen/TransferBall.kt     |  460 ++++
- .../phone/vscreen/VirtualScreenOverlay.kt     | 2422 +++++++++++++++++
+ .../phone/vscreen/VirtualScreenOverlay.kt     | 2427 +++++++++++++++++
  .../phone/vscreen/VirtualScreenPlugin.kt      |  251 ++
  .../dsh_app/phone/vscreen/VscreenUi.kt        |  111 +
  .../ccch1mneyyy/dsh_app/runtime/GuestSetup.kt |   47 +-
@@ -131,7 +131,7 @@ Subject: [PATCH] pb: scene4u
  docs/wake-word.md                             |  107 +
  dsh-go-wake.patch                             | 2065 ++++++++++++++
  tooling/build-wake-apk.sh                     |   68 +
- 127 files changed, 16500 insertions(+), 554 deletions(-)
+ 127 files changed, 16505 insertions(+), 554 deletions(-)
  create mode 100644 .github/workflows/wake-apk.yml
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallForegroundService.kt
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallOverlay.kt
@@ -7275,10 +7275,10 @@ index 00000000..45ceccd0
 +}
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenOverlay.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenOverlay.kt
 new file mode 100644
-index 00000000..4eda1bf0
+index 00000000..e0b65f20
 --- /dev/null
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenOverlay.kt
-@@ -0,0 +1,2422 @@
+@@ -0,0 +1,2427 @@
 +package io.github.ccch1mneyyy.dsh_app.phone.vscreen
 +
 +import io.github.ccch1mneyyy.dsh_app.phone.PhoneRegistry
@@ -8670,7 +8670,12 @@ index 00000000..4eda1bf0
 +        transferKey?.let { key ->
 +            // 只在展开态显示；没有应用时置灰而不是消失（用户 15:15：按钮有时有有时没有）。
 +            key.visibility = if (shape == Shape.EXPAND) View.VISIBLE else View.GONE
-+            key.alpha = if (hasApp) KEY_ALPHA else KEY_ALPHA_DIM
++            // 【不要再莫名变暗】用户 05:4x："转换键的颜色偏暗"。
++            // 变暗依据是 hasApp（Dart 侧 status.task.app 是否有值），而任务一结束那个字段就空了，
++            // 应用其实还好好待在虚拟屏上（有 taskId / previewTaskId）→ 键却变暗，看着像"不可用"。
++            // 现在的判据：只要窗口绑着任务号，就认为可以切换，保持正常亮度。
++            val canTransfer = hasApp || taskId > 0 || previewTaskId > 0
++            key.alpha = if (canTransfer) KEY_ALPHA else KEY_ALPHA_DIM
 +        }
 +        fullscreenKey?.alpha = if (fullscreen) 1f else KEY_ALPHA
 +    }
