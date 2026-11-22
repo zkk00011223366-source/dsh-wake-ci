@@ -1,7 +1,7 @@
-From 2f9179d14aa36f9ea0403fa6026a71ed3ccbe7b3 Mon Sep 17 00:00:00 2001
+From 85b5aaaed90a53eb5f86235661f3455ae50eddda Mon Sep 17 00:00:00 2001
 From: ci <ci@local>
-Date: Mon, 23 Nov 2026 04:34:46 +0800
-Subject: [PATCH] pb: scene4o
+Date: Mon, 23 Nov 2026 05:03:51 +0800
+Subject: [PATCH] pb: scene4p
 
 ---
  .gitattributes                                |    3 +
@@ -14,11 +14,11 @@ Subject: [PATCH] pb: scene4o
  .../dsh_app/call/CallOverlayPlugin.kt         |   70 +
  .../dsh_app/notify/NotifyPlugin.kt            |    5 +-
  .../dsh_app/phone/PhoneAndroidShell.kt        |   10 +-
- .../dsh_app/phone/PhoneBackGuard.kt           |  146 ++
- .../dsh_app/phone/PhoneContracts.kt           |  192 ++
+ .../dsh_app/phone/PhoneBackGuard.kt           |  146 +
+ .../dsh_app/phone/PhoneContracts.kt           |  198 ++
  .../ccch1mneyyy/dsh_app/phone/PhoneControl.kt |  100 +-
  .../ccch1mneyyy/dsh_app/phone/PhoneCore.kt    |  458 +++-
- .../ccch1mneyyy/dsh_app/phone/PhonePlugin.kt  |  432 +++
+ .../ccch1mneyyy/dsh_app/phone/PhonePlugin.kt  |  439 +++
  .../dsh_app/phone/PhoneTaskSessions.kt        |   33 +-
  .../ccch1mneyyy/dsh_app/phone/PhoneTasks.kt   |   46 +
  .../dsh_app/phone/PhoneToolCatalog.kt         |   35 +-
@@ -52,7 +52,7 @@ Subject: [PATCH] pb: scene4o
  .../phone/vscreen/SwitchPromptOverlay.kt      |  142 +
  .../dsh_app/phone/vscreen/TaskMover.kt        |  152 ++
  .../dsh_app/phone/vscreen/TransferBall.kt     |  460 ++++
- .../phone/vscreen/VirtualScreenOverlay.kt     | 2306 +++++++++++++++++
+ .../phone/vscreen/VirtualScreenOverlay.kt     | 2395 +++++++++++++++++
  .../phone/vscreen/VirtualScreenPlugin.kt      |  251 ++
  .../dsh_app/phone/vscreen/VscreenUi.kt        |  111 +
  .../ccch1mneyyy/dsh_app/runtime/GuestSetup.kt |   47 +-
@@ -129,9 +129,9 @@ Subject: [PATCH] pb: scene4o
  app/pubspec.lock                              |    8 +
  app/pubspec.yaml                              |    4 +
  docs/wake-word.md                             |  107 +
- dsh-go-wake.patch                             | 2065 +++++++++++++++
+ dsh-go-wake.patch                             | 2065 ++++++++++++++
  tooling/build-wake-apk.sh                     |   68 +
- 127 files changed, 16306 insertions(+), 553 deletions(-)
+ 127 files changed, 16408 insertions(+), 553 deletions(-)
  create mode 100644 .github/workflows/wake-apk.yml
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallForegroundService.kt
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallOverlay.kt
@@ -1343,7 +1343,7 @@ index 00000000..175e47b7
 +    }
 +}
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneContracts.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneContracts.kt
-index 612f94d1..7260f21c 100644
+index 612f94d1..d6844edf 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneContracts.kt
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneContracts.kt
 @@ -220,6 +220,13 @@ interface PhoneDriver {
@@ -1360,7 +1360,7 @@ index 612f94d1..7260f21c 100644
  }
  
  data class ConfirmRequest(
-@@ -346,13 +353,198 @@ interface ControlListener {
+@@ -346,13 +353,204 @@ interface ControlListener {
      fun onAccessibilityChanged(connected: Boolean) {}
  }
  
@@ -1521,6 +1521,12 @@ index 612f94d1..7260f21c 100644
 +     * 这里从 BackgroundDisplay 最近一次 open/observe 的结果里取真实屏号。
 +     */
 +    @Volatile var vscreenDisplayId: (() -> Int)? = null
++    /**
++     * 窗口【⇄】把当前任务搬回主屏（用户 04:5x：切换键现在只收起成黄条，任务根本没搬走）。
++     * 参数是任务号；由 PhonePlugin 接到既有的 transferToMain（handOverTask(toMain=true)）。
++     * 走原生不走 Dart：App 在后台时 Dart 可能没人接，而这条不依赖前台。
++     */
++    @Volatile var vscreenMoveToMain: ((Long) -> Unit)? = null
 +    @Volatile var stopRoundForDeclinedFront: ((String) -> Unit)? = null
 +    /**
 +     * 虚拟屏"10 秒内没有画面"= 没启动成功（用户 01:4x：超时就主动提示"没启动成功"）。
@@ -2410,7 +2416,7 @@ index 6c701851..b6de49d5 100644
          private val WRITES = setOf(FOCUS_TEXT, PhoneToolCatalog.TAP, PhoneToolCatalog.TYPE, PhoneToolCatalog.TAP_XY, PhoneToolCatalog.OPEN)
          /** An uncertain effect call tightens draft eligibility; it does not prove input was dispatched. */
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhonePlugin.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhonePlugin.kt
-index 4a76535f..6d282829 100644
+index 4a76535f..546c9646 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhonePlugin.kt
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhonePlugin.kt
 @@ -2,7 +2,14 @@ package io.github.ccch1mneyyy.dsh_app.phone
@@ -2438,7 +2444,7 @@ index 4a76535f..6d282829 100644
      private val privilegedActions = PrivilegedActionGate()
  
      override fun onAttachedToEngine(binding: FlutterPlugin.FlutterPluginBinding) {
-@@ -77,6 +87,180 @@ class PhonePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
+@@ -77,6 +87,185 @@ class PhonePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
          promptOwner = Any()
          attached = true
          control.background.restoreKeptChannel()
@@ -2458,6 +2464,11 @@ index 4a76535f..6d282829 100644
 +        // 前端退出确认（v3.2 §7.3）：要操作的应用正占着主屏前台时先问一句。
 +        // 调用方在后台线程，这里投到主线程弹条，然后**阻塞**到他点或 30 秒超时——
 +        // 超时按拒绝（绝不替用户决定把前台让出来）。
++        // 窗口【⇄】→ 原生直接搬回主屏（不再依赖 Dart 处理 onAction）。
++        PhoneRegistry.vscreenMoveToMain = { taskId ->
++            runCatching { transferToMain("window:$taskId") }
++            Unit
++        }
 +        // 虚拟屏真实屏号（手动操作用）：优先 pkgDisplay（应用实际所在那块屏），回退缩屏号。
 +        PhoneRegistry.vscreenDisplayId = {
 +            runCatching {
@@ -2619,7 +2630,7 @@ index 4a76535f..6d282829 100644
          methods = MethodChannel(binding.binaryMessenger, "dsh/phone").also { it.setMethodCallHandler(this) }
          events = EventChannel(binding.binaryMessenger, "dsh/phone/events").also { it.setStreamHandler(this) }
          previewEvents = EventChannel(binding.binaryMessenger, "dsh/phone/preview").also { channel ->
-@@ -103,9 +287,160 @@ class PhonePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
+@@ -103,9 +292,162 @@ class PhonePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
          }
      }
  
@@ -2630,7 +2641,8 @@ index 4a76535f..6d282829 100644
 +     */
 +    private fun transferToMain(source: String) {
 +        val live = VirtualScreenOverlay.isSurfaceLive()
-+        runCatching { VirtualScreenOverlay.hideWindowOnly(announce = false) }
++        // ⇄ 是"搬到主屏"，不是"收起到后台"：收起时**不要**强制叫出黄条（用户 04:5x 指出这与眼睛键混淆）。
++        runCatching { VirtualScreenOverlay.hideWindowOnly(announce = false, forceBall = false) }
 +            .onFailure { WakeTrace.log("vscreen: hide before move threw ${it.javaClass.simpleName}") }
 +        io.execute {
 +            runCatching {
@@ -2775,12 +2787,13 @@ index 4a76535f..6d282829 100644
 +        PhoneRegistry.handBackToMain = null
 +        PhoneRegistry.askExitFront = null
 +        PhoneRegistry.vscreenDisplayId = null
++        PhoneRegistry.vscreenMoveToMain = null
 +        PhoneRegistry.stopRoundForDeclinedFront = null
 +        PhoneRegistry.notifyVscreenFailed = null
          skillSelectionRequest = Any()
          skillInspection = null
          skillClient?.let { control.skillReplaySelections.retireClient(it); control.skillDrafts.retireClient(it) }
-@@ -249,6 +584,103 @@ class PhonePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
+@@ -249,6 +591,103 @@ class PhonePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
                  result.success(if (removed) mapOf("kind" to "discarded") else replayRejected("stale"))
              }
              "setBackgroundPreview" -> result.success(control.preview.setEnabled(call.argument<Boolean>("enabled") == true))
@@ -7187,10 +7200,10 @@ index 00000000..ad26ed08
 +}
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenOverlay.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenOverlay.kt
 new file mode 100644
-index 00000000..33e2cdc9
+index 00000000..d200b74c
 --- /dev/null
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenOverlay.kt
-@@ -0,0 +1,2306 @@
+@@ -0,0 +1,2395 @@
 +package io.github.ccch1mneyyy.dsh_app.phone.vscreen
 +
 +import io.github.ccch1mneyyy.dsh_app.phone.PhoneRegistry
@@ -7396,6 +7409,8 @@ index 00000000..33e2cdc9
 +    private val main = android.os.Handler(android.os.Looper.getMainLooper())
 +
 +    private var screenReceiver: BroadcastReceiver? = null
++    /** 屏幕旋转/尺寸变化监听（用户 04:4x：横竖屏都要按中间线重算侧栏）。 */
++    private var displayListener: android.hardware.display.DisplayManager.DisplayListener? = null
 +
 +    /** App 图标字体（与 Flutter 界面同一套 DshIcons.ttf）。 */
 +    private var iconFont: Typeface? = null
@@ -7583,7 +7598,7 @@ index 00000000..33e2cdc9
 +     * 切到后台：只把窗口从屏幕上拿掉，**不释放直显 surface、不注销预览**
 +     * （与用户决策一致：任务继续、AI 继续读屏、点球回来立刻有画面）。
 +     */
-+    fun hideWindowOnly(announce: Boolean = true) {
++    fun hideWindowOnly(announce: Boolean = true, forceBall: Boolean = true) {
 +        // 3w 第 5 条：收窗的唯一入口先无条件留一行。实测 15:21 收窗（display 186）时
 +        // "window: hidden" 缺失，导致"到底收没收窗"无法从日志判断——先记请求，再判有没有窗口。
 +        io.github.ccch1mneyyy.dsh_app.wake.WakeTrace.log(
@@ -7623,7 +7638,7 @@ index 00000000..33e2cdc9
 +        // 而"点眼睛 → 立刻出两键球"是硬需求。任何收窗路径（眼睛、5 秒无画面、attach 失败、
 +        // 应用被迁走）都必须走这里，条才会按当前通道回来。
 +        val app = context
-+        if (app != null) {
++        if (app != null && forceBall) {
 +            TransferBall.setWanted(true, app, forced = true)
 +            WakeTrace.log("ball: forced on (window hidden, announce=$announce)")
 +        }
@@ -7810,7 +7825,9 @@ index 00000000..33e2cdc9
 +        val manager = wm ?: return
 +        val lp = params ?: return
 +        val app = context ?: return
-+        if (displayW <= 0 || displayH <= 0) return
++        // 不再因为 displayW/H 未知就整段跳过：真机 04:59 实测按 + − 时档位在变
++        // （`window: zoom level=1/3…3/3`），但本函数在这里直接 return，窗口尺寸一次没变
++        // → 用户看到"放大缩小没反应"。aspect() 在尺寸未知时会退回手机比例，可以安全往下走。
 +        val px = app.resources.displayMetrics.density
 +        val area = area(app, manager)
 +        WakeTrace.log("window: reshape by display ${displayW}x$displayH shape=$shape")
@@ -7989,6 +8006,26 @@ index 00000000..33e2cdc9
 +        }
 +    }
 +
++    /**
++     * 侧边栏条框（设计文档 §二「条框样式」）：**背景透明，仅 rgba(255,255,255,.16) 1px 描边**；
++     * 圆角外侧跟随窗口 16dp、内侧直角。外侧是哪边由 [endSide] 决定（栏在右=右侧圆角）。
++     */
++    private fun railFrame(px: Float, endSide: Boolean): GradientDrawable {
++        val outer = 16f * px
++        val r = floatArrayOf(
++            if (endSide) 0f else outer, if (endSide) 0f else outer,     // topLeft
++            if (endSide) outer else 0f, if (endSide) outer else 0f,     // topRight
++            if (endSide) outer else 0f, if (endSide) outer else 0f,     // bottomRight
++            if (endSide) 0f else outer, if (endSide) 0f else outer,     // bottomLeft
++        )
++        return GradientDrawable().apply {
++            shape = GradientDrawable.RECTANGLE
++            cornerRadii = r
++            setColor(0x00000000)                                         // 透明
++            setStroke((1f * px).roundToInt().coerceAtLeast(1), 0x29FFFFFF) // rgba(255,255,255,.16)
++        }
++    }
++
 +    /** 有画面了才显示窗口。 */
 +    private fun reveal(box: View?) {
 +        val v = box ?: root ?: return
@@ -8148,9 +8185,37 @@ index 00000000..33e2cdc9
 +        } catch (_: Exception) {
 +            screenReceiver = null
 +        }
++        // 旋转/尺寸变化 → 按新的屏幕中间线重算侧栏在哪一侧（横屏同理）。
++        runCatching {
++            val dm = app.getSystemService(Context.DISPLAY_SERVICE) as? android.hardware.display.DisplayManager
++            val listener = object : android.hardware.display.DisplayManager.DisplayListener {
++                override fun onDisplayAdded(displayId: Int) {}
++                override fun onDisplayRemoved(displayId: Int) {}
++                override fun onDisplayChanged(displayId: Int) {
++                    if (displayId != android.view.Display.DEFAULT_DISPLAY) return
++                    main.post {
++                        val v = root ?: return@post
++                        val m = wm ?: return@post
++                        val lp = params ?: return@post
++                        val a = area(v.context, m)
++                        applyRailSide(a.screenW, lp.x, lp.width)
++                        WakeTrace.log("window: rail recomputed after display change side=$railSide screenW=${a.screenW}")
++                    }
++                }
++            }
++            dm?.registerDisplayListener(listener, main)
++            displayListener = listener
++        }
 +    }
 +
 +    private fun unregisterScreen(app: Context) {
++        displayListener?.let { l ->
++            runCatching {
++                (app.getSystemService(Context.DISPLAY_SERVICE) as? android.hardware.display.DisplayManager)
++                    ?.unregisterDisplayListener(l)
++            }
++        }
++        displayListener = null
 +        val receiver = screenReceiver ?: return
 +        screenReceiver = null
 +        try {
@@ -8540,11 +8605,16 @@ index 00000000..33e2cdc9
 +        // px 在这棵树里不是局部变量：密度从 rail 自己的资源里取（原补丁假设了一个外部 px，
 +        // 直接引用会编译不过 —— 这是补丁与本树的唯一差异点）。
 +        val density = rail.context.resources.displayMetrics.density
++        // 参考系 = **屏幕中间线**（用户 04:4x）：窗口中心在左半屏 → 栏贴窗口右内边（END）；
++        // 在右半屏 → 栏贴左内边（START）。24dp 死区内保持现状防抖。
++        // 横竖屏同理：screenW 取自 area()，它读的是 currentWindowMetrics（随旋转变化），
++        // 旋转后由 registerDisplayListener 里的 DisplayListener 重新调用本函数。
 +        val half = screenW / 2f
 +        val cx = x + w / 2f
 +        val dead = 24f * density
 +        val wantEnd = if (Math.abs(cx - half) <= dead) railSide == "end" else cx < half
-+        val margin = (4 * density).roundToInt()
++        // 设计文档 §二：紧贴窗口内边、**间距 0**。原来这里写 4dp，会把建栏时的 0 覆盖回去。
++        val margin = 0
 +        val right = if (wantEnd) margin else 0
 +        val left = if (wantEnd) 0 else margin
 +        val gravity = (if (wantEnd) Gravity.END else Gravity.START) or Gravity.CENTER_VERTICAL
@@ -8554,6 +8624,7 @@ index 00000000..33e2cdc9
 +        p.leftMargin = left
 +        rail.layoutParams = p
 +        railSide = if (wantEnd) "end" else "start"
++        rail.background = railFrame(density, endSide = wantEnd)
 +        WakeTrace.log("window: rail side=$railSide cx=${cx.toInt()} half=${half.toInt()}")
 +    }
 +
@@ -8736,8 +8807,8 @@ index 00000000..33e2cdc9
 +     * alpha 0.85（按下 1.0）。
 +     */
 +    private fun roundKey(app: Context, glyph: Int, px: Float, onTap: () -> Unit): FrameLayout {
-+        val touch = (44 * px).roundToInt()
-+        val visible = (28 * px).roundToInt()
++        val touch = (44 * px).roundToInt()          // 设计文档 §二：触控热区 44dp
++        val visible = (32 * px).roundToInt()        // 设计文档 §二：可见圆 32dp（原 28）
 +        val holder = FrameLayout(app).apply {
 +            layoutParams = LinearLayout.LayoutParams(touch, touch)
 +            alpha = KEY_ALPHA
@@ -8764,10 +8835,12 @@ index 00000000..33e2cdc9
 +            setTextColor(Color.WHITE)
 +            setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f)
 +            iconFont?.let { typeface = it }
++            // 设计文档 §二「键样式」：圆形半透明磨砂 —— 底色白 13%、1px 亮边。
++            // 外投影与内侧高光暂缺（Android 上要叠 layer-list，留作后续视觉项）。
 +            background = GradientDrawable().apply {
 +                shape = GradientDrawable.OVAL
-+                setColor(CHROME)
-+                setStroke((1.5f * px).roundToInt(), 0x66FFFFFF)
++                setColor(0x21FFFFFF)                       // 白色 13%
++                setStroke((1f * px).roundToInt().coerceAtLeast(1), 0x40FFFFFF)  // 1px 亮边
 +            }
 +        }
 +        holder.addView(circle, FrameLayout.LayoutParams(visible, visible, Gravity.CENTER))
@@ -8809,8 +8882,8 @@ index 00000000..33e2cdc9
 +        content: () -> View,
 +        onTap: () -> Unit,
 +    ): FrameLayout {
-+        val touch = (44 * px).roundToInt()
-+        val visible = (28 * px).roundToInt()
++        val touch = (44 * px).roundToInt()          // 设计文档 §二：触控热区 44dp
++        val visible = (32 * px).roundToInt()        // 设计文档 §二：可见圆 32dp（原 28）
 +        val holder = FrameLayout(app).apply {
 +            layoutParams = LinearLayout.LayoutParams(touch, touch)
 +            alpha = KEY_ALPHA
@@ -8825,10 +8898,12 @@ index 00000000..33e2cdc9
 +            }
 +        }
 +        val circle = FrameLayout(app).apply {
++            // 设计文档 §二「键样式」：圆形半透明磨砂 —— 底色白 13%、1px 亮边。
++            // 外投影与内侧高光暂缺（Android 上要叠 layer-list，留作后续视觉项）。
 +            background = GradientDrawable().apply {
 +                shape = GradientDrawable.OVAL
-+                setColor(CHROME)
-+                setStroke((1.5f * px).roundToInt(), 0x66FFFFFF)
++                setColor(0x21FFFFFF)                       // 白色 13%
++                setStroke((1f * px).roundToInt().coerceAtLeast(1), 0x40FFFFFF)  // 1px 亮边
 +            }
 +        }
 +        circle.addView(content(), FrameLayout.LayoutParams(-1, -1))
@@ -8936,10 +9011,12 @@ index 00000000..33e2cdc9
 +        // 竖排键轨（用户 18:4x 定稿）：紧贴窗口内边、条框透明、键是圆形磨砂。
 +        // 顺序自上而下：✕ 👁 🔊 + − ↺ ⇄（⇄ 保留"虚拟屏→主屏"）。
 +        // 键距 16dp 防误触；不可见热区补到 touch（44dp 级）。
++        // 设计文档 §二「侧边栏」：竖排一列、**紧贴窗口内边（间距 0）**、
++        // 宽度 46dp、高度=窗口高度、上下内边距 14dp、**条框透明仅 1px 描边**。
 +        val rail = LinearLayout(app).apply {
 +            orientation = LinearLayout.VERTICAL
 +            gravity = Gravity.CENTER
-+            setPadding(0, (8 * px).roundToInt(), 0, (8 * px).roundToInt())
++            setPadding(0, (14 * px).roundToInt(), 0, (14 * px).roundToInt())
 +        }
 +        for (key in listOf(close, eye, volume, zoomIn, zoomOut, zoomReset, transfer)) {
 +            rail.addView(key, LinearLayout.LayoutParams(touch, touch).apply {
@@ -8947,9 +9024,13 @@ index 00000000..33e2cdc9
 +            })
 +        }
 +        rail.setOnTouchListener { _, _ -> true }
-+        val railParams = FrameLayout.LayoutParams(-2, -2, Gravity.END or Gravity.CENTER_VERTICAL).apply {
-+            rightMargin = (4 * px).roundToInt()
++        val railParams = FrameLayout.LayoutParams(
++            (46 * px).roundToInt(), FrameLayout.LayoutParams.MATCH_PARENT,
++            Gravity.END or Gravity.CENTER_VERTICAL,
++        ).apply {
++            rightMargin = 0            // 紧贴窗口内边（文档 §二：间距 0）
 +        }
++        rail.background = railFrame(px, endSide = true)
 +        box.addView(rail, railParams)
 +        railView = rail
 +        railSide = "end"
@@ -9083,7 +9164,16 @@ index 00000000..33e2cdc9
 +        // 带上窗口实际绑定的任务号：Dart 那边的状态可能是旧的/空的，
 +        // 之前就出现 handOverTask(taskId:0) → noTask（20:23 日志）。
 +        val id = taskId.takeIf { it > 0 } ?: previewTaskId
-+        onAction?.invoke(if (id != null && id > 0) "toMain:$id" else "toMain")
++        // 直接交给原生做：以前只发 onAction("toMain:…") 给 Dart，而 Dart 侧没有对应处理器
++        // （真机 04:59：`key hit=swap` 之后只有 `window: hide`，完全没有 move start/swap 日志，
++        // 任务从未搬走，屏幕上只剩一根黄条）。原生这条路不依赖 App 是否在前台。
++        val hook = io.github.ccch1mneyyy.dsh_app.phone.PhoneRegistry.vscreenMoveToMain
++        if (hook != null && id != null && id > 0) {
++            WakeTrace.log("window: transfer via native hook task=$id")
++            runCatching { hook.invoke(id) }
++        } else {
++            onAction?.invoke(if (id != null && id > 0) "toMain:$id" else "toMain")
++        }
 +    }
 +
 +    /**
@@ -9364,7 +9454,13 @@ index 00000000..33e2cdc9
 +                        if (moved > 8 * px) return@setOnTouchListener true
 +                        if (SystemClock.elapsedRealtime() - downAt > 400) return@setOnTouchListener true
 +                        // 点小窗 → 放大（出全部按键）；再点画面 → 收回小窗（第十节 3）。
-+                        applyShape(if (shape == Shape.SMALL) Shape.EXPAND else Shape.SMALL, manager, lp, box, area, px)
++                        // v3.4（用户 04:4x）：点击只做"放大"。展开态点画面**不再收回**——
++                        // 否则与"展开态点画面 = 操作应用"直接打架。回初始态只走【↺】。
++                        if (shape == Shape.SMALL) {
++                            applyShape(Shape.EXPAND, manager, lp, box, area, px)
++                        } else {
++                            WakeTrace.log("window: tap ignored in EXPAND (collapse only via ↺)")
++                        }
 +                        return@setOnTouchListener true
 +                    }
 +                    // 允许手动操作: 点、长按、滑动都直接落到虚拟屏里的应用上。
@@ -9457,7 +9553,13 @@ index 00000000..33e2cdc9
 +                        if (moved > 8 * px) return@setOnTouchListener true
 +                        if (SystemClock.elapsedRealtime() - downAt > 400) return@setOnTouchListener true
 +                        // 点小窗 → 放大（出全部按键）；再点画面 → 收回小窗（第十节 3）。
-+                        applyShape(if (shape == Shape.SMALL) Shape.EXPAND else Shape.SMALL, manager, lp, box, area, px)
++                        // v3.4（用户 04:4x）：点击只做"放大"。展开态点画面**不再收回**——
++                        // 否则与"展开态点画面 = 操作应用"直接打架。回初始态只走【↺】。
++                        if (shape == Shape.SMALL) {
++                            applyShape(Shape.EXPAND, manager, lp, box, area, px)
++                        } else {
++                            WakeTrace.log("window: tap ignored in EXPAND (collapse only via ↺)")
++                        }
 +                        return@setOnTouchListener true
 +                    }
 +                    // 允许手动操作: 点、长按、滑动都直接落到虚拟屏里的应用上。
