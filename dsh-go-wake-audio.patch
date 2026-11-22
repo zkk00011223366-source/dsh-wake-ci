@@ -1,7 +1,7 @@
-From a7a2c4cb9ca654bcae03387e3dc10e81909fab5d Mon Sep 17 00:00:00 2001
+From 1190a87ce0be9641129e96da809eddf350370a61 Mon Sep 17 00:00:00 2001
 From: ci <ci@local>
-Date: Mon, 23 Nov 2026 01:45:11 +0800
-Subject: [PATCH] pb: scene4f
+Date: Mon, 23 Nov 2026 01:59:08 +0800
+Subject: [PATCH] pb: scene4g
 
 ---
  .gitattributes                                |    3 +
@@ -40,7 +40,7 @@ Subject: [PATCH] pb: scene4f
  .../background/DisplayOrientationKeeper.kt    |  125 +
  .../background/DisplayOrientationWatch.kt     |  100 +
  .../dsh_app/phone/background/KeptTasks.kt     |   39 +
- .../phone/background/PrivilegedDisplayCore.kt | 1037 +++++++-
+ .../phone/background/PrivilegedDisplayCore.kt | 1066 +++++++-
  .../phone/background/PrivilegedDisplayHost.kt |    6 +-
  .../phone/background/PrivilegedProtocol.kt    |   83 +-
  .../dsh_app/phone/skills/PhoneSkillDraft.kt   |    2 +-
@@ -53,7 +53,7 @@ Subject: [PATCH] pb: scene4f
  .../phone/vscreen/SwitchPromptOverlay.kt      |  142 ++
  .../dsh_app/phone/vscreen/TaskMover.kt        |  152 ++
  .../dsh_app/phone/vscreen/TransferBall.kt     |  460 ++++
- .../phone/vscreen/VirtualScreenOverlay.kt     | 2256 +++++++++++++++++
+ .../phone/vscreen/VirtualScreenOverlay.kt     | 2250 +++++++++++++++++
  .../phone/vscreen/VirtualScreenPlugin.kt      |  251 ++
  .../dsh_app/phone/vscreen/VscreenUi.kt        |  111 +
  .../ccch1mneyyy/dsh_app/runtime/GuestSetup.kt |   47 +-
@@ -132,7 +132,7 @@ Subject: [PATCH] pb: scene4f
  docs/wake-word.md                             |  107 +
  dsh-go-wake.patch                             | 2065 +++++++++++++++
  tooling/build-wake-apk.sh                     |   68 +
- 128 files changed, 16235 insertions(+), 553 deletions(-)
+ 128 files changed, 16258 insertions(+), 553 deletions(-)
  create mode 100644 .github/workflows/wake-apk.yml
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallForegroundService.kt
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallOverlay.kt
@@ -4436,7 +4436,7 @@ index 0000000..c1dcef9
 +    fun logSize() = Log.i(TAG, "vscreen: task-finish kept-total=$size")
 +}
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/PrivilegedDisplayCore.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/PrivilegedDisplayCore.kt
-index c7ed0f7..3474eae 100644
+index c7ed0f7..84cd673 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/PrivilegedDisplayCore.kt
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/PrivilegedDisplayCore.kt
 @@ -11,6 +11,7 @@ package io.github.ccch1mneyyy.dsh_app.phone.background
@@ -4471,17 +4471,23 @@ index c7ed0f7..3474eae 100644
  import java.util.concurrent.locks.ReentrantLock
  import kotlin.concurrent.withLock
  
-@@ -89,6 +93,9 @@ class PrivilegedDisplayCore internal constructor(
+@@ -89,6 +93,15 @@ class PrivilegedDisplayCore internal constructor(
      private val taskDisplayIdField by lazy {
          runCatching { ActivityManager.RunningTaskInfo::class.java.getField("displayId") }.getOrNull()
      }
 +    /** 本机 OWN_DISPLAY_GROUP 的值；安卓 13 以前没有这个常量，为 0（就不带）。 */
 +    private val ownGroupFlag by lazy { runCatching { displayFlag("OWN_DISPLAY_GROUP") }.getOrDefault(0) }
++    /**
++     * ALWAYS_UNLOCKED（安卓 13 起）。Mika 的可信屏一定带这一项，我们之前漏了。
++     * 不带它，系统可能把这决虚拟屏当成"锁屏状态"，上面需要已解锁用户的应用会被立刻结束、
++     * 任务被送回默认屏——真机 01:55 现场就是"启动成功、0.57 秒后应用自己跳回主屏"。
++     */
++    private val alwaysUnlockedFlag by lazy { runCatching { displayFlag("ALWAYS_UNLOCKED") }.getOrDefault(0) }
 +    private val touchFeedbackFlag by lazy { runCatching { displayFlag("TOUCH_FEEDBACK_DISABLED") }.getOrDefault(0) }
  
      private val lock = ReentrantLock()
      private val preview = BackgroundPreviewState()
-@@ -97,6 +104,9 @@ class PrivilegedDisplayCore internal constructor(
+@@ -97,6 +110,9 @@ class PrivilegedDisplayCore internal constructor(
      @Volatile private var owner: String? = hosted?.owner
      @Volatile private var display: VirtualDisplay? = null
      @Volatile private var reader: ImageReader? = null
@@ -4491,7 +4497,7 @@ index c7ed0f7..3474eae 100644
      private var pendingReader: ImageReader? = null
      private var readerAllocationUncertain = false
      private var width = 0
-@@ -121,6 +131,25 @@ class PrivilegedDisplayCore internal constructor(
+@@ -121,6 +137,25 @@ class PrivilegedDisplayCore internal constructor(
          Class.forName("android.app.IActivityTaskManager").getMethod("getAllRootTaskInfosOnDisplay", Int::class.javaPrimitiveType)
      }
      private val rootTaskInfoType by lazy { Class.forName("android.app.ActivityTaskManager\$RootTaskInfo") }
@@ -4517,7 +4523,7 @@ index c7ed0f7..3474eae 100644
  
      private fun rootTaskInfos(displayId: Int): List<Any> {
          val result = try {
-@@ -301,7 +330,7 @@ class PrivilegedDisplayCore internal constructor(
+@@ -301,7 +336,7 @@ class PrivilegedDisplayCore internal constructor(
          if (op == Proto.OP_REPLAY_NAVIGATION && hosted == null)
              throw Fault("identityChanged")
          if (owner != null && owner != ownerId) throw Fault("identityChanged")
@@ -4526,7 +4532,7 @@ index c7ed0f7..3474eae 100644
              if (request.get(Proto.RELEASE_RECEIPT) !is Int || request.getInt(Proto.RELEASE_RECEIPT) != 1) throw Fault("invalidArguments")
              if (lastReleasedOwner == ownerId) throw Fault("identityChanged")
              if (owner == null) {
-@@ -315,6 +344,31 @@ class PrivilegedDisplayCore internal constructor(
+@@ -315,6 +350,31 @@ class PrivilegedDisplayCore internal constructor(
          if (strictOwner && displayApiReleased) throw Fault("releasePending")
          if (strictOwner && (readerAllocationUncertain || display == null && (displayCreationAttempted || reader != null || pendingReader != null))) throw Fault("releaseUnconfirmed")
          if (keyguard?.isKeyguardLocked == true) throw Fault("locked")
@@ -4558,7 +4564,7 @@ index c7ed0f7..3474eae 100644
          val pkg = request.getString(Proto.PKG).orEmpty()
          if (!PACKAGE.matches(pkg)) throw Fault("invalidArguments")
          val opening = op == Proto.OP_CREATE || op == Proto.OP_LAUNCH
-@@ -340,9 +394,34 @@ class PrivilegedDisplayCore internal constructor(
+@@ -340,9 +400,34 @@ class PrivilegedDisplayCore internal constructor(
                  // A task keeps the screen it opened first; its driver always asks for the same viewport.
                  if (display == null) createDisplay(request)
                  response.putInt(Proto.DISPLAY_ID, displayId())
@@ -4594,7 +4600,7 @@ index c7ed0f7..3474eae 100644
              }
              // A read never refuses over which app is on top: it reports what is there.
              Proto.OP_OBSERVE -> observe(openedPackage(request, pkg), request.getBoolean(Proto.WANT_IMAGE), response, requireTree = true, detail = request.getBoolean(Proto.DETAIL), localVisual = localVisual, coordinates = request.containsKey(Proto.BACKGROUND_COORDINATES))
-@@ -379,6 +458,8 @@ class PrivilegedDisplayCore internal constructor(
+@@ -379,6 +464,8 @@ class PrivilegedDisplayCore internal constructor(
          }
          // Every reply names the app now on top (none when the screen is empty). A read already did.
          if (!response.containsKey(Proto.TARGET_IDENTITY_VERSION)) putShown(response, openedPackage(request, pkg), shownApp())
@@ -4603,7 +4609,7 @@ index c7ed0f7..3474eae 100644
          if (op == Proto.OP_LAUNCH && expected != null) {
              val shown = TargetIdentity.shown(response.get(Proto.PKG), response.get(Proto.TARGET_UID))
              val actualDisplay = display?.display
-@@ -729,57 +810,622 @@ class PrivilegedDisplayCore internal constructor(
+@@ -729,57 +816,645 @@ class PrivilegedDisplayCore internal constructor(
      private fun displayId(): Int = display?.display?.displayId ?: throw Fault("displayMissing")
      private fun requireDisplay() { if (display == null) throw Fault("displayMissing") }
  
@@ -4958,6 +4964,28 @@ index c7ed0f7..3474eae 100644
 +     * 只观测与记录，不擅自重建（重建要用户重新发指令，避免抢跑乱开屏）。
 +     * 判据：vscreen: display vanished id=… afterMs=… / vscreen: display alive id=… （每 60 秒一次心跳）
 +     */
++    /**
++     * 屏存活监控（只看头 6 秒）：真机 01:55 证据是"建屏成功、0.57 秒后屏上的任务全被送回主屏"，
++     * 而我们的 release 日志要到 5 秒后才出现——说明屏在这之前就没收了，且不是我们主动放的。
++     * 这里每 300ms 采一次 VirtualDisplay 的有效性，状态一变立刻留痕，直接定位它是第几毫秒死的。
++     * 判据：`vscreen: display alive displayId=… t=…ms valid=true|false`
++     */
++    private fun monitorDisplayLifetime(vd: VirtualDisplay, displayId: Int) {
++        Thread({
++            val started = SystemClock.uptimeMillis()
++            var last: Boolean? = null
++            repeat(20) {
++                val valid = runCatching { vd.display.isValid }.getOrDefault(false)
++                if (valid != last) {
++                    last = valid
++                    io.github.ccch1mneyyy.dsh_app.wake.WakeTrace.log(
++                        "vscreen: display alive displayId=$displayId t=${SystemClock.uptimeMillis() - started}ms valid=$valid")
++                }
++                runCatching { Thread.sleep(300) }
++            }
++        }, "dsh-display-life").apply { isDaemon = true }.start()
++    }
++
 +    private fun startDisplayWatchdog(displayId: Int) {
 +        val startedAt = SystemClock.uptimeMillis()
 +        runCatching {
@@ -5179,6 +5207,7 @@ index c7ed0f7..3474eae 100644
 +            // 自成一组的屏要人替它报用户操作，否则到息屏时间就睡（照 Mika 的 pokeDisplay，每 4 秒）。
 +            DisplayAwakeKeeper.start(vd.display.displayId, useFlags, if (trusted) ownGroupFlag else 0)
 +            startDisplayWatchdog(vd.display.displayId)
++            monitorDisplayLifetime(vd, vd.display.displayId)
          } catch (e: Throwable) {
 -            // Undo this attempt (nothing was launched on it) so it does not hold back the next
 -            // open. Only a handle that would not close stays, for the owner's release to settle.
@@ -5208,9 +5237,9 @@ index c7ed0f7..3474eae 100644
 +            ImageReader.newInstance(w, h, PixelFormat.RGBA_8888, 2)
 +        } catch (_: Throwable) {
 +            throw Fault("displayUnsupported")
-+        }
-+    }
-+
+         }
+     }
+ 
 +    /** 这一次建屏失败：收掉它留下的句柄与句柄表项，别挡住下一次 open。 */
 +    private fun rollbackDisplayAttempt() {
 +        // Only a handle that would not close stays, for the owner's release to settle.
@@ -5218,9 +5247,9 @@ index c7ed0f7..3474eae 100644
 +            releasingDisplayId?.let { DisplayHandles.forget(it) }
 +            display = null; reader = null; pendingReader = null
 +            releasingDisplayId = null; displayCreationAttempted = false
-         }
-     }
- 
++        }
++    }
++
 +    /**
 +     * 建屏标志（照 Mika 的 displayFlags）。[trusted] 为 false 时去掉只对可信屏可用的几项：
 +     * 有的系统里 shell 没有 ADD_TRUSTED_DISPLAY，带上 TRUSTED 会被系统直接拒；OWN_DISPLAY_GROUP、
@@ -5238,7 +5267,7 @@ index c7ed0f7..3474eae 100644
 +        // 自成一组的屏有自己的息屏计时（注入的输入不算用户操作），到点就睡：画面不再合成、
 +        // 截图不变、点按没反应。所以带上 OWN_DISPLAY_GROUP，并在建好后替它续亮（DisplayAwake）。
 +        // 这个常量安卓 13 才有；拿不到就不带，屏留在默认组，由用户自己点亮。
-+        return base or trustedOnly or ownGroupFlag or touchFeedbackFlag
++        return base or trustedOnly or ownGroupFlag or touchFeedbackFlag or alwaysUnlockedFlag
 +    }
 +
 +    private fun displayFlag(name: String): Int =
@@ -5247,7 +5276,7 @@ index c7ed0f7..3474eae 100644
      private fun resolveLaunch(pkg: String, expected: PhoneAppIdentity?): Intent {
          val pm = privileged.packageManager
          val intent = runCatching { pm.getLaunchIntentForPackage(pkg) }.getOrNull() ?: throw Fault("notLaunchable")
-@@ -821,6 +1467,44 @@ class PrivilegedDisplayCore internal constructor(
+@@ -821,6 +1496,44 @@ class PrivilegedDisplayCore internal constructor(
      }
  
      /** (displayId, packages of that task) rows of one running-task read. */
@@ -5292,7 +5321,7 @@ index c7ed0f7..3474eae 100644
      private fun taskRows(): List<Pair<Int, Set<String>>>? {
          val field = taskDisplayIdField ?: return null
          @Suppress("DEPRECATION")
-@@ -862,8 +1546,29 @@ class PrivilegedDisplayCore internal constructor(
+@@ -862,8 +1575,29 @@ class PrivilegedDisplayCore internal constructor(
  
      private fun launchPackage(pkg: String, intent: Intent) {
          val display = this.display ?: throw Fault("displayMissing")
@@ -5323,7 +5352,7 @@ index c7ed0f7..3474eae 100644
          // A shell/UserService is not an ActivityManager-attached app process: a PendingIntent
          // avoids Context.startActivity's caller check (Phase, after Aether).
          var pending: PendingIntent? = null
-@@ -879,10 +1584,79 @@ class PrivilegedDisplayCore internal constructor(
+@@ -879,10 +1613,79 @@ class PrivilegedDisplayCore internal constructor(
          // Wait for the target on the owned display. Any app it brought up there instead is reported
          // by the read that follows; only a screen still empty, or a target that went to another
          // display, means the open did not happen here.
@@ -5404,7 +5433,7 @@ index c7ed0f7..3474eae 100644
                  val placement = taskRows()?.let { TargetIdentity.placement(pkg, display.display.displayId, it) }
                  throw Fault(if (placement == TargetIdentity.Placement.OTHER_DISPLAY) "targetLeftDisplay" else "launchUnconfirmed")
              }
-@@ -906,8 +1680,140 @@ class PrivilegedDisplayCore internal constructor(
+@@ -906,8 +1709,140 @@ class PrivilegedDisplayCore internal constructor(
          if (readerAllocationUncertain) throw Fault("releaseUnconfirmed")
      }
  
@@ -5545,7 +5574,7 @@ index c7ed0f7..3474eae 100644
          closeTreeConnection()
          visualObservation = null
          stopPreview()
-@@ -925,11 +1831,42 @@ class PrivilegedDisplayCore internal constructor(
+@@ -925,11 +1860,42 @@ class PrivilegedDisplayCore internal constructor(
              closeReaders()
          } else {
              val displayId = releasingDisplayId ?: throw Fault("releaseUnconfirmed")
@@ -5575,7 +5604,7 @@ index c7ed0f7..3474eae 100644
                  displayApiReleased = true
 +                io.github.ccch1mneyyy.dsh_app.wake.WakeTrace.log(
 +                    "vscreen: release surface cleared=$cleared displayId=$displayId")
-             }
++            }
 +            DisplayHandles.forget(displayId)
 +            // 3w 第 8 条：释放自证。executor 报"屏释放后仍有空壳 display，会随次数累积"，
 +            // 这里把"系统还剩几块屏 / 我们表里还按着几块"一起打出来，下次就能判是不是真泄漏。
@@ -5583,13 +5612,13 @@ index c7ed0f7..3474eae 100644
 +                io.github.ccch1mneyyy.dsh_app.wake.WakeTrace.log(
 +                    "vscreen: release verified displays=${displays.displays.size} " +
 +                        "tracked=${DisplayHandles.snapshot().size}")
-+            }
+             }
 +            // 已经没有屏了就把方向监听关掉，别让它在后台扫任务。
 +            DisplayOrientationKeeper.release()
              closeReaders()
              val deadline = SystemClock.uptimeMillis() + 1_000
              // The display itself is already released. A ROM whose task query is unreadable cannot
-@@ -944,6 +1881,7 @@ class PrivilegedDisplayCore internal constructor(
+@@ -944,6 +1910,7 @@ class PrivilegedDisplayCore internal constructor(
      }
  
      private fun clearResourceState() {
@@ -5597,7 +5626,7 @@ index c7ed0f7..3474eae 100644
          display = null; owner = null; strictOwner = false; selfCheckOwner = false
          targetSequence = null; targetSnapshot = null; targetMain = null
          releasingDisplayId = null; displayCreationAttempted = false; displayApiReleased = false; probeDisplay = false
-@@ -1166,7 +2104,15 @@ class PrivilegedDisplayCore internal constructor(
+@@ -1166,7 +2133,15 @@ class PrivilegedDisplayCore internal constructor(
      private class CaptureResult(val jpeg: ByteArray, val raw: BackgroundPreviewState.RawFrame?, val local: ImageObservation?, val targetMatched: Boolean? = null)
  
      /** Null means only absent/black frames; other capture failures remain distinguishable. */
@@ -5614,7 +5643,7 @@ index c7ed0f7..3474eae 100644
          val ir = lock.withLock {
              if (pendingReader != null || readerAllocationUncertain) throw Fault("releasePending")
              val vd = display ?: throw Fault("displayMissing")
-@@ -2025,6 +2971,32 @@ class PrivilegedDisplayCore internal constructor(
+@@ -2025,6 +3000,32 @@ class PrivilegedDisplayCore internal constructor(
          if (waitForFinish && !accepted) throw Fault("inputRejected")
      }
  
@@ -5647,7 +5676,7 @@ index c7ed0f7..3474eae 100644
      private fun setImePolicyHide(displayId: Int) {
          val sm = Class.forName("android.os.ServiceManager")
          val binder = sm.getMethod("getService", String::class.java).invoke(null, "window") as IBinder
-@@ -2079,9 +3051,14 @@ class PrivilegedDisplayCore internal constructor(
+@@ -2079,9 +3080,14 @@ class PrivilegedDisplayCore internal constructor(
  
      companion object {
          private val PACKAGE = Regex("[a-zA-Z][a-zA-Z0-9_]*(\\.[a-zA-Z0-9_]+)+")
@@ -7174,10 +7203,10 @@ index 0000000..50b681e
 +}
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenOverlay.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenOverlay.kt
 new file mode 100644
-index 0000000..6ff8fdf
+index 0000000..69c76f9
 --- /dev/null
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenOverlay.kt
-@@ -0,0 +1,2256 @@
+@@ -0,0 +1,2250 @@
 +package io.github.ccch1mneyyy.dsh_app.phone.vscreen
 +
 +import io.github.ccch1mneyyy.dsh_app.phone.PhoneRegistry
@@ -8854,23 +8883,17 @@ index 0000000..6ff8fdf
 +        }.also { hit(it, "sound") }
 +        val eye = roundKey(app, ICON_EYE, px) { toggleEye() }.also { hit(it, "eye") }
 +        val close = roundKey(app, ICON_CLOSE, px) { endTask() }.also { hit(it, "close") }
-+        val topRow = LinearLayout(app).apply {
-+            orientation = LinearLayout.HORIZONTAL
-+            gravity = Gravity.CENTER_VERTICAL
-+        }
-+        topRow.addView(volume, LinearLayout.LayoutParams(touch, touch).apply { leftMargin = gap })
-+        topRow.addView(eye, LinearLayout.LayoutParams(touch, touch).apply { leftMargin = gap })
-+        // 中间弹性留白，把 × 顶到最右，四颗键仍在同一条水平线上。
-+        topRow.addView(View(app), LinearLayout.LayoutParams(0, 1).apply { weight = 1f })
-+        topRow.addView(close, LinearLayout.LayoutParams(touch, touch))
-+        // 键条的空白处也吃掉手势：不让点击穿透注入到应用（那里的应用可能正好是返回键）。
-+        topRow.setOnTouchListener { _, _ -> true }
-+        // 顶栏不再挂载：键改到竖排键轨（见下）。
++        // 顶栏已彻底删除（键全部进竖排键轨）。这里**绝对不能**再把 close/eye/volume 加进任何容器：
++        // 一个 View 只能有一个父容器，先加进 topRow 再加进 rail 会抛
++        // IllegalStateException: The specified child already has a parent —— 真机 01:55 现场。
++        // 后果极隐蔽：顶栏根本不挂到窗口上（所以看不出有顶栏），但子视图仍被它占着，
++        // 于是 rail.addView 必崩、show() 每次都失败、窗口一次都出不来
++        // （`window: reveal` 最后一次成功是 18:24:50，正是加竖排键轨那一次改动之前）。
 +        backKey = null   // 左箭头已移除（18:2x）
 +        volumeKey = volume
 +        eyeKey = eye
 +        eyeGlyph = eye.getChildAt(0) as? TextView
-+        topLeft = topRow
++        topLeft = null
 +        closeKey = close
 +
 +        // 底部一排：左 ⇄（把这块屏上的应用转到主屏），右"全屏"（用户 15:15：
