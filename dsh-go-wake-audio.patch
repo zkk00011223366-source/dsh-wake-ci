@@ -1,7 +1,7 @@
-From 6548feb4af56e4a4b518bf3dd38b2d4835e27420 Mon Sep 17 00:00:00 2001
+From 1127adce989c1964972dc7a0eac9332b063f3b5d Mon Sep 17 00:00:00 2001
 From: ci <ci@local>
-Date: Mon, 23 Nov 2026 20:46:01 +0800
-Subject: [PATCH] pb: scene4ay
+Date: Mon, 23 Nov 2026 21:10:03 +0800
+Subject: [PATCH] pb: scene4bb
 
 ---
  .gitattributes                                |    3 +
@@ -27,13 +27,13 @@ Subject: [PATCH] pb: scene4ay
  .../dsh_app/phone/SystemActions.kt            |    7 +-
  .../dsh_app/phone/a11y/ControlOverlay.kt      |   11 +-
  .../dsh_app/phone/a11y/PhoneA11yService.kt    |   20 +
- .../phone/background/BackgroundControl.kt     |  160 +-
+ .../phone/background/BackgroundControl.kt     |  174 +-
  .../phone/background/BackgroundCoordinates.kt |    2 +
  .../phone/background/BackgroundDisplay.kt     |  363 ++-
  .../phone/background/BackgroundPolicy.kt      |    8 +-
  .../phone/background/BackgroundPreview.kt     |   10 +-
  .../background/BackgroundProbeActivity.kt     |    4 +-
- .../phone/background/BackgroundTaskSlot.kt    |    2 +
+ .../phone/background/BackgroundTaskSlot.kt    |    4 +
  .../phone/background/BackgroundTree.kt        |    4 +-
  .../dsh_app/phone/background/CoalescedScan.kt |   31 +
  .../dsh_app/phone/background/DisplayAwake.kt  |  154 +
@@ -54,7 +54,7 @@ Subject: [PATCH] pb: scene4ay
  .../phone/vscreen/SwitchPromptOverlay.kt      |  142 +
  .../dsh_app/phone/vscreen/TaskMover.kt        |  152 +
  .../dsh_app/phone/vscreen/TransferBall.kt     |  488 +++
- .../phone/vscreen/VirtualScreenOverlay.kt     | 2699 +++++++++++++++++
+ .../phone/vscreen/VirtualScreenOverlay.kt     | 2704 +++++++++++++++++
  .../phone/vscreen/VirtualScreenPlugin.kt      |  249 ++
  .../dsh_app/phone/vscreen/VscreenUi.kt        |  150 +
  .../ccch1mneyyy/dsh_app/runtime/GuestSetup.kt |   47 +-
@@ -105,7 +105,7 @@ Subject: [PATCH] pb: scene4ay
  app/lib/speech/call/voice_call.dart           |   57 +-
  app/lib/speech/wake_reply.dart                |  175 ++
  app/lib/state/app_info.dart                   |    5 +
- app/lib/state/update_state.dart               |    9 +
+ app/lib/state/update_state.dart               |   19 +-
  app/lib/state/virtual_screen_state.dart       |  456 +++
  app/lib/ui/chat/chat_rows.dart                |    2 +
  app/lib/ui/chat/chat_screen.dart              |  108 +-
@@ -118,6 +118,7 @@ Subject: [PATCH] pb: scene4ay
  app/lib/ui/phone/virtual_screen_host.dart     |  397 +++
  app/lib/ui/phone/virtual_screen_page.dart     |  114 +
  app/lib/ui/phone/virtual_screen_surface.dart  |  286 ++
+ app/lib/ui/settings/settings_screen.dart      |   22 +-
  app/lib/ui/settings/voice_settings_page.dart  |  151 +
  app/lib/ui/shell/call_overlay_host.dart       |   55 +
  app/lib/ui/shell/home_shell.dart              |    7 +
@@ -133,7 +134,7 @@ Subject: [PATCH] pb: scene4ay
  docs/wake-word.md                             |  107 +
  dsh-go-wake.patch                             | 2065 +++++++++++++
  tooling/build-wake-apk.sh                     |   68 +
- 129 files changed, 17381 insertions(+), 559 deletions(-)
+ 130 files changed, 17423 insertions(+), 570 deletions(-)
  create mode 100644 .github/workflows/wake-apk.yml
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallForegroundService.kt
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallOverlay.kt
@@ -3471,7 +3472,7 @@ index 8aa204bc..298fc3a9 100644
          super.onConfigurationChanged(newConfig)
          overlay?.onConfigurationChanged()
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/BackgroundControl.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/BackgroundControl.kt
-index 79cae468..0eadd85e 100644
+index 79cae468..c062e54f 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/BackgroundControl.kt
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/BackgroundControl.kt
 @@ -13,6 +13,8 @@ import android.net.Network
@@ -3638,7 +3639,7 @@ index 79cae468..0eadd85e 100644
              "shizuku" to shizukuStatus.map(),
              "adb" to adbStatus.map(),
              "root" to rootStatus.map(),
-@@ -703,6 +837,15 @@ class BackgroundControl private constructor(context: Context) {
+@@ -703,6 +837,29 @@ class BackgroundControl private constructor(context: Context) {
              synchronized(keepGuard) {
                  if (selfCheckBorrow != null || interruptRequested || !current()) return null
                  taskResource.find(owner)?.let { return it.driver }
@@ -3646,15 +3647,29 @@ index 79cae468..0eadd85e 100644
 +                // 语义跟手机一样——新应用上来，原来那个自动退到后台（不杀、不搬、状态保留）。
 +                // 真机 15:10 实证：不这么做就会 293→294→295 越积越多，最后 inUseByOther /
 +                // deviceUnavailable 把 open 拒掉，用户看到"虚拟屏打不开"。
-+                taskResource.boundDriver?.let { existing ->
++                taskResource.boundRecord?.let { existing ->
++                    // 【4az】复用之前必须先确认这块屏还活着。
++                    // 真机实证：⇄ / ✕ 之后虚拟屏已经释放，但 App 这边还留着旧 driver，
++                    // 下一个任务复用到一个死掉的通道 → open 直接报"通道未就绪" →
++                    // 不管打开哪个应用都失败，只能强停。
++                    val alive = runCatching { existing.driver.availability().ok }.getOrDefault(false)
++                    if (alive) {
++                        io.github.ccch1mneyyy.dsh_app.wake.WakeTrace.log(
++                            "vscreen: reuse the only screen for new task (no second display)")
++                        return existing.driver
++                    }
 +                    io.github.ccch1mneyyy.dsh_app.wake.WakeTrace.log(
-+                        "vscreen: reuse the only screen for new task (no second display)")
-+                    return existing
++                        "vscreen: stale screen dropped (channel dead) -> build a new one")
++                    runCatching { existing.driver.seal() }
++                    taskResource.seal()
++                    taskResource.cleanupCandidates().forEach { stale ->
++                        runCatching { taskResource.complete(stale) }
++                    }
 +                }
                  if (selectingResource || restoring?.isDone == false || selectionChange != null) return null
                  keep.selectionTicket()
              }
-@@ -722,7 +865,7 @@ class BackgroundControl private constructor(context: Context) {
+@@ -722,7 +879,7 @@ class BackgroundControl private constructor(context: Context) {
                          channelProvider = { peer },
                          mayUse = { currentOwner() && !interruptRequested },
                          admitUse = { action -> admitOwner { check(!interruptRequested); action() } },
@@ -3663,7 +3678,7 @@ index 79cae468..0eadd85e 100644
                          localOcr = ocr,
                          localOcrAllowed = { target -> localOcrAllowed(target) },
                          onResourceReady = { publishPreviewTarget(record, it) },
-@@ -762,6 +905,19 @@ class BackgroundControl private constructor(context: Context) {
+@@ -762,6 +919,19 @@ class BackgroundControl private constructor(context: Context) {
          }
          if (previewChanged) onPreviewChanged()
          for (record in captured) {
@@ -4267,15 +4282,17 @@ index 6f0a4508..58c6ea17 100644
      const val NONCE = "nonce"
      const val DISPLAY = "display"
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/BackgroundTaskSlot.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/BackgroundTaskSlot.kt
-index 853ed85e..91f8dbc2 100644
+index 853ed85e..891aff45 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/BackgroundTaskSlot.kt
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/BackgroundTaskSlot.kt
-@@ -16,6 +16,8 @@ internal class BackgroundTaskSlot<D : Any, P : Any>(private val lock: Any) {
+@@ -16,6 +16,10 @@ internal class BackgroundTaskSlot<D : Any, P : Any>(private val lock: Any) {
      // Readable under keepGuard without acquiring the ownership monitor in reverse order.
      val occupied: Boolean get() = resources.isNotEmpty()
      val boundPeer: P? get() = resources.firstOrNull()?.peer
 +    /** 【4ao】当前这块屏的 driver：帧直读要它的 ownerToken 才能"按 owner 直挂"。 */
 +    val boundDriver: D? get() = resources.firstOrNull()?.driver
++    /** 【4az】当前这块屏的整条记录：判断它是不是已经死了、好把死记录摘掉。 */
++    val boundRecord: TaskResource<D, P>? get() = resources.firstOrNull()
  
      fun find(owner: PhoneTasks.Owner): TaskResource<D, P>? = synchronized(lock) {
          resources.firstOrNull { !it.sealed && it.matches(owner) }
@@ -7855,10 +7872,10 @@ index 00000000..586e79c6
 +}
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenOverlay.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenOverlay.kt
 new file mode 100644
-index 00000000..7cef47ec
+index 00000000..68ee0d70
 --- /dev/null
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenOverlay.kt
-@@ -0,0 +1,2699 @@
+@@ -0,0 +1,2704 @@
 +package io.github.ccch1mneyyy.dsh_app.phone.vscreen
 +
 +import io.github.ccch1mneyyy.dsh_app.phone.PhoneRegistry
@@ -10150,17 +10167,22 @@ index 00000000..7cef47ec
 +        // 以前这里调 handBackToMain（挪回主屏并顶到前台），用户会看到"叉掉之后应用自己弹到主屏"。
 +        // 现在优先走 toBack；没有这把钩子才退回老路，保证不卡死。
 +        val toBack = io.github.ccch1mneyyy.dsh_app.phone.PhoneRegistry.vscreenEndTaskToBack
-+        val hand = io.github.ccch1mneyyy.dsh_app.phone.PhoneRegistry.handBackToMain
-+        if (toBack == null && hand == null) {
++        if (toBack == null) {
 +            WakeTrace.log("window: stop without hand-back (no hook) task=$id")
 +            onAction?.invoke(if (id > 0) "stop:$id" else "stop")
 +            return
 +        }
 +        worker.execute {
-+            val backed = if (toBack != null) runCatching { toBack.invoke(id.toInt()) }.getOrDefault(false) else false
-+            if (!backed && hand != null) {
-+                val handed = runCatching { hand.invoke(); true }.getOrDefault(false)
-+                WakeTrace.log("window: hand back before stop handed=$handed task=$id")
++            var backed = if (toBack != null) runCatching { toBack.invoke(id.toInt()) }.getOrDefault(false) else false
++            if (!backed && toBack != null) {
++                // 【4bb】第一次用窗口的任务号失败，就用 core 自己记的任务号再试一次（0 = 让它按最近一次
++                // open 解析）。**仍然走"退后台"这条路**，绝不回退到 handBackToMain——
++                // 那条路会把应用顶到主屏前台，用户看到"叉掉之后应用自己弹回主屏"（21:1x 明确不要）。
++                backed = runCatching { toBack.invoke(0) }.getOrDefault(false)
++                WakeTrace.log("window: endTask retry with core task id ok=$backed task=$id")
++            }
++            if (!backed) {
++                WakeTrace.log("window: endTask toBack failed, keep background (no hand-back) task=$id")
 +            }
 +            WakeTrace.log("window: end toBack=$backed task=$id")
 +            main.post { onAction?.invoke(if (id > 0) "stop:$id" else "stop") }
@@ -87059,7 +87081,7 @@ index 18b01c2e..f532b20a 100644
    static String get displayVersion {
      final parts = version.split('+');
 diff --git a/app/lib/state/update_state.dart b/app/lib/state/update_state.dart
-index c089d192..a15b64da 100644
+index c089d192..5f01b451 100644
 --- a/app/lib/state/update_state.dart
 +++ b/app/lib/state/update_state.dart
 @@ -359,6 +359,15 @@ class AppUpdateController extends Notifier<AppUpdateState> {
@@ -87078,6 +87100,37 @@ index c089d192..a15b64da 100644
      return AppUpdateState(current: AppVersion.tryParse(AppInfo.version) ?? const AppVersion(0, 0, 0));
    }
  
+@@ -387,6 +396,12 @@ class AppUpdateController extends Notifier<AppUpdateState> {
+       // Native side failed: fall back to the compiled-in version.
+     }
+     if (!ref.mounted) return;
++    // 【4az】私人版彻底不检查更新（用户 20:46 要求）。
++    // 以前只在 build() 的初始状态里置 installable=false，_load() 装到原生版本信息后又把它改回 true，
++    // checkable 随之变 true → 自动检查照跑、缓存里的旧记录照亮"有新版本"角标。
++    // 私人版包名带 .private、签名也不同，官方 APK 永远装不上，检查没有意义。
++    final privateBuild = !AppInfo.officialPackage;
++    if (privateBuild) installable = false;
+     _prefs = prefs;
+     if (app?.versionName case final name?) {
+       _userAgent = updaterUserAgent(version: name, build: app?.versionCode, abi: app?.androidAbi);
+@@ -398,7 +413,7 @@ class AppUpdateController extends Notifier<AppUpdateState> {
+       final raw = prefs.getString(_latestKey);
+       if (raw != null) cached = parseUpdateManifest(jsonDecode(raw));
+     } catch (_) {}
+-    final latest = cached != null && cached.version.isNewerThan(current) ? cached : null;
++    final latest = !privateBuild && cached != null && cached.version.isNewerThan(current) ? cached : null;
+     if (latest == null) {
+       // Updated (or nothing pending): drop the offer and any leftover APK.
+       unawaited(prefs.remove(_latestKey));
+@@ -410,7 +425,7 @@ class AppUpdateController extends Notifier<AppUpdateState> {
+     state = state.copyWith(
+       loaded: true,
+       installable: installable,
+-      autoCheck: prefs.getBool(_autoKey) ?? true,
++      autoCheck: privateBuild ? false : (prefs.getBool(_autoKey) ?? true),
+       current: current,
+       flavor: flavor,
+       skippedVersion: () => prefs.getString(_skippedKey),
 diff --git a/app/lib/state/virtual_screen_state.dart b/app/lib/state/virtual_screen_state.dart
 new file mode 100644
 index 00000000..79588945
@@ -89618,6 +89671,46 @@ index 00000000..adebc521
 +    );
 +  }
 +}
+diff --git a/app/lib/ui/settings/settings_screen.dart b/app/lib/ui/settings/settings_screen.dart
+index f48b78e3..0be28fd0 100644
+--- a/app/lib/ui/settings/settings_screen.dart
++++ b/app/lib/ui/settings/settings_screen.dart
+@@ -7,6 +7,7 @@ import '../../l10n/l10n.dart';
+ import '../../runtime/local_footprint.dart';
+ import '../../runtime/runtime_state.dart';
+ import '../../state/account_state.dart';
++import '../../state/app_info.dart';
+ import '../../state/android_features.dart';
+ import '../../state/ask_ai.dart' show askAiAvailableProvider;
+ import '../../state/balance_state.dart';
+@@ -330,15 +331,18 @@ class SettingsScreen extends ConsumerWidget {
+               spot: SettingsIndex.entry(SettingsPageId.diagnostics),
+               onTap: () => _push(context, const DiagnosticsPage()),
+             ),
+-            SettingsTile(
+-              icon: AppIcons.info,
+-              tint: SettingsHues.help,
+-              spot: SettingsIndex.entry(SettingsPageId.about),
+-              value: newVersion
+-                  ? UpdateBadge(l10n.hubAboutNewVersion)
+-                  : Text(update.current.name, style: AppType.tabular(Theme.of(context).textTheme.bodyMedium!)),
+-              onTap: () => _push(context, const AboutPage()),
+-            ),
++            // 【4az】私人版不显示"关于 DSH Go"这一项（用户 20:46 要求）：
++            // 它带的是官方版的应用内更新入口，私人版的包名/签名都不同，永远装不上。
++            if (AppInfo.officialPackage)
++              SettingsTile(
++                icon: AppIcons.info,
++                tint: SettingsHues.help,
++                spot: SettingsIndex.entry(SettingsPageId.about),
++                value: newVersion
++                    ? UpdateBadge(l10n.hubAboutNewVersion)
++                    : Text(update.current.name, style: AppType.tabular(Theme.of(context).textTheme.bodyMedium!)),
++                onTap: () => _push(context, const AboutPage()),
++              ),
+           ],
+         ),
+         Padding(
 diff --git a/app/lib/ui/settings/voice_settings_page.dart b/app/lib/ui/settings/voice_settings_page.dart
 index 38418e6a..997bcccd 100644
 --- a/app/lib/ui/settings/voice_settings_page.dart
