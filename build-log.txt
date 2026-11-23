@@ -1,7 +1,7 @@
 == resources ==
-/dev/mapper/cow-root  145G   46G   99G  32% /
+/dev/mapper/cow-root  145G   47G   98G  33% /
                total        used        free      shared  buff/cache   available
-Mem:           15700        3667         195          49       12222       12033
+Mem:           15700        3764         182          49       12138       11936
 == tail ==
 
 ==> 依赖: flutter pub get
