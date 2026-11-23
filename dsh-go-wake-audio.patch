@@ -1,7 +1,7 @@
-From 0a14a3b5ff5de36b02dd76878ad2a91cc0b4e9a1 Mon Sep 17 00:00:00 2001
+From 9c6dc50aa2543fe11028c4d01145e886179ffcca Mon Sep 17 00:00:00 2001
 From: ci <ci@local>
-Date: Mon, 23 Nov 2026 19:31:55 +0800
-Subject: [PATCH] pb: scene4aw
+Date: Mon, 23 Nov 2026 19:35:00 +0800
+Subject: [PATCH] pb: scene4ax
 
 ---
  .gitattributes                                |    3 +
@@ -15,7 +15,7 @@ Subject: [PATCH] pb: scene4aw
  .../dsh_app/notify/NotifyPlugin.kt            |    5 +-
  .../dsh_app/phone/PhoneAndroidShell.kt        |   10 +-
  .../dsh_app/phone/PhoneBackGuard.kt           |  146 +
- .../dsh_app/phone/PhoneContracts.kt           |  227 ++
+ .../dsh_app/phone/PhoneContracts.kt           |  234 ++
  .../ccch1mneyyy/dsh_app/phone/PhoneControl.kt |  100 +-
  .../ccch1mneyyy/dsh_app/phone/PhoneCore.kt    |  482 ++-
  .../ccch1mneyyy/dsh_app/phone/PhonePlugin.kt  |  557 ++++
@@ -54,9 +54,9 @@ Subject: [PATCH] pb: scene4aw
  .../phone/vscreen/SwitchPromptOverlay.kt      |  142 +
  .../dsh_app/phone/vscreen/TaskMover.kt        |  152 +
  .../dsh_app/phone/vscreen/TransferBall.kt     |  488 +++
- .../phone/vscreen/VirtualScreenOverlay.kt     | 2700 +++++++++++++++++
+ .../phone/vscreen/VirtualScreenOverlay.kt     | 2702 +++++++++++++++++
  .../phone/vscreen/VirtualScreenPlugin.kt      |  249 ++
- .../dsh_app/phone/vscreen/VscreenUi.kt        |  150 +
+ .../dsh_app/phone/vscreen/VscreenUi.kt        |  159 +
  .../ccch1mneyyy/dsh_app/runtime/GuestSetup.kt |   47 +-
  .../dsh_app/shortcuts/EntryActivity.kt        |    3 +
  .../dsh_app/shortcuts/ShortcutsPlugin.kt      |   13 +-
@@ -133,7 +133,7 @@ Subject: [PATCH] pb: scene4aw
  docs/wake-word.md                             |  107 +
  dsh-go-wake.patch                             | 2065 +++++++++++++
  tooling/build-wake-apk.sh                     |   68 +
- 129 files changed, 17374 insertions(+), 559 deletions(-)
+ 129 files changed, 17392 insertions(+), 559 deletions(-)
  create mode 100644 .github/workflows/wake-apk.yml
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallForegroundService.kt
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallOverlay.kt
@@ -1345,7 +1345,7 @@ index 00000000..175e47b7
 +    }
 +}
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneContracts.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneContracts.kt
-index 612f94d1..4add1a11 100644
+index 612f94d1..bfe78144 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneContracts.kt
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneContracts.kt
 @@ -220,6 +220,13 @@ interface PhoneDriver {
@@ -1362,7 +1362,7 @@ index 612f94d1..4add1a11 100644
  }
  
  data class ConfirmRequest(
-@@ -346,13 +353,233 @@ interface ControlListener {
+@@ -346,13 +353,240 @@ interface ControlListener {
      fun onAccessibilityChanged(connected: Boolean) {}
  }
  
@@ -1528,6 +1528,13 @@ index 612f94d1..4add1a11 100644
 +     * 谁置位：PrivilegedDisplayCore 的首帧探测；谁清除：建新屏 / 释放屏。
 +     */
 +    @Volatile var vscreenFirstFrameAt: Long = 0L
++
++    /**
++     * 【4ax·用户 19:4x】最近一次真的收到画面的时刻（单调时钟）。
++     * 条的语义是"我出现就代表画面已经稳了，你点我绝不黑屏"，所以判定不能只看"曾经有过一帧"，
++     * 必须看"刚刚还有帧"（≤1.5 秒）。画面停住时条不该出现；恢复供帧后条再出现。
++     */
++    @Volatile var vscreenLastFrameAt: Long = 0L
 +    /**
 +     * 前端退出确认（v3.2 §7.3）：要操作的应用正占着主屏前台时，先问用户一句。
 +     * 参数是通道名（"virtual" / "silent"），返回 true=同意退出前台、false=拒绝。
@@ -7847,10 +7854,10 @@ index 00000000..586e79c6
 +}
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenOverlay.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenOverlay.kt
 new file mode 100644
-index 00000000..49063604
+index 00000000..382fe571
 --- /dev/null
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenOverlay.kt
-@@ -0,0 +1,2700 @@
+@@ -0,0 +1,2702 @@
 +package io.github.ccch1mneyyy.dsh_app.phone.vscreen
 +
 +import io.github.ccch1mneyyy.dsh_app.phone.PhoneRegistry
@@ -8409,6 +8416,7 @@ index 00000000..49063604
 +        val old = lastBitmap
 +        lastBitmap = decoded
 +        lastBitmapAt = SystemClock.elapsedRealtime()
++        io.github.ccch1mneyyy.dsh_app.phone.PhoneRegistry.vscreenLastFrameAt = lastBitmapAt
 +        // 【4aa】"这块屏真的出过画面"的凭据必须记在 **App 进程**：core 跑在 :vdisplay，
 +        // 那边的 PhoneRegistry 静态变量传不过来（4z 装机上实测：core 里置了位，
 +        // App 侧读到的还是 0 → 点👁 后 `ui-rule -> none` → 黄条闪一下就被收回）。
@@ -8691,6 +8699,7 @@ index 00000000..49063604
 +        val old = lastBitmap
 +        lastBitmap = bmp
 +        lastBitmapAt = SystemClock.elapsedRealtime()
++        io.github.ccch1mneyyy.dsh_app.phone.PhoneRegistry.vscreenLastFrameAt = lastBitmapAt
 +        if (dw > 0 && dh > 0 && (displayW != dw || displayH != dh)) {
 +            displayW = dw; displayH = dh
 +            applyAspect()
@@ -10808,10 +10817,10 @@ index 00000000..6ec7218a
 +}
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VscreenUi.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VscreenUi.kt
 new file mode 100644
-index 00000000..5761624d
+index 00000000..71493c03
 --- /dev/null
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VscreenUi.kt
-@@ -0,0 +1,150 @@
+@@ -0,0 +1,159 @@
 +package io.github.ccch1mneyyy.dsh_app.phone.vscreen
 +
 +import io.github.ccch1mneyyy.dsh_app.phone.PhoneRegistry
@@ -10863,6 +10872,13 @@ index 00000000..5761624d
 +    private var lastRuleSig = ""
 +    private var lastRuleLogAt = 0L
 +
++    /** 最近 1.5 秒内真的收到过画面（条出现的前提）。 */
++    private fun isFrameFresh(): Boolean {
++        val at = PhoneRegistry.vscreenLastFrameAt
++        if (at <= 0L) return false
++        return android.os.SystemClock.elapsedRealtime() - at <= 1_500L
++    }
++
 +    /** 上一次确定的"屏里有任务"（unknown 时沿用它）。 */
 +    private var lastHasTask = false
 +
@@ -10896,7 +10912,9 @@ index 00000000..5761624d
 +            // 是我们的探测失明（`open-missing hasTask=false`），不是真没任务。
 +            // 读不到 ≠ 没有：加这条会把真实存在的任务也藏掉，用户更看不到。
 +            // 真正要修的是探测（读不到要报 unknown，不许当 false），不是收紧这里。
-+            ch == "silent" && PhoneRegistry.vscreenFirstFrameAt > 0 -> BALL2
++            // 【4ax】条的语义 = "画面已经稳了，点开绝不黑屏"。所以看"最近有没有帧"，
++            // 不是"曾经有没有过帧"：画面停住时不挂条，恢复供帧后再挂。
++            ch == "silent" && isFrameFresh() -> BALL2
 +            ch == "silent" -> NONE
 +            // R9：屏里还有内容（剧还在放、应用还在跑）且不在虚拟屏通道 → 双键条，眼睛能叫回来
 +            hasScreen -> BALL2
