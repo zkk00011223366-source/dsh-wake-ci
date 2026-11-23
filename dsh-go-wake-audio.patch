@@ -1,7 +1,7 @@
-From e486902cd34c5cab536aea90377a4d8a91dce1ef Mon Sep 17 00:00:00 2001
+From 63e5ddafd907cc99a7df80453801f1d2d4ee9ce1 Mon Sep 17 00:00:00 2001
 From: ci <ci@local>
-Date: Mon, 23 Nov 2026 13:41:23 +0800
-Subject: [PATCH] pb: scene4ap
+Date: Mon, 23 Nov 2026 14:56:57 +0800
+Subject: [PATCH] pb: scene4aq
 
 ---
  .gitattributes                                |    3 +
@@ -15,10 +15,10 @@ Subject: [PATCH] pb: scene4ap
  .../dsh_app/notify/NotifyPlugin.kt            |    5 +-
  .../dsh_app/phone/PhoneAndroidShell.kt        |   10 +-
  .../dsh_app/phone/PhoneBackGuard.kt           |  146 +
- .../dsh_app/phone/PhoneContracts.kt           |  220 ++
+ .../dsh_app/phone/PhoneContracts.kt           |  227 ++
  .../ccch1mneyyy/dsh_app/phone/PhoneControl.kt |  100 +-
- .../ccch1mneyyy/dsh_app/phone/PhoneCore.kt    |  476 ++-
- .../ccch1mneyyy/dsh_app/phone/PhonePlugin.kt  |  532 ++++
+ .../ccch1mneyyy/dsh_app/phone/PhoneCore.kt    |  482 ++-
+ .../ccch1mneyyy/dsh_app/phone/PhonePlugin.kt  |  544 ++++
  .../dsh_app/phone/PhoneTaskSessions.kt        |   33 +-
  .../ccch1mneyyy/dsh_app/phone/PhoneTasks.kt   |   46 +
  .../dsh_app/phone/PhoneToolCatalog.kt         |   35 +-
@@ -54,9 +54,9 @@ Subject: [PATCH] pb: scene4ap
  .../phone/vscreen/SwitchPromptOverlay.kt      |  142 +
  .../dsh_app/phone/vscreen/TaskMover.kt        |  152 +
  .../dsh_app/phone/vscreen/TransferBall.kt     |  488 +++
- .../phone/vscreen/VirtualScreenOverlay.kt     | 2642 +++++++++++++++++
+ .../phone/vscreen/VirtualScreenOverlay.kt     | 2657 +++++++++++++++++
  .../phone/vscreen/VirtualScreenPlugin.kt      |  249 ++
- .../dsh_app/phone/vscreen/VscreenUi.kt        |  146 +
+ .../dsh_app/phone/vscreen/VscreenUi.kt        |  150 +
  .../ccch1mneyyy/dsh_app/runtime/GuestSetup.kt |   47 +-
  .../dsh_app/shortcuts/EntryActivity.kt        |    3 +
  .../dsh_app/shortcuts/ShortcutsPlugin.kt      |   13 +-
@@ -133,7 +133,7 @@ Subject: [PATCH] pb: scene4ap
  docs/wake-word.md                             |  107 +
  dsh-go-wake.patch                             | 2065 +++++++++++++
  tooling/build-wake-apk.sh                     |   68 +
- 129 files changed, 17232 insertions(+), 559 deletions(-)
+ 129 files changed, 17276 insertions(+), 559 deletions(-)
  create mode 100644 .github/workflows/wake-apk.yml
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallForegroundService.kt
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallOverlay.kt
@@ -1345,7 +1345,7 @@ index 00000000..175e47b7
 +    }
 +}
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneContracts.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneContracts.kt
-index 612f94d1..4c2f27a3 100644
+index 612f94d1..4add1a11 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneContracts.kt
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneContracts.kt
 @@ -220,6 +220,13 @@ interface PhoneDriver {
@@ -1362,7 +1362,7 @@ index 612f94d1..4c2f27a3 100644
  }
  
  data class ConfirmRequest(
-@@ -346,13 +353,226 @@ interface ControlListener {
+@@ -346,13 +353,233 @@ interface ControlListener {
      fun onAccessibilityChanged(connected: Boolean) {}
  }
  
@@ -1570,6 +1570,13 @@ index 612f94d1..4c2f27a3 100644
 +    @Volatile var vscreenTarget: String = ""
 +
 +    /**
++     * 【4aq】用户手动按了👁收起：这把锁**比 AI 的工具调用优先**，直到用户点条 / 点✕ / ⇄ 才解除。
++     * 真机 14:43:46 实证：按眼睛收起（0.1 秒就出了条）→ 14:43:48.9 下一次工具调用把通道翻回 virtual
++     * → 窗口自己弹回来、条被撤掉 → 用户看到"条闪一下就没了，窗自己又回来"，再点一次才稳住。
++     */
++    @Volatile var vscreenUserSilent: Boolean = false
++
++    /**
 +     * 主屏合并球的两个键（"eye" / "toVirtual"）：原生直接处理，返回 true 表示已经办了。
 +     * 之前这两个动作回给 Dart，App 在后台时没人接，点了没反应（问题#3）。
 +     */
@@ -1751,7 +1758,7 @@ index 2fc7cd59..35689c03 100644
      }
  
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneCore.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneCore.kt
-index 6c701851..141aa5df 100644
+index 6c701851..6899503d 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneCore.kt
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneCore.kt
 @@ -1,9 +1,12 @@
@@ -2185,7 +2192,7 @@ index 6c701851..141aa5df 100644
      }
  
      /** The handler is a dispatch fact. Only the following read describes the actual foreground UI. */
-@@ -816,8 +1041,152 @@ class PhoneCore(
+@@ -816,8 +1041,158 @@ class PhoneCore(
          return Either.Right(d)
      }
  
@@ -2315,6 +2322,9 @@ index 6c701851..141aa5df 100644
 +        // 以前这里没写，channel 永远等于设置值 → 判定结果恒为 none（真机 03:16 全程 channel=virtual）。
 +        io.github.ccch1mneyyy.dsh_app.phone.PhoneRegistry.vscreenTarget = when {
 +            v == "main" || v == "false" -> "main"
++            // 【4aq】用户按过👁：通道锁在后台屏。AI 的工具调用（哪怕明确点名 virtual/background）
++            // 不许把窗口叫回来——那正是"条闪一下就没了、窗自己又回来"的来源（真机 14:43:48.9）。
++            io.github.ccch1mneyyy.dsh_app.phone.PhoneRegistry.vscreenUserSilent -> "silent"
 +            v == "silent" -> "silent"
 +            v == "virtual" || v == "true" -> "virtual"
 +            // 没点名：按"设置=AI 优选"来定，但后台屏设置要落成 silent（双键条），
@@ -2323,8 +2333,11 @@ index 6c701851..141aa5df 100644
 +            // 后续"没点名通道"的工具调用不许按设置值把它覆盖回去。
 +            // 真机 08:30 实证：`ui-rule` 每秒在 `silent -> ball2` 和 `virtual -> none` 之间来回，
 +            // 黄条就闪一下消失、再出现；AI 一轮结束后条彻底不见，也是这条造成的。
++            // 【4aq】**main 也粘**：⇄ 之后用户已经明确在主屏了，没点名的工具调用不许按设置值
++            // 把它翻回 virtual（真机 14:44:07.878 实证：swap 后 3.9 秒通道回翻、判回 window）。
 +            io.github.ccch1mneyyy.dsh_app.phone.PhoneRegistry.vscreenTarget == "silent" ||
-+                io.github.ccch1mneyyy.dsh_app.phone.PhoneRegistry.vscreenTarget == "virtual" ->
++                io.github.ccch1mneyyy.dsh_app.phone.PhoneRegistry.vscreenTarget == "virtual" ||
++                io.github.ccch1mneyyy.dsh_app.phone.PhoneRegistry.vscreenTarget == "main" ->
 +                io.github.ccch1mneyyy.dsh_app.phone.PhoneRegistry.vscreenTarget
 +            else -> when {
 +                io.github.ccch1mneyyy.dsh_app.phone.PhoneRegistry.backgroundSilent -> "silent"
@@ -2338,7 +2351,7 @@ index 6c701851..141aa5df 100644
      /** Admission uses the same argument coercion and routing as the actual tool body. */
      fun requiredScreens(name: String, args: Map<String, Any?>): Either<String, List<PhoneScreen>> {
          return requiredScreens(name, Args(args))
-@@ -825,10 +1194,11 @@ class PhoneCore(
+@@ -825,10 +1200,11 @@ class PhoneCore(
  
      private fun requiredScreens(name: String, a: Args): Either<String, List<PhoneScreen>> {
          return when (name) {
@@ -2353,7 +2366,7 @@ index 6c701851..141aa5df 100644
              // Arbitrary system commands take the main/global unknown-app lease, without reading a screen.
              PhoneToolCatalog.INTENT, PhoneToolCatalog.ANDROID_SHELL -> Either.Right(listOf(PhoneScreen.MAIN))
              PhoneToolCatalog.HANDOFF -> Either.Right(if (lastScreen == PhoneScreen.BACKGROUND)
-@@ -852,7 +1222,7 @@ class PhoneCore(
+@@ -852,7 +1228,7 @@ class PhoneCore(
          if (id == null) return Either.Left("缺少 $parameterName（屏幕号，如 s7）。先调用 screen 拿到屏幕号。")
          return PhoneScreen.ofScreenId(id)?.let { Either.Right(it) }
              // l10n:keep agent tool result
@@ -2362,7 +2375,7 @@ index 6c701851..141aa5df 100644
      }
  
      private fun locked(summary: String) =
-@@ -871,21 +1241,29 @@ class PhoneCore(
+@@ -871,21 +1247,29 @@ class PhoneCore(
  
      private fun screen(a: Args, owner: PhoneTasks.Owner): Out {
          if (!current(owner)) return stoppedOut("screen")
@@ -2398,7 +2411,7 @@ index 6c701851..141aa5df 100644
          return Out(
              // l10n:keep agent tool result
              if (refused) "没有读取这个屏幕的内容。" else "",
-@@ -897,6 +1275,40 @@ class PhoneCore(
+@@ -897,6 +1281,40 @@ class PhoneCore(
          )
      }
  
@@ -2439,7 +2452,7 @@ index 6c701851..141aa5df 100644
      private fun collect(a: Args, owner: PhoneTasks.Owner): Out {
          if (!current(owner)) return stoppedOut("collect")
          val sid = a.str("screen")
-@@ -1362,6 +1774,7 @@ class PhoneCore(
+@@ -1362,6 +1780,7 @@ class PhoneCore(
          summary = summary, decision = "stopped")
  
      companion object {
@@ -2447,7 +2460,7 @@ index 6c701851..141aa5df 100644
          internal const val REPLAY = "replay"
          internal const val FOCUS_TEXT = "focus_text"
  
-@@ -1370,6 +1783,9 @@ class PhoneCore(
+@@ -1370,6 +1789,9 @@ class PhoneCore(
          const val PAUSE_WAIT_MS = 600_000L
          const val HANDOFF_MS = 600_000L
  
@@ -2458,7 +2471,7 @@ index 6c701851..141aa5df 100644
          private val WRITES = setOf(FOCUS_TEXT, PhoneToolCatalog.TAP, PhoneToolCatalog.TYPE, PhoneToolCatalog.TAP_XY, PhoneToolCatalog.OPEN)
          /** An uncertain effect call tightens draft eligibility; it does not prove input was dispatched. */
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhonePlugin.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhonePlugin.kt
-index 4a76535f..00b1cf81 100644
+index 4a76535f..4a24af67 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhonePlugin.kt
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhonePlugin.kt
 @@ -2,7 +2,14 @@ package io.github.ccch1mneyyy.dsh_app.phone
@@ -2495,7 +2508,7 @@ index 4a76535f..00b1cf81 100644
      private val privilegedActions = PrivilegedActionGate()
  
      override fun onAttachedToEngine(binding: FlutterPlugin.FlutterPluginBinding) {
-@@ -77,6 +89,259 @@ class PhonePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
+@@ -77,6 +89,271 @@ class PhonePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
          promptOwner = Any()
          attached = true
          control.background.restoreKeptChannel()
@@ -2625,7 +2638,15 @@ index 4a76535f..00b1cf81 100644
 +        PhoneRegistry.vscreenUiApply = { ui ->
 +            val ctx = appContext
 +            when (ui) {
-+                "ball1", "ball2" -> TransferBall.setWanted(true, ctx, forced = false)
++                "ball1", "ball2" -> {
++                    // 【4aq】窗条互斥：判成条就必须先把窗收掉。真机 14:44:00 实证——通道翻回 silent
++                    // 判了 ball2，条出现了，可 14:43:49.198 开的那个窗口还在，窗和条同时挂在屏幕上。
++                    if (VirtualScreenOverlay.isWindowShown()) {
++                        WakeTrace.log("ball: mutual-exclusion hide window (ui=$ui)")
++                        runCatching { VirtualScreenOverlay.hideWindowOnly(announce = false) }
++                    }
++                    TransferBall.setWanted(true, ctx, forced = false)
++                }
 +                else -> {
 +                    runCatching { TransferBall.setWanted(false, ctx) }
 +                    TransferBall.hide()
@@ -2720,6 +2741,8 @@ index 4a76535f..00b1cf81 100644
 +                        // 后台屏 → 虚拟屏：唤回来，小窗形态。
 +                        taskOnVirtual -> {
 +                            WakeTrace.log("vscreen: channel-switch to=virtual via=eye")
++                            // 【4aq】用户自己点条回来 = 解除"收起锁"。
++                            PhoneRegistry.vscreenUserSilent = false
 +                            runCatching {
 +                                VirtualScreenOverlay.show(appContext, VirtualScreenOverlay.currentTaskId())
 +                            }.onFailure { WakeTrace.log("ball: eye show threw ${it.javaClass.simpleName}") }
@@ -2734,6 +2757,8 @@ index 4a76535f..00b1cf81 100644
 +                    true
 +                }
 +                "swap" -> {
++                    // 【4aq】⇄ 是"换到主屏"，用户收起锁一并解除（否则之后一直锁在后台屏）。
++                    PhoneRegistry.vscreenUserSilent = false
 +                    when {
 +                        // 虚拟屏 → 主屏：任务真正搬回手机，窗口收起，边上留黄条。
 +                        windowShown -> transferToMain("window")
@@ -2755,7 +2780,7 @@ index 4a76535f..00b1cf81 100644
          methods = MethodChannel(binding.binaryMessenger, "dsh/phone").also { it.setMethodCallHandler(this) }
          events = EventChannel(binding.binaryMessenger, "dsh/phone/events").also { it.setStreamHandler(this) }
          previewEvents = EventChannel(binding.binaryMessenger, "dsh/phone/preview").also { channel ->
-@@ -103,9 +368,179 @@ class PhonePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
+@@ -103,9 +380,179 @@ class PhonePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
          }
      }
  
@@ -2935,7 +2960,7 @@ index 4a76535f..00b1cf81 100644
          skillSelectionRequest = Any()
          skillInspection = null
          skillClient?.let { control.skillReplaySelections.retireClient(it); control.skillDrafts.retireClient(it) }
-@@ -249,6 +684,103 @@ class PhonePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
+@@ -249,6 +696,103 @@ class PhonePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
                  result.success(if (removed) mapOf("kind" to "discarded") else replayRejected("stale"))
              }
              "setBackgroundPreview" -> result.success(control.preview.setEnabled(call.argument<Boolean>("enabled") == true))
@@ -7760,10 +7785,10 @@ index 00000000..586e79c6
 +}
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenOverlay.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenOverlay.kt
 new file mode 100644
-index 00000000..a504310e
+index 00000000..e0eee0c6
 --- /dev/null
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenOverlay.kt
-@@ -0,0 +1,2642 @@
+@@ -0,0 +1,2657 @@
 +package io.github.ccch1mneyyy.dsh_app.phone.vscreen
 +
 +import io.github.ccch1mneyyy.dsh_app.phone.PhoneRegistry
@@ -7989,7 +8014,14 @@ index 00000000..a504310e
 +    /** App 图标字体（与 Flutter 界面同一套 DshIcons.ttf）。 */
 +    private var iconFont: Typeface? = null
 +
-+    val shown: Boolean get() = root != null
++    /**
++     * 【4aq】"窗口此刻在不在屏上"必须三个条件同时成立：有视图、已揭窗、真的挂在 WindowManager 上。
++     * 原来只看 `root != null`，于是"视图建过但没揭窗/没挂上"也算 shown=true →
++     * `VscreenUi.decide()` 一直判 window、黄条永远不出。真机 14:54 实证：后台屏任务已经完成、
++     * 屏里在放《仙逆》，`ui-rule: channel=silent hasTask=true shown=true -> window`，可屏幕上什么都没有。
++     * 窗口只有带画面才会 reveal（需求 §6.2），所以"没揭窗"就等于"没在屏上"，不能算 shown。
++     */
++    val shown: Boolean get() = root != null && revealed && (root?.isAttachedToWindow == true)
 +
 +    fun show(context: Context, taskId: Long = 0): Boolean {
 +        // H：唤回/新建窗口前先把旧 surface 从虚拟屏上摘掉。VirtualDisplay 只认一个输出面，
@@ -8342,6 +8374,9 @@ index 00000000..a504310e
 +    }
 +
 +    /** Whether preview frames are wanted: a parked sliver shows nothing, a live surface needs none. */
++    /** 【4aq】窗口此刻是否真的在屏上：判成条时要据此把窗收掉（窗和条不许并存）。 */
++    fun isWindowShown(): Boolean = root != null && revealed
++
 +    fun wantsFrames(): Boolean = fallback != null && shape != Shape.SLIVER && !liveSurface && !eyeHidden && screenOn && !appReaderActive
 +
 +    /**
@@ -9919,6 +9954,9 @@ index 00000000..a504310e
 +    /** 眼睛: hide the picture, keep the display (and its task) running; the glyph follows. */
 +    private fun toggleEye() {
 +        // 眼睛键 = 切到后台操作：只隐藏窗口（surface/预览都保留）。
++        // 【4aq】上锁：这一下是**用户**的意思，比 AI 后面任何工具调用都优先；
++        // 只有用户点条 / 点✕ / ⇄ 才解锁（PhonePlugin 的 ball 分支与 endTask 里清）。
++        io.github.ccch1mneyyy.dsh_app.phone.PhoneRegistry.vscreenUserSilent = true
 +        hideWindowOnly()
 +        return
 +        @Suppress("UNREACHABLE_CODE")
@@ -9987,6 +10025,8 @@ index 00000000..a504310e
 +            "vscreen: close source=window display=$displayId -> stop|clear -> release")
 +        // 关屏后这块屏不再代表任何通道，界面按 none 收干净（条在下面 hideWindowOnly 里统一处理）。
 +        io.github.ccch1mneyyy.dsh_app.phone.PhoneRegistry.vscreenTarget = "none"
++        // 【4aq】✕ 是"关屏"，不是"收起"：用户收起锁一并解除。
++        io.github.ccch1mneyyy.dsh_app.phone.PhoneRegistry.vscreenUserSilent = false
 +        // 点【✕】= 关屏：解除"任务结束后保住屏"的旗标，后面才会真正交回主屏并释放。
 +        io.github.ccch1mneyyy.dsh_app.phone.PhoneRegistry.vscreenKeepAfterTask = false
 +        // 同时解除 hideWindowOnly 里加的"窗口还在，别放屏"——不然 ✕ 之后屏永远放不掉（资源泄漏）。
@@ -10663,10 +10703,10 @@ index 00000000..6ec7218a
 +}
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VscreenUi.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VscreenUi.kt
 new file mode 100644
-index 00000000..616af521
+index 00000000..5761624d
 --- /dev/null
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VscreenUi.kt
-@@ -0,0 +1,146 @@
+@@ -0,0 +1,150 @@
 +package io.github.ccch1mneyyy.dsh_app.phone.vscreen
 +
 +import io.github.ccch1mneyyy.dsh_app.phone.PhoneRegistry
@@ -10730,6 +10770,10 @@ index 00000000..616af521
 +        val hasScreen = screen == true
 +        val screenText = screen?.toString() ?: "unknown"
 +        val ui = when {
++            // 【4aq】主屏通道恒为 none，**必须排在 shown 之前**：⇄ 到主屏后 shown 会卡在 true，
++            // 排在 shown 后面就会一直判 window（真机 14:44:19 起每 10 秒一条 `channel=main … shown=true -> window`，
++            // 而那时窗和条都不在屏幕上，用户看到的就是"卡住、点什么都没用"）。
++            ch == "main" -> NONE
 +            shown -> WINDOW                                  // R7：窗口可见 → 窗口（不挂条）
 +            // 主屏通道：**永远零悬浮物**。必须排在 hasScreen 之前——
 +            // 否则用完虚拟屏、屏里还留着任务时，主屏会被判成 ball2 挂出一条双键条，
