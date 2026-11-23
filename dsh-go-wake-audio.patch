@@ -1,7 +1,7 @@
-From ce48cdfc199040e27a0f83b8939a35d4ded9e34a Mon Sep 17 00:00:00 2001
+From 4142877848c593d365ce89a8cf0f2b6aa4c74b0d Mon Sep 17 00:00:00 2001
 From: ci <ci@local>
-Date: Mon, 23 Nov 2026 07:18:19 +0800
-Subject: [PATCH] pb: scene4aa3
+Date: Mon, 23 Nov 2026 08:03:54 +0800
+Subject: [PATCH] pb: scene4ab
 
 ---
  .gitattributes                                |    3 +
@@ -52,10 +52,10 @@ Subject: [PATCH] pb: scene4aa3
  .../dsh_app/phone/vscreen/PresentationHost.kt |   69 +
  .../phone/vscreen/SwitchPromptOverlay.kt      |  142 +
  .../dsh_app/phone/vscreen/TaskMover.kt        |  152 +
- .../dsh_app/phone/vscreen/TransferBall.kt     |  480 ++++
+ .../dsh_app/phone/vscreen/TransferBall.kt     |  488 ++++
  .../phone/vscreen/VirtualScreenOverlay.kt     | 2445 +++++++++++++++++
  .../phone/vscreen/VirtualScreenPlugin.kt      |  249 ++
- .../dsh_app/phone/vscreen/VscreenUi.kt        |  111 +
+ .../dsh_app/phone/vscreen/VscreenUi.kt        |  116 +
  .../ccch1mneyyy/dsh_app/runtime/GuestSetup.kt |   47 +-
  .../dsh_app/shortcuts/EntryActivity.kt        |    3 +
  .../dsh_app/shortcuts/ShortcutsPlugin.kt      |   13 +-
@@ -132,7 +132,7 @@ Subject: [PATCH] pb: scene4aa3
  docs/wake-word.md                             |  107 +
  dsh-go-wake.patch                             | 2065 ++++++++++++++
  tooling/build-wake-apk.sh                     |   68 +
- 128 files changed, 16650 insertions(+), 559 deletions(-)
+ 128 files changed, 16663 insertions(+), 559 deletions(-)
  create mode 100644 .github/workflows/wake-apk.yml
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallForegroundService.kt
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallOverlay.kt
@@ -6955,10 +6955,10 @@ index 00000000..19aecfea
 +}
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/TransferBall.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/TransferBall.kt
 new file mode 100644
-index 00000000..6c4622a9
+index 00000000..586e79c6
 --- /dev/null
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/TransferBall.kt
-@@ -0,0 +1,480 @@
+@@ -0,0 +1,488 @@
 +package io.github.ccch1mneyyy.dsh_app.phone.vscreen
 +
 +import android.annotation.SuppressLint
@@ -7376,7 +7376,15 @@ index 00000000..6c4622a9
 +                        if (!native) onAction?.invoke(half)
 +                        setOpen(false)
 +                    } else {
-+                        setOpen(true)
++                        // 【4ab】需求 §4.2：黄条**没有图标，整条就是按钮**——点一下虚拟屏就回来，
++                        // 条同时消失。以前这里先 setOpen(true) 展开成双键胶囊，用户点了只看到
++                        // "条变大"（真机 07:48 截图：条 → 黄色椭圆），窗口不回来。
++                        // 眼睛动作在后台屏态就是"唤回窗口"（PhonePlugin ballAction:"eye"）。
++                        val native = io.github.ccch1mneyyy.dsh_app.phone.PhoneRegistry
++                            .ballAction?.invoke("eye") == true
++                        io.github.ccch1mneyyy.dsh_app.wake.WakeTrace.log(
++                            "ball: tap=eye from sliver native=$native（整条即按钮）")
++                        if (!native) onAction?.invoke("eye")
 +                    }
 +                    true
 +                }
@@ -10147,10 +10155,10 @@ index 00000000..6ec7218a
 +}
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VscreenUi.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VscreenUi.kt
 new file mode 100644
-index 00000000..eb4d03dd
+index 00000000..50df6bea
 --- /dev/null
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VscreenUi.kt
-@@ -0,0 +1,111 @@
+@@ -0,0 +1,116 @@
 +package io.github.ccch1mneyyy.dsh_app.phone.vscreen
 +
 +import io.github.ccch1mneyyy.dsh_app.phone.PhoneRegistry
@@ -10207,6 +10215,11 @@ index 00000000..eb4d03dd
 +            // v3.2（用户 01:1x）：后台屏的条**必须带画面一起出现**——"应用没起来、屏里没画面，
 +            // 就不许先把条挂出来"。所以这条要排在 hasScreen 之前，否则屏里一有任务就先把条挂上去了。
 +            // 凭据用"这块屏真的画出过一帧"（用户选的标准：必须真的收到第一帧）。
++            // 【4ab·撤回一条】本来想在这里加"必须 task||hasScreen"，用来治"没任务也出条"。
++            // 撤回理由（用户 07:5x 回忆）：那次其实**有声音**，说明腾讯视频还在跑，
++            // 是我们的探测失明（`open-missing hasTask=false`），不是真没任务。
++            // 读不到 ≠ 没有：加这条会把真实存在的任务也藏掉，用户更看不到。
++            // 真正要修的是探测（读不到要报 unknown，不许当 false），不是收紧这里。
 +            ch == "silent" && PhoneRegistry.vscreenFirstFrameAt > 0 -> BALL2
 +            ch == "silent" -> NONE
 +            // R9：屏里还有内容（剧还在放、应用还在跑）且不在虚拟屏通道 → 双键条，眼睛能叫回来
