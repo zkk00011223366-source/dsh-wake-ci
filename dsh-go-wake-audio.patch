@@ -1,7 +1,7 @@
-From 1413c5e6371b29fcca0f577d61607be5ac9e8c63 Mon Sep 17 00:00:00 2001
+From 6940218efb89bab5b3c383955d8bc12c671bb2c1 Mon Sep 17 00:00:00 2001
 From: ci <ci@local>
-Date: Mon, 23 Nov 2026 20:08:23 +0800
-Subject: [PATCH] pb: rollback-4at
+Date: Mon, 23 Nov 2026 18:55:50 +0800
+Subject: [PATCH] pb: scene4au
 
 ---
  .gitattributes                                |    3 +
@@ -27,7 +27,7 @@ Subject: [PATCH] pb: rollback-4at
  .../dsh_app/phone/SystemActions.kt            |    7 +-
  .../dsh_app/phone/a11y/ControlOverlay.kt      |   11 +-
  .../dsh_app/phone/a11y/PhoneA11yService.kt    |   20 +
- .../phone/background/BackgroundControl.kt     |  150 +-
+ .../phone/background/BackgroundControl.kt     |  160 +-
  .../phone/background/BackgroundCoordinates.kt |    2 +
  .../phone/background/BackgroundDisplay.kt     |  355 ++-
  .../phone/background/BackgroundPolicy.kt      |    8 +-
@@ -54,7 +54,7 @@ Subject: [PATCH] pb: rollback-4at
  .../phone/vscreen/SwitchPromptOverlay.kt      |  142 +
  .../dsh_app/phone/vscreen/TaskMover.kt        |  152 +
  .../dsh_app/phone/vscreen/TransferBall.kt     |  488 +++
- .../phone/vscreen/VirtualScreenOverlay.kt     | 2669 +++++++++++++++++
+ .../phone/vscreen/VirtualScreenOverlay.kt     | 2695 +++++++++++++++++
  .../phone/vscreen/VirtualScreenPlugin.kt      |  249 ++
  .../dsh_app/phone/vscreen/VscreenUi.kt        |  150 +
  .../ccch1mneyyy/dsh_app/runtime/GuestSetup.kt |   47 +-
@@ -133,7 +133,7 @@ Subject: [PATCH] pb: rollback-4at
  docs/wake-word.md                             |  107 +
  dsh-go-wake.patch                             | 2065 +++++++++++++
  tooling/build-wake-apk.sh                     |   68 +
- 129 files changed, 17329 insertions(+), 559 deletions(-)
+ 129 files changed, 17365 insertions(+), 559 deletions(-)
  create mode 100644 .github/workflows/wake-apk.yml
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallForegroundService.kt
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallOverlay.kt
@@ -3467,7 +3467,7 @@ index 8aa204bc..298fc3a9 100644
          super.onConfigurationChanged(newConfig)
          overlay?.onConfigurationChanged()
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/BackgroundControl.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/BackgroundControl.kt
-index 79cae468..605b7e28 100644
+index 79cae468..0eadd85e 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/BackgroundControl.kt
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/BackgroundControl.kt
 @@ -13,6 +13,8 @@ import android.net.Network
@@ -3501,7 +3501,7 @@ index 79cae468..605b7e28 100644
      private val preferenceGuard = Any()
      private val viewportPrefs = app.getSharedPreferences("phone-background-viewport", Context.MODE_PRIVATE)
      @Volatile private var viewport = BackgroundPolicy.Viewport.parse(
-@@ -149,6 +166,113 @@ class BackgroundControl private constructor(context: Context) {
+@@ -149,6 +166,123 @@ class BackgroundControl private constructor(context: Context) {
  
      fun previewTarget(taskId: Long): BackgroundPreviewTarget? = previewTargets[taskId]
  
@@ -3602,6 +3602,16 @@ index 79cae468..605b7e28 100644
 +    }
 +
 +    /**
++     * 【4at-2】把这块屏上的任务搬回主屏。窗口按 ⇄ 时直接调这条，
++     * 不再经过 PhonePlugin 的回调链（那条链上的改动连续两次没进 CI 产物）。
++     */
++    fun moveTaskToMainById(taskId: Int): Map<String, Any?> {
++        val driver = taskResource.boundDriver
++            ?: return mapOf("ok" to false, "reason" to "noDriver")
++        return driver.handOverToMainByTaskId(taskId)
++    }
++
++    /**
 +     * 【4ao】按 owner 直挂：不需要 previewTarget。
 +     * 帧直读的尺寸查询和挂面都走这条，所以窗口没打开时也能把 Surface 交给持有这块屏的 core（破 B9）。
 +     * 没有活动 driver 时明确回 `noDriver`，让上层退回原来的预览帧路。
@@ -3615,7 +3625,7 @@ index 79cae468..605b7e28 100644
      /** Memory publication only; callers notify after releasing controller locks. */
      private fun replaceChannel(value: PrivilegedChannel?): Boolean = synchronized(previewGuard) {
          if (channel === value) false else {
-@@ -237,7 +361,7 @@ class BackgroundControl private constructor(context: Context) {
+@@ -237,7 +371,7 @@ class BackgroundControl private constructor(context: Context) {
                  mode, reason, AppStrings.get(app, R.string.background_root_legacy_client),
              ),
              "androidOk" to androidOk(),
@@ -3624,7 +3634,7 @@ index 79cae468..605b7e28 100644
              "shizuku" to shizukuStatus.map(),
              "adb" to adbStatus.map(),
              "root" to rootStatus.map(),
-@@ -703,6 +827,15 @@ class BackgroundControl private constructor(context: Context) {
+@@ -703,6 +837,15 @@ class BackgroundControl private constructor(context: Context) {
              synchronized(keepGuard) {
                  if (selfCheckBorrow != null || interruptRequested || !current()) return null
                  taskResource.find(owner)?.let { return it.driver }
@@ -3640,7 +3650,7 @@ index 79cae468..605b7e28 100644
                  if (selectingResource || restoring?.isDone == false || selectionChange != null) return null
                  keep.selectionTicket()
              }
-@@ -722,7 +855,7 @@ class BackgroundControl private constructor(context: Context) {
+@@ -722,7 +865,7 @@ class BackgroundControl private constructor(context: Context) {
                          channelProvider = { peer },
                          mayUse = { currentOwner() && !interruptRequested },
                          admitUse = { action -> admitOwner { check(!interruptRequested); action() } },
@@ -3649,7 +3659,7 @@ index 79cae468..605b7e28 100644
                          localOcr = ocr,
                          localOcrAllowed = { target -> localOcrAllowed(target) },
                          onResourceReady = { publishPreviewTarget(record, it) },
-@@ -762,6 +895,19 @@ class BackgroundControl private constructor(context: Context) {
+@@ -762,6 +905,19 @@ class BackgroundControl private constructor(context: Context) {
          }
          if (previewChanged) onPreviewChanged()
          for (record in captured) {
@@ -7833,10 +7843,10 @@ index 00000000..586e79c6
 +}
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenOverlay.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenOverlay.kt
 new file mode 100644
-index 00000000..3e6d2303
+index 00000000..436b54ff
 --- /dev/null
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenOverlay.kt
-@@ -0,0 +1,2669 @@
+@@ -0,0 +1,2695 @@
 +package io.github.ccch1mneyyy.dsh_app.phone.vscreen
 +
 +import io.github.ccch1mneyyy.dsh_app.phone.PhoneRegistry
@@ -10064,12 +10074,38 @@ index 00000000..3e6d2303
 +        // 直接交给原生做：以前只发 onAction("toMain:…") 给 Dart，而 Dart 侧没有对应处理器
 +        // （真机 04:59：`key hit=swap` 之后只有 `window: hide`，完全没有 move start/swap 日志，
 +        // 任务从未搬走，屏幕上只剩一根黄条）。原生这条路不依赖 App 是否在前台。
-+        val hook = io.github.ccch1mneyyy.dsh_app.phone.PhoneRegistry.vscreenMoveToMain
-+        if (hook != null && id != null && id > 0) {
-+            WakeTrace.log("window: transfer via native hook task=$id")
-+            runCatching { hook.invoke(id) }
-+        } else {
-+            onAction?.invoke(if (id != null && id > 0) "toMain:$id" else "toMain")
++        // 【4at-2】窗口自己把任务搬回主屏，不再经过 PhonePlugin 的回调链。
++        // 原因：那条链上的改动连续两次构建都没进包（补丁对、CI 应用成功、编译无错，
++        // 但产物 dex 里既没有新日志也没有新方法签名）。VirtualScreenOverlay 的改动是能进包的，所以搬到这里。
++        // 语义不变：搬任务 → 主屏零悬浮物 → 虚拟屏回收（用户 17:0x：切换之后不能再留一块屏）。
++        val moveId = id ?: return
++        WakeTrace.log("window: swap start taskId=$moveId from=window")
++        worker.execute {
++            val app = context
++            val reply: Map<String, Any?> = runCatching {
++                val ctl = io.github.ccch1mneyyy.dsh_app.phone.background.BackgroundControl.get(
++                    app ?: return@runCatching mapOf("ok" to false, "reason" to "noContext"))
++                ctl.moveTaskToMainById(moveId.toInt())
++            }.getOrElse { mapOf("ok" to false, "reason" to "threw:" + it.javaClass.simpleName) }
++            val ok = reply["ok"] == true
++            WakeTrace.log(
++                "vscreen: swap pkg=${reply["packageName"]} target=main taskId=$moveId ok=$ok reason=${reply["reason"]} from=window")
++            main.post {
++                if (ok) {
++                    io.github.ccch1mneyyy.dsh_app.phone.PhoneRegistry.vscreenTarget = "main"
++                    io.github.ccch1mneyyy.dsh_app.phone.PhoneRegistry.vscreenFirstFrameAt = 0L
++                    // 切换 = 搬走 + 回收：放开"任务结束保屏"和"窗口还在别放屏"两道闸。
++                    io.github.ccch1mneyyy.dsh_app.phone.PhoneRegistry.vscreenKeepAfterTask = false
++                    runCatching { io.github.ccch1mneyyy.dsh_app.phone.PhoneRegistry.holdDisplayForWindow?.invoke(false) }
++                    runCatching { TransferBall.setWanted(false) }
++                    runCatching { TransferBall.hide() }
++                    runCatching { hide() }
++                } else {
++                    // 没搬成：窗口按原样回来，绝不把它变成黄条（那正是"跟眼睛键一样"的错法）。
++                    WakeTrace.log("window: swap failed, keep window reason=${reply["reason"]}")
++                    context?.let { c -> runCatching { show(c, currentTaskId()) } }
++                }
++            }
 +        }
 +    }
 +
