@@ -1,7 +1,7 @@
-From 80c34e69b74341da30b8a0eb1e586d7eb80baca1 Mon Sep 17 00:00:00 2001
+From 6af8f716b9fcd2e2e180260b719c3a147283862f Mon Sep 17 00:00:00 2001
 From: ci <ci@local>
-Date: Mon, 23 Nov 2026 11:05:05 +0800
-Subject: [PATCH] pb: scene4ak
+Date: Mon, 23 Nov 2026 11:23:37 +0800
+Subject: [PATCH] pb: scene4am
 
 ---
  .gitattributes                                |    3 +
@@ -55,14 +55,14 @@ Subject: [PATCH] pb: scene4ak
  .../dsh_app/phone/vscreen/TransferBall.kt     |  488 +++
  .../phone/vscreen/VirtualScreenOverlay.kt     | 2613 +++++++++++++++++
  .../phone/vscreen/VirtualScreenPlugin.kt      |  249 ++
- .../dsh_app/phone/vscreen/VscreenUi.kt        |  135 +
+ .../dsh_app/phone/vscreen/VscreenUi.kt        |  146 +
  .../ccch1mneyyy/dsh_app/runtime/GuestSetup.kt |   47 +-
  .../dsh_app/shortcuts/EntryActivity.kt        |    3 +
  .../dsh_app/shortcuts/ShortcutsPlugin.kt      |   13 +-
  .../ccch1mneyyy/dsh_app/speech/CallCapture.kt |    6 +-
  .../dsh_app/wake/WakeBootReceiver.kt          |   29 +
  .../ccch1mneyyy/dsh_app/wake/WakeCapture.kt   |  172 ++
- .../ccch1mneyyy/dsh_app/wake/WakeTrace.kt     |   39 +
+ .../ccch1mneyyy/dsh_app/wake/WakeTrace.kt     |   99 +
  .../dsh_app/wake/WakeWordPlugin.kt            |  131 +
  .../dsh_app/wake/WakeWordService.kt           |  216 ++
  .../src/main/res/values-zh/i18n_strings.xml   |   20 +-
@@ -132,7 +132,7 @@ Subject: [PATCH] pb: scene4ak
  docs/wake-word.md                             |  107 +
  dsh-go-wake.patch                             | 2065 +++++++++++++
  tooling/build-wake-apk.sh                     |   68 +
- 128 files changed, 17073 insertions(+), 559 deletions(-)
+ 128 files changed, 17144 insertions(+), 559 deletions(-)
  create mode 100644 .github/workflows/wake-apk.yml
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallForegroundService.kt
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallOverlay.kt
@@ -10556,10 +10556,10 @@ index 00000000..6ec7218a
 +}
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VscreenUi.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VscreenUi.kt
 new file mode 100644
-index 00000000..c861504c
+index 00000000..616af521
 --- /dev/null
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VscreenUi.kt
-@@ -0,0 +1,135 @@
+@@ -0,0 +1,146 @@
 +package io.github.ccch1mneyyy.dsh_app.phone.vscreen
 +
 +import io.github.ccch1mneyyy.dsh_app.phone.PhoneRegistry
@@ -10608,6 +10608,9 @@ index 00000000..c861504c
 +        return false
 +    }
 +
++    private var lastRuleSig = ""
++    private var lastRuleLogAt = 0L
++
 +    /** 上一次确定的"屏里有任务"（unknown 时沿用它）。 */
 +    private var lastHasTask = false
 +
@@ -10649,7 +10652,15 @@ index 00000000..c861504c
 +            else -> NONE
 +        }
 +        warnIfOpenMissing(ch, task)
-+        WakeTrace.log("ui-rule: $why channel=$ch hasTask=$task hasScreen=$screenText shown=$shown -> $ui")
++        // 【4am】降噪：状态没变时每 10 秒才打一行心跳，变了立刻打。
++        // 以前每秒两行重复，日志 55MB 里有相当一部分是它。
++        val sig = "$why|$ch|$task|$screenText|$shown|$ui"
++        val logAtNow = android.os.SystemClock.elapsedRealtime()
++        if (sig != lastRuleSig || logAtNow - lastRuleLogAt > 10_000L) {
++            lastRuleSig = sig
++            lastRuleLogAt = logAtNow
++            WakeTrace.log("ui-rule: $why channel=$ch hasTask=$task hasScreen=$screenText shown=$shown -> $ui")
++        }
 +        // 判定必须落地：只打日志不驱动界面，就会"规则说 ball2、屏幕上没有条"。
 +        val apply = PhoneRegistry.vscreenUiApply
 +        // 3w 第 7 条：同一形态一秒内只应用一次（实测 15:21:05 一秒 ≥12 条重入）。
@@ -11066,10 +11077,10 @@ index 00000000..6f623e89
 +}
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/wake/WakeTrace.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/wake/WakeTrace.kt
 new file mode 100644
-index 00000000..024ef57c
+index 00000000..0cdd0f36
 --- /dev/null
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/wake/WakeTrace.kt
-@@ -0,0 +1,39 @@
+@@ -0,0 +1,99 @@
 +package io.github.ccch1mneyyy.dsh_app.wake
 +
 +import java.io.File
@@ -11086,10 +11097,19 @@ index 00000000..024ef57c
 + */
 +object WakeTrace {
 +    private const val DIR = "/sdcard/Download/DSH-Go"
++    private const val MAX_BYTES = 20L * 1024 * 1024
 +    private val marker = File(DIR, ".wake-log")
 +    private val file = File(DIR, "wake-debug.log")
 +
 +    @Volatile private var on: Boolean? = null
++
++    // 【4am】批量写：以前每行都 `appendText`（open+write+close 到 /sdcard FUSE），
++    // 日志 55MB 时每次写都要等一次 I/O；唤醒后"建通话"排在写日志后面就变慢（用户实测），
++    // 虚拟屏的判定/建窗也一起吃这份延迟。现在常开一个流，200ms flush 一次。
++    private val lock = Any()
++    private var stream: java.io.BufferedWriter? = null
++    @Volatile private var lastFlushAt = 0L
++    private var dirty = false
 +
 +    fun log(message: String) {
 +        try {
@@ -11097,9 +11117,60 @@ index 00000000..024ef57c
 +                if (!marker.exists()) return
 +                on = true
 +            }
-+            file.appendText(stamp() + " " + message + "\n")
++            val line = stamp() + " " + message + "\n"
++            synchronized(lock) {
++                rotateIfNeeded()
++                val w = stream ?: open()
++                if (w == null) return
++                w.write(line)
++                dirty = true
++                val now = android.os.SystemClock.elapsedRealtime()
++                if (now - lastFlushAt >= 200L) {
++                    w.flush()
++                    lastFlushAt = now
++                    dirty = false
++                }
++            }
 +        } catch (_: Throwable) {
-+            // No marker, no storage: the trace is best effort.
++            // 写不进去就算了，绝不因为日志影响功能。
++        }
++    }
++
++    /** 关键事件立刻落盘（崩溃后要靠它）：调用方明确知道这条不能等 200ms。 */
++    fun logNow(message: String) {
++        log(message)
++        runCatching {
++            synchronized(lock) {
++                stream?.flush()
++                lastFlushAt = android.os.SystemClock.elapsedRealtime()
++                dirty = false
++            }
++        }
++    }
++
++    private fun open(): java.io.BufferedWriter? = try {
++        file.parentFile?.mkdirs()
++        java.io.BufferedWriter(
++            java.io.OutputStreamWriter(java.io.FileOutputStream(file, true), Charsets.UTF_8),
++            64 * 1024,
++        ).also { stream = it; lastFlushAt = android.os.SystemClock.elapsedRealtime() }
++    } catch (_: Throwable) {
++        stream = null
++        null
++    }
++
++    /** 超过 20MB 轮转成 wake-debug.1.log（旧的覆盖，不删观测入口文件本身）。 */
++    private fun rotateIfNeeded() {
++        if (file.length() < MAX_BYTES) return
++        runCatching {
++            stream?.flush()
++            stream?.close()
++        }
++        stream = null
++        runCatching {
++            val old = File(DIR, "wake-debug.1.log")
++            if (old.exists()) old.delete()
++            file.renameTo(old)
 +        }
 +    }
 +
