@@ -1,7 +1,7 @@
-From 800b4a2d14add6dc7417819475afa0bfd2790c6b Mon Sep 17 00:00:00 2001
+From a7815cc9938b0a3de4a3c87704da0ca7faabc397 Mon Sep 17 00:00:00 2001
 From: ci <ci@local>
-Date: Mon, 23 Nov 2026 22:11:58 +0800
-Subject: [PATCH] pb: scene4bd
+Date: Mon, 23 Nov 2026 22:37:10 +0800
+Subject: [PATCH] pb: scene4be
 
 ---
  .gitattributes                                |    3 +
@@ -15,10 +15,10 @@ Subject: [PATCH] pb: scene4bd
  .../dsh_app/notify/NotifyPlugin.kt            |    5 +-
  .../dsh_app/phone/PhoneAndroidShell.kt        |   10 +-
  .../dsh_app/phone/PhoneBackGuard.kt           |  146 +
- .../dsh_app/phone/PhoneContracts.kt           |  227 ++
+ .../dsh_app/phone/PhoneContracts.kt           |  239 ++
  .../ccch1mneyyy/dsh_app/phone/PhoneControl.kt |  100 +-
  .../ccch1mneyyy/dsh_app/phone/PhoneCore.kt    |  482 ++-
- .../ccch1mneyyy/dsh_app/phone/PhonePlugin.kt  |  560 ++++
+ .../ccch1mneyyy/dsh_app/phone/PhonePlugin.kt  |  584 ++++
  .../dsh_app/phone/PhoneTaskSessions.kt        |   33 +-
  .../ccch1mneyyy/dsh_app/phone/PhoneTasks.kt   |   46 +
  .../dsh_app/phone/PhoneToolCatalog.kt         |   35 +-
@@ -54,7 +54,7 @@ Subject: [PATCH] pb: scene4bd
  .../phone/vscreen/SwitchPromptOverlay.kt      |  142 +
  .../dsh_app/phone/vscreen/TaskMover.kt        |  152 +
  .../dsh_app/phone/vscreen/TransferBall.kt     |  488 +++
- .../phone/vscreen/VirtualScreenOverlay.kt     | 2704 +++++++++++++++++
+ .../phone/vscreen/VirtualScreenOverlay.kt     | 2719 +++++++++++++++++
  .../phone/vscreen/VirtualScreenPlugin.kt      |  249 ++
  .../dsh_app/phone/vscreen/VscreenUi.kt        |  154 +
  .../ccch1mneyyy/dsh_app/runtime/GuestSetup.kt |   47 +-
@@ -134,7 +134,7 @@ Subject: [PATCH] pb: scene4bd
  docs/wake-word.md                             |  107 +
  dsh-go-wake.patch                             | 2065 +++++++++++++
  tooling/build-wake-apk.sh                     |   68 +
- 130 files changed, 17439 insertions(+), 570 deletions(-)
+ 130 files changed, 17490 insertions(+), 570 deletions(-)
  create mode 100644 .github/workflows/wake-apk.yml
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallForegroundService.kt
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallOverlay.kt
@@ -1346,7 +1346,7 @@ index 00000000..175e47b7
 +    }
 +}
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneContracts.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneContracts.kt
-index 612f94d1..4add1a11 100644
+index 612f94d1..7fdcf046 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneContracts.kt
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneContracts.kt
 @@ -220,6 +220,13 @@ interface PhoneDriver {
@@ -1363,7 +1363,7 @@ index 612f94d1..4add1a11 100644
  }
  
  data class ConfirmRequest(
-@@ -346,13 +353,233 @@ interface ControlListener {
+@@ -346,13 +353,245 @@ interface ControlListener {
      fun onAccessibilityChanged(connected: Boolean) {}
  }
  
@@ -1443,6 +1443,18 @@ index 612f94d1..4add1a11 100644
 +     * 参数是真实任务号。返回 true = 已经退到后台且界面不可见。
 +     */
 +    @Volatile var vscreenEndTaskToBack: ((Int) -> Boolean)? = null
++
++    /**
++     * 【4be】✕ / ⇄ 之后**立刻**放掉虚拟屏（用户 22:2x：叉掉、或转到主屏之后，屏要自动释放，
++     * 不能影响下一个任务进虚拟屏）。参数是原因（close / swap），只用于日志。
++     *
++     * 以前只有一条路：清 `vscreenKeepAfterTask` → 等收尾链自己 release。真机 21:41:01 按 ✕，
++     * 收尾链到 21:48:38 才跑，而那时 PhoneTasks 已经把旗标重新置成 true（"任务自然结束保屏"），
++     * 于是 `release deferred reason=keepAfterTask taskId=1` —— 屏从来没被释放过。
++     * ⇄ 也一样：19:01 swap 成功，19:01:37 才 release（24 秒）。
++     * 这条钩子是"明确的一次放屏请求"：清旗标、解占屏、让 core 把记录封掉并 release。
++     */
++    @Volatile var vscreenReleaseNow: ((String) -> Unit)? = null
 +
 +    /**
 +     * 引擎自己最近一次"搬屏/开屏"的时刻（SystemClock.elapsedRealtime）。
@@ -2472,7 +2484,7 @@ index 6c701851..6899503d 100644
          private val WRITES = setOf(FOCUS_TEXT, PhoneToolCatalog.TAP, PhoneToolCatalog.TYPE, PhoneToolCatalog.TAP_XY, PhoneToolCatalog.OPEN)
          /** An uncertain effect call tightens draft eligibility; it does not prove input was dispatched. */
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhonePlugin.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhonePlugin.kt
-index 4a76535f..2136ae8a 100644
+index 4a76535f..3396e255 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhonePlugin.kt
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhonePlugin.kt
 @@ -2,7 +2,14 @@ package io.github.ccch1mneyyy.dsh_app.phone
@@ -2509,7 +2521,7 @@ index 4a76535f..2136ae8a 100644
      private val privilegedActions = PrivilegedActionGate()
  
      override fun onAttachedToEngine(binding: FlutterPlugin.FlutterPluginBinding) {
-@@ -77,6 +89,280 @@ class PhonePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
+@@ -77,6 +89,297 @@ class PhonePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
          promptOwner = Any()
          attached = true
          control.background.restoreKeptChannel()
@@ -2539,6 +2551,23 @@ index 4a76535f..2136ae8a 100644
 +            val display = control.driver(PhoneScreen.BACKGROUND) as? BackgroundDisplay
 +            if (on) display?.holdForWindow() else display?.dropHoldForWindow()
 +            Unit
++        }
++        // 【4be】✕ / ⇄ 之后立刻放屏：清"保屏"旗标 + 解窗口占屏，再让 core 走一遍正规收尾
++        // （封记录 → release → complete），这样下一个任务能马上重新进虚拟屏。
++        // 走独立线程：endTask 里的 release 是阻塞的（等系统确认），不能压在主线程上。
++        PhoneRegistry.vscreenReleaseNow = { reason ->
++            Thread {
++                runCatching {
++                    PhoneRegistry.vscreenKeepAfterTask = false
++                    runCatching { PhoneRegistry.holdDisplayForWindow?.invoke(false) }
++                    // 给"退后台 / 搬主屏"留一拍：别在搬移事务还没落地时就把屏放掉。
++                    Thread.sleep(600)
++                    control.background.endTask(null)
++                    WakeTrace.log("vscreen: release-now reason=$reason done")
++                }.onFailure {
++                    WakeTrace.log("vscreen: release-now reason=$reason threw ${it.javaClass.simpleName}")
++                }
++            }.apply { name = "vscreen-release-now"; isDaemon = true }.start()
 +        }
 +        // 前端退出确认（v3.2 §7.3）：要操作的应用正占着主屏前台时先问一句。
 +        // 调用方在后台线程，这里投到主线程弹条，然后**阻塞**到他点或 30 秒超时——
@@ -2790,7 +2819,7 @@ index 4a76535f..2136ae8a 100644
          methods = MethodChannel(binding.binaryMessenger, "dsh/phone").also { it.setMethodCallHandler(this) }
          events = EventChannel(binding.binaryMessenger, "dsh/phone/events").also { it.setStreamHandler(this) }
          previewEvents = EventChannel(binding.binaryMessenger, "dsh/phone/preview").also { channel ->
-@@ -103,9 +389,186 @@ class PhonePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
+@@ -103,9 +406,193 @@ class PhonePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
          }
      }
  
@@ -2844,10 +2873,16 @@ index 4a76535f..2136ae8a 100644
 +                    // 所以放开"任务结束保屏"和"窗口还在别放屏"这两道闸，让收尾链真的释放。
 +                    PhoneRegistry.vscreenKeepAfterTask = false
 +                    runCatching { PhoneRegistry.holdDisplayForWindow?.invoke(false) }
++                    // 【4be】账本清零 + 立刻放屏。⇄ 的语义是"任务搬到主屏、虚拟屏回收"，
++                    // 以前靠收尾链，真机 19:01:13 swap 成功、19:01:37 才 release（24 秒），
++                    // 期间再开任务就撞"屏还占着"。现在搬完就放。
++                    PhoneRegistry.vscreenScreenDisplayId = 0
++                    PhoneRegistry.vscreenObservedDisplayId = 0
 +                    main.post {
 +                        runCatching { TransferBall.setWanted(false, appContext) }
 +                        runCatching { TransferBall.hide() }
 +                        runCatching { VirtualScreenOverlay.hide() }
++                        runCatching { PhoneRegistry.vscreenReleaseNow?.invoke("swap") }
 +                    }
 +                } else if (source.startsWith("window")) {
 +                    // 没搬成、而且本来就是窗口里按的：窗口按原样回来，别收走眼前的东西。
@@ -2969,6 +3004,7 @@ index 4a76535f..2136ae8a 100644
 +        PhoneRegistry.holdDisplayForWindow = null
 +        PhoneRegistry.handBackToMain = null
 +        PhoneRegistry.vscreenEndTaskToBack = null
++        PhoneRegistry.vscreenReleaseNow = null
 +        PhoneRegistry.askExitFront = null
 +        PhoneRegistry.vscreenDisplayId = null
 +        PhoneRegistry.vscreenMoveToMain = null
@@ -2977,7 +3013,7 @@ index 4a76535f..2136ae8a 100644
          skillSelectionRequest = Any()
          skillInspection = null
          skillClient?.let { control.skillReplaySelections.retireClient(it); control.skillDrafts.retireClient(it) }
-@@ -249,6 +712,103 @@ class PhonePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
+@@ -249,6 +736,103 @@ class PhonePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
                  result.success(if (removed) mapOf("kind" to "discarded") else replayRejected("stale"))
              }
              "setBackgroundPreview" -> result.success(control.preview.setEnabled(call.argument<Boolean>("enabled") == true))
@@ -7891,10 +7927,10 @@ index 00000000..fff2a63f
 +}
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenOverlay.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenOverlay.kt
 new file mode 100644
-index 00000000..68ee0d70
+index 00000000..2d071ef4
 --- /dev/null
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenOverlay.kt
-@@ -0,0 +1,2704 @@
+@@ -0,0 +1,2719 @@
 +package io.github.ccch1mneyyy.dsh_app.phone.vscreen
 +
 +import io.github.ccch1mneyyy.dsh_app.phone.PhoneRegistry
@@ -9936,7 +9972,9 @@ index 00000000..68ee0d70
 +            }
 +        }
 +        // 左上角左箭头已按用户要求移除（18:2x）：形态只由 眼睛/✕/−/+/↺ 决定。
-+        val sound = SoundGlyph(app, px, true)
++        // 【4be】图标跟着真实状态走：以前这里写死 true（画成"静音"），而实际 muted=false、
++        // 整机音量也没动 → 用户看着像"默认静音"，点一下反而把音量改成别的值。
++        val sound = SoundGlyph(app, px, muted)
 +        soundGlyph = sound
 +        val volume = roundKeyCustom(app, px, { sound }) {
 +            // 默认静音：第一次点开声音，再点关掉。
@@ -10064,6 +10102,9 @@ index 00000000..68ee0d70
 +    private fun restoreVolume(app: Context) {
 +        val back = savedVolume
 +        savedVolume = -1
++        // 【4be】音量放回来了，"静音"这个意图也一并复位，否则下次开窗图标还停在静音上。
++        muted = false
++        soundGlyph?.let { it.muted = false; it.invalidate() }
 +        if (back < 0) return
 +        try {
 +            val audio = app.getSystemService(Context.AUDIO_SERVICE) as? AudioManager ?: return
@@ -10182,12 +10223,19 @@ index 00000000..68ee0d70
 +        // 带上窗口实际绑定的任务号：不带号时原生找不到"当前任务"，停止会静默失败（10:1x）。
 +        val id = previewTaskId.takeIf { it > 0 } ?: taskId
 +        hide()
++        // 【4be】✕ 之后账本立刻清零：这块屏马上要被放掉，界面不许再按"屏里还有任务"挂条。
++        // （hasTask 只看账本；不清就会在屏已经没了之后又冒一条点不开的黄条。）
++        io.github.ccch1mneyyy.dsh_app.phone.PhoneRegistry.vscreenScreenDisplayId = 0
++        io.github.ccch1mneyyy.dsh_app.phone.PhoneRegistry.vscreenObservedDisplayId = 0
++        io.github.ccch1mneyyy.dsh_app.phone.PhoneRegistry.vscreenFirstFrameAt = 0L
 +        // 【4ae】✕ = 结束任务 + 退到普通后台（像按 Home）：进程活着、界面不可见、最近任务里能翻到。
 +        // 以前这里调 handBackToMain（挪回主屏并顶到前台），用户会看到"叉掉之后应用自己弹到主屏"。
 +        // 现在优先走 toBack；没有这把钩子才退回老路，保证不卡死。
 +        val toBack = io.github.ccch1mneyyy.dsh_app.phone.PhoneRegistry.vscreenEndTaskToBack
 +        if (toBack == null) {
 +            WakeTrace.log("window: stop without hand-back (no hook) task=$id")
++            // 【4be】没有退后台的钩子也要放屏：✕ 的语义是"关掉这块屏"。
++            io.github.ccch1mneyyy.dsh_app.phone.PhoneRegistry.vscreenReleaseNow?.invoke("close")
 +            onAction?.invoke(if (id > 0) "stop:$id" else "stop")
 +            return
 +        }
@@ -10204,6 +10252,9 @@ index 00000000..68ee0d70
 +                WakeTrace.log("window: endTask toBack failed, keep background (no hand-back) task=$id")
 +            }
 +            WakeTrace.log("window: end toBack=$backed task=$id")
++            // 【4be】✕ = 关屏：应用已经退到后台，立刻把这屏放掉，下一个任务才能重新进来。
++            // 以前只靠收尾链，而收尾链会把"保屏"旗标重新置真 → 真机 21:41 ✕ 到 21:48 都没 release。
++            io.github.ccch1mneyyy.dsh_app.phone.PhoneRegistry.vscreenReleaseNow?.invoke("close")
 +            main.post { onAction?.invoke(if (id > 0) "stop:$id" else "stop") }
 +        }
 +    }
