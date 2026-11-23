@@ -1,7 +1,7 @@
-From bc271e090e4e710873bb54e7102d7ab552e9a806 Mon Sep 17 00:00:00 2001
+From 0a2acf008771ac740669eed48900b091009be843 Mon Sep 17 00:00:00 2001
 From: ci <ci@local>
-Date: Mon, 23 Nov 2026 16:34:00 +0800
-Subject: [PATCH] pb: scene4as
+Date: Mon, 23 Nov 2026 17:01:43 +0800
+Subject: [PATCH] pb: scene4at
 
 ---
  .gitattributes                                |    3 +
@@ -18,7 +18,7 @@ Subject: [PATCH] pb: scene4as
  .../dsh_app/phone/PhoneContracts.kt           |  227 ++
  .../ccch1mneyyy/dsh_app/phone/PhoneControl.kt |  100 +-
  .../ccch1mneyyy/dsh_app/phone/PhoneCore.kt    |  482 ++-
- .../ccch1mneyyy/dsh_app/phone/PhonePlugin.kt  |  544 ++++
+ .../ccch1mneyyy/dsh_app/phone/PhonePlugin.kt  |  553 ++++
  .../dsh_app/phone/PhoneTaskSessions.kt        |   33 +-
  .../ccch1mneyyy/dsh_app/phone/PhoneTasks.kt   |   46 +
  .../dsh_app/phone/PhoneToolCatalog.kt         |   35 +-
@@ -133,7 +133,7 @@ Subject: [PATCH] pb: scene4as
  docs/wake-word.md                             |  107 +
  dsh-go-wake.patch                             | 2065 +++++++++++++
  tooling/build-wake-apk.sh                     |   68 +
- 129 files changed, 17320 insertions(+), 559 deletions(-)
+ 129 files changed, 17329 insertions(+), 559 deletions(-)
  create mode 100644 .github/workflows/wake-apk.yml
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallForegroundService.kt
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallOverlay.kt
@@ -2471,7 +2471,7 @@ index 6c701851..6899503d 100644
          private val WRITES = setOf(FOCUS_TEXT, PhoneToolCatalog.TAP, PhoneToolCatalog.TYPE, PhoneToolCatalog.TAP_XY, PhoneToolCatalog.OPEN)
          /** An uncertain effect call tightens draft eligibility; it does not prove input was dispatched. */
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhonePlugin.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhonePlugin.kt
-index 4a76535f..4a24af67 100644
+index 4a76535f..382ea081 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhonePlugin.kt
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhonePlugin.kt
 @@ -2,7 +2,14 @@ package io.github.ccch1mneyyy.dsh_app.phone
@@ -2508,7 +2508,7 @@ index 4a76535f..4a24af67 100644
      private val privilegedActions = PrivilegedActionGate()
  
      override fun onAttachedToEngine(binding: FlutterPlugin.FlutterPluginBinding) {
-@@ -77,6 +89,271 @@ class PhonePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
+@@ -77,6 +89,273 @@ class PhonePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
          promptOwner = Any()
          attached = true
          control.background.restoreKeptChannel()
@@ -2540,7 +2540,9 @@ index 4a76535f..4a24af67 100644
 +        // 超时按拒绝（绝不替用户决定把前台让出来）。
 +        // 窗口【⇄】→ 原生直接搬回主屏（不再依赖 Dart 处理 onAction）。
 +        PhoneRegistry.vscreenMoveToMain = { taskId ->
-+            runCatching { transferToMain("window:$taskId") }
++            // 【4as-2】把窗口自己知道的任务号带下去：单屏复用后 target/lastOpenInfo 都可能为空，
++            // 不带号就会被算成 0 → noDisplay → 搬不动 → 退回"出黄条"，看着跟眼睛键一样。
++            runCatching { transferToMain("window:$taskId", taskId) }
 +            Unit
 +        }
 +        // 虚拟屏真实屏号（手动操作用）：优先 pkgDisplay（应用实际所在那块屏），回退缩屏号。
@@ -2780,7 +2782,7 @@ index 4a76535f..4a24af67 100644
          methods = MethodChannel(binding.binaryMessenger, "dsh/phone").also { it.setMethodCallHandler(this) }
          events = EventChannel(binding.binaryMessenger, "dsh/phone/events").also { it.setStreamHandler(this) }
          previewEvents = EventChannel(binding.binaryMessenger, "dsh/phone/preview").also { channel ->
-@@ -103,9 +380,179 @@ class PhonePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
+@@ -103,9 +382,186 @@ class PhonePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
          }
      }
  
@@ -2789,7 +2791,7 @@ index 4a76535f..4a24af67 100644
 +     * 阻塞（引擎先搬任务、再回包），整段跑在后台线程；任何异常都只记日志，不许上抛（上抛就是闪退）。
 +     * 成功要记两笔：账本（[VsreenTaskMark] → 黄条变单键）、lastScreen（AI 之后落在主屏）。
 +     */
-+    private fun transferToMain(source: String) {
++    private fun transferToMain(source: String, preferredTaskId: Long = 0L) {
 +        val live = VirtualScreenOverlay.isSurfaceLive()
 +        // ⇄ 是"搬到主屏"，不是"收起到后台"：收起时**不要**强制叫出黄条（用户 04:5x 指出这与眼睛键混淆）。
 +        runCatching { VirtualScreenOverlay.hideWindowOnly(announce = false, forceBall = false) }
@@ -2802,16 +2804,19 @@ index 4a76535f..4a24af67 100644
 +                val driver = control.driver(PhoneScreen.BACKGROUND) as? BackgroundDisplay
 +                val info = runCatching { driver?.lastOpenInfo() }.getOrNull()
 +                val realTask = (info?.get("taskId") as? Int) ?: 0
-+                val id = target?.taskId ?: realTask.toLong()
++                // 【4as-2】优先用窗口传来的任务号。真机 16:55:46 实证：窗口那边
++                // `window: transfer via native hook task=1`，这里却算成 taskId=0 → noDisplay →
++                // 搬不动 → 走"失败保留黄条"，用户看到的就是"⇄ 跟眼睛键一个功能"。
++                val id = preferredTaskId.takeIf { it > 0 }
++                    ?: target?.taskId?.takeIf { it > 0 }
++                    ?: realTask.toLong()
 +                WakeTrace.log("vscreen: move start taskId=$id display=0 surfaceLive=$live from=$source")
-+                val reply = if (target != null) {
++                val reply = if (target != null && id > 0) {
 +                    control.background.handOverTask(target, toMain = true)
-+                } else if (driver != null && realTask > 0) {
-+                    // 【4ac】没有预览目标不等于搬不了：用上次 open 记下的真实任务号搬。
-+                    // 真机 07:00 实例：`swap ok=false reason=noDisplay taskId=0`，
-+                    // 应用其实还在虚拟屏上跑，用户只听到声音。
-+                    WakeTrace.log("vscreen: swap fallback by taskId=$realTask（no preview target）")
-+                    driver.handOverToMainByTaskId(realTask)
++                } else if (driver != null && id > 0) {
++                    // 没有预览目标不等于搬不了：用任务号搬。
++                    WakeTrace.log("vscreen: swap by taskId=$id（no preview target）")
++                    driver.handOverToMainByTaskId(id.toInt())
 +                } else {
 +                    mapOf("ok" to false, "reason" to "noDisplay")
 +                }
@@ -2827,12 +2832,16 @@ index 4a76535f..4a24af67 100644
 +                    // 真机 09:13 实测，转主屏后冒出一条假黄条，点一下就消失。
 +                    PhoneRegistry.vscreenTarget = "main"
 +                    PhoneRegistry.vscreenFirstFrameAt = 0L
++                    // 【4as-2】⇄ = 任务搬到主屏 + **虚拟屏回收**（用户 17:0x：切换键不能再留一块屏）。
++                    // 所以放开"任务结束保屏"和"窗口还在别放屏"这两道闸，让收尾链真的释放。
++                    PhoneRegistry.vscreenKeepAfterTask = false
++                    runCatching { PhoneRegistry.holdDisplayForWindow?.invoke(false) }
 +                    main.post {
 +                        runCatching { TransferBall.setWanted(false, appContext) }
 +                        runCatching { TransferBall.hide() }
 +                        runCatching { VirtualScreenOverlay.hide() }
 +                    }
-+                } else if (source == "window") {
++                } else if (source.startsWith("window")) {
 +                    // 没搬成、而且本来就是窗口里按的：窗口按原样回来，别收走眼前的东西。
 +                    main.post {
 +                        runCatching {
@@ -2960,7 +2969,7 @@ index 4a76535f..4a24af67 100644
          skillSelectionRequest = Any()
          skillInspection = null
          skillClient?.let { control.skillReplaySelections.retireClient(it); control.skillDrafts.retireClient(it) }
-@@ -249,6 +696,103 @@ class PhonePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
+@@ -249,6 +705,103 @@ class PhonePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
                  result.success(if (removed) mapOf("kind" to "discarded") else replayRejected("stale"))
              }
              "setBackgroundPreview" -> result.success(control.preview.setEnabled(call.argument<Boolean>("enabled") == true))
