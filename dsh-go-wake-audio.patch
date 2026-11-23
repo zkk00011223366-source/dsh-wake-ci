@@ -1,7 +1,7 @@
-From 63e5ddafd907cc99a7df80453801f1d2d4ee9ce1 Mon Sep 17 00:00:00 2001
+From bc271e090e4e710873bb54e7102d7ab552e9a806 Mon Sep 17 00:00:00 2001
 From: ci <ci@local>
-Date: Mon, 23 Nov 2026 14:56:57 +0800
-Subject: [PATCH] pb: scene4aq
+Date: Mon, 23 Nov 2026 16:34:00 +0800
+Subject: [PATCH] pb: scene4as
 
 ---
  .gitattributes                                |    3 +
@@ -27,7 +27,7 @@ Subject: [PATCH] pb: scene4aq
  .../dsh_app/phone/SystemActions.kt            |    7 +-
  .../dsh_app/phone/a11y/ControlOverlay.kt      |   11 +-
  .../dsh_app/phone/a11y/PhoneA11yService.kt    |   20 +
- .../phone/background/BackgroundControl.kt     |  141 +-
+ .../phone/background/BackgroundControl.kt     |  150 +-
  .../phone/background/BackgroundCoordinates.kt |    2 +
  .../phone/background/BackgroundDisplay.kt     |  355 ++-
  .../phone/background/BackgroundPolicy.kt      |    8 +-
@@ -44,7 +44,7 @@ Subject: [PATCH] pb: scene4aq
  .../dsh_app/phone/background/KeptTasks.kt     |   39 +
  .../phone/background/PrivilegedDisplayCore.kt | 1265 +++++++-
  .../phone/background/PrivilegedDisplayHost.kt |    6 +-
- .../phone/background/PrivilegedProtocol.kt    |   85 +-
+ .../phone/background/PrivilegedProtocol.kt    |  108 +-
  .../dsh_app/phone/skills/PhoneSkillDraft.kt   |    2 +-
  .../phone/vscreen/CloseActionReceiver.kt      |   79 +
  .../phone/vscreen/DisplayFrameGeometry.kt     |   21 +
@@ -54,7 +54,7 @@ Subject: [PATCH] pb: scene4aq
  .../phone/vscreen/SwitchPromptOverlay.kt      |  142 +
  .../dsh_app/phone/vscreen/TaskMover.kt        |  152 +
  .../dsh_app/phone/vscreen/TransferBall.kt     |  488 +++
- .../phone/vscreen/VirtualScreenOverlay.kt     | 2657 +++++++++++++++++
+ .../phone/vscreen/VirtualScreenOverlay.kt     | 2669 +++++++++++++++++
  .../phone/vscreen/VirtualScreenPlugin.kt      |  249 ++
  .../dsh_app/phone/vscreen/VscreenUi.kt        |  150 +
  .../ccch1mneyyy/dsh_app/runtime/GuestSetup.kt |   47 +-
@@ -133,7 +133,7 @@ Subject: [PATCH] pb: scene4aq
  docs/wake-word.md                             |  107 +
  dsh-go-wake.patch                             | 2065 +++++++++++++
  tooling/build-wake-apk.sh                     |   68 +
- 129 files changed, 17276 insertions(+), 559 deletions(-)
+ 129 files changed, 17320 insertions(+), 559 deletions(-)
  create mode 100644 .github/workflows/wake-apk.yml
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallForegroundService.kt
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallOverlay.kt
@@ -3458,7 +3458,7 @@ index 8aa204bc..298fc3a9 100644
          super.onConfigurationChanged(newConfig)
          overlay?.onConfigurationChanged()
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/BackgroundControl.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/BackgroundControl.kt
-index 79cae468..68f8cc36 100644
+index 79cae468..605b7e28 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/BackgroundControl.kt
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/BackgroundControl.kt
 @@ -13,6 +13,8 @@ import android.net.Network
@@ -3615,7 +3615,23 @@ index 79cae468..68f8cc36 100644
              "shizuku" to shizukuStatus.map(),
              "adb" to adbStatus.map(),
              "root" to rootStatus.map(),
-@@ -722,7 +846,7 @@ class BackgroundControl private constructor(context: Context) {
+@@ -703,6 +827,15 @@ class BackgroundControl private constructor(context: Context) {
+             synchronized(keepGuard) {
+                 if (selfCheckBorrow != null || interruptRequested || !current()) return null
+                 taskResource.find(owner)?.let { return it.driver }
++                // 【4as】**只保留一块虚拟屏**：已经有一块活着就直接用它，不再为新任务新建第二块。
++                // 语义跟手机一样——新应用上来，原来那个自动退到后台（不杀、不搬、状态保留）。
++                // 真机 15:10 实证：不这么做就会 293→294→295 越积越多，最后 inUseByOther /
++                // deviceUnavailable 把 open 拒掉，用户看到"虚拟屏打不开"。
++                taskResource.boundDriver?.let { existing ->
++                    io.github.ccch1mneyyy.dsh_app.wake.WakeTrace.log(
++                        "vscreen: reuse the only screen for new task (no second display)")
++                    return existing
++                }
+                 if (selectingResource || restoring?.isDone == false || selectionChange != null) return null
+                 keep.selectionTicket()
+             }
+@@ -722,7 +855,7 @@ class BackgroundControl private constructor(context: Context) {
                          channelProvider = { peer },
                          mayUse = { currentOwner() && !interruptRequested },
                          admitUse = { action -> admitOwner { check(!interruptRequested); action() } },
@@ -3624,7 +3640,7 @@ index 79cae468..68f8cc36 100644
                          localOcr = ocr,
                          localOcrAllowed = { target -> localOcrAllowed(target) },
                          onResourceReady = { publishPreviewTarget(record, it) },
-@@ -762,6 +886,19 @@ class BackgroundControl private constructor(context: Context) {
+@@ -762,6 +895,19 @@ class BackgroundControl private constructor(context: Context) {
          }
          if (previewChanged) onPreviewChanged()
          for (record in captured) {
@@ -6311,7 +6327,7 @@ index aa3faff3..4731fbf8 100644
          }
      }
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/PrivilegedProtocol.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/PrivilegedProtocol.kt
-index 4c327b1e..6a2d1fca 100644
+index 4c327b1e..98b01ed0 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/PrivilegedProtocol.kt
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/PrivilegedProtocol.kt
 @@ -19,7 +19,7 @@ object Proto {
@@ -6411,7 +6427,7 @@ index 4c327b1e..6a2d1fca 100644
          // l10n:keep agent target identity
          "targetIdentityUnsupported" -> "当前后台服务不支持目标应用身份核验，请更新并重新连接；未派发新的启动请求"
          // l10n:keep agent target identity
-@@ -253,47 +288,47 @@ object Reasons {
+@@ -253,47 +288,70 @@ object Reasons {
          // l10n:keep agent target identity
          "targetIdentityUnavailable" -> "无法确认目标应用身份，已停止后续操作。先重新打开应用或结束任务；先前动作是否完成需核对，不要自动重试"
          // l10n:keep agent target identity
@@ -6451,26 +6467,49 @@ index 4c327b1e..6a2d1fca 100644
          // l10n:keep privileged protocol
 -        "inputApiUnavailable" -> "此系统没有可用的后台屏输入接口，无法点按或输入"
 +        "inputApiUnavailable" -> "此系统没有可用的虚拟屏输入接口，无法点按或输入"
-         // l10n:keep privileged protocol
--        "inputRejected" -> "未能确认后台屏输入结果；动作可能已发出，请重新观察，不要重复动作"
++        // l10n:keep privileged protocol
 +        "inputRejected" -> "未能确认虚拟屏输入结果；动作可能已发出，请重新观察，不要重复动作"
          // l10n:keep privileged protocol
--        "screenshotFailed" -> "未取得后台屏画面，可重新观察；不要重放已派发的动作"
+-        "inputRejected" -> "未能确认后台屏输入结果；动作可能已发出，请重新观察，不要重复动作"
 +        "screenshotFailed" -> "未取得虚拟屏画面，可重新观察；不要重放已派发的动作"
          // l10n:keep privileged protocol
--        "treeUnavailable" -> "未能读取后台屏控件树，请重新观察"
+-        "screenshotFailed" -> "未取得后台屏画面，可重新观察；不要重放已派发的动作"
 +        "treeUnavailable" -> "未能读取虚拟屏控件树，请重新观察"
          // l10n:keep privileged protocol
--        "locked" -> "设备已锁定，后台屏操作已停止"
+-        "treeUnavailable" -> "未能读取后台屏控件树，请重新观察"
 +        "locked" -> "设备已锁定，虚拟屏操作已停止"
          // l10n:keep privileged protocol
--        "invalidArguments" -> "后台屏动作参数无效"
+-        "locked" -> "设备已锁定，后台屏操作已停止"
 +        "invalidArguments" -> "虚拟屏动作参数无效"
          // l10n:keep privileged protocol
--        "cancelled" -> "后台屏操作已停止，已派发动作不代表已撤销"
+-        "invalidArguments" -> "后台屏动作参数无效"
 +        "cancelled" -> "虚拟屏操作已停止，已派发动作不代表已撤销"
          // l10n:keep privileged protocol
+-        "cancelled" -> "后台屏操作已停止，已派发动作不代表已撤销"
+         // l10n:keep privileged protocol
 -        "timeout" -> "后台屏操作超时，已派发动作不代表已撤销"
++        // 【4as】下面这些以前没翻译，全部掉进 else 那句"不打扰模式暂不可用…"，
++        // 把"屏被占用""上一块没收尾""你选了先不退"全说成"设备不支持"，用户被引到错方向。
++        "inUseByOther" -> "这个应用已经在虚拟屏里（在后台），这就切到前台"
++        "emptyDisplay" -> "虚拟屏里还没有应用，先打开一个"
++        "noTask" -> "虚拟屏里没有可操作的任务"
++        "outOfOrder" -> "动作顺序不对，请重新观察后再操作"
++        "targetChanged" -> "操作目标变了，请重新观察"
++        "targetFrameMismatch" -> "画面与操作目标不一致，请重新观察"
++        "targetFrameUnavailable" -> "拿不到这块虚拟屏的画面"
++        "targetNotVisible" -> "应用没有到前台，可能被系统拦住了"
++        "targetReadbackMismatch" -> "操作后界面与预期不一致"
++        "targetUnavailable" -> "操作目标不可用"
++        "taskLeftOnDisplay" -> "应用还留在这块虚拟屏上"
++        "surfaceUnsupported" -> "当前通道传不了画面（需要 Shizuku 通道）"
++        "releasePending" -> "上一块虚拟屏还在收尾，等 2 秒或先点 ✕"
++        "releaseFailed" -> "虚拟屏释放失败，资源可能还占着"
++        "releaseQueryFailed" -> "查不到虚拟屏的释放结果"
++        "releaseReceiptRequired" -> "释放还没拿到回执，正在确认"
++        "releaseUnconfirmed" -> "没能确认虚拟屏已经释放"
++        "resizeFailed" -> "调整虚拟屏尺寸失败"
++        "selfCheckAlreadyStarted" -> "自检已经在进行中"
++        "userDeclinedExitFront" -> "你选了「先不退」，这次操作已取消"
 +        "timeout" -> "虚拟屏操作超时，已派发动作不代表已撤销"
          // l10n:keep privileged protocol
          else -> "不打扰模式暂不可用，请检查授权、服务和设备支持情况"
@@ -7785,10 +7824,10 @@ index 00000000..586e79c6
 +}
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenOverlay.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenOverlay.kt
 new file mode 100644
-index 00000000..e0eee0c6
+index 00000000..3e6d2303
 --- /dev/null
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenOverlay.kt
-@@ -0,0 +1,2657 @@
+@@ -0,0 +1,2669 @@
 +package io.github.ccch1mneyyy.dsh_app.phone.vscreen
 +
 +import io.github.ccch1mneyyy.dsh_app.phone.PhoneRegistry
@@ -8250,6 +8289,18 @@ index 00000000..e0eee0c6
 +        // 通道跟着落到 silent；否则 VscreenUi 会判 virtual & !hasTask → none，
 +        // 用户点完眼睛什么都看不到（11:35 现场：条和窗一起消失）。
 +        if (PhoneRegistry.vscreenTarget == "virtual") PhoneRegistry.vscreenTarget = "silent"
++        // 【4ar】"立刻出条"和"有画面才出条"两个机制原来在打架：眼睛走 forced 旁路先把条亮出来，
++        // 紧接着 2 秒心跳的判定发现 `vscreenFirstFrameAt == 0`（眼睛一收窗，置位这条路就断了）
++        // 判成 none 又把条收回 → 用户看到"出来→消失→再出现"。
++        // 合并办法：按 👁 这一刻窗口里正显示着画面，帧刚才就在——这就是"真的收到过帧"的铁证，
++        // 当场把它记上。判定随后自然得出"有画面 → 出条"，两个机制结论一致，谁也不会撤谁。
++        // 注意：是真的有画面才记（hasPicture），不搞无条件放行——没画面就不许出条，那条承诺不能破。
++        if (hasPicture() && SystemClock.elapsedRealtime() - lastBitmapAt < 3_000L) {
++            if (PhoneRegistry.vscreenFirstFrameAt == 0L) {
++                PhoneRegistry.vscreenFirstFrameAt = SystemClock.elapsedRealtime()
++                WakeTrace.log("ball: eye first-frame credential seeded (picture was on screen)")
++            }
++        }
 +        // 先原生把球叫出来：Dart 那条 onAction 只是通知，App 在后台时可能没人接，
 +        // 而"点眼睛 → 立刻出两键球"是硬需求。任何收窗路径（眼睛、5 秒无画面、attach 失败、
 +        // 应用被迁走）都必须走这里，条才会按当前通道回来。
