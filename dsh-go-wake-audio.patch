@@ -1,7 +1,7 @@
-From 6af8f716b9fcd2e2e180260b719c3a147283862f Mon Sep 17 00:00:00 2001
+From 349cb1e3d285eeea77704ac784ae03190e1240a5 Mon Sep 17 00:00:00 2001
 From: ci <ci@local>
-Date: Mon, 23 Nov 2026 11:23:37 +0800
-Subject: [PATCH] pb: scene4am
+Date: Mon, 23 Nov 2026 12:33:48 +0800
+Subject: [PATCH] pb: scene4an
 
 ---
  .gitattributes                                |    3 +
@@ -18,7 +18,7 @@ Subject: [PATCH] pb: scene4am
  .../dsh_app/phone/PhoneContracts.kt           |  220 ++
  .../ccch1mneyyy/dsh_app/phone/PhoneControl.kt |  100 +-
  .../ccch1mneyyy/dsh_app/phone/PhoneCore.kt    |  476 ++-
- .../ccch1mneyyy/dsh_app/phone/PhonePlugin.kt  |  526 ++++
+ .../ccch1mneyyy/dsh_app/phone/PhonePlugin.kt  |  532 ++++
  .../dsh_app/phone/PhoneTaskSessions.kt        |   33 +-
  .../ccch1mneyyy/dsh_app/phone/PhoneTasks.kt   |   46 +
  .../dsh_app/phone/PhoneToolCatalog.kt         |   35 +-
@@ -132,7 +132,7 @@ Subject: [PATCH] pb: scene4am
  docs/wake-word.md                             |  107 +
  dsh-go-wake.patch                             | 2065 +++++++++++++
  tooling/build-wake-apk.sh                     |   68 +
- 128 files changed, 17144 insertions(+), 559 deletions(-)
+ 128 files changed, 17150 insertions(+), 559 deletions(-)
  create mode 100644 .github/workflows/wake-apk.yml
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallForegroundService.kt
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallOverlay.kt
@@ -2457,7 +2457,7 @@ index 6c701851..141aa5df 100644
          private val WRITES = setOf(FOCUS_TEXT, PhoneToolCatalog.TAP, PhoneToolCatalog.TYPE, PhoneToolCatalog.TAP_XY, PhoneToolCatalog.OPEN)
          /** An uncertain effect call tightens draft eligibility; it does not prove input was dispatched. */
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhonePlugin.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhonePlugin.kt
-index 4a76535f..8947c9db 100644
+index 4a76535f..00b1cf81 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhonePlugin.kt
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhonePlugin.kt
 @@ -2,7 +2,14 @@ package io.github.ccch1mneyyy.dsh_app.phone
@@ -2494,7 +2494,7 @@ index 4a76535f..8947c9db 100644
      private val privilegedActions = PrivilegedActionGate()
  
      override fun onAttachedToEngine(binding: FlutterPlugin.FlutterPluginBinding) {
-@@ -77,6 +89,253 @@ class PhonePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
+@@ -77,6 +89,259 @@ class PhonePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
          promptOwner = Any()
          attached = true
          control.background.restoreKeptChannel()
@@ -2685,8 +2685,14 @@ index 4a76535f..8947c9db 100644
 +            // 三个地方：主屏 / 虚拟屏（窗口可见）/ 后台屏（窗口收起、任务还在跑）。
 +            // 眼睛 = 虚拟屏 ⇄ 后台屏（永不碰主屏）；切换 = 主屏 ⇄ 虚拟屏（永不进后台屏）。
 +            val windowShown = VirtualScreenOverlay.shown
-+            val taskOnVirtual = runCatching { control.background.anyPreviewTarget() != null }
-+                .getOrDefault(false)
++            // 【4al】"虚拟屏里还有任务"不能只看 preview target：没有预览消费者时它是 null，
++            // 于是点黄条被判成"眼睛无可切对象 → ignored"，窗再也叫不回来（真机 11:31:45 实测）。
++            // 改用和 VscreenUi 同一套事实：账本屏号 / 最近读屏落屏。
++            val taskOnVirtual = runCatching {
++                control.background.anyPreviewTarget() != null ||
++                    PhoneRegistry.vscreenScreenDisplayId > 0 ||
++                    PhoneRegistry.vscreenObservedDisplayId > 0
++            }.getOrDefault(false)
 +            // 细条也算"窗口不可见"：拖成细条后点球的眼睛应当把窗口唤回，而不是再收一次。
 +            val sliver = VirtualScreenOverlay.currentShape() == "SLIVER"
 +            // 键数只看账本：预览登记在任务搬回主屏后还挂着，只看它会一直给双键。
@@ -2748,7 +2754,7 @@ index 4a76535f..8947c9db 100644
          methods = MethodChannel(binding.binaryMessenger, "dsh/phone").also { it.setMethodCallHandler(this) }
          events = EventChannel(binding.binaryMessenger, "dsh/phone/events").also { it.setStreamHandler(this) }
          previewEvents = EventChannel(binding.binaryMessenger, "dsh/phone/preview").also { channel ->
-@@ -103,9 +362,179 @@ class PhonePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
+@@ -103,9 +368,179 @@ class PhonePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
          }
      }
  
@@ -2928,7 +2934,7 @@ index 4a76535f..8947c9db 100644
          skillSelectionRequest = Any()
          skillInspection = null
          skillClient?.let { control.skillReplaySelections.retireClient(it); control.skillDrafts.retireClient(it) }
-@@ -249,6 +678,103 @@ class PhonePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
+@@ -249,6 +684,103 @@ class PhonePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
                  result.success(if (removed) mapOf("kind" to "discarded") else replayRejected("stale"))
              }
              "setBackgroundPreview" -> result.success(control.preview.setEnabled(call.argument<Boolean>("enabled") == true))
