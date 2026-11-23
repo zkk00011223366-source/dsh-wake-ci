@@ -1,7 +1,7 @@
-From f20196da1ba6a3d6d9a8bcf92aec975f70f441fc Mon Sep 17 00:00:00 2001
+From 291f4b89c3e50c8269108680f04ef8d4fdf2a230 Mon Sep 17 00:00:00 2001
 From: ci <ci@local>
-Date: Mon, 23 Nov 2026 10:15:00 +0800
-Subject: [PATCH] pb: scene4ag
+Date: Mon, 23 Nov 2026 10:35:58 +0800
+Subject: [PATCH] pb: scene4aj
 
 ---
  .gitattributes                                |    3 +
@@ -10,14 +10,14 @@ Subject: [PATCH] pb: scene4ag
  app/android/app/src/main/AndroidManifest.xml  |   43 +-
  .../ccch1mneyyy/dsh_app/MainActivity.kt       |   85 +-
  .../dsh_app/call/CallForegroundService.kt     |   94 +
- .../ccch1mneyyy/dsh_app/call/CallOverlay.kt   |  320 +++
+ .../ccch1mneyyy/dsh_app/call/CallOverlay.kt   |  320 ++
  .../dsh_app/call/CallOverlayPlugin.kt         |   70 +
  .../dsh_app/notify/NotifyPlugin.kt            |    5 +-
  .../dsh_app/phone/PhoneAndroidShell.kt        |   10 +-
  .../dsh_app/phone/PhoneBackGuard.kt           |  146 +
  .../dsh_app/phone/PhoneContracts.kt           |  211 ++
  .../ccch1mneyyy/dsh_app/phone/PhoneControl.kt |  100 +-
- .../ccch1mneyyy/dsh_app/phone/PhoneCore.kt    |  476 +++-
+ .../ccch1mneyyy/dsh_app/phone/PhoneCore.kt    |  476 ++-
  .../ccch1mneyyy/dsh_app/phone/PhonePlugin.kt  |  526 ++++
  .../dsh_app/phone/PhoneTaskSessions.kt        |   33 +-
  .../ccch1mneyyy/dsh_app/phone/PhoneTasks.kt   |   46 +
@@ -29,19 +29,19 @@ Subject: [PATCH] pb: scene4ag
  .../dsh_app/phone/a11y/PhoneA11yService.kt    |   20 +
  .../phone/background/BackgroundControl.kt     |  130 +-
  .../phone/background/BackgroundCoordinates.kt |    2 +
- .../phone/background/BackgroundDisplay.kt     |  313 ++-
+ .../phone/background/BackgroundDisplay.kt     |  313 +-
  .../phone/background/BackgroundPolicy.kt      |    8 +-
  .../phone/background/BackgroundPreview.kt     |   10 +-
  .../background/BackgroundProbeActivity.kt     |    4 +-
  .../phone/background/BackgroundTree.kt        |    4 +-
  .../dsh_app/phone/background/CoalescedScan.kt |   31 +
- .../dsh_app/phone/background/DisplayAwake.kt  |  154 ++
+ .../dsh_app/phone/background/DisplayAwake.kt  |  154 +
  .../phone/background/DisplayHandles.kt        |   31 +
  .../phone/background/DisplayOrientation.kt    |   37 +
  .../background/DisplayOrientationKeeper.kt    |  125 +
  .../background/DisplayOrientationWatch.kt     |  100 +
  .../dsh_app/phone/background/KeptTasks.kt     |   39 +
- .../phone/background/PrivilegedDisplayCore.kt | 1250 ++++++++-
+ .../phone/background/PrivilegedDisplayCore.kt | 1262 +++++++-
  .../phone/background/PrivilegedDisplayHost.kt |    6 +-
  .../phone/background/PrivilegedProtocol.kt    |   85 +-
  .../dsh_app/phone/skills/PhoneSkillDraft.kt   |    2 +-
@@ -52,8 +52,8 @@ Subject: [PATCH] pb: scene4ag
  .../dsh_app/phone/vscreen/PresentationHost.kt |   69 +
  .../phone/vscreen/SwitchPromptOverlay.kt      |  142 +
  .../dsh_app/phone/vscreen/TaskMover.kt        |  152 +
- .../dsh_app/phone/vscreen/TransferBall.kt     |  488 ++++
- .../phone/vscreen/VirtualScreenOverlay.kt     | 2456 +++++++++++++++++
+ .../dsh_app/phone/vscreen/TransferBall.kt     |  488 +++
+ .../phone/vscreen/VirtualScreenOverlay.kt     | 2613 +++++++++++++++++
  .../phone/vscreen/VirtualScreenPlugin.kt      |  249 ++
  .../dsh_app/phone/vscreen/VscreenUi.kt        |  133 +
  .../ccch1mneyyy/dsh_app/runtime/GuestSetup.kt |   47 +-
@@ -121,7 +121,7 @@ Subject: [PATCH] pb: scene4ag
  app/lib/ui/shell/call_overlay_host.dart       |   55 +
  app/lib/ui/shell/home_shell.dart              |    7 +
  app/lib/ui/shell/system_entry_host.dart       |   44 +
- app/lib/ui/speech/voice_call_page.dart        |  307 ++-
+ app/lib/ui/speech/voice_call_page.dart        |  307 +-
  app/lib/ui/theme/app_icons.dart               |    4 +
  app/lib/ui/update/update_tiles.dart           |    5 +-
  app/lib/voice/wake_keywords.dart              |   50 +
@@ -130,9 +130,9 @@ Subject: [PATCH] pb: scene4ag
  app/pubspec.lock                              |    8 +
  app/pubspec.yaml                              |    4 +
  docs/wake-word.md                             |  107 +
- dsh-go-wake.patch                             | 2065 ++++++++++++++
+ dsh-go-wake.patch                             | 2065 +++++++++++++
  tooling/build-wake-apk.sh                     |   68 +
- 128 files changed, 16888 insertions(+), 559 deletions(-)
+ 128 files changed, 17057 insertions(+), 559 deletions(-)
  create mode 100644 .github/workflows/wake-apk.yml
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallForegroundService.kt
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallOverlay.kt
@@ -4700,7 +4700,7 @@ index 00000000..c1dcef97
 +    fun logSize() = Log.i(TAG, "vscreen: task-finish kept-total=$size")
 +}
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/PrivilegedDisplayCore.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/PrivilegedDisplayCore.kt
-index c7ed0f7a..17264cfd 100644
+index c7ed0f7a..9c1ba7cc 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/PrivilegedDisplayCore.kt
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/PrivilegedDisplayCore.kt
 @@ -11,6 +11,7 @@ package io.github.ccch1mneyyy.dsh_app.phone.background
@@ -4834,7 +4834,7 @@ index c7ed0f7a..17264cfd 100644
          val pkg = request.getString(Proto.PKG).orEmpty()
          if (!PACKAGE.matches(pkg)) throw Fault("invalidArguments")
          val opening = op == Proto.OP_CREATE || op == Proto.OP_LAUNCH
-@@ -340,12 +412,42 @@ class PrivilegedDisplayCore internal constructor(
+@@ -340,12 +412,54 @@ class PrivilegedDisplayCore internal constructor(
                  // A task keeps the screen it opened first; its driver always asks for the same viewport.
                  if (display == null) createDisplay(request)
                  response.putInt(Proto.DISPLAY_ID, displayId())
@@ -4868,6 +4868,18 @@ index c7ed0f7a..17264cfd 100644
 +                // B2：这次 open 之后这个包**实际**在哪块屏（任务表事实）。App 侧按它做打开后校验。
 +                response.putInt("pkgDisplay", displayOfPackageInTasks(pkg))
 +                response.putLong("firstFrameAt", firstFrameAtMs)
++                // 【4ah】回包要说实话：落屏结算完再定成败。
++                // 真机 10:19 实证：`open: done ok=true pkg=com.hihonor.deskclock`，而请求的是
++                // com.hihonor.calculator —— 回复里的 msg 仍是"已在虚拟屏打开"，执行方据此说"打开了"，
++                // 用户看到的却是时钟。以后：目标没在虚拟屏前台 → ok=false + targetNotVisible。
++                val topOnHere = runCatching { foregroundPackage() }.getOrNull()
++                if (topOnHere != null && topOnHere != pkg) {
++                    response.putBoolean(Proto.OK, false)
++                    response.putString(Proto.ERROR, "targetNotVisible")
++                    response.putString(Proto.ERROR_DETAIL, "虚拟屏上现在是 $topOnHere，不是 $pkg")
++                    io.github.ccch1mneyyy.dsh_app.wake.WakeTrace.log(
++                        "open: target not visible on virtual display want=$pkg top=$topOnHere")
++                }
              }
              // A read never refuses over which app is on top: it reports what is there.
 -            Proto.OP_OBSERVE -> observe(openedPackage(request, pkg), request.getBoolean(Proto.WANT_IMAGE), response, requireTree = true, detail = request.getBoolean(Proto.DETAIL), localVisual = localVisual, coordinates = request.containsKey(Proto.BACKGROUND_COORDINATES))
@@ -4879,7 +4891,7 @@ index c7ed0f7a..17264cfd 100644
              Proto.OP_COORDINATE -> coordinate(pkg, expected?.uid, request, response)
              Proto.OP_TAP -> {
                  requireShown(pkg, expected?.uid)
-@@ -379,6 +481,8 @@ class PrivilegedDisplayCore internal constructor(
+@@ -379,6 +493,8 @@ class PrivilegedDisplayCore internal constructor(
          }
          // Every reply names the app now on top (none when the screen is empty). A read already did.
          if (!response.containsKey(Proto.TARGET_IDENTITY_VERSION)) putShown(response, openedPackage(request, pkg), shownApp())
@@ -4888,7 +4900,7 @@ index c7ed0f7a..17264cfd 100644
          if (op == Proto.OP_LAUNCH && expected != null) {
              val shown = TargetIdentity.shown(response.get(Proto.PKG), response.get(Proto.TARGET_UID))
              val actualDisplay = display?.display
-@@ -729,57 +833,726 @@ class PrivilegedDisplayCore internal constructor(
+@@ -729,57 +845,726 @@ class PrivilegedDisplayCore internal constructor(
      private fun displayId(): Int = display?.display?.displayId ?: throw Fault("displayMissing")
      private fun requireDisplay() { if (display == null) throw Fault("displayMissing") }
  
@@ -5636,7 +5648,7 @@ index c7ed0f7a..17264cfd 100644
      private fun resolveLaunch(pkg: String, expected: PhoneAppIdentity?): Intent {
          val pm = privileged.packageManager
          val intent = runCatching { pm.getLaunchIntentForPackage(pkg) }.getOrNull() ?: throw Fault("notLaunchable")
-@@ -821,6 +1594,44 @@ class PrivilegedDisplayCore internal constructor(
+@@ -821,6 +1606,44 @@ class PrivilegedDisplayCore internal constructor(
      }
  
      /** (displayId, packages of that task) rows of one running-task read. */
@@ -5681,7 +5693,7 @@ index c7ed0f7a..17264cfd 100644
      private fun taskRows(): List<Pair<Int, Set<String>>>? {
          val field = taskDisplayIdField ?: return null
          @Suppress("DEPRECATION")
-@@ -862,8 +1673,29 @@ class PrivilegedDisplayCore internal constructor(
+@@ -862,8 +1685,29 @@ class PrivilegedDisplayCore internal constructor(
  
      private fun launchPackage(pkg: String, intent: Intent) {
          val display = this.display ?: throw Fault("displayMissing")
@@ -5712,7 +5724,7 @@ index c7ed0f7a..17264cfd 100644
          // A shell/UserService is not an ActivityManager-attached app process: a PendingIntent
          // avoids Context.startActivity's caller check (Phase, after Aether).
          var pending: PendingIntent? = null
-@@ -879,17 +1711,135 @@ class PrivilegedDisplayCore internal constructor(
+@@ -879,17 +1723,135 @@ class PrivilegedDisplayCore internal constructor(
          // Wait for the target on the owned display. Any app it brought up there instead is reported
          // by the read that follows; only a screen still empty, or a target that went to another
          // display, means the open did not happen here.
@@ -5852,7 +5864,7 @@ index c7ed0f7a..17264cfd 100644
      /** Legacy success shape stays unchanged; failed physical cleanup retains its original handles. */
      private fun releaseAll() = lock.withLock {
          if (strictOwner) throw Fault("releaseReceiptRequired")
-@@ -906,8 +1856,140 @@ class PrivilegedDisplayCore internal constructor(
+@@ -906,8 +1868,140 @@ class PrivilegedDisplayCore internal constructor(
          if (readerAllocationUncertain) throw Fault("releaseUnconfirmed")
      }
  
@@ -5993,7 +6005,7 @@ index c7ed0f7a..17264cfd 100644
          closeTreeConnection()
          visualObservation = null
          stopPreview()
-@@ -925,11 +2007,42 @@ class PrivilegedDisplayCore internal constructor(
+@@ -925,11 +2019,42 @@ class PrivilegedDisplayCore internal constructor(
              closeReaders()
          } else {
              val displayId = releasingDisplayId ?: throw Fault("releaseUnconfirmed")
@@ -6037,7 +6049,7 @@ index c7ed0f7a..17264cfd 100644
              closeReaders()
              val deadline = SystemClock.uptimeMillis() + 1_000
              // The display itself is already released. A ROM whose task query is unreadable cannot
-@@ -944,6 +2057,7 @@ class PrivilegedDisplayCore internal constructor(
+@@ -944,6 +2069,7 @@ class PrivilegedDisplayCore internal constructor(
      }
  
      private fun clearResourceState() {
@@ -6045,7 +6057,7 @@ index c7ed0f7a..17264cfd 100644
          display = null; owner = null; strictOwner = false; selfCheckOwner = false
          targetSequence = null; targetSnapshot = null; targetMain = null
          releasingDisplayId = null; displayCreationAttempted = false; displayApiReleased = false; probeDisplay = false
-@@ -1166,7 +2280,15 @@ class PrivilegedDisplayCore internal constructor(
+@@ -1166,7 +2292,15 @@ class PrivilegedDisplayCore internal constructor(
      private class CaptureResult(val jpeg: ByteArray, val raw: BackgroundPreviewState.RawFrame?, val local: ImageObservation?, val targetMatched: Boolean? = null)
  
      /** Null means only absent/black frames; other capture failures remain distinguishable. */
@@ -6062,7 +6074,7 @@ index c7ed0f7a..17264cfd 100644
          val ir = lock.withLock {
              if (pendingReader != null || readerAllocationUncertain) throw Fault("releasePending")
              val vd = display ?: throw Fault("displayMissing")
-@@ -1359,8 +2481,23 @@ class PrivilegedDisplayCore internal constructor(
+@@ -1359,8 +2493,23 @@ class PrivilegedDisplayCore internal constructor(
                  } finally { image.close() }
                  // All Image/buffer access ends before releaseAll can close its ImageReader.
              } finally { lock.unlock() }
@@ -6087,7 +6099,7 @@ index c7ed0f7a..17264cfd 100644
                  bitmap = Bitmap.createBitmap(raw.width, raw.height, Bitmap.Config.ARGB_8888)
                  bitmap!!.copyPixelsFromBuffer(ByteBuffer.wrap(raw.pixels))
              }
-@@ -1382,6 +2519,18 @@ class PrivilegedDisplayCore internal constructor(
+@@ -1382,6 +2531,18 @@ class PrivilegedDisplayCore internal constructor(
                  preview.unavailable(ticket, "frameTooLarge"); return
              }
              preview.publish(ticket, BackgroundPreviewState.Frame(w, h, pixels, bytes), SystemClock.uptimeMillis())
@@ -6106,7 +6118,7 @@ index c7ed0f7a..17264cfd 100644
          } catch (_: Exception) {
              preview.unavailable(ticket, "captureFailed")
          } finally {
-@@ -2025,6 +3174,32 @@ class PrivilegedDisplayCore internal constructor(
+@@ -2025,6 +3186,32 @@ class PrivilegedDisplayCore internal constructor(
          if (waitForFinish && !accepted) throw Fault("inputRejected")
      }
  
@@ -6139,7 +6151,7 @@ index c7ed0f7a..17264cfd 100644
      private fun setImePolicyHide(displayId: Int) {
          val sm = Class.forName("android.os.ServiceManager")
          val binder = sm.getMethod("getService", String::class.java).invoke(null, "window") as IBinder
-@@ -2079,9 +3254,14 @@ class PrivilegedDisplayCore internal constructor(
+@@ -2079,9 +3266,14 @@ class PrivilegedDisplayCore internal constructor(
  
      companion object {
          private val PACKAGE = Regex("[a-zA-Z][a-zA-Z0-9_]*(\\.[a-zA-Z0-9_]+)+")
@@ -7656,10 +7668,10 @@ index 00000000..586e79c6
 +}
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenOverlay.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenOverlay.kt
 new file mode 100644
-index 00000000..55393121
+index 00000000..bdc0667d
 --- /dev/null
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenOverlay.kt
-@@ -0,0 +1,2456 @@
+@@ -0,0 +1,2613 @@
 +package io.github.ccch1mneyyy.dsh_app.phone.vscreen
 +
 +import io.github.ccch1mneyyy.dsh_app.phone.PhoneRegistry
@@ -7677,6 +7689,9 @@ index 00000000..55393121
 +import android.graphics.PixelFormat
 +import android.graphics.Typeface
 +import android.graphics.drawable.GradientDrawable
++import android.media.ImageReader
++import android.os.Handler
++import android.os.HandlerThread
 +import android.media.AudioManager
 +import android.os.Build
 +import android.os.SystemClock
@@ -7858,6 +7873,15 @@ index 00000000..55393121
 +
 +    /** The display is really composing into [picture]; preview frames are not needed. */
 +    private var liveSurface = false
++
++    // 【4ai】App 直读帧（治"卡成 PPT"）：ImageReader 建在 App 进程，只把 Surface 交给 :vdisplay。
++    // 依据 Mika AgentDisplay.kt（L33/L51/L74），我们复用现成的 attachViewSurface 通道。
++    // 字段：reader + 线程 + 代次（窗口换了就作废旧代次）。
++    private var appReader: ImageReader? = null
++    private var appReaderThread: HandlerThread? = null
++    private var appReaderGen = -1
++    /** 直读帧生效时，Dart 那条 preview 轮询必须停（两套帧源会打架）。 */
++    @Volatile private var appReaderActive = false
 +
 +    /** 直连接上后留给应用画第一帧的时刻；之前窗口靠占位文字撑住可见性。 */
 +    private var paintedAt = 0L
@@ -8049,6 +8073,10 @@ index 00000000..55393121
 +        val ready = surfaceView?.holder?.surface
 +        if (forceFrameMode) {
 +            WakeTrace.log("window: frame mode, skip direct surface")
++            // 【4ai】帧模式：这里就是启动 App 进程直读的地方（之前帧模式什么都不做，
++            // 只能靠 Dart 那条 JPEG 预览路 → 卡成 PPT）。
++            val gen = ++surfaceGen
++            startAppReader(app, gen)
 +        } else if (ready != null && ready.isValid) requestSurface(app, ready, surfaceGen)
 +        registerScreen(app)
 +        return true
@@ -8059,6 +8087,7 @@ index 00000000..55393121
 +     * （与用户决策一致：任务继续、AI 继续读屏、点球回来立刻有画面）。
 +     */
 +    fun hideWindowOnly(announce: Boolean = true, forceBall: Boolean = true) {
++        stopAppReader()
 +        // 3w 第 5 条：收窗的唯一入口先无条件留一行。实测 15:21 收窗（display 186）时
 +        // "window: hidden" 缺失，导致"到底收没收窗"无法从日志判断——先记请求，再判有没有窗口。
 +        io.github.ccch1mneyyy.dsh_app.wake.WakeTrace.log(
@@ -8106,6 +8135,7 @@ index 00000000..55393121
 +    }
 +
 +    fun hide() {
++        stopAppReader()
 +        runCatching { presentationHost?.dismiss() }
 +        presentationHost = null
 +        // 关窗恢复原来的音量（窗口里默认静音，别把手机整体声音一直掐着）。
@@ -8143,7 +8173,7 @@ index 00000000..55393121
 +
 +    /** One frame from the background display, for when the display cannot compose into the view. */
 +    fun pushFrame(bytes: ByteArray): Boolean {
-+        if (liveSurface) return false
++        if (liveSurface || appReaderActive) return false
 +        val target = fallback ?: return false
 +        val now = SystemClock.elapsedRealtime()
 +        // Frames are throttled by the caller; this only refuses a storm.
@@ -8217,7 +8247,7 @@ index 00000000..55393121
 +    }
 +
 +    /** Whether preview frames are wanted: a parked sliver shows nothing, a live surface needs none. */
-+    fun wantsFrames(): Boolean = fallback != null && shape != Shape.SLIVER && !liveSurface && !eyeHidden && screenOn
++    fun wantsFrames(): Boolean = fallback != null && shape != Shape.SLIVER && !liveSurface && !eyeHidden && screenOn && !appReaderActive
 +
 +    /**
 +     * 手动操作：**展开态可以点/滑画面，未展开态只能拖动**（用户 07:0x 明确的需求设置）。
@@ -8319,6 +8349,143 @@ index 00000000..55393121
 +    /** SurfaceView 直显：不需要自算缩放/裁剪（12:1x，参考 Mika 的做法）。 */
 +    private fun applyFitTransform() = Unit
 +
++
++    /**
++     * 【4ai】App 直读帧：拿尺寸 → 建 ImageReader → 把 Surface 交给 core 挂上 → 自己读帧显示。
++     * 依据 Mika `AgentDisplay.kt`（L33 建 reader、L51 交 Surface、L74 读帧、L167/168 参数）。
++     * 失败一律留痕，并退回原来的 preview 帧路（那条链不动）。
++     */
++    private fun startAppReader(app: Context, gen: Int) {
++        stopAppReader()
++        val id = taskId
++        worker.execute {
++            val control = runCatching {
++                io.github.ccch1mneyyy.dsh_app.phone.background.BackgroundControl.get(app)
++            }.getOrNull()
++            var target = if (id > 0) control?.previewTarget(id) else null
++            target = target ?: control?.anyPreviewTarget()
++            var wait = 0
++            while (target == null && control != null && gen == surfaceGen && wait < 12) {
++                Thread.sleep(150); wait++
++                target = control.previewTarget(id) ?: control.anyPreviewTarget()
++            }
++            if (control == null || target == null) {
++                WakeTrace.log("frame: appReader no target id=$id")
++                return@execute
++            }
++            // 1) 取尺寸（surface=null 分支会把输出面安全还给 core 的 reader）
++            val probe = runCatching { control.attachViewSurface(target, null) }
++                .getOrDefault(mapOf("ok" to false))
++            val dw = (probe["width"] as? Int) ?: 0
++            val dh = (probe["height"] as? Int) ?: 0
++            val did = (probe["displayId"] as? Int) ?: 0
++            if (dw <= 0 || dh <= 0) {
++                WakeTrace.log("frame: appReader size unknown $probe")
++                return@execute
++            }
++            if (gen != surfaceGen) return@execute
++            val ir = runCatching {
++                ImageReader.newInstance(dw, dh, PixelFormat.RGBA_8888, 2)
++            }.getOrNull()
++            if (ir == null) {
++                WakeTrace.log("frame: appReader alloc failed ${dw}x$dh")
++                return@execute
++            }
++            // 2) 挂上去
++            val reply = runCatching { control.attachViewSurface(target, ir.surface) }
++                .getOrDefault(mapOf("ok" to false))
++            if (reply["ok"] != true) {
++                WakeTrace.log("frame: appReader attach failed $reply")
++                runCatching { ir.close() }
++                return@execute
++            }
++            // 3) 读帧（≤10fps，旧帧直接丢）
++            val thread = HandlerThread("dsh-app-frame").apply { start() }
++            val handler = Handler(thread.looper)
++            var lastAt = 0L
++            ir.setOnImageAvailableListener({ r ->
++                val now = SystemClock.elapsedRealtime()
++                if (now - lastAt < 100) {
++                    runCatching { r.acquireLatestImage()?.close() }
++                    return@setOnImageAvailableListener
++                }
++                lastAt = now
++                val image = runCatching { r.acquireLatestImage() }.getOrNull()
++                    ?: return@setOnImageAvailableListener
++                try {
++                    val plane = image.planes.singleOrNull() ?: return@setOnImageAvailableListener
++                    val stride = plane.rowStride
++                    val buf = java.nio.ByteBuffer.allocate(dw * dh * 4)
++                    val src = plane.buffer.duplicate()
++                    for (row in 0 until dh) {
++                        val start = row * stride
++                        if (start + dw * 4 > src.capacity()) break
++                        src.limit(start + dw * 4)
++                        src.position(start)
++                        buf.put(src)
++                    }
++                    buf.flip()
++                    val full = Bitmap.createBitmap(dw, dh, Bitmap.Config.ARGB_8888)
++                    full.copyPixelsFromBuffer(buf)
++                    val scale = minOf(1f, 360f / minOf(dw, dh), 800f / maxOf(dw, dh))
++                    val out = if (scale < 0.999f) {
++                        val sw = (dw * scale).toInt().coerceAtLeast(1)
++                        val sh = (dh * scale).toInt().coerceAtLeast(1)
++                        Bitmap.createScaledBitmap(full, sw, sh, true).also { full.recycle() }
++                    } else full
++                    main.post { showAppFrame(out, dw, dh) }
++                } catch (t: Throwable) {
++                    WakeTrace.log("frame: appReader decode failed ${t.javaClass.simpleName}")
++                } finally {
++                    runCatching { image.close() }
++                }
++            }, handler)
++            appReader = ir
++            appReaderThread = thread
++            appReaderGen = gen
++            appReaderActive = true
++            displayW = dw; displayH = dh
++            if (did > 0) displayId = did
++            WakeTrace.log("frame: appReader attached ${dw}x$dh display=$did task=${target.taskId} gen=$gen")
++        }
++    }
++
++    /** 直读帧到窗口（替掉 pushFrame 的解码那一半）。 */
++    private fun showAppFrame(bmp: Bitmap, dw: Int, dh: Int) {
++        val target = fallback
++        if (target == null) {
++            main.post { reveal(root) }
++            bmp.recycle()
++            return
++        }
++        val old = lastBitmap
++        lastBitmap = bmp
++        lastBitmapAt = SystemClock.elapsedRealtime()
++        if (dw > 0 && dh > 0 && (displayW != dw || displayH != dh)) {
++            displayW = dw; displayH = dh
++            applyAspect()
++        }
++        target.setImageBitmap(bmp)
++        if (old != null && old !== bmp) old.recycle()
++        if (!revealed) main.post { reveal(root) }
++        if (io.github.ccch1mneyyy.dsh_app.phone.PhoneRegistry.vscreenFirstFrameAt == 0L) {
++            io.github.ccch1mneyyy.dsh_app.phone.PhoneRegistry.vscreenFirstFrameAt =
++                SystemClock.elapsedRealtime()
++            WakeTrace.log("frame: first picture (app reader) ${bmp.width}x${bmp.height}")
++        }
++    }
++
++    /** 停掉直读帧（隐藏/关闭时）：reader 关掉、线程退出；切回原 preview 帧路。 */
++    private fun stopAppReader() {
++        if (!appReaderActive && appReader == null) return
++        appReaderActive = false
++        runCatching { appReader?.close() }
++        appReader = null
++        runCatching { appReaderThread?.quitSafely() }
++        appReaderThread = null
++        appReaderGen = -1
++    }
++
 +    private fun requestSurface(app: Context, surface: Surface?, gen: Int) {
 +        // 帧模式闸：必须在函数入口拦，覆盖所有调用点。
 +        // 真机 23:33 证据：只拦一个调用点时，"surface ready" 回调仍从另一处进来接面，
@@ -8328,6 +8495,8 @@ index 00000000..55393121
 +                frameModeLogged = true
 +                WakeTrace.log("window: frame mode, skip direct surface (entry guard)")
 +            }
++            // 【4ai】帧模式不再走"缩略 JPEG 回传"，改成 App 进程直读（Mika 同路）。
++            startAppReader(app, gen)
 +            return
 +        }
 +        if (gen != surfaceGen) return
