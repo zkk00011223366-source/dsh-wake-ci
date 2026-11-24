@@ -1,12 +1,12 @@
-From 785aa89548622d1915bd5a2607e83ac422eaca4a Mon Sep 17 00:00:00 2001
+From eeb8fa9eb3558efbe78bb061946e13e01194b32d Mon Sep 17 00:00:00 2001
 From: ci <ci@local>
-Date: Tue, 24 Nov 2026 19:20:37 +0800
-Subject: [PATCH] b: scene4cg
+Date: Tue, 24 Nov 2026 19:22:39 +0800
+Subject: [PATCH] b: scene4ci
 MIME-Version: 1.0
 Content-Type: text/plain; charset=UTF-8
 Content-Transfer-Encoding: 8bit
 
-4cg: ⇄ 真释放屏 + 会话代际防复用（治 identityChanged 风暴）
+4ci: 收尾三合一（4cc 发两遍 + 4ch 默认隐藏 + 4cf 提示条）
 ---
  .gitattributes                                |    3 +
  .github/workflows/wake-apk.yml                |  192 ++
@@ -21,17 +21,17 @@ Content-Transfer-Encoding: 8bit
  .../dsh_app/phone/PhoneBackGuard.kt           |  146 +
  .../dsh_app/phone/PhoneContracts.kt           |  263 ++
  .../ccch1mneyyy/dsh_app/phone/PhoneControl.kt |  109 +-
- .../ccch1mneyyy/dsh_app/phone/PhoneCore.kt    |  562 +++-
- .../ccch1mneyyy/dsh_app/phone/PhonePlugin.kt  |  607 ++++
- .../dsh_app/phone/PhoneTaskSessions.kt        |   33 +-
- .../ccch1mneyyy/dsh_app/phone/PhoneTasks.kt   |   68 +-
+ .../ccch1mneyyy/dsh_app/phone/PhoneCore.kt    |  567 +++-
+ .../ccch1mneyyy/dsh_app/phone/PhonePlugin.kt  |  614 ++++
+ .../dsh_app/phone/PhoneTaskSessions.kt        |   49 +-
+ .../ccch1mneyyy/dsh_app/phone/PhoneTasks.kt   |   78 +-
  .../dsh_app/phone/PhoneToolCatalog.kt         |   35 +-
  .../ccch1mneyyy/dsh_app/phone/SafetyGate.kt   |    4 +-
  .../dsh_app/phone/SingleInstanceApps.kt       |   27 +
  .../dsh_app/phone/SystemActions.kt            |    7 +-
  .../dsh_app/phone/a11y/ControlOverlay.kt      |   11 +-
  .../dsh_app/phone/a11y/PhoneA11yService.kt    |   20 +
- .../phone/background/BackgroundControl.kt     |  210 +-
+ .../phone/background/BackgroundControl.kt     |  223 +-
  .../phone/background/BackgroundCoordinates.kt |    2 +
  .../phone/background/BackgroundDisplay.kt     |  373 ++-
  .../phone/background/BackgroundDisplayIo.kt   |   10 +-
@@ -57,7 +57,7 @@ Content-Transfer-Encoding: 8bit
  .../phone/vscreen/CloseActionReceiver.kt      |   79 +
  .../phone/vscreen/DisplayFrameGeometry.kt     |   21 +
  .../dsh_app/phone/vscreen/FrameMath.kt        |   60 +
- .../dsh_app/phone/vscreen/FrontExitPrompt.kt  |  236 ++
+ .../dsh_app/phone/vscreen/FrontExitPrompt.kt  |  270 ++
  .../dsh_app/phone/vscreen/PresentationHost.kt |   69 +
  .../phone/vscreen/SwitchPromptOverlay.kt      |  142 +
  .../dsh_app/phone/vscreen/TaskMover.kt        |  152 +
@@ -142,7 +142,7 @@ Content-Transfer-Encoding: 8bit
  docs/wake-word.md                             |  107 +
  dsh-go-wake.patch                             | 2065 ++++++++++++
  tooling/build-wake-apk.sh                     |   68 +
- 134 files changed, 17963 insertions(+), 579 deletions(-)
+ 134 files changed, 18041 insertions(+), 586 deletions(-)
  create mode 100644 .github/workflows/wake-apk.yml
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallForegroundService.kt
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallOverlay.kt
@@ -1813,7 +1813,7 @@ index 2fc7cd59..ec152c95 100644
      }
  
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneCore.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneCore.kt
-index 6c701851..5c7a1b32 100644
+index 6c701851..fadb603b 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneCore.kt
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneCore.kt
 @@ -1,9 +1,12 @@
@@ -2297,7 +2297,7 @@ index 6c701851..5c7a1b32 100644
      }
  
      /** The handler is a dispatch fact. Only the following read describes the actual foreground UI. */
-@@ -816,8 +1090,187 @@ class PhoneCore(
+@@ -816,8 +1090,192 @@ class PhoneCore(
          return Either.Right(d)
      }
  
@@ -2440,7 +2440,12 @@ index 6c701851..5c7a1b32 100644
 +    internal fun backgroundTarget(a: Args): Boolean {
 +        val v = a.str("background")
 +        // 三通道：主屏 / 虚拟屏（看得见）/ 后台屏（只在后台干活，不显示窗口）。
-+        io.github.ccch1mneyyy.dsh_app.phone.PhoneRegistry.backgroundSilent = v == "silent"
++        // 【4ch】只有明确点名才覆盖"默认隐藏"；auto 时不动它——prefersBackground() 有 1 秒缓存，
++        // 缓存命中不重读设置，这里每次一覆盖，设置读出的 silent=true 就活不过一秒
++        // （真机 17:12：default target=background silent=true，同秒 Dart 侧 bgSilent=false → 弹窗）。
++        if (v == "silent") io.github.ccch1mneyyy.dsh_app.phone.PhoneRegistry.backgroundSilent = true
++        else if (v == "virtual" || v == "main" || v == "true" || v == "false")
++            io.github.ccch1mneyyy.dsh_app.phone.PhoneRegistry.backgroundSilent = false
 +        val onBackground = when (v) {
 +            "virtual", "silent", "true" -> true
 +            "main", "false" -> false
@@ -2485,7 +2490,7 @@ index 6c701851..5c7a1b32 100644
      /** Admission uses the same argument coercion and routing as the actual tool body. */
      fun requiredScreens(name: String, args: Map<String, Any?>): Either<String, List<PhoneScreen>> {
          return requiredScreens(name, Args(args))
-@@ -825,10 +1278,11 @@ class PhoneCore(
+@@ -825,10 +1283,11 @@ class PhoneCore(
  
      private fun requiredScreens(name: String, a: Args): Either<String, List<PhoneScreen>> {
          return when (name) {
@@ -2500,7 +2505,7 @@ index 6c701851..5c7a1b32 100644
              // Arbitrary system commands take the main/global unknown-app lease, without reading a screen.
              PhoneToolCatalog.INTENT, PhoneToolCatalog.ANDROID_SHELL -> Either.Right(listOf(PhoneScreen.MAIN))
              PhoneToolCatalog.HANDOFF -> Either.Right(if (lastScreen == PhoneScreen.BACKGROUND)
-@@ -852,7 +1306,7 @@ class PhoneCore(
+@@ -852,7 +1311,7 @@ class PhoneCore(
          if (id == null) return Either.Left("缺少 $parameterName（屏幕号，如 s7）。先调用 screen 拿到屏幕号。")
          return PhoneScreen.ofScreenId(id)?.let { Either.Right(it) }
              // l10n:keep agent tool result
@@ -2509,7 +2514,7 @@ index 6c701851..5c7a1b32 100644
      }
  
      private fun locked(summary: String) =
-@@ -871,21 +1325,29 @@ class PhoneCore(
+@@ -871,21 +1330,29 @@ class PhoneCore(
  
      private fun screen(a: Args, owner: PhoneTasks.Owner): Out {
          if (!current(owner)) return stoppedOut("screen")
@@ -2545,7 +2550,7 @@ index 6c701851..5c7a1b32 100644
          return Out(
              // l10n:keep agent tool result
              if (refused) "没有读取这个屏幕的内容。" else "",
-@@ -897,6 +1359,40 @@ class PhoneCore(
+@@ -897,6 +1364,40 @@ class PhoneCore(
          )
      }
  
@@ -2586,7 +2591,7 @@ index 6c701851..5c7a1b32 100644
      private fun collect(a: Args, owner: PhoneTasks.Owner): Out {
          if (!current(owner)) return stoppedOut("collect")
          val sid = a.str("screen")
-@@ -1362,6 +1858,7 @@ class PhoneCore(
+@@ -1362,6 +1863,7 @@ class PhoneCore(
          summary = summary, decision = "stopped")
  
      companion object {
@@ -2594,7 +2599,7 @@ index 6c701851..5c7a1b32 100644
          internal const val REPLAY = "replay"
          internal const val FOCUS_TEXT = "focus_text"
  
-@@ -1370,6 +1867,9 @@ class PhoneCore(
+@@ -1370,6 +1872,9 @@ class PhoneCore(
          const val PAUSE_WAIT_MS = 600_000L
          const val HANDOFF_MS = 600_000L
  
@@ -2605,7 +2610,7 @@ index 6c701851..5c7a1b32 100644
          private val WRITES = setOf(FOCUS_TEXT, PhoneToolCatalog.TAP, PhoneToolCatalog.TYPE, PhoneToolCatalog.TAP_XY, PhoneToolCatalog.OPEN)
          /** An uncertain effect call tightens draft eligibility; it does not prove input was dispatched. */
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhonePlugin.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhonePlugin.kt
-index 4a76535f..219efe3e 100644
+index 4a76535f..2d4cf4bf 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhonePlugin.kt
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhonePlugin.kt
 @@ -2,7 +2,14 @@ package io.github.ccch1mneyyy.dsh_app.phone
@@ -2642,7 +2647,7 @@ index 4a76535f..219efe3e 100644
      private val privilegedActions = PrivilegedActionGate()
  
      override fun onAttachedToEngine(binding: FlutterPlugin.FlutterPluginBinding) {
-@@ -77,6 +89,319 @@ class PhonePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
+@@ -77,6 +89,326 @@ class PhonePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
          promptOwner = Any()
          attached = true
          control.background.restoreKeptChannel()
@@ -2840,7 +2845,9 @@ index 4a76535f..219efe3e 100644
 +                    PhoneRegistry.vscreenScreenDisplayId > 0 ||
 +                    PhoneRegistry.vscreenFirstFrameAt > 0L ||
 +                    TransferBall.isWanted)
-+            if ((av == null || !av.ok) && inUse) {
++            // 【4cf】availability() 只是弱探测；报"断了"必须真探活（一次 OP_PROBE 往返）。
++            val reallyDead = (av == null || !av.ok) && !control.background.channelAnswers()
++            if (reallyDead && inUse) {
 +                // 【4ac-4】幽灵态必须说人话：通道断了（`:vdisplay` 不在 / 未就绪）时，
 +                // 不能只在日志里写一行、界面上什么都不说，让用户在屏幕上瞎点。
 +                // 从"可用"跌到"不可用"才提示一次，并且 60 秒内不重复。
@@ -2849,15 +2856,20 @@ index 4a76535f..219efe3e 100644
 +                    if (now - channelDeadNoticeAt > 60_000L) {
 +                        channelDeadNoticeAt = now
 +                        val reason = av?.reason ?: "服务未在运行"
-+                        WakeTrace.log("vscreen: channel dead -> notice reason=$reason")
++                        WakeTrace.log("vscreen: channel really dead -> notice reason=$reason")
 +                        val ctx = appContext
 +                        if (ctx != null) {
 +                            Handler(Looper.getMainLooper()).post {
 +                                runCatching {
 +                                    VscreenNotice.show(
 +                                        ctx,
-+                                        "虚拟屏通道已断开（$reason），请重新检查通道或重启 App",
-+                                        5_000L,
++                                        "虚拟屏通道没有响应（$reason），正在自动重建；也可点右侧按钮",
++                                        6_000L,
++                                        buttonText = "立即重连",
++                                        onClick = {
++                                            WakeTrace.log("vscreen: notice reconnect clicked")
++                                            runCatching { control.background.recycleVscreenChannel() }
++                                        },
 +                                    )
 +                                }
 +                            }
@@ -2962,7 +2974,7 @@ index 4a76535f..219efe3e 100644
          methods = MethodChannel(binding.binaryMessenger, "dsh/phone").also { it.setMethodCallHandler(this) }
          events = EventChannel(binding.binaryMessenger, "dsh/phone/events").also { it.setStreamHandler(this) }
          previewEvents = EventChannel(binding.binaryMessenger, "dsh/phone/preview").also { channel ->
-@@ -103,9 +428,194 @@ class PhonePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
+@@ -103,9 +435,194 @@ class PhonePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
          }
      }
  
@@ -3157,7 +3169,7 @@ index 4a76535f..219efe3e 100644
          skillSelectionRequest = Any()
          skillInspection = null
          skillClient?.let { control.skillReplaySelections.retireClient(it); control.skillDrafts.retireClient(it) }
-@@ -249,6 +759,103 @@ class PhonePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
+@@ -249,6 +766,103 @@ class PhonePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
                  result.success(if (removed) mapOf("kind" to "discarded") else replayRejected("stale"))
              }
              "setBackgroundPreview" -> result.success(control.preview.setEnabled(call.argument<Boolean>("enabled") == true))
@@ -3262,7 +3274,7 @@ index 4a76535f..219efe3e 100644
                  val selected = call.argument<String>("mode").orEmpty()
                  val enabled = call.argument<Boolean>("enabled") == true
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneTaskSessions.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneTaskSessions.kt
-index 3fd6e482..6a2410fc 100644
+index 3fd6e482..aa1bf338 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneTaskSessions.kt
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneTaskSessions.kt
 @@ -1,5 +1,6 @@
@@ -3285,7 +3297,30 @@ index 3fd6e482..6a2410fc 100644
      private val screenRecoveryReady: () -> Boolean = { false },
      // Connection preparation precedes any new screen lease and runs outside registry/Tasks locks.
      private val prepareBackground: (Task, PhoneTasks.Owner) -> String? = { _, _ -> null },
-@@ -459,7 +464,15 @@ class PhoneTaskSessions(
+@@ -201,8 +206,20 @@ class PhoneTaskSessions(
+             if (caller != null) {
+                 if (key in endedRuns) return Admission(null, epoch, PhoneTasks.RUN_ENDED_MESSAGE, startedAt = startedAt)
+                 if (entries[key]?.stopped == true) return Admission(null, epoch, PhoneTasks.STOPPED_MESSAGE, startedAt = startedAt)
+-                if (caller.sessionId in stoppedSessions && !recoverScreenStop(key, screenReady && readinessEpoch == epoch))
+-                    return Admission(null, epoch, PhoneTasks.STOPPED_MESSAGE, startedAt = startedAt)
++                if (caller.sessionId in stoppedSessions) {
++                    // 【4cc】用户的新一轮指令 = 隐式继续：取消后下一条手机指令直接执行，不必先说"继续"。
++                    // 判据：新 runId（key 不在 entries 里）且停因不是熄屏（熄屏恢复仍需屏幕就绪）。
++                    // 同轮重试（key 在 entries 里且 stopped）仍被上面拒绝——停止按钮不许 AI 同轮自己复活。
++                    if (recoverScreenStop(key, screenReady && readinessEpoch == epoch)) {
++                        // 熄屏停止且屏幕已就绪：按原恢复路径放行。
++                    } else if (key !in entries && caller.sessionId !in screenStoppedSessions) {
++                        stoppedSessions -= caller.sessionId
++                        io.github.ccch1mneyyy.dsh_app.wake.WakeTrace.log(
++                            "phone: implicit resume for new run session=${caller.sessionId}")
++                    } else {
++                        return Admission(null, epoch, PhoneTasks.STOPPED_MESSAGE, startedAt = startedAt)
++                    }
++                }
+                 if (!reserve(key)) return Admission(null, epoch, CAPACITY_MESSAGE, startedAt = startedAt)
+             }
+             val task = entries.getOrPut(key) {
+@@ -459,7 +476,15 @@ class PhoneTaskSessions(
      }
  
      private fun awaitResources(a: Admission, call: PhoneCore.PreparedCall): String? {
@@ -3302,7 +3337,7 @@ index 3fd6e482..6a2410fc 100644
          val known = call.knownApp
          val unknown = call.unknownApp
          if (needed.isEmpty() && known == null && !unknown) return null
-@@ -472,7 +485,7 @@ class PhoneTaskSessions(
+@@ -472,7 +497,7 @@ class PhoneTaskSessions(
          fun acquire(): String? = synchronized(a) {
              if (remainingMs(a) <= 0) return@synchronized deadlineOutput().text
              call.borrowedMainForBackgroundOpen = call.name == PhoneToolCatalog.OPEN &&
@@ -3311,7 +3346,7 @@ index 3fd6e482..6a2410fc 100644
              if (PhoneScreen.MAIN in needed) mainHolder = task
              if (PhoneScreen.BACKGROUND in needed) backgroundHolders += task
              if (known != null) task.heldApps += known
-@@ -700,7 +713,6 @@ class PhoneTaskSessions(
+@@ -700,7 +725,6 @@ class PhoneTaskSessions(
                  else mapOf("kind" to "known", "packageName" to checkNotNull(task.waitingApp).packageName)
              mapOf("sessionId" to task.sessionId, "runId" to task.runId,
              "identity" to if (task.sessionId == null) "legacy" else "session",
@@ -3319,7 +3354,7 @@ index 3fd6e482..6a2410fc 100644
              "waitingForScreen" to task.waitingScreens.firstOrNull { screen ->
                  when (screen) {
                      PhoneScreen.MAIN -> mainHolder != null && mainHolder !== task
-@@ -864,13 +876,20 @@ class PhoneTaskSessions(
+@@ -864,13 +888,20 @@ class PhoneTaskSessions(
          return synchronized(lock) { lastAdmitted[task.sessionId] === task } && task.tasks.isCurrent(owner)
      }
  
@@ -3342,7 +3377,7 @@ index 3fd6e482..6a2410fc 100644
                  // A prior cancellation keeps responsibility for its external work. Still
                  // invalidate this lifetime now. An idle record must not gain a stop hold or
                  // a session fence merely because the screen/service disappeared.
-@@ -948,7 +967,7 @@ class PhoneTaskSessions(
+@@ -948,7 +979,7 @@ class PhoneTaskSessions(
  
      companion object {
          // l10n:keep agent resource admission
@@ -3352,7 +3387,7 @@ index 3fd6e482..6a2410fc 100644
          // An implementation memory bound, not a measured throughput limit. Never evict a fence.
          const val MAX_RUNS_PER_LAUNCH = 256
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneTasks.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneTasks.kt
-index a09015e7..feaa3380 100644
+index a09015e7..bece18e7 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneTasks.kt
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneTasks.kt
 @@ -73,6 +73,9 @@ class PhoneTasks(
@@ -3467,6 +3502,33 @@ index a09015e7..feaa3380 100644
          approved.clear()
          grants.clear()
          visualScopes.clear(); visualGrants.clear(); visualLifecycle = lifecycle
+@@ -547,9 +611,9 @@ class PhoneTasks(
+     }
+ 
+     companion object {
+-        /** 本轮不再执行: the person stopped this turn. The next turn starts fresh and asks again. */
++        /** 本轮不再执行: the person stopped this turn. The next instruction resumes directly (4cc). */
+         // l10n:keep agent stop protocol
+-        const val STOPPED_MESSAGE = "你停止了本轮手机操作，本轮不再执行手机动作；下一轮会恢复，届时会重新向你确认"
++        const val STOPPED_MESSAGE = "你停止了本轮手机操作，本轮不再执行手机动作；下一条指令会直接恢复执行"
+ 
+         /** This one action was cancelled; the rest of the turn is unaffected. */
+         // l10n:keep agent cancel protocol
+@@ -557,11 +621,11 @@ class PhoneTasks(
+ 
+         /** 熄屏 / 无障碍断开 stopped this turn (not the person). */
+         // l10n:keep agent environment-stop protocol
+-        const val ENV_STOPPED_MESSAGE = "手机操控被系统中断（熄屏或无障碍断开），本轮不再执行手机动作；恢复后下一轮会重新向你确认"
++        const val ENV_STOPPED_MESSAGE = "手机操控被系统中断（熄屏或无障碍断开），本轮不再执行手机动作；下一条指令会直接恢复执行"
+ 
+-        /** The host ended this turn; the next turn asks again. */
++        /** The host ended this turn; the next instruction resumes directly (4cc). */
+         // l10n:keep agent run-end protocol
+-        const val RUN_ENDED_MESSAGE = "本轮已结束，这条手机动作没有执行；下一轮会恢复，届时会重新向你确认"
++        const val RUN_ENDED_MESSAGE = "本轮已结束，这条手机动作没有执行；下一条指令会直接恢复执行"
+ 
+         /** No confirmation surface is reachable, so this one action did not run. */
+         // l10n:keep agent no-gate protocol
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneToolCatalog.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneToolCatalog.kt
 index cbfb0de3..8fc282c1 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneToolCatalog.kt
@@ -3691,7 +3753,7 @@ index 8aa204bc..298fc3a9 100644
          super.onConfigurationChanged(newConfig)
          overlay?.onConfigurationChanged()
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/BackgroundControl.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/BackgroundControl.kt
-index 79cae468..567a319a 100644
+index 79cae468..b2dc1d70 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/BackgroundControl.kt
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/BackgroundControl.kt
 @@ -13,6 +13,8 @@ import android.net.Network
@@ -3967,6 +4029,26 @@ index 79cae468..567a319a 100644
              if (!record.driver.release()) discardPeer(record.peer)
              taskResource.complete(record)
          }
+@@ -942,6 +1148,19 @@ class BackgroundControl private constructor(context: Context) {
+     } catch (_: InterruptedException) { Thread.currentThread().interrupt(); false }
+     catch (_: Exception) { false }
+ 
++    /** 【4cf】真探活：对当前通道做一次 OP_PROBE 往返。availability() 判死不算数，这个才算。 */
++    fun channelAnswers(): Boolean {
++        val peer = channel ?: return false
++        return answers(peer)
++    }
++
++    /** 【4cf】提示条「立即重连」：丢掉当前通道，下一次建驱动时自动重建（会话 owner 不变）。 */
++    fun recycleVscreenChannel() {
++        val peer = channel ?: return
++        io.github.ccch1mneyyy.dsh_app.wake.WakeTrace.log("vscreen: recycle channel by notice button")
++        discardPeer(peer)
++    }
++
+     // ---- explicit channel keep consent and event-driven recovery ------------
+ 
+     /** Main-thread intent boundary. The returned ticket is persisted on the short control queue. */
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/BackgroundCoordinates.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/BackgroundCoordinates.kt
 index f6b83a0a..2eb59f32 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/BackgroundCoordinates.kt
@@ -7249,10 +7331,10 @@ index 00000000..656af3e0
 +}
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/FrontExitPrompt.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/FrontExitPrompt.kt
 new file mode 100644
-index 00000000..fba46794
+index 00000000..1855dd00
 --- /dev/null
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/FrontExitPrompt.kt
-@@ -0,0 +1,236 @@
+@@ -0,0 +1,270 @@
 +package io.github.ccch1mneyyy.dsh_app.phone.vscreen
 +
 +import android.annotation.SuppressLint
@@ -7437,15 +7519,15 @@ index 00000000..fba46794
 +    private var wm: WindowManager? = null
 +    private var timer: Handler? = null
 +
-+    fun show(context: Context, text: String, ms: Long = 3_500L) {
++    /** 【4cf】[buttonText]/[onClick] 非空时显示可点击按钮，条不再 NOT_TOUCHABLE；否则行为同旧版。 */
++    @SuppressLint("ClickableViewAccessibility")
++    fun show(context: Context, text: String, ms: Long = 3_500L, buttonText: String? = null, onClick: (() -> Unit)? = null) {
 +        hide()
 +        val app = context.applicationContext
 +        val px = app.resources.displayMetrics.density
 +        val manager = app.getSystemService(Context.WINDOW_SERVICE) as WindowManager
-+        val label = TextView(app).apply {
-+            this.text = text
-+            setTextColor(Color.WHITE)
-+            textSize = 13f
++        val column = LinearLayout(app).apply {
++            orientation = LinearLayout.VERTICAL
 +            setPadding(
 +                (16 * px).roundToInt(), (10 * px).roundToInt(),
 +                (16 * px).roundToInt(), (10 * px).roundToInt(),
@@ -7455,25 +7537,59 @@ index 00000000..fba46794
 +                setColor(0xF2C0392B.toInt())
 +            }
 +        }
++        val label = TextView(app).apply {
++            this.text = text
++            setTextColor(Color.WHITE)
++            textSize = 13f
++        }
++        column.addView(label, LinearLayout.LayoutParams(-2, -2))
++        if (buttonText != null) {
++            val row = LinearLayout(app).apply {
++                orientation = LinearLayout.HORIZONTAL
++                gravity = Gravity.CENTER
++                setPadding(0, (8 * px).roundToInt(), 0, 0)
++            }
++            val btn = TextView(app).apply {
++                this.text = buttonText
++                setTextColor(Color.rgb(16, 24, 32))
++                textSize = 13f
++                gravity = Gravity.CENTER
++                setPadding(
++                    (12 * px).roundToInt(), (6 * px).roundToInt(),
++                    (12 * px).roundToInt(), (6 * px).roundToInt(),
++                )
++                background = GradientDrawable().apply {
++                    cornerRadius = 14 * px
++                    setColor(0xFF20E3B0.toInt())
++                }
++                setOnClickListener {
++                    onClick?.invoke()
++                    hide()
++                }
++            }
++            row.addView(btn, LinearLayout.LayoutParams(-2, -2))
++            column.addView(row, LinearLayout.LayoutParams(-2, -2))
++        }
++        var flags = WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
++            WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN
++        if (buttonText == null) flags = flags or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
 +        val lp = WindowManager.LayoutParams(
 +            WindowManager.LayoutParams.WRAP_CONTENT,
 +            WindowManager.LayoutParams.WRAP_CONTENT,
 +            WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
-+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
-+                WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or
-+                WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
++            flags,
 +            PixelFormat.TRANSLUCENT,
 +        ).apply {
 +            gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL
 +            y = (96 * px).roundToInt()
 +        }
-+        if (!runCatching { manager.addView(label, lp) }.isSuccess) {
++        if (!runCatching { manager.addView(column, lp) }.isSuccess) {
 +            WakeTrace.log("prompt: notice addView failed text=$text")
 +            return
 +        }
-+        root = label
++        root = column
 +        wm = manager
-+        WakeTrace.log("prompt: notice shown text=$text")
++        WakeTrace.log("prompt: notice shown text=$text button=${buttonText != null}")
 +        val h = Handler(Looper.getMainLooper())
 +        timer = h
 +        h.postDelayed({ hide() }, ms)
