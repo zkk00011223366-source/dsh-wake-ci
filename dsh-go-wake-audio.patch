@@ -1,7 +1,7 @@
-From 66b0f165e15adbd7ffb3d3de69dd6b3b430bc1c0 Mon Sep 17 00:00:00 2001
+From 12726e2fcc41638ac936a1f485999c16cc57227d Mon Sep 17 00:00:00 2001
 From: ci <ci@local>
-Date: Tue, 24 Nov 2026 11:12:44 +0800
-Subject: [PATCH] pb: scene4bs
+Date: Tue, 24 Nov 2026 11:40:54 +0800
+Subject: [PATCH] pb: scene4bu
 
 ---
  .gitattributes                                |    3 +
@@ -17,7 +17,7 @@ Subject: [PATCH] pb: scene4bs
  .../dsh_app/phone/PhoneBackGuard.kt           |  146 +
  .../dsh_app/phone/PhoneContracts.kt           |  254 ++
  .../ccch1mneyyy/dsh_app/phone/PhoneControl.kt |  109 +-
- .../ccch1mneyyy/dsh_app/phone/PhoneCore.kt    |  541 +++-
+ .../ccch1mneyyy/dsh_app/phone/PhoneCore.kt    |  562 +++-
  .../ccch1mneyyy/dsh_app/phone/PhonePlugin.kt  |  596 ++++
  .../dsh_app/phone/PhoneTaskSessions.kt        |   33 +-
  .../ccch1mneyyy/dsh_app/phone/PhoneTasks.kt   |   62 +-
@@ -107,7 +107,7 @@ Subject: [PATCH] pb: scene4bs
  app/lib/speech/wake_reply.dart                |  175 ++
  app/lib/state/app_info.dart                   |    5 +
  app/lib/state/update_state.dart               |   19 +-
- app/lib/state/virtual_screen_state.dart       |  490 +++
+ app/lib/state/virtual_screen_state.dart       |  494 +++
  app/lib/ui/chat/chat_rows.dart                |    2 +
  app/lib/ui/chat/chat_screen.dart              |  108 +-
  app/lib/ui/chat/media/media_format.dart       |   16 +-
@@ -135,7 +135,7 @@ Subject: [PATCH] pb: scene4bs
  docs/wake-word.md                             |  107 +
  dsh-go-wake.patch                             | 2065 ++++++++++++
  tooling/build-wake-apk.sh                     |   68 +
- 131 files changed, 17742 insertions(+), 573 deletions(-)
+ 131 files changed, 17767 insertions(+), 573 deletions(-)
  create mode 100644 .github/workflows/wake-apk.yml
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallForegroundService.kt
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallOverlay.kt
@@ -1796,7 +1796,7 @@ index 2fc7cd59..ec152c95 100644
      }
  
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneCore.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneCore.kt
-index 6c701851..0f33ae53 100644
+index 6c701851..5c7a1b32 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneCore.kt
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneCore.kt
 @@ -1,9 +1,12 @@
@@ -2010,7 +2010,7 @@ index 6c701851..0f33ae53 100644
              confirmSystem(plan, scope, owner, summary)?.let { return it }
              val ticket = skillTrace.beginOpen(owner, PhoneScreen.MAIN)
              val result = try {
-@@ -556,50 +622,237 @@ class PhoneCore(
+@@ -556,50 +622,258 @@ class PhoneCore(
                      skillTrace.finish(ticket, it.ok, false, false)
                  }
              } catch (e: Throwable) { skillTrace.fail(ticket); throw e }
@@ -2126,6 +2126,27 @@ index 6c701851..0f33ae53 100644
 +        // G：记下这一下是"复用/搬进来/新启动"。第二次打开同一个应用时，日志里必须能看到
 +        // `vscreen: reuse … ok=true` 或 `vscreen: move … ok=true`；复用了就不会再 launch 一份。
 +        runCatching { noteOpenPath(app, driver, res.ok) }
++        // 【4bu】open 报成功 ≠ 应用真的落在虚拟屏上。真机 11:37 现场：
++        // `window: attach skipped reason=emptyDisplay displayId=331` + `still no picture after 5s`，
++        // 窗口建了却永远没画面。这里补一次落屏核对：查这个包实际在哪块屏，
++        // 不在虚拟屏就按包名搬进去（现成的 movePackageToVirtual，不会搬错应用）。
++        if (res.ok) {
++            runCatching {
++                val virt = PhoneRegistry.vscreenDisplayId?.invoke() ?: 0
++                val where = io.github.ccch1mneyyy.dsh_app.phone.vscreen.TaskMover
++                    .displayOfPackage(env.androidShell(), app.packageName)
++                if (where != null && (where == 0 || (virt > 0 && where != virt))) {
++                    val moved = (driver as? io.github.ccch1mneyyy.dsh_app.phone.background.BackgroundDisplay)
++                        ?.movePackageToVirtual(app.packageName)
++                    io.github.ccch1mneyyy.dsh_app.wake.WakeTrace.log(
++                        "open: landed where=$where virt=$virt -> move pkg=${app.packageName} " +
++                            "ok=${moved?.get("ok")} reason=${moved?.get("reason")}")
++                } else {
++                    io.github.ccch1mneyyy.dsh_app.wake.WakeTrace.log(
++                        "open: landed where=$where virt=$virt (no move needed)")
++                }
++            }
++        }
          if (!current(owner) || !tasks.setAppIfCurrent(owner, app.label)) return stoppedOut("open")
 +        // 有没有留在虚拟屏上：腾讯视频这类没有多屏支持的应用 open 成功后会自己把任务挪回
 +        // 主屏（12:51 日志：displayId=100 起完，任务跑到主屏）。open 后 1.5 秒核对一次，
@@ -2259,7 +2280,7 @@ index 6c701851..0f33ae53 100644
      }
  
      /** The handler is a dispatch fact. Only the following read describes the actual foreground UI. */
-@@ -816,8 +1069,187 @@ class PhoneCore(
+@@ -816,8 +1090,187 @@ class PhoneCore(
          return Either.Right(d)
      }
  
@@ -2447,7 +2468,7 @@ index 6c701851..0f33ae53 100644
      /** Admission uses the same argument coercion and routing as the actual tool body. */
      fun requiredScreens(name: String, args: Map<String, Any?>): Either<String, List<PhoneScreen>> {
          return requiredScreens(name, Args(args))
-@@ -825,10 +1257,11 @@ class PhoneCore(
+@@ -825,10 +1278,11 @@ class PhoneCore(
  
      private fun requiredScreens(name: String, a: Args): Either<String, List<PhoneScreen>> {
          return when (name) {
@@ -2462,7 +2483,7 @@ index 6c701851..0f33ae53 100644
              // Arbitrary system commands take the main/global unknown-app lease, without reading a screen.
              PhoneToolCatalog.INTENT, PhoneToolCatalog.ANDROID_SHELL -> Either.Right(listOf(PhoneScreen.MAIN))
              PhoneToolCatalog.HANDOFF -> Either.Right(if (lastScreen == PhoneScreen.BACKGROUND)
-@@ -852,7 +1285,7 @@ class PhoneCore(
+@@ -852,7 +1306,7 @@ class PhoneCore(
          if (id == null) return Either.Left("缺少 $parameterName（屏幕号，如 s7）。先调用 screen 拿到屏幕号。")
          return PhoneScreen.ofScreenId(id)?.let { Either.Right(it) }
              // l10n:keep agent tool result
@@ -2471,7 +2492,7 @@ index 6c701851..0f33ae53 100644
      }
  
      private fun locked(summary: String) =
-@@ -871,21 +1304,29 @@ class PhoneCore(
+@@ -871,21 +1325,29 @@ class PhoneCore(
  
      private fun screen(a: Args, owner: PhoneTasks.Owner): Out {
          if (!current(owner)) return stoppedOut("screen")
@@ -2507,7 +2528,7 @@ index 6c701851..0f33ae53 100644
          return Out(
              // l10n:keep agent tool result
              if (refused) "没有读取这个屏幕的内容。" else "",
-@@ -897,6 +1338,40 @@ class PhoneCore(
+@@ -897,6 +1359,40 @@ class PhoneCore(
          )
      }
  
@@ -2548,7 +2569,7 @@ index 6c701851..0f33ae53 100644
      private fun collect(a: Args, owner: PhoneTasks.Owner): Out {
          if (!current(owner)) return stoppedOut("collect")
          val sid = a.str("screen")
-@@ -1362,6 +1837,7 @@ class PhoneCore(
+@@ -1362,6 +1858,7 @@ class PhoneCore(
          summary = summary, decision = "stopped")
  
      companion object {
@@ -2556,7 +2577,7 @@ index 6c701851..0f33ae53 100644
          internal const val REPLAY = "replay"
          internal const val FOCUS_TEXT = "focus_text"
  
-@@ -1370,6 +1846,9 @@ class PhoneCore(
+@@ -1370,6 +1867,9 @@ class PhoneCore(
          const val PAUSE_WAIT_MS = 600_000L
          const val HANDOFF_MS = 600_000L
  
@@ -87418,10 +87439,10 @@ index c089d192..5f01b451 100644
        skippedVersion: () => prefs.getString(_skippedKey),
 diff --git a/app/lib/state/virtual_screen_state.dart b/app/lib/state/virtual_screen_state.dart
 new file mode 100644
-index 00000000..8fa7f83d
+index 00000000..e788970c
 --- /dev/null
 +++ b/app/lib/state/virtual_screen_state.dart
-@@ -0,0 +1,490 @@
+@@ -0,0 +1,494 @@
 +import 'dart:async';
 +
 +import 'package:flutter/services.dart';
@@ -87777,7 +87798,11 @@ index 00000000..8fa7f83d
 +        unawaited(ref.read(virtualWindowProvider.notifier).setBall(false));
 +      }
 +      if (ui == 'window') {
-+        if (taskId != null && !state.open) unawaited(open(taskId));
++        // 【4bt】原生判 window 就必须把窗口叫出来：以前 taskId 为空就跳过，
++        // 于是日志里 ui-rule 一直说 window、屏幕上却什么都没有（真机 11:38 连续 6 次）。
++        // 任务号只是窗口绑定用的，拿不到就用 0（原生传 0 不会擦掉已绑的号），
++        // 不能因为"号未知"就不给用户窗口。
++        if (!state.open) unawaited(open(taskId ?? status.task.id ?? 0));
 +      } else if (state.open) {
 +        unawaited(close());
 +      }
