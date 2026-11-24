@@ -1,8 +1,22 @@
-From 9d83b5807bab1b7398ad5bd44527d63c4b88d7bb Mon Sep 17 00:00:00 2001
+From f9d01c4739e4817ffc3878c9fb9ea4a5da997eda Mon Sep 17 00:00:00 2001
 From: ci <ci@local>
-Date: Tue, 24 Nov 2026 12:55:36 +0800
-Subject: [PATCH] pb: scene4bz
+Date: Tue, 24 Nov 2026 13:23:34 +0800
+Subject: [PATCH] =?UTF-8?q?4ca:=20=E7=AA=97=E5=8F=A3=E4=B8=8D=E5=86=8D?=
+ =?UTF-8?q?=E8=A2=AB=20Dart=20=E4=BE=A7=E8=87=AA=E5=8A=A8=E5=85=B3?=
+ =?UTF-8?q?=E6=8E=89=EF=BC=88=E6=B2=BB=E2=80=9C=E7=82=B9=E6=9D=A1=E5=BC=80?=
+ =?UTF-8?q?=E4=BA=86=E5=8F=88=E8=87=AA=E5=B7=B1=E5=BC=B9=E5=9B=9E=E6=9D=A1?=
+ =?UTF-8?q?=E2=80=9D=EF=BC=89?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
 
+真机 13:20 反复出现：点条 → 1.85s 窗口出来 → 1s 后自己 close() → 黄条又回来。
+日志可见 ball: hide caller=ya2.g:7（TransferBall 被自己的 wanted=false 关掉）。
+
+原因：Dart 的 onVirtual 用 status.backgroundSilent 计算，而它反映的是设置默认
+（默认隐藏 → true），不是这次要不要窗口。用户手动点条打开的窗口因此被判“不该显示”。
+
+改动：删掉两处 onVirtual=false 就关窗的兜底，窗口显隐只认原生 VscreenUi 的判定。
 ---
  .gitattributes                                |    3 +
  .github/workflows/wake-apk.yml                |  192 ++
@@ -107,7 +121,7 @@ Subject: [PATCH] pb: scene4bz
  app/lib/speech/wake_reply.dart                |  175 ++
  app/lib/state/app_info.dart                   |    5 +
  app/lib/state/update_state.dart               |   19 +-
- app/lib/state/virtual_screen_state.dart       |  501 +++
+ app/lib/state/virtual_screen_state.dart       |  507 +++
  app/lib/ui/chat/chat_rows.dart                |    2 +
  app/lib/ui/chat/chat_screen.dart              |  108 +-
  app/lib/ui/chat/media/media_format.dart       |   16 +-
@@ -135,7 +149,7 @@ Subject: [PATCH] pb: scene4bz
  docs/wake-word.md                             |  107 +
  dsh-go-wake.patch                             | 2065 ++++++++++++
  tooling/build-wake-apk.sh                     |   68 +
- 131 files changed, 17819 insertions(+), 573 deletions(-)
+ 131 files changed, 17825 insertions(+), 573 deletions(-)
  create mode 100644 .github/workflows/wake-apk.yml
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallForegroundService.kt
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallOverlay.kt
@@ -87491,10 +87505,10 @@ index c089d192..5f01b451 100644
        skippedVersion: () => prefs.getString(_skippedKey),
 diff --git a/app/lib/state/virtual_screen_state.dart b/app/lib/state/virtual_screen_state.dart
 new file mode 100644
-index 00000000..c08091f2
+index 00000000..3867b2e7
 --- /dev/null
 +++ b/app/lib/state/virtual_screen_state.dart
-@@ -0,0 +1,501 @@
+@@ -0,0 +1,507 @@
 +import 'dart:async';
 +
 +import 'package:flutter/services.dart';
@@ -87924,14 +87938,20 @@ index 00000000..c08091f2
 +    // 宽限期内一直算"该显示"，到期自然失效（不能读一次就清掉，否则第二次 sync 又关了）。
 +    // 窗口为什么开/为什么关：迁移、"明确主屏却弹窗"这类问题只靠这行日志能定案。
 +    // 应用已经不在虚拟屏（被搬到主屏/结束了）→ 窗口立刻关掉，别留一个卡住的旧窗口（12:0x）。
-+    if (state.open && !onVirtual && taskId == null) {
++    // 【4ca】这里以前会"应用不在虚拟屏就关窗"。但 onVirtual 依赖 status.backgroundSilent，
++    // 而它反映的是**设置默认**（默认隐藏→true），不是"这次要不要窗口"；
++    // 于是用户刚点条打开的窗口被这里关掉，条又回来（真机 13:20 反复出现）。
++    // 窗口显隐只有一个权威：原生 VscreenUi 的判定（上面的 ui 分支已经处理过）。
++    if (state.open && taskId == null && status.lastScreen != 'background') {
 +      unawaited(ref.read(virtualWindowProvider.notifier).close());
 +    }
 +    diagWake('vsync: lastScreen=${status.lastScreen} task=${firstBackgroundTaskId(status)} open=${state.open} hold=${_holdOpenUntil != null}');
 +    final holding = _holdOpenUntil != null && DateTime.now().isBefore(_holdOpenUntil!);
 +    if (!holding) _holdOpenUntil = null;
 +    if (!onVirtual && !holding) {
-+      if (state.open) unawaited(close());
++      // 【4ca】不再因为 onVirtual 就关窗：同理，它会被设置默认带偏。
++      // 只有"确实没有任务、且原生判定也说不是 window"时才由上面那支处理。
++      diagWake('vsync: not-on-virtual, keep window (rule authoritative)');
 +      return;
 +    }
 +    if (taskId == null) {
