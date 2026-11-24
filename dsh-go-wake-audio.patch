@@ -1,204 +1,149 @@
-From c39fa7ae28e13c4ed12d291463b2c8b6238f6299 Mon Sep 17 00:00:00 2001
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: ci <ci@local>
-Date: Tue, 24 Nov 2026 23:32:40 +0800
-Subject: [PATCH] b: scene4h
+Date: Wed, 25 Nov 2026 00:51:58 +0800
+Subject: [PATCH] b: scene4i
 MIME-Version: 1.0
 Content-Type: text/plain; charset=UTF-8
 Content-Transfer-Encoding: 8bit
 
-4h: versionCode 恒用构建分钟数（治同版本安装不杀旧进程）
+4i: reader 保活（点条不再撞 1.84s）+ shell 免确认诊断日志 + 读屏说明书防误判
+
 ---
- .gitattributes                                |    3 +
- .github/workflows/wake-apk.yml                |  192 ++
- app/android/app/build.gradle.kts              |   11 +-
- app/android/app/src/main/AndroidManifest.xml  |   43 +-
- .../ccch1mneyyy/dsh_app/MainActivity.kt       |   85 +-
- .../dsh_app/call/CallForegroundService.kt     |   94 +
- .../ccch1mneyyy/dsh_app/call/CallOverlay.kt   |  369 +++
- .../dsh_app/call/CallOverlayPlugin.kt         |   70 +
- .../dsh_app/notify/NotifyPlugin.kt            |    5 +-
- .../dsh_app/phone/PhoneAndroidShell.kt        |   10 +-
- .../dsh_app/phone/PhoneBackGuard.kt           |  146 +
- .../dsh_app/phone/PhoneContracts.kt           |  265 ++
- .../ccch1mneyyy/dsh_app/phone/PhoneControl.kt |  109 +-
- .../ccch1mneyyy/dsh_app/phone/PhoneCore.kt    |  571 +++-
- .../ccch1mneyyy/dsh_app/phone/PhonePlugin.kt  |  618 ++++
- .../dsh_app/phone/PhoneTaskSessions.kt        |   49 +-
- .../ccch1mneyyy/dsh_app/phone/PhoneTasks.kt   |   85 +-
- .../dsh_app/phone/PhoneToolCatalog.kt         |   36 +-
- .../ccch1mneyyy/dsh_app/phone/SafetyGate.kt   |    4 +-
- .../dsh_app/phone/SingleInstanceApps.kt       |   27 +
- .../dsh_app/phone/SystemActions.kt            |    7 +-
- .../dsh_app/phone/a11y/ControlOverlay.kt      |   11 +-
- .../dsh_app/phone/a11y/PhoneA11yService.kt    |   20 +
- .../phone/background/BackgroundControl.kt     |  231 +-
- .../phone/background/BackgroundCoordinates.kt |    2 +
- .../phone/background/BackgroundDisplay.kt     |  376 ++-
- .../phone/background/BackgroundDisplayIo.kt   |   10 +-
- .../phone/background/BackgroundPolicy.kt      |    8 +-
- .../phone/background/BackgroundPreview.kt     |   10 +-
- .../background/BackgroundProbeActivity.kt     |    4 +-
- .../phone/background/BackgroundTaskSlot.kt    |    7 +
- .../phone/background/BackgroundTree.kt        |    4 +-
- .../dsh_app/phone/background/CoalescedScan.kt |   31 +
- .../dsh_app/phone/background/DisplayAwake.kt  |  154 +
- .../phone/background/DisplayHandles.kt        |   31 +
- .../phone/background/DisplayOrientation.kt    |   37 +
- .../background/DisplayOrientationKeeper.kt    |  125 +
- .../background/DisplayOrientationWatch.kt     |  100 +
- .../dsh_app/phone/background/KeptTasks.kt     |   39 +
- .../dsh_app/phone/background/OwnerScopes.kt   |   17 +-
- .../phone/background/PrivilegedDisplayCore.kt | 1315 +++++++-
- .../background/PrivilegedDisplayEntry.kt      |   19 +-
- .../phone/background/PrivilegedDisplayHost.kt |   10 +-
- .../phone/background/PrivilegedProtocol.kt    |  108 +-
- .../phone/background/VscreenSession.kt        |   39 +
- .../dsh_app/phone/skills/PhoneSkillDraft.kt   |    2 +-
- .../phone/vscreen/CloseActionReceiver.kt      |   79 +
- .../phone/vscreen/DisplayFrameGeometry.kt     |   21 +
- .../dsh_app/phone/vscreen/FrameMath.kt        |   60 +
- .../dsh_app/phone/vscreen/FrontExitPrompt.kt  |  270 ++
- .../dsh_app/phone/vscreen/PresentationHost.kt |   69 +
- .../phone/vscreen/SwitchPromptOverlay.kt      |  142 +
- .../dsh_app/phone/vscreen/TaskMover.kt        |  152 +
- .../dsh_app/phone/vscreen/TransferBall.kt     |  500 +++
- .../phone/vscreen/VirtualScreenOverlay.kt     | 2789 +++++++++++++++++
- .../phone/vscreen/VirtualScreenPlugin.kt      |  249 ++
- .../dsh_app/phone/vscreen/VscreenUi.kt        |  166 +
- .../ccch1mneyyy/dsh_app/runtime/GuestSetup.kt |   47 +-
- .../dsh_app/shortcuts/EntryActivity.kt        |    3 +
- .../dsh_app/shortcuts/ShortcutsPlugin.kt      |   13 +-
- .../ccch1mneyyy/dsh_app/speech/CallCapture.kt |    6 +-
- .../dsh_app/wake/WakeBootReceiver.kt          |   29 +
- .../ccch1mneyyy/dsh_app/wake/WakeCapture.kt   |  172 +
- .../ccch1mneyyy/dsh_app/wake/WakeTrace.kt     |   99 +
- .../dsh_app/wake/WakeWordPlugin.kt            |  131 +
- .../dsh_app/wake/WakeWordService.kt           |  216 ++
- .../src/main/res/values-zh/i18n_strings.xml   |   20 +-
- .../main/res/values-zh/phone_a11y_strings.xml |    6 +-
- .../phone_background_setup_strings.xml        |    2 +-
- .../main/res/values-zh/phone_task_strings.xml |    2 +-
- .../app/src/main/res/values/i18n_strings.xml  |   10 +
- .../res/xml/phone_accessibility_service.xml   |    3 +-
- .../app/src/main/res/xml/shortcuts.xml        |   18 +-
- .../phone/background/DisplayAwakeTest.kt      |  105 +
- .../background/DisplayOrientationTest.kt      |   48 +
- .../phone/vscreen/DisplayFrameGeometryTest.kt |   39 +
- .../dsh_app/phone/vscreen/FrameMathTest.kt    |   45 +
- app/assets/kws/LICENSE.txt                    |   20 +
- app/assets/kws/NOTICE.txt                     |    4 +
- app/assets/kws/decoder.int8.onnx              |  Bin 0 -> 181069 bytes
- app/assets/kws/encoder.int8.onnx              |  Bin 0 -> 4777666 bytes
- app/assets/kws/joiner.int8.onnx               |  Bin 0 -> 65242 bytes
- app/assets/kws/tokens.txt                     |  227 ++
- app/lib/app.dart                              |    6 +
- app/lib/app_navigator.dart                    |    4 +
- app/lib/l10n/app_en.arb                       |   27 +
- app/lib/l10n/app_zh.arb                       |   51 +-
- app/lib/l10n/gen/app_localizations.dart       |  186 +-
- app/lib/l10n/gen/app_localizations_en.dart    |   84 +
- app/lib/l10n/gen/app_localizations_zh.dart    |  105 +-
- app/lib/l10n/parts/android_shell_en.arb       |    3 +-
- app/lib/l10n/parts/android_shell_zh.arb       |    3 +-
- app/lib/l10n/parts/phone_en.arb               |    9 +-
- app/lib/l10n/parts/phone_zh.arb               |   33 +-
- app/lib/l10n/parts/speech_en.arb              |   21 +-
- app/lib/l10n/parts/speech_zh.arb              |   21 +-
- app/lib/links/launcher_entries.dart           |    7 +-
- app/lib/phone/phone_channel.dart              |  135 +-
- app/lib/phone/virtual_screen_window.dart      |  144 +
- app/lib/speech/call/active_call.dart          |  110 +
- app/lib/speech/call/chat_call.dart            |    3 +
- app/lib/speech/call/thinking_cue.dart         |    3 +-
- app/lib/speech/call/voice_call.dart           |   57 +-
- app/lib/speech/wake_reply.dart                |  175 ++
- app/lib/state/app_info.dart                   |    5 +
- app/lib/state/update_state.dart               |   19 +-
- app/lib/state/virtual_screen_state.dart       |  507 +++
- app/lib/ui/chat/chat_rows.dart                |    2 +
- app/lib/ui/chat/chat_screen.dart              |  108 +-
- app/lib/ui/chat/media/media_format.dart       |   16 +-
- app/lib/ui/phone/android_shell_page.dart      |   33 +
- app/lib/ui/phone/background_preview.dart      |  264 +-
- app/lib/ui/phone/dnd_mode_page.dart           |  214 +-
- app/lib/ui/phone/phone_control_screen.dart    |    1 +
- app/lib/ui/phone/phone_task_card.dart         |  430 +++
- app/lib/ui/phone/virtual_screen_host.dart     |  397 +++
- app/lib/ui/phone/virtual_screen_page.dart     |  114 +
- app/lib/ui/phone/virtual_screen_surface.dart  |  286 ++
- app/lib/ui/settings/settings_screen.dart      |   22 +-
- app/lib/ui/settings/voice_settings_page.dart  |  151 +
- app/lib/ui/shell/call_overlay_host.dart       |   55 +
- app/lib/ui/shell/home_shell.dart              |    7 +
- app/lib/ui/shell/system_entry_host.dart       |   44 +
- app/lib/ui/speech/voice_call_page.dart        |  307 +-
- app/lib/ui/theme/app_icons.dart               |    4 +
- app/lib/ui/update/update_tiles.dart           |    5 +-
- app/lib/voice/wake_keywords.dart              |   50 +
- app/lib/voice/wake_settings.dart              |  131 +
- app/lib/voice/wake_word.dart                  |  856 +++++
- app/pubspec.lock                              |    8 +
- app/pubspec.yaml                              |    4 +
- docs/wake-word.md                             |  107 +
- dsh-go-wake.patch                             | 2065 ++++++++++++
- tooling/build-wake-apk.sh                     |   68 +
- 134 files changed, 18151 insertions(+), 587 deletions(-)
- create mode 100644 .github/workflows/wake-apk.yml
- create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallForegroundService.kt
- create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallOverlay.kt
- create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallOverlayPlugin.kt
- create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneBackGuard.kt
- create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/SingleInstanceApps.kt
- create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/CoalescedScan.kt
- create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/DisplayAwake.kt
- create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/DisplayHandles.kt
- create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/DisplayOrientation.kt
- create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/DisplayOrientationKeeper.kt
- create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/DisplayOrientationWatch.kt
- create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/KeptTasks.kt
- create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/VscreenSession.kt
- create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/CloseActionReceiver.kt
- create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/DisplayFrameGeometry.kt
- create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/FrameMath.kt
- create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/FrontExitPrompt.kt
- create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/PresentationHost.kt
- create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/SwitchPromptOverlay.kt
- create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/TaskMover.kt
- create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/TransferBall.kt
- create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenOverlay.kt
- create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenPlugin.kt
- create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VscreenUi.kt
- create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/wake/WakeBootReceiver.kt
- create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/wake/WakeCapture.kt
- create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/wake/WakeTrace.kt
- create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/wake/WakeWordPlugin.kt
- create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/wake/WakeWordService.kt
- create mode 100644 app/android/app/src/test/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/DisplayAwakeTest.kt
- create mode 100644 app/android/app/src/test/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/DisplayOrientationTest.kt
- create mode 100644 app/android/app/src/test/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/DisplayFrameGeometryTest.kt
- create mode 100644 app/android/app/src/test/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/FrameMathTest.kt
- create mode 100644 app/assets/kws/LICENSE.txt
- create mode 100644 app/assets/kws/NOTICE.txt
- create mode 100644 app/assets/kws/decoder.int8.onnx
- create mode 100644 app/assets/kws/encoder.int8.onnx
- create mode 100644 app/assets/kws/joiner.int8.onnx
- create mode 100644 app/assets/kws/tokens.txt
- create mode 100644 app/lib/app_navigator.dart
- create mode 100644 app/lib/phone/virtual_screen_window.dart
- create mode 100644 app/lib/speech/call/active_call.dart
- create mode 100644 app/lib/speech/wake_reply.dart
- create mode 100644 app/lib/state/virtual_screen_state.dart
- create mode 100644 app/lib/ui/phone/phone_task_card.dart
- create mode 100644 app/lib/ui/phone/virtual_screen_host.dart
- create mode 100644 app/lib/ui/phone/virtual_screen_page.dart
- create mode 100644 app/lib/ui/phone/virtual_screen_surface.dart
- create mode 100644 app/lib/ui/shell/call_overlay_host.dart
- create mode 100644 app/lib/voice/wake_keywords.dart
- create mode 100644 app/lib/voice/wake_settings.dart
- create mode 100644 app/lib/voice/wake_word.dart
- create mode 100644 docs/wake-word.md
- create mode 100644 dsh-go-wake.patch
- create mode 100644 tooling/build-wake-apk.sh
+ .gitattributes                                     |    3 +
+ .github/workflows/wake-apk.yml                     |  192 ++
+ app/android/app/build.gradle.kts                   |   11 +-
+ app/android/app/src/main/AndroidManifest.xml       |   43 +-
+ .../io/github/ccch1mneyyy/dsh_app/MainActivity.kt  |   85 +-
+ .../dsh_app/call/CallForegroundService.kt          |   94 +
+ .../github/ccch1mneyyy/dsh_app/call/CallOverlay.kt |  369 +++
+ .../ccch1mneyyy/dsh_app/call/CallOverlayPlugin.kt  |   70 +
+ .../ccch1mneyyy/dsh_app/notify/NotifyPlugin.kt     |    5 +-
+ .../ccch1mneyyy/dsh_app/phone/PhoneAndroidShell.kt |   14 +-
+ .../ccch1mneyyy/dsh_app/phone/PhoneBackGuard.kt    |  146 +
+ .../ccch1mneyyy/dsh_app/phone/PhoneContracts.kt    |  265 ++
+ .../ccch1mneyyy/dsh_app/phone/PhoneControl.kt      |  113 +-
+ .../github/ccch1mneyyy/dsh_app/phone/PhoneCore.kt  |  571 +++-
+ .../ccch1mneyyy/dsh_app/phone/PhonePlugin.kt       |  618 +++++
+ .../ccch1mneyyy/dsh_app/phone/PhoneTaskSessions.kt |   49 +-
+ .../github/ccch1mneyyy/dsh_app/phone/PhoneTasks.kt |   85 +-
+ .../ccch1mneyyy/dsh_app/phone/PhoneToolCatalog.kt  |   36 +-
+ .../github/ccch1mneyyy/dsh_app/phone/SafetyGate.kt |    4 +-
+ .../dsh_app/phone/SingleInstanceApps.kt            |   27 +
+ .../ccch1mneyyy/dsh_app/phone/SystemActions.kt     |    7 +-
+ .../dsh_app/phone/a11y/ControlOverlay.kt           |   11 +-
+ .../dsh_app/phone/a11y/PhoneA11yService.kt         |   20 +
+ .../dsh_app/phone/background/BackgroundControl.kt  |  231 +-
+ .../phone/background/BackgroundCoordinates.kt      |    2 +
+ .../dsh_app/phone/background/BackgroundDisplay.kt  |  376 ++-
+ .../phone/background/BackgroundDisplayIo.kt        |   10 +-
+ .../dsh_app/phone/background/BackgroundPolicy.kt   |    8 +-
+ .../dsh_app/phone/background/BackgroundPreview.kt  |   10 +-
+ .../phone/background/BackgroundProbeActivity.kt    |    4 +-
+ .../dsh_app/phone/background/BackgroundTaskSlot.kt |    7 +
+ .../dsh_app/phone/background/BackgroundTree.kt     |    4 +-
+ .../dsh_app/phone/background/CoalescedScan.kt      |   31 +
+ .../dsh_app/phone/background/DisplayAwake.kt       |  154 ++
+ .../dsh_app/phone/background/DisplayHandles.kt     |   31 +
+ .../dsh_app/phone/background/DisplayOrientation.kt |   37 +
+ .../phone/background/DisplayOrientationKeeper.kt   |  125 +
+ .../phone/background/DisplayOrientationWatch.kt    |  100 +
+ .../dsh_app/phone/background/KeptTasks.kt          |   39 +
+ .../dsh_app/phone/background/OwnerScopes.kt        |   17 +-
+ .../phone/background/PrivilegedDisplayCore.kt      | 1315 ++++++++-
+ .../phone/background/PrivilegedDisplayEntry.kt     |   19 +-
+ .../phone/background/PrivilegedDisplayHost.kt      |   10 +-
+ .../dsh_app/phone/background/PrivilegedProtocol.kt |  108 +-
+ .../dsh_app/phone/background/VscreenSession.kt     |   39 +
+ .../dsh_app/phone/skills/PhoneSkillDraft.kt        |    2 +-
+ .../dsh_app/phone/vscreen/CloseActionReceiver.kt   |   79 +
+ .../dsh_app/phone/vscreen/DisplayFrameGeometry.kt  |   21 +
+ .../ccch1mneyyy/dsh_app/phone/vscreen/FrameMath.kt |   60 +
+ .../dsh_app/phone/vscreen/FrontExitPrompt.kt       |  270 ++
+ .../dsh_app/phone/vscreen/PresentationHost.kt      |   69 +
+ .../dsh_app/phone/vscreen/SwitchPromptOverlay.kt   |  142 +
+ .../ccch1mneyyy/dsh_app/phone/vscreen/TaskMover.kt |  152 ++
+ .../dsh_app/phone/vscreen/TransferBall.kt          |  500 ++++
+ .../dsh_app/phone/vscreen/VirtualScreenOverlay.kt  | 2810 ++++++++++++++++++++
+ .../dsh_app/phone/vscreen/VirtualScreenPlugin.kt   |  249 ++
+ .../ccch1mneyyy/dsh_app/phone/vscreen/VscreenUi.kt |  166 ++
+ .../ccch1mneyyy/dsh_app/runtime/GuestSetup.kt      |   47 +-
+ .../ccch1mneyyy/dsh_app/shortcuts/EntryActivity.kt |    3 +
+ .../dsh_app/shortcuts/ShortcutsPlugin.kt           |   13 +-
+ .../ccch1mneyyy/dsh_app/speech/CallCapture.kt      |    6 +-
+ .../ccch1mneyyy/dsh_app/wake/WakeBootReceiver.kt   |   29 +
+ .../github/ccch1mneyyy/dsh_app/wake/WakeCapture.kt |  172 ++
+ .../github/ccch1mneyyy/dsh_app/wake/WakeTrace.kt   |   99 +
+ .../ccch1mneyyy/dsh_app/wake/WakeWordPlugin.kt     |  131 +
+ .../ccch1mneyyy/dsh_app/wake/WakeWordService.kt    |  216 ++
+ .../app/src/main/res/values-zh/i18n_strings.xml    |   20 +-
+ .../src/main/res/values-zh/phone_a11y_strings.xml  |    6 +-
+ .../values-zh/phone_background_setup_strings.xml   |    2 +-
+ .../src/main/res/values-zh/phone_task_strings.xml  |    2 +-
+ .../app/src/main/res/values/i18n_strings.xml       |   10 +
+ .../main/res/xml/phone_accessibility_service.xml   |    3 +-
+ app/android/app/src/main/res/xml/shortcuts.xml     |   18 +-
+ .../dsh_app/phone/background/DisplayAwakeTest.kt   |  105 +
+ .../phone/background/DisplayOrientationTest.kt     |   48 +
+ .../phone/vscreen/DisplayFrameGeometryTest.kt      |   39 +
+ .../dsh_app/phone/vscreen/FrameMathTest.kt         |   45 +
+ app/assets/kws/LICENSE.txt                         |   20 +
+ app/assets/kws/NOTICE.txt                          |    4 +
+ app/assets/kws/decoder.int8.onnx                   |  Bin 0 -> 181069 bytes
+ app/assets/kws/encoder.int8.onnx                   |  Bin 0 -> 4777666 bytes
+ app/assets/kws/joiner.int8.onnx                    |  Bin 0 -> 65242 bytes
+ app/assets/kws/tokens.txt                          |  227 ++
+ app/lib/app.dart                                   |    6 +
+ app/lib/app_navigator.dart                         |    4 +
+ app/lib/l10n/app_en.arb                            |   27 +
+ app/lib/l10n/app_zh.arb                            |   51 +-
+ app/lib/l10n/gen/app_localizations.dart            |  186 +-
+ app/lib/l10n/gen/app_localizations_en.dart         |   84 +
+ app/lib/l10n/gen/app_localizations_zh.dart         |  105 +-
+ app/lib/l10n/parts/android_shell_en.arb            |    3 +-
+ app/lib/l10n/parts/android_shell_zh.arb            |    3 +-
+ app/lib/l10n/parts/phone_en.arb                    |    9 +-
+ app/lib/l10n/parts/phone_zh.arb                    |   33 +-
+ app/lib/l10n/parts/speech_en.arb                   |   21 +-
+ app/lib/l10n/parts/speech_zh.arb                   |   21 +-
+ app/lib/links/launcher_entries.dart                |    7 +-
+ app/lib/phone/phone_channel.dart                   |  135 +-
+ app/lib/phone/virtual_screen_window.dart           |  144 +
+ app/lib/speech/call/active_call.dart               |  110 +
+ app/lib/speech/call/chat_call.dart                 |    3 +
+ app/lib/speech/call/thinking_cue.dart              |    3 +-
+ app/lib/speech/call/voice_call.dart                |   57 +-
+ app/lib/speech/wake_reply.dart                     |  175 ++
+ app/lib/state/app_info.dart                        |    5 +
+ app/lib/state/update_state.dart                    |   19 +-
+ app/lib/state/virtual_screen_state.dart            |  507 ++++
+ app/lib/ui/chat/chat_rows.dart                     |    2 +
+ app/lib/ui/chat/chat_screen.dart                   |  108 +-
+ app/lib/ui/chat/media/media_format.dart            |   16 +-
+ app/lib/ui/phone/android_shell_page.dart           |   33 +
+ app/lib/ui/phone/background_preview.dart           |  264 +-
+ app/lib/ui/phone/dnd_mode_page.dart                |  214 +-
+ app/lib/ui/phone/phone_control_screen.dart         |    1 +
+ app/lib/ui/phone/phone_task_card.dart              |  430 +++
+ app/lib/ui/phone/virtual_screen_host.dart          |  397 +++
+ app/lib/ui/phone/virtual_screen_page.dart          |  114 +
+ app/lib/ui/phone/virtual_screen_surface.dart       |  286 ++
+ app/lib/ui/settings/settings_screen.dart           |   22 +-
+ app/lib/ui/settings/voice_settings_page.dart       |  151 ++
+ app/lib/ui/shell/call_overlay_host.dart            |   55 +
+ app/lib/ui/shell/home_shell.dart                   |    7 +
+ app/lib/ui/shell/system_entry_host.dart            |   44 +
+ app/lib/ui/speech/voice_call_page.dart             |  307 ++-
+ app/lib/ui/theme/app_icons.dart                    |    4 +
+ app/lib/ui/update/update_tiles.dart                |    5 +-
+ app/lib/voice/wake_keywords.dart                   |   50 +
+ app/lib/voice/wake_settings.dart                   |  131 +
+ app/lib/voice/wake_word.dart                       |  856 ++++++
+ app/pubspec.lock                                   |    8 +
+ app/pubspec.yaml                                   |    4 +
+ docs/wake-word.md                                  |  107 +
+ dsh-go-wake.patch                                  | 2065 ++++++++++++++
+ tooling/build-wake-apk.sh                          |   68 +
+ 134 files changed, 18180 insertions(+), 587 deletions(-)
 
 diff --git a/.gitattributes b/.gitattributes
 index 52e3e08a..3e877c7e 100644
@@ -1234,7 +1179,7 @@ index 12b600d4..63d16e02 100644
  
      override fun onDetachedFromActivityForConfigChanges() = onDetachedFromActivity()
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneAndroidShell.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneAndroidShell.kt
-index bb9c8031..aa39cdcd 100644
+index bb9c8031..5fdf99d1 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneAndroidShell.kt
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneAndroidShell.kt
 @@ -14,6 +14,14 @@ object PhoneAndroidShell {
@@ -1252,15 +1197,20 @@ index bb9c8031..aa39cdcd 100644
      data class Request(val command: String, val timeoutMs: Long)
  
      fun parse(args: Args): Request? {
-@@ -59,7 +67,7 @@ object PhoneAndroidShell {
+@@ -59,8 +67,12 @@ object PhoneAndroidShell {
          return executor.execute(owner.taskId, request.command, request.timeoutMs, ::live) { backend, uid ->
              if (!live()) Decision.STOP
              else if (!(backend == "adb" && uid == 2000 || backend == "shizuku" && uid in setOf(0, 2000))) Decision.DENY
 -            else if (tasks.hasGrant(null, GRANT)) Decision.ALLOW_ONCE
 +            else if (alwaysAllow || tasks.hasGrant(null, GRANT)) Decision.ALLOW_ONCE
              else {
++                // 【4i】诊断：走到弹卡片这一步，记下闸门三件套（alwaysAllow/后端/uid），
++                // 与 PhoneControl 那条 "shell: no-confirm prefs=…" 拼起来就能定案。
++                io.github.ccch1mneyyy.dsh_app.wake.WakeTrace.log(
++                    "shell: confirm card alwaysAllow=$alwaysAllow backend=$backend uid=$uid cmd=${request.command.take(40)}")
                  val prompt = ConfirmRequest(
                      ui.get("phone_shell_confirm",
+                         "执行 Android 系统命令（%1\$s，UID %2\$s）。这可能修改系统或应用数据；屏幕操作的免确认不适用：\n\n%3\$s",
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneBackGuard.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneBackGuard.kt
 new file mode 100644
 index 00000000..175e47b7
@@ -1704,7 +1654,7 @@ index 612f94d1..4debf107 100644
      @Volatile var overlayGate: UserGate? = null
      @Volatile var notificationGate: UserGate? = null
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneControl.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneControl.kt
-index 2fc7cd59..ec152c95 100644
+index 2fc7cd59..ba3140ee 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneControl.kt
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneControl.kt
 @@ -201,6 +201,8 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
@@ -1778,7 +1728,7 @@ index 2fc7cd59..ec152c95 100644
      }
  
      override fun a11yState(): A11yState = when {
-@@ -999,15 +1020,93 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
+@@ -999,15 +1020,97 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
          else -> A11yState.DISABLED
      }
  
@@ -1868,8 +1818,12 @@ index 2fc7cd59..ec152c95 100644
 +    }
 +
      override fun androidShell(): PhoneShellExecutor = PhoneShellExecutor { ownerId, command, timeoutMs, live, confirm ->
-+        PhoneAndroidShell.alwaysAllow = app.getSharedPreferences("FlutterSharedPreferences", Context.MODE_PRIVATE)
++        // 【4i】诊断：免确认开关实际读到的值。真机"逐条弹卡片"时凭这条判断是值没存上还是走了别的闸门。
++        val noConfirm = app.getSharedPreferences("FlutterSharedPreferences", Context.MODE_PRIVATE)
 +            .getBoolean("flutter.androidShellNoConfirm", false)
++        PhoneAndroidShell.alwaysAllow = noConfirm
++        io.github.ccch1mneyyy.dsh_app.wake.WakeTrace.log(
++            "shell: no-confirm prefs=$noConfirm cmd=${command.take(40)}")
          shell.execute(ownerId, command, timeoutMs, live, confirm)
      }
  
@@ -3606,7 +3560,7 @@ index a09015e7..848fd2da 100644
          /** No confirmation surface is reachable, so this one action did not run. */
          // l10n:keep agent no-gate protocol
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneToolCatalog.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneToolCatalog.kt
-index cbfb0de3..5a59c61f 100644
+index cbfb0de3..2713b173 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneToolCatalog.kt
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneToolCatalog.kt
 @@ -24,6 +24,7 @@ object PhoneToolCatalog {
@@ -3656,7 +3610,7 @@ index cbfb0de3..5a59c61f 100644
              SCREEN,
              // l10n:keep agent tool catalog
 -            "读当前屏幕：每行一个元素，[编号] 只在本屏有效。detail:true 附坐标，结果可能截断；image:true 请求截图，安全或能力限制时可能不附图（主屏可带编号，后台图不带编号）；background:true 读后台屏。元素少或为空不表示页面安全；本机文字识别不可用时按回话提示处理，无法核对目标就 handoff。",
-+            "读当前屏幕：每行一个元素，[编号] 只在本屏有效。detail:true 附坐标，结果可能截断；image:true 请求截图，安全或能力限制时可能不附图（主屏可带编号，后台图不带编号）；读哪块屏由系统按设置决定，**你不需要也不许自己决定**。元素少或为空不表示页面安全；本机文字识别不可用时按回话提示处理，无法核对目标就 handoff。",
++            "读当前屏幕：每行一个元素，[编号] 只在本屏有效。detail:true 附坐标，结果可能截断；image:true 请求截图，安全或能力限制时可能不附图（主屏可带编号，后台图不带编号）；读哪块屏由系统按设置决定，**你不需要也不许自己决定**。元素少或为空不表示页面安全；本机文字识别不可用时按回话提示处理，无法核对目标就 handoff。**读不到文字 ≠ 没打开**：网页、银行等页面常是敏感视图或网页树，读屏 0 项不代表应用没落屏；打开是否成功以打开回包为准，不要据此切换屏幕或重新打开。",
              linkedMapOf(
                  // l10n:keep agent tool catalog
                  "detail" to bool("附上已返回元素的坐标，不保证完整页面"),
@@ -8595,10 +8549,10 @@ index 00000000..abe0de2c
 +}
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenOverlay.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenOverlay.kt
 new file mode 100644
-index 00000000..8b2afff5
+index 00000000..835ad836
 --- /dev/null
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenOverlay.kt
-@@ -0,0 +1,2789 @@
+@@ -0,0 +1,2810 @@
 +package io.github.ccch1mneyyy.dsh_app.phone.vscreen
 +
 +import io.github.ccch1mneyyy.dsh_app.phone.PhoneRegistry
@@ -8809,6 +8763,8 @@ index 00000000..8b2afff5
 +    private var appReaderGen = -1
 +    /** 直读帧生效时，Dart 那条 preview 轮询必须停（两套帧源会打架）。 */
 +    @Volatile private var appReaderActive = false
++    /** 【4i】重建进行中：并发调用（点条/👁/开屏钩子）只让一个在跑，防 stop→重建 反复循环。 */
++    @Volatile private var appReaderStarting = false
 +
 +    /** 直连接上后留给应用画第一帧的时刻；之前窗口靠占位文字撑住可见性。 */
 +    private var paintedAt = 0L
@@ -9360,9 +9316,15 @@ index 00000000..8b2afff5
 +    }
 +
 +    private fun startAppReader(app: Context, gen: Int) {
++        // 【4i】已活或已在重建就不重复起：点条/👁/开屏钩子并发调用曾让 reader 反复
++        // stop→重建（日志里同一秒 gen=4/5 两条 attached），重建中的 attach 又被下一次
++        // stop 打断，窗口掉进"每次点条 1.8 秒"的循环。
++        if (appReaderActive || appReaderStarting) return
++        appReaderStarting = true
 +        stopAppReader()
 +        val id = taskId
 +        worker.execute {
++            try {
 +            val control = runCatching {
 +                io.github.ccch1mneyyy.dsh_app.phone.background.BackgroundControl.get(app)
 +            }.getOrNull()
@@ -9373,9 +9335,14 @@ index 00000000..8b2afff5
 +            var target = if (id > 0) control.previewTarget(id) else null
 +            target = target ?: control.anyPreviewTarget()
 +            var wait = 0
-+            while (target == null && gen == surfaceGen && wait < 12) {
++            // 【4i】12×150ms=1.8s 的白等降成 3×150ms：viaOwner 直挂已被 4ao 证明可靠
++            // （00:38:51/00:39:00/00:39:04 慢路全是被它救回来的），拿不到 target 就早点走它。
++            while (target == null && gen == surfaceGen && wait < 3) {
 +                Thread.sleep(150); wait++
 +                target = control.previewTarget(id) ?: control.anyPreviewTarget()
++            }
++            if (target == null) {
++                WakeTrace.log("frame: appReader viaOwner after ${wait} preview waits gen=$gen")
 +            }
 +            // 【4ao】没有 previewTarget 不再直接放弃：改走"按 owner 直挂"（破 B9 死循环）。
 +            val previewTarget = target
@@ -9411,8 +9378,12 @@ index 00000000..8b2afff5
 +                WakeTrace.log("frame: appReader alloc failed ${dw}x$dh")
 +                return@execute
 +            }
-+            // 2) 挂上去
-+            val reply = attach(ir.surface)
++            // 2) 挂上去；【4i】一次失败多半是 scopeBusy 还没让开，等 400ms 再试一轮，仍失败才放弃。
++            var reply = attach(ir.surface)
++            if (reply["ok"] != true && gen == surfaceGen) {
++                Thread.sleep(400)
++                reply = attach(ir.surface)
++            }
 +            if (reply["ok"] != true) {
 +                WakeTrace.log("frame: appReader attach failed $reply")
 +                runCatching { ir.close() }
@@ -9466,6 +9437,10 @@ index 00000000..8b2afff5
 +            displayW = dw; displayH = dh
 +            if (did > 0) displayId = did
 +            WakeTrace.log("frame: appReader attached ${dw}x$dh display=$did task=${previewTarget?.taskId ?: 0} gen=$gen via=${if (viaOwner) "owner" else "preview"}")
++            } finally {
++                // 【4i】谁置位谁清除：重建无论成败都放行下一次（保活靠 show/👁/开屏钩子再触发）。
++                appReaderStarting = false
++            }
 +        }
 +    }
 +
@@ -94791,4 +94766,3 @@ index 00000000..1d7f139d
 +printf '装之前: 与官方版签名不同，需要先卸载官方版（本地数据会丢，先备份）。\n'
 -- 
 2.43.0
-
