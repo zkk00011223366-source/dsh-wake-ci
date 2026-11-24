@@ -1,12 +1,12 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: ci <ci@local>
-Date: Wed, 25 Nov 2026 00:51:58 +0800
+Date: Wed, 25 Nov 2026 00:58:52 +0800
 Subject: [PATCH] b: scene4i
 MIME-Version: 1.0
 Content-Type: text/plain; charset=UTF-8
 Content-Transfer-Encoding: 8bit
 
-4i: reader 保活（点条不再撞 1.84s）+ shell 免确认诊断日志 + 读屏说明书防误判
+4i: reader 保活（点条不再撞 1.84s）+ shell 免确认诊断日志（值变化才打，不刷屏）+ 读屏说明书防误判
 
 ---
  .gitattributes                                     |    3 +
@@ -18,10 +18,10 @@ Content-Transfer-Encoding: 8bit
  .../github/ccch1mneyyy/dsh_app/call/CallOverlay.kt |  369 +++
  .../ccch1mneyyy/dsh_app/call/CallOverlayPlugin.kt  |   70 +
  .../ccch1mneyyy/dsh_app/notify/NotifyPlugin.kt     |    5 +-
- .../ccch1mneyyy/dsh_app/phone/PhoneAndroidShell.kt |   14 +-
+ .../ccch1mneyyy/dsh_app/phone/PhoneAndroidShell.kt |   18 +-
  .../ccch1mneyyy/dsh_app/phone/PhoneBackGuard.kt    |  146 +
  .../ccch1mneyyy/dsh_app/phone/PhoneContracts.kt    |  265 ++
- .../ccch1mneyyy/dsh_app/phone/PhoneControl.kt      |  113 +-
+ .../ccch1mneyyy/dsh_app/phone/PhoneControl.kt      |  117 +-
  .../github/ccch1mneyyy/dsh_app/phone/PhoneCore.kt  |  571 +++-
  .../ccch1mneyyy/dsh_app/phone/PhonePlugin.kt       |  618 +++++
  .../ccch1mneyyy/dsh_app/phone/PhoneTaskSessions.kt |   49 +-
@@ -143,7 +143,7 @@ Content-Transfer-Encoding: 8bit
  docs/wake-word.md                                  |  107 +
  dsh-go-wake.patch                                  | 2065 ++++++++++++++
  tooling/build-wake-apk.sh                          |   68 +
- 134 files changed, 18180 insertions(+), 587 deletions(-)
+ 134 files changed, 18188 insertions(+), 587 deletions(-)
 
 diff --git a/.gitattributes b/.gitattributes
 index 52e3e08a..3e877c7e 100644
@@ -1179,10 +1179,10 @@ index 12b600d4..63d16e02 100644
  
      override fun onDetachedFromActivityForConfigChanges() = onDetachedFromActivity()
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneAndroidShell.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneAndroidShell.kt
-index bb9c8031..5fdf99d1 100644
+index bb9c8031..1a9f4d29 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneAndroidShell.kt
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneAndroidShell.kt
-@@ -14,6 +14,14 @@ object PhoneAndroidShell {
+@@ -14,6 +14,18 @@ object PhoneAndroidShell {
  
      /** 本轮允许 key for shell commands (they have no target app). */
      const val GRANT = "android-shell"
@@ -1194,10 +1194,14 @@ index bb9c8031..5fdf99d1 100644
 +     */
 +    @Volatile
 +    var alwaysAllow: Boolean = false
++
++    /** 【4i】诊断：上一次打出日志的免确认值，变化才再打（高频注入命令不刷屏）。 */
++    @Volatile
++    var lastLoggedNoConfirm: Boolean? = null
      data class Request(val command: String, val timeoutMs: Long)
  
      fun parse(args: Args): Request? {
-@@ -59,8 +67,12 @@ object PhoneAndroidShell {
+@@ -59,8 +71,12 @@ object PhoneAndroidShell {
          return executor.execute(owner.taskId, request.command, request.timeoutMs, ::live) { backend, uid ->
              if (!live()) Decision.STOP
              else if (!(backend == "adb" && uid == 2000 || backend == "shizuku" && uid in setOf(0, 2000))) Decision.DENY
@@ -1207,7 +1211,7 @@ index bb9c8031..5fdf99d1 100644
 +                // 【4i】诊断：走到弹卡片这一步，记下闸门三件套（alwaysAllow/后端/uid），
 +                // 与 PhoneControl 那条 "shell: no-confirm prefs=…" 拼起来就能定案。
 +                io.github.ccch1mneyyy.dsh_app.wake.WakeTrace.log(
-+                    "shell: confirm card alwaysAllow=$alwaysAllow backend=$backend uid=$uid cmd=${request.command.take(40)}")
++                    "shell: confirm card alwaysAllow=$alwaysAllow backend=$backend uid=$uid cmd=${request.command.take(40).replace('\n', ' ')}")
                  val prompt = ConfirmRequest(
                      ui.get("phone_shell_confirm",
                          "执行 Android 系统命令（%1\$s，UID %2\$s）。这可能修改系统或应用数据；屏幕操作的免确认不适用：\n\n%3\$s",
@@ -1654,7 +1658,7 @@ index 612f94d1..4debf107 100644
      @Volatile var overlayGate: UserGate? = null
      @Volatile var notificationGate: UserGate? = null
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneControl.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneControl.kt
-index 2fc7cd59..ba3140ee 100644
+index 2fc7cd59..caaf4a64 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneControl.kt
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneControl.kt
 @@ -201,6 +201,8 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
@@ -1728,7 +1732,7 @@ index 2fc7cd59..ba3140ee 100644
      }
  
      override fun a11yState(): A11yState = when {
-@@ -999,15 +1020,97 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
+@@ -999,15 +1020,101 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
          else -> A11yState.DISABLED
      }
  
@@ -1818,12 +1822,16 @@ index 2fc7cd59..ba3140ee 100644
 +    }
 +
      override fun androidShell(): PhoneShellExecutor = PhoneShellExecutor { ownerId, command, timeoutMs, live, confirm ->
-+        // 【4i】诊断：免确认开关实际读到的值。真机"逐条弹卡片"时凭这条判断是值没存上还是走了别的闸门。
++        // 【4i】诊断：免确认开关实际读到的值。只在值变化时打一次——虚拟屏的屏幕注入
++        // 也走这条 lambda（每点一下一条命令），每次都打会把日志轮转冲掉。
 +        val noConfirm = app.getSharedPreferences("FlutterSharedPreferences", Context.MODE_PRIVATE)
 +            .getBoolean("flutter.androidShellNoConfirm", false)
 +        PhoneAndroidShell.alwaysAllow = noConfirm
-+        io.github.ccch1mneyyy.dsh_app.wake.WakeTrace.log(
-+            "shell: no-confirm prefs=$noConfirm cmd=${command.take(40)}")
++        if (PhoneAndroidShell.lastLoggedNoConfirm != noConfirm) {
++            PhoneAndroidShell.lastLoggedNoConfirm = noConfirm
++            io.github.ccch1mneyyy.dsh_app.wake.WakeTrace.log(
++                "shell: no-confirm prefs=$noConfirm cmd=${command.take(40).replace('\n', ' ')}")
++        }
          shell.execute(ownerId, command, timeoutMs, live, confirm)
      }
  
