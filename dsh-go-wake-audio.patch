@@ -1,7 +1,7 @@
-From 757acfa0ee978b9718e5ed44437833fc7e649579 Mon Sep 17 00:00:00 2001
+From 66b0f165e15adbd7ffb3d3de69dd6b3b430bc1c0 Mon Sep 17 00:00:00 2001
 From: ci <ci@local>
-Date: Tue, 24 Nov 2026 11:01:11 +0800
-Subject: [PATCH] pb: scene4br
+Date: Tue, 24 Nov 2026 11:12:44 +0800
+Subject: [PATCH] pb: scene4bs
 
 ---
  .gitattributes                                |    3 +
@@ -29,7 +29,8 @@ Subject: [PATCH] pb: scene4br
  .../dsh_app/phone/a11y/PhoneA11yService.kt    |   20 +
  .../phone/background/BackgroundControl.kt     |  183 +-
  .../phone/background/BackgroundCoordinates.kt |    2 +
- .../phone/background/BackgroundDisplay.kt     |  363 ++-
+ .../phone/background/BackgroundDisplay.kt     |  369 ++-
+ .../phone/background/BackgroundDisplayIo.kt   |    6 +
  .../phone/background/BackgroundPolicy.kt      |    8 +-
  .../phone/background/BackgroundPreview.kt     |   10 +-
  .../background/BackgroundProbeActivity.kt     |    4 +-
@@ -134,7 +135,7 @@ Subject: [PATCH] pb: scene4br
  docs/wake-word.md                             |  107 +
  dsh-go-wake.patch                             | 2065 ++++++++++++
  tooling/build-wake-apk.sh                     |   68 +
- 130 files changed, 17730 insertions(+), 573 deletions(-)
+ 131 files changed, 17742 insertions(+), 573 deletions(-)
  create mode 100644 .github/workflows/wake-apk.yml
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallForegroundService.kt
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallOverlay.kt
@@ -3884,7 +3885,7 @@ index f6b83a0a..2eb59f32 100644
          val result = receipt.takeIf { accepted && screen == screenId }
          clear()
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/BackgroundDisplay.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/BackgroundDisplay.kt
-index bc1810a3..0010b58d 100644
+index bc1810a3..7a185c97 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/BackgroundDisplay.kt
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/BackgroundDisplay.kt
 @@ -3,6 +3,7 @@ package io.github.ccch1mneyyy.dsh_app.phone.background
@@ -3944,12 +3945,18 @@ index bc1810a3..0010b58d 100644
      private var coordinateSupported = false
      private var afterVisualSupported = false
      private var navigationSupported = false
-@@ -70,14 +99,82 @@ class BackgroundDisplay internal constructor(
+@@ -70,14 +99,88 @@ class BackgroundDisplay internal constructor(
      override fun availability(): Availability {
          if (Build.VERSION.SDK_INT < BackgroundPolicy.MIN_SDK)
              // l10n:keep agent screen protocol
 -            return Availability(false, "不打扰模式需要 Android 14 或更高版本")
 +            return Availability(false, "虚拟屏需要 Android 14 或更高版本")
++        // 【4bs】先问"这块资源还是不是活的"：release/seal 过就别再复用。
++        // 否则 driverForTask 的 alive 判断会通过，复用一条已关闭的驱动 → 每次 open 都
++        // 抛 Background resource admission was stopped，只有强停 App 才恢复。
++        if (resourceIo.stopped())
++            // l10n:keep agent screen protocol
++            return Availability(false, "虚拟屏已释放，需要重新申请")
          val channel = resourceIo.peer() ?: channelProvider()
          if (channel == null || !channel.alive())
              // l10n:keep agent screen protocol
@@ -4029,7 +4036,7 @@ index bc1810a3..0010b58d 100644
      private fun channel(): PrivilegedChannel =
          // l10n:keep agent screen protocol
          resourceIo.peer() ?: channelProvider() ?: throw IllegalStateException("背景屏通道未就绪")
-@@ -99,8 +196,13 @@ class BackgroundDisplay internal constructor(
+@@ -99,8 +202,13 @@ class BackgroundDisplay internal constructor(
                  putInt(Proto.RELEASE_RECEIPT, 1)
                  putString(Proto.OWNER, ownerToken)
                  putTarget(this, target)
@@ -4044,7 +4051,7 @@ index bc1810a3..0010b58d 100644
                  putBoolean(Proto.LOCAL_VISUAL, true)
                  putInt(Proto.WANT_IMAGE, 0)
              }
-@@ -126,7 +228,36 @@ class BackgroundDisplay internal constructor(
+@@ -126,7 +234,36 @@ class BackgroundDisplay internal constructor(
                  }) { Reasons.of("deviceUnavailable") }
              }
              onResourceReady(active)
@@ -4082,7 +4089,7 @@ index bc1810a3..0010b58d 100644
              result.copy(backgroundOpenConfirmed = result.ok && TargetIdentity.backgroundOpenConfirmed(target,
                  response.get(Proto.OK), response.get(Proto.BACKGROUND_OPEN_EVIDENCE), response.get(Proto.DISPLAY_ID),
                  response.get(Proto.TARGET_IDENTITY_VERSION), response.get(Proto.PKG), response.get(Proto.TARGET_UID)))
-@@ -165,6 +296,29 @@ class BackgroundDisplay internal constructor(
+@@ -165,6 +302,29 @@ class BackgroundDisplay internal constructor(
              throw e
          }
          requireObservation(response.getBoolean(Proto.OK), response.getString(Proto.ERROR), response.getString(Proto.ERROR_DETAIL))
@@ -4112,7 +4119,7 @@ index bc1810a3..0010b58d 100644
          val shown = shownApp(response) ?: return emptySnapshot(response)
          // Local OCR follows the app actually read, under that app's own permission.
          val local = if (requestLocalText) readLocalText(response, shown, ocrEpoch, started) else null
-@@ -345,7 +499,7 @@ class BackgroundDisplay internal constructor(
+@@ -345,7 +505,7 @@ class BackgroundDisplay internal constructor(
          val peer = resourceIo.peer()
          if (step.relation != relation || target == null || peer == null || !navigationSupported ||
              target.packageName != step.app.packageName || target.uid != step.app.uid || !existingReplayTarget(target))
@@ -4121,7 +4128,7 @@ index bc1810a3..0010b58d 100644
          val request = navigationRequest(step, null)
          val parsed = checkNotNull(BackgroundNavigationProtocol.request(request.keySet(), request::get))
          val response = dispatch({ navigationCurrent(target, peer) }) {
-@@ -449,10 +603,10 @@ class BackgroundDisplay internal constructor(
+@@ -449,10 +609,10 @@ class BackgroundDisplay internal constructor(
          val started = if (afterVisualSupported) SystemClock.uptimeMillis() else 0L
          val epoch = localOcr?.enabledEpoch()
          // l10n:keep agent screen protocol
@@ -4134,7 +4141,7 @@ index bc1810a3..0010b58d 100644
          }
          // Explicit element ids are checked by PhoneCore before perform; collect owns its internal scrolls.
          if (action is PhoneAction.Scroll && action.elementId == null && action.screenId != lastScreenId) {
-@@ -502,7 +656,150 @@ class BackgroundDisplay internal constructor(
+@@ -502,7 +662,150 @@ class BackgroundDisplay internal constructor(
              dispatch(allowed) { OwnerScopeProtocol.execute(channel(), ownerToken, request, it) }
          } catch (error: Exception) { clearSnapshot(); throw error }
              ?: return ActionResult(false, PhoneTasks.STOPPED_MESSAGE)
@@ -4286,7 +4293,7 @@ index bc1810a3..0010b58d 100644
      }
  
      /**
-@@ -573,8 +870,44 @@ class BackgroundDisplay internal constructor(
+@@ -573,8 +876,44 @@ class BackgroundDisplay internal constructor(
  
      override fun foregroundPackage(): String? = currentTarget?.packageName
  
@@ -4331,7 +4338,7 @@ index bc1810a3..0010b58d 100644
          val acknowledged = try {
              resourceIo.release { pinned -> OwnerScopeProtocol.release(pinned, ownerToken) }
          } catch (_: Exception) { false }
-@@ -659,7 +992,7 @@ class BackgroundDisplay internal constructor(
+@@ -659,7 +998,7 @@ class BackgroundDisplay internal constructor(
              clearSnapshot()
              val now = response.getString(Proto.FG_PKG)
              // l10n:keep agent target identity
@@ -4340,7 +4347,7 @@ index bc1810a3..0010b58d 100644
              return ActionResult(false, Reasons.withDetail(message, detail), staleSnapshot = true)
          }
          if (!ok) clearSnapshot()
-@@ -693,13 +1026,13 @@ class BackgroundDisplay internal constructor(
+@@ -693,13 +1032,13 @@ class BackgroundDisplay internal constructor(
          if (response.getBoolean(Proto.SECURE)) {
              lastScreenId = id; lastElements = emptyList(); previousLabels = emptySet()
              // l10n:keep agent screen protocol
@@ -4356,7 +4363,7 @@ index bc1810a3..0010b58d 100644
              return@commitObservation ScreenSnapshot(id, text, appLabel, pkg, secure = false, poorTree = true, readPackages = setOf(pkg))
          }
          val elements = buildElements(response, markNew)
-@@ -789,14 +1122,14 @@ class BackgroundDisplay internal constructor(
+@@ -789,14 +1128,14 @@ class BackgroundDisplay internal constructor(
          if (opened.packageName == shown.packageName) return ""
          val name = appLabel?.let { "「$it」（${shown.packageName}）" } ?: shown.packageName
          // l10n:keep agent target identity
@@ -4373,7 +4380,7 @@ index bc1810a3..0010b58d 100644
          // l10n:keep agent target identity
          "closed" -> "；${openedTarget?.packageName} 已经退出，需要时重新打开"
          else -> ""
-@@ -810,7 +1143,7 @@ class BackgroundDisplay internal constructor(
+@@ -810,7 +1149,7 @@ class BackgroundDisplay internal constructor(
          val id = "b${++counter}"
          lastScreenId = id; lastElements = emptyList(); previousLabels = emptySet()
          // l10n:keep agent target identity
@@ -4382,7 +4389,7 @@ index bc1810a3..0010b58d 100644
              // l10n:keep agent target identity
              "。可以用 open 重新打开应用。", null, null)
      }
-@@ -821,7 +1154,7 @@ class BackgroundDisplay internal constructor(
+@@ -821,7 +1160,7 @@ class BackgroundDisplay internal constructor(
          val id = "b${++counter}"
          lastScreenId = id; lastElements = emptyList()
          // l10n:keep agent screen protocol
@@ -4391,6 +4398,23 @@ index bc1810a3..0010b58d 100644
      }
      companion object {
          // l10n:keep agent coordinate protocol
+diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/BackgroundDisplayIo.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/BackgroundDisplayIo.kt
+index 0c09729b..fcff0c9f 100644
+--- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/BackgroundDisplayIo.kt
++++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/BackgroundDisplayIo.kt
+@@ -50,6 +50,12 @@ internal class BackgroundDisplayIo<C : Any> {
+ 
+     fun peer(): C? = synchronized(lock) { pinned }
+ 
++    /** 【4bs】这块资源是不是已经关了（release/seal 过，或首次申请被拒）。
++     *  关了以后任何 call/checkDispatch 都会抛 "admission was stopped"，但 availability() 以前只问
++     *  通道活不活 → 上层误以为"这块屏还在"，继续复用它 → 每次 open 都报同一条错，
++     *  只能强停 App 才好（真机 11:05~11:09 连续 10 次 Background resource admission was stopped）。*/
++    fun stopped(): Boolean = synchronized(lock) { releaseStarted || notAdmitted }
++
+     fun previewAvailable(peer: C): Boolean = synchronized(lock) { !releaseStarted && pinned === peer }
+     fun previewClosed(): Boolean = synchronized(lock) { releaseStarted }
+ 
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/BackgroundPolicy.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/BackgroundPolicy.kt
 index f49daeeb..86f536de 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/BackgroundPolicy.kt
