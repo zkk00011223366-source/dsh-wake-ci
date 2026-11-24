@@ -1,12 +1,12 @@
-From cb08f343f97747cc5f44796e3563b6c737286b47 Mon Sep 17 00:00:00 2001
+From 84d4b3732207ee3609aedc1d414ebc862c512b4c Mon Sep 17 00:00:00 2001
 From: ci <ci@local>
-Date: Tue, 24 Nov 2026 21:10:53 +0800
+Date: Tue, 24 Nov 2026 21:18:54 +0800
 Subject: [PATCH] b: scene4da
 MIME-Version: 1.0
 Content-Type: text/plain; charset=UTF-8
 Content-Transfer-Encoding: 8bit
 
-4da: 可靠落屏信号 + notLanded 诚实判据 + 出条不等首帧
+4da+4db: 可靠落屏信号 + notLanded + 出条不等首帧 + 开关即时生效
 ---
  .gitattributes                                |    3 +
  .github/workflows/wake-apk.yml                |  192 ++
@@ -21,7 +21,7 @@ Content-Transfer-Encoding: 8bit
  .../dsh_app/phone/PhoneBackGuard.kt           |  146 +
  .../dsh_app/phone/PhoneContracts.kt           |  263 ++
  .../ccch1mneyyy/dsh_app/phone/PhoneControl.kt |  109 +-
- .../ccch1mneyyy/dsh_app/phone/PhoneCore.kt    |  567 +++-
+ .../ccch1mneyyy/dsh_app/phone/PhoneCore.kt    |  571 +++-
  .../ccch1mneyyy/dsh_app/phone/PhonePlugin.kt  |  614 ++++
  .../dsh_app/phone/PhoneTaskSessions.kt        |   49 +-
  .../ccch1mneyyy/dsh_app/phone/PhoneTasks.kt   |   85 +-
@@ -142,7 +142,7 @@ Content-Transfer-Encoding: 8bit
  docs/wake-word.md                             |  107 +
  dsh-go-wake.patch                             | 2065 ++++++++++++
  tooling/build-wake-apk.sh                     |   68 +
- 134 files changed, 18065 insertions(+), 586 deletions(-)
+ 134 files changed, 18069 insertions(+), 586 deletions(-)
  create mode 100644 .github/workflows/wake-apk.yml
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallForegroundService.kt
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallOverlay.kt
@@ -1813,7 +1813,7 @@ index 2fc7cd59..ec152c95 100644
      }
  
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneCore.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneCore.kt
-index 6c701851..fadb603b 100644
+index 6c701851..7a8fa57e 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneCore.kt
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneCore.kt
 @@ -1,9 +1,12 @@
@@ -2297,7 +2297,7 @@ index 6c701851..fadb603b 100644
      }
  
      /** The handler is a dispatch fact. Only the following read describes the actual foreground UI. */
-@@ -816,8 +1090,192 @@ class PhoneCore(
+@@ -816,8 +1090,196 @@ class PhoneCore(
          return Either.Right(d)
      }
  
@@ -2453,7 +2453,10 @@ index 6c701851..fadb603b 100644
 +        }
 +        // 唯一判定点 VscreenUi 的输入：这次实际走哪条通道（AI 明确说的 > 设置默认）。
 +        // 以前这里没写，channel 永远等于设置值 → 判定结果恒为 none（真机 03:16 全程 channel=virtual）。
-+        if (io.github.ccch1mneyyy.dsh_app.phone.PhoneRegistry.vscreenSettingDirty) {
++        // 【4db】改设置立即生效：先取出"要不要解除粘性"，再清零。旧代码先清零再判断，
++        // 下面的粘性检查看到的永远是 false → 改完设置必须重启 App 才生效（用户 21:1x 实测）。
++        val unstickThisCall = io.github.ccch1mneyyy.dsh_app.phone.PhoneRegistry.vscreenSettingDirty
++        if (unstickThisCall) {
 +            io.github.ccch1mneyyy.dsh_app.phone.PhoneRegistry.vscreenSettingDirty = false
 +            io.github.ccch1mneyyy.dsh_app.wake.WakeTrace.log("vscreen: setting dirty -> apply new default once")
 +        }
@@ -2473,7 +2476,8 @@ index 6c701851..fadb603b 100644
 +            // 【4aq】**main 也粘**：⇄ 之后用户已经明确在主屏了，没点名的工具调用不许按设置值
 +            // 把它翻回 virtual（真机 14:44:07.878 实证：swap 后 3.9 秒通道回翻、判回 window）。
 +            // 【4bn】设置刚改过 → 这一次不认粘性，直接按新设置落通道（用完即清）。
-+            !io.github.ccch1mneyyy.dsh_app.phone.PhoneRegistry.vscreenSettingDirty &&
++            // 【4db】用上面取出的 unstickThisCall 判断，而不是已经清零的旗标。
++            !unstickThisCall &&
 +                (io.github.ccch1mneyyy.dsh_app.phone.PhoneRegistry.vscreenTarget == "silent" ||
 +                    io.github.ccch1mneyyy.dsh_app.phone.PhoneRegistry.vscreenTarget == "virtual" ||
 +                    io.github.ccch1mneyyy.dsh_app.phone.PhoneRegistry.vscreenTarget == "main") ->
@@ -2490,7 +2494,7 @@ index 6c701851..fadb603b 100644
      /** Admission uses the same argument coercion and routing as the actual tool body. */
      fun requiredScreens(name: String, args: Map<String, Any?>): Either<String, List<PhoneScreen>> {
          return requiredScreens(name, Args(args))
-@@ -825,10 +1283,11 @@ class PhoneCore(
+@@ -825,10 +1287,11 @@ class PhoneCore(
  
      private fun requiredScreens(name: String, a: Args): Either<String, List<PhoneScreen>> {
          return when (name) {
@@ -2505,7 +2509,7 @@ index 6c701851..fadb603b 100644
              // Arbitrary system commands take the main/global unknown-app lease, without reading a screen.
              PhoneToolCatalog.INTENT, PhoneToolCatalog.ANDROID_SHELL -> Either.Right(listOf(PhoneScreen.MAIN))
              PhoneToolCatalog.HANDOFF -> Either.Right(if (lastScreen == PhoneScreen.BACKGROUND)
-@@ -852,7 +1311,7 @@ class PhoneCore(
+@@ -852,7 +1315,7 @@ class PhoneCore(
          if (id == null) return Either.Left("缺少 $parameterName（屏幕号，如 s7）。先调用 screen 拿到屏幕号。")
          return PhoneScreen.ofScreenId(id)?.let { Either.Right(it) }
              // l10n:keep agent tool result
@@ -2514,7 +2518,7 @@ index 6c701851..fadb603b 100644
      }
  
      private fun locked(summary: String) =
-@@ -871,21 +1330,29 @@ class PhoneCore(
+@@ -871,21 +1334,29 @@ class PhoneCore(
  
      private fun screen(a: Args, owner: PhoneTasks.Owner): Out {
          if (!current(owner)) return stoppedOut("screen")
@@ -2550,7 +2554,7 @@ index 6c701851..fadb603b 100644
          return Out(
              // l10n:keep agent tool result
              if (refused) "没有读取这个屏幕的内容。" else "",
-@@ -897,6 +1364,40 @@ class PhoneCore(
+@@ -897,6 +1368,40 @@ class PhoneCore(
          )
      }
  
@@ -2591,7 +2595,7 @@ index 6c701851..fadb603b 100644
      private fun collect(a: Args, owner: PhoneTasks.Owner): Out {
          if (!current(owner)) return stoppedOut("collect")
          val sid = a.str("screen")
-@@ -1362,6 +1863,7 @@ class PhoneCore(
+@@ -1362,6 +1867,7 @@ class PhoneCore(
          summary = summary, decision = "stopped")
  
      companion object {
@@ -2599,7 +2603,7 @@ index 6c701851..fadb603b 100644
          internal const val REPLAY = "replay"
          internal const val FOCUS_TEXT = "focus_text"
  
-@@ -1370,6 +1872,9 @@ class PhoneCore(
+@@ -1370,6 +1876,9 @@ class PhoneCore(
          const val PAUSE_WAIT_MS = 600_000L
          const val HANDOFF_MS = 600_000L
  
