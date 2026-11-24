@@ -1,12 +1,12 @@
-From 2cc16e6cf8183c01ddc3d0b9d9f86b0590aab5d3 Mon Sep 17 00:00:00 2001
+From 3a97b606f97c783f15e6ffed400275bc924f7541 Mon Sep 17 00:00:00 2001
 From: ci <ci@local>
-Date: Tue, 24 Nov 2026 17:03:06 +0800
+Date: Tue, 24 Nov 2026 17:37:50 +0800
 Subject: [PATCH] b: scene4ce
 MIME-Version: 1.0
 Content-Type: text/plain; charset=UTF-8
 Content-Transfer-Encoding: 8bit
 
-4ce: 点条翻回显示状态 + 删 shown 自指 + 粘性戳（治点条后窗口被拉回条）
+4ce-2: 点条翻通道改到 ballAction 生效点（治窗条同框后收回）
 ---
  .gitattributes                                |    3 +
  .github/workflows/wake-apk.yml                |  192 ++
@@ -22,7 +22,7 @@ Content-Transfer-Encoding: 8bit
  .../dsh_app/phone/PhoneContracts.kt           |  263 ++
  .../ccch1mneyyy/dsh_app/phone/PhoneControl.kt |  109 +-
  .../ccch1mneyyy/dsh_app/phone/PhoneCore.kt    |  562 +++-
- .../ccch1mneyyy/dsh_app/phone/PhonePlugin.kt  |  601 ++++
+ .../ccch1mneyyy/dsh_app/phone/PhonePlugin.kt  |  607 ++++
  .../dsh_app/phone/PhoneTaskSessions.kt        |   33 +-
  .../ccch1mneyyy/dsh_app/phone/PhoneTasks.kt   |   68 +-
  .../dsh_app/phone/PhoneToolCatalog.kt         |   35 +-
@@ -142,7 +142,7 @@ Content-Transfer-Encoding: 8bit
  docs/wake-word.md                             |  107 +
  dsh-go-wake.patch                             | 2065 ++++++++++++
  tooling/build-wake-apk.sh                     |   68 +
- 134 files changed, 17943 insertions(+), 579 deletions(-)
+ 134 files changed, 17949 insertions(+), 579 deletions(-)
  create mode 100644 .github/workflows/wake-apk.yml
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallForegroundService.kt
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallOverlay.kt
@@ -2605,7 +2605,7 @@ index 6c701851..5c7a1b32 100644
          private val WRITES = setOf(FOCUS_TEXT, PhoneToolCatalog.TAP, PhoneToolCatalog.TYPE, PhoneToolCatalog.TAP_XY, PhoneToolCatalog.OPEN)
          /** An uncertain effect call tightens draft eligibility; it does not prove input was dispatched. */
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhonePlugin.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhonePlugin.kt
-index 4a76535f..6bd55ba9 100644
+index 4a76535f..219efe3e 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhonePlugin.kt
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhonePlugin.kt
 @@ -2,7 +2,14 @@ package io.github.ccch1mneyyy.dsh_app.phone
@@ -2642,7 +2642,7 @@ index 4a76535f..6bd55ba9 100644
      private val privilegedActions = PrivilegedActionGate()
  
      override fun onAttachedToEngine(binding: FlutterPlugin.FlutterPluginBinding) {
-@@ -77,6 +89,313 @@ class PhonePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
+@@ -77,6 +89,319 @@ class PhonePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
          promptOwner = Any()
          attached = true
          control.background.restoreKeptChannel()
@@ -2919,6 +2919,12 @@ index 4a76535f..6bd55ba9 100644
 +                            WakeTrace.log("vscreen: channel-switch to=virtual via=eye")
 +                            // 【4aq】用户自己点条回来 = 解除"收起锁"。
 +                            PhoneRegistry.vscreenUserSilent = false
++                            // 【4ce-2】点条 = 回到显示状态：通道必须翻回 virtual，否则判定还停在 silent，
++                            // 下一拍 decide→ball2→窗条互斥 hideWindowOnly 把刚开的窗拉回条
++                            // （真机 17:32：revealed 后 0.7 秒就被拉回，反复循环）。
++                            PhoneRegistry.vscreenTarget = "virtual"
++                            PhoneRegistry.vscreenTapLatchedAt = android.os.SystemClock.elapsedRealtime()
++                            WakeTrace.log("ball: eye->virtual latched (4ce-2)")
 +                            runCatching {
 +                                VirtualScreenOverlay.show(appContext, VirtualScreenOverlay.currentTaskId())
 +                            }.onFailure { WakeTrace.log("ball: eye show threw ${it.javaClass.simpleName}") }
@@ -2956,7 +2962,7 @@ index 4a76535f..6bd55ba9 100644
          methods = MethodChannel(binding.binaryMessenger, "dsh/phone").also { it.setMethodCallHandler(this) }
          events = EventChannel(binding.binaryMessenger, "dsh/phone/events").also { it.setStreamHandler(this) }
          previewEvents = EventChannel(binding.binaryMessenger, "dsh/phone/preview").also { channel ->
-@@ -103,9 +422,194 @@ class PhonePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
+@@ -103,9 +428,194 @@ class PhonePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
          }
      }
  
@@ -3151,7 +3157,7 @@ index 4a76535f..6bd55ba9 100644
          skillSelectionRequest = Any()
          skillInspection = null
          skillClient?.let { control.skillReplaySelections.retireClient(it); control.skillDrafts.retireClient(it) }
-@@ -249,6 +753,103 @@ class PhonePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
+@@ -249,6 +759,103 @@ class PhonePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
                  result.success(if (removed) mapOf("kind" to "discarded") else replayRejected("stale"))
              }
              "setBackgroundPreview" -> result.success(control.preview.setEnabled(call.argument<Boolean>("enabled") == true))
