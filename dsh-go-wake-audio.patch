@@ -1,7 +1,7 @@
-From d089c4d56b4961de2baeef868c18cf6ea7edb27d Mon Sep 17 00:00:00 2001
+From 1a9bbc6b087cafa07d7ed8332ac373d9390a4180 Mon Sep 17 00:00:00 2001
 From: ci <ci@local>
-Date: Tue, 24 Nov 2026 09:49:04 +0800
-Subject: [PATCH] pb: scene4bl
+Date: Tue, 24 Nov 2026 10:02:08 +0800
+Subject: [PATCH] pb: scene4bm
 
 ---
  .gitattributes                                |    3 +
@@ -18,7 +18,7 @@ Subject: [PATCH] pb: scene4bl
  .../dsh_app/phone/PhoneContracts.kt           |  239 ++
  .../ccch1mneyyy/dsh_app/phone/PhoneControl.kt |  100 +-
  .../ccch1mneyyy/dsh_app/phone/PhoneCore.kt    |  505 ++-
- .../ccch1mneyyy/dsh_app/phone/PhonePlugin.kt  |  588 ++++
+ .../ccch1mneyyy/dsh_app/phone/PhonePlugin.kt  |  596 ++++
  .../dsh_app/phone/PhoneTaskSessions.kt        |   33 +-
  .../ccch1mneyyy/dsh_app/phone/PhoneTasks.kt   |   46 +
  .../dsh_app/phone/PhoneToolCatalog.kt         |   35 +-
@@ -106,13 +106,13 @@ Subject: [PATCH] pb: scene4bl
  app/lib/speech/wake_reply.dart                |  175 ++
  app/lib/state/app_info.dart                   |    5 +
  app/lib/state/update_state.dart               |   19 +-
- app/lib/state/virtual_screen_state.dart       |  456 +++
+ app/lib/state/virtual_screen_state.dart       |  490 +++
  app/lib/ui/chat/chat_rows.dart                |    2 +
  app/lib/ui/chat/chat_screen.dart              |  108 +-
  app/lib/ui/chat/media/media_format.dart       |   16 +-
  app/lib/ui/phone/android_shell_page.dart      |   33 +
  app/lib/ui/phone/background_preview.dart      |  264 +-
- app/lib/ui/phone/dnd_mode_page.dart           |  186 +-
+ app/lib/ui/phone/dnd_mode_page.dart           |  203 +-
  app/lib/ui/phone/phone_control_screen.dart    |    1 +
  app/lib/ui/phone/phone_task_card.dart         |  430 +++
  app/lib/ui/phone/virtual_screen_host.dart     |  397 +++
@@ -134,7 +134,7 @@ Subject: [PATCH] pb: scene4bl
  docs/wake-word.md                             |  107 +
  dsh-go-wake.patch                             | 2065 +++++++++++++
  tooling/build-wake-apk.sh                     |   68 +
- 130 files changed, 17570 insertions(+), 570 deletions(-)
+ 130 files changed, 17630 insertions(+), 569 deletions(-)
  create mode 100644 .github/workflows/wake-apk.yml
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallForegroundService.kt
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallOverlay.kt
@@ -2507,7 +2507,7 @@ index 6c701851..148dd9b6 100644
          private val WRITES = setOf(FOCUS_TEXT, PhoneToolCatalog.TAP, PhoneToolCatalog.TYPE, PhoneToolCatalog.TAP_XY, PhoneToolCatalog.OPEN)
          /** An uncertain effect call tightens draft eligibility; it does not prove input was dispatched. */
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhonePlugin.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhonePlugin.kt
-index 4a76535f..1b73a285 100644
+index 4a76535f..4dcd6789 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhonePlugin.kt
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhonePlugin.kt
 @@ -2,7 +2,14 @@ package io.github.ccch1mneyyy.dsh_app.phone
@@ -2544,7 +2544,7 @@ index 4a76535f..1b73a285 100644
      private val privilegedActions = PrivilegedActionGate()
  
      override fun onAttachedToEngine(binding: FlutterPlugin.FlutterPluginBinding) {
-@@ -77,6 +89,300 @@ class PhonePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
+@@ -77,6 +89,308 @@ class PhonePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
          promptOwner = Any()
          attached = true
          control.background.restoreKeptChannel()
@@ -2728,7 +2728,15 @@ index 4a76535f..1b73a285 100644
 +            val av = runCatching { control.driver(PhoneScreen.BACKGROUND)?.availability() }.getOrNull()
 +            // 【4bc】冷启动误报：开机时 `:vdisplay` 还没起来，检查必然失败，但此时根本没有虚拟屏任务。
 +            // 只有"确实在用虚拟屏通道"时才提示断了，否则每次开 App 都弹一条红条。
-+            val inUse = PhoneRegistry.vscreenTarget == "virtual" || PhoneRegistry.vscreenTarget == "silent"
++            // 【4bm】光看通道旗标不够：冷启动时 vscreenTarget 会被解析成 virtual，而那一刻根本没有屏。
++            // 要有"这次真的用过虚拟屏"的证据才提示断开：
++            //   开过屏（openDone）/ 账本上有屏号 / 收到过首帧 / 条正挂着。
++            // 真机：每次启动 20~70 秒后弹一条红条"通道已断开"，而虚拟屏随后照样能打开（用户实拍）。
++            val inUse = (PhoneRegistry.vscreenTarget == "virtual" || PhoneRegistry.vscreenTarget == "silent") &&
++                (PhoneRegistry.vscreenOpenDone ||
++                    PhoneRegistry.vscreenScreenDisplayId > 0 ||
++                    PhoneRegistry.vscreenFirstFrameAt > 0L ||
++                    TransferBall.isWanted)
 +            if ((av == null || !av.ok) && inUse) {
 +                // 【4ac-4】幽灵态必须说人话：通道断了（`:vdisplay` 不在 / 未就绪）时，
 +                // 不能只在日志里写一行、界面上什么都不说，让用户在屏幕上瞎点。
@@ -2845,7 +2853,7 @@ index 4a76535f..1b73a285 100644
          methods = MethodChannel(binding.binaryMessenger, "dsh/phone").also { it.setMethodCallHandler(this) }
          events = EventChannel(binding.binaryMessenger, "dsh/phone/events").also { it.setStreamHandler(this) }
          previewEvents = EventChannel(binding.binaryMessenger, "dsh/phone/preview").also { channel ->
-@@ -103,9 +409,194 @@ class PhonePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
+@@ -103,9 +417,194 @@ class PhonePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
          }
      }
  
@@ -3040,7 +3048,7 @@ index 4a76535f..1b73a285 100644
          skillSelectionRequest = Any()
          skillInspection = null
          skillClient?.let { control.skillReplaySelections.retireClient(it); control.skillDrafts.retireClient(it) }
-@@ -249,6 +740,103 @@ class PhonePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
+@@ -249,6 +748,103 @@ class PhonePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
                  result.success(if (removed) mapOf("kind" to "discarded") else replayRejected("stale"))
              }
              "setBackgroundPreview" -> result.success(control.preview.setEnabled(call.argument<Boolean>("enabled") == true))
@@ -87287,10 +87295,10 @@ index c089d192..5f01b451 100644
        skippedVersion: () => prefs.getString(_skippedKey),
 diff --git a/app/lib/state/virtual_screen_state.dart b/app/lib/state/virtual_screen_state.dart
 new file mode 100644
-index 00000000..79588945
+index 00000000..8fa7f83d
 --- /dev/null
 +++ b/app/lib/state/virtual_screen_state.dart
-@@ -0,0 +1,456 @@
+@@ -0,0 +1,490 @@
 +import 'dart:async';
 +
 +import 'package:flutter/services.dart';
@@ -87315,6 +87323,8 @@ index 00000000..79588945
 +    this.fps = 15,
 +    this.quality = 80,
 +    this.target = VirtualScreenTarget.virtual,
++    // 虚拟屏默认隐藏（原来的"后台屏"）：开在虚拟屏里，但不弹窗口，只出黄条。
++    this.hidden = false,
 +    // 悬浮屏常开：后台任务一起来就摆出来，关了也记得住（下次不再自己弹）。
 +    this.window = true,
 +    // 允许手动操作：关着时画面只读（防误触打断 AI），开着时手指直接作用于虚拟屏。
@@ -87328,6 +87338,10 @@ index 00000000..79588945
 +
 +  final VirtualScreenTarget target;
 +
++  /// 虚拟屏默认隐藏：任务开在虚拟屏里但窗口不弹，只留黄条（点条随时展开）。
++  /// 这是原来「默认后台屏」那条通道，用户 10:0x 定：后台屏就是隐藏态的虚拟屏，不该是第三通道。
++  final bool hidden;
++
 +  /// 悬浮屏开关：开着就记住，重开 App 自动恢复；后台任务起来时也会自己弹出来。
 +  final bool window;
 +
@@ -87338,12 +87352,14 @@ index 00000000..79588945
 +    int? fps,
 +    int? quality,
 +    VirtualScreenTarget? target,
++    bool? hidden,
 +    bool? window,
 +    bool? manual,
 +  }) => VirtualScreenSettings(
 +    fps: fps ?? this.fps,
 +    quality: quality ?? this.quality,
 +    target: target ?? this.target,
++    hidden: hidden ?? this.hidden,
 +    window: window ?? this.window,
 +    manual: manual ?? this.manual,
 +  );
@@ -87376,6 +87392,7 @@ index 00000000..79588945
 +  static const _fpsKey = 'virtual_screen_fps';
 +  static const _qualityKey = 'virtual_screen_quality';
 +  static const _targetKey = 'virtual_screen_target';
++  static const _hiddenKey = 'virtual_screen_hidden';
 +  static const _windowKey = 'virtual_screen_window';
 +  static const _manualKey = 'virtual_screen_manual';
 +
@@ -87391,11 +87408,15 @@ index 00000000..79588945
 +      if (!ref.mounted) return;
 +      final fps = prefs.getInt(_fpsKey);
 +      final quality = prefs.getInt(_qualityKey);
-+      final target = prefs.getString(_targetKey);
++      final rawTarget = prefs.getString(_targetKey);
++      // 旧值 "background"（原第三通道）迁移成「虚拟屏 + 默认隐藏」。
++      final legacyBackground = rawTarget == 'background';
++      final target = VirtualScreenTarget.values.asNameMap()[rawTarget];
 +      state = VirtualScreenSettings(
 +        fps: fps == null ? state.fps : fps.clamp(1, 15),
 +        quality: quality == null ? state.quality : quality.clamp(40, 100),
-+        target: VirtualScreenTarget.values.asNameMap()[target] ?? state.target,
++        target: legacyBackground ? VirtualScreenTarget.virtual : (target ?? state.target),
++        hidden: legacyBackground || (prefs.getBool(_hiddenKey) ?? state.hidden),
 +        window: prefs.getBool(_windowKey) ?? state.window,
 +        manual: prefs.getBool(_manualKey) ?? state.manual,
 +      );
@@ -87421,8 +87442,26 @@ index 00000000..79588945
 +  /// 不然引擎可能读到旧值——「关了默认虚拟屏却还走虚拟屏」就是这种竞态。
 +  Future<void> setTarget(VirtualScreenTarget target) async {
 +    if (target == state.target) return;
-+    state = state.copyWith(target: target);
-+    await _save(_targetKey, target.name);
++    state = state.copyWith(target: target == VirtualScreenTarget.background
++        ? VirtualScreenTarget.virtual
++        : target);
++    await _persistTarget();
++  }
++
++  /// 虚拟屏默认隐藏（替代原「后台屏」通道）。原生只认一个字符串，
++  /// 隐藏时写 "background"，打开时写 "virtual"，读回来再还原成 virtual+hidden。
++  Future<void> setHidden(bool on) async {
++    if (on == state.hidden) return;
++    state = state.copyWith(hidden: on);
++    await _persistTarget();
++  }
++
++  Future<void> _persistTarget() async {
++    final name = state.target == VirtualScreenTarget.virtual && state.hidden
++        ? VirtualScreenTarget.background.name
++        : state.target.name;
++    await _save(_targetKey, name);
++    await _save(_hiddenKey, state.hidden);
 +  }
 +
 +  /// 悬浮屏开关：记住，重开 App 时由 [virtualWindowProvider] 恢复。
@@ -87580,8 +87619,9 @@ index 00000000..79588945
 +    // 窗口跟随"实际在用哪块屏"（用户 15:47）：AI 明确在主屏操作时窗口不出现；
 +    // 只有真的在虚拟屏上干活（或刚转进来）才显示。设置开关只是默认值。
 +    // 默认操作=后台屏时，窗口不自动弹（AI 在后台默默干活）；AI 明确要虚拟屏时会切 target。
++    final vsSettings = ref.read(virtualScreenSettingsProvider);
 +    var silent = status.backgroundSilent || vscreenKeepBackground ||
-+        ref.read(virtualScreenSettingsProvider).target == VirtualScreenTarget.background;
++        (vsSettings.target == VirtualScreenTarget.virtual && vsSettings.hidden);
 +    // AI 这次明确要"后台屏"：清掉手动查看，静默重新生效（11:3x）。
 +    if (status.backgroundSilent) vscreenManualView = false;
 +    if (vscreenManualView && !status.backgroundSilent) silent = false;
@@ -87590,7 +87630,9 @@ index 00000000..79588945
 +    // 日志里的 ui 必须分别是 window / ball2 / ball1。
 +    final targetName = status.backgroundSilent
 +        ? 'background'
-+        : (ref.read(virtualScreenSettingsProvider).target.name);
++        : (vsSettings.target == VirtualScreenTarget.virtual && vsSettings.hidden
++            ? 'background'
++            : vsSettings.target.name);
 +    // 判据带分解：只看 silent=true 分不清是哪面旗子顶上来的（经验包外的实测需要这一行）。
 +    diagWake(
 +        'vscreen: target=$targetName ui=${state.open ? "window" : (_ballOn ? "ball2" : "ball1")} '
@@ -88323,7 +88365,7 @@ index 173f148a..475ff4b2 100644
 +  _ => '任务迁移没成功，应用还在原处。',
 +};
 diff --git a/app/lib/ui/phone/dnd_mode_page.dart b/app/lib/ui/phone/dnd_mode_page.dart
-index 3a23e526..8bea0b8a 100644
+index 3a23e526..23ce8741 100644
 --- a/app/lib/ui/phone/dnd_mode_page.dart
 +++ b/app/lib/ui/phone/dnd_mode_page.dart
 @@ -16,8 +16,8 @@ import '../common/row_marks.dart';
@@ -88344,7 +88386,7 @@ index 3a23e526..8bea0b8a 100644
    String? _error;
    late final AppLifecycleListener _lifecycle;
  
-@@ -181,51 +180,14 @@ class _PhoneDndPageState extends ConsumerState<PhoneDndPage> {
+@@ -181,51 +180,15 @@ class _PhoneDndPageState extends ConsumerState<PhoneDndPage> {
      await _run(() => _phone.adbConnect(port: port), done: l10n.phoneDndConnected);
    }
  
@@ -88395,10 +88437,11 @@ index 3a23e526..8bea0b8a 100644
      final using = bg.effectiveMode;
 +    final target = ref.watch(virtualScreenSettingsProvider.select((s) => s.target));
 +    final manualOn = ref.watch(virtualScreenSettingsProvider.select((s) => s.manual));
++    final hidden = ref.watch(virtualScreenSettingsProvider.select((s) => s.hidden));
      final waiting = using == PhonePrivilegedMode.root && bg.root.starting;
      final open = _open ?? (bg.effectiveReady ? PhonePrivilegedMode.off : using);
      final choices = <Widget>[
-@@ -276,36 +238,74 @@ class _PhoneDndPageState extends ConsumerState<PhoneDndPage> {
+@@ -276,36 +239,92 @@ class _PhoneDndPageState extends ConsumerState<PhoneDndPage> {
                  subtitle: bg.effectiveReady ? l10n.phoneReady : (waiting ? bg.effectiveReason : null),
                  trailing: TextButton(onPressed: _ready ? _close : null, child: Text(l10n.commonClose)),
                ),
@@ -88420,28 +88463,25 @@ index 3a23e526..8bea0b8a 100644
 +                      ref.read(virtualScreenSettingsProvider.notifier).setManual(on),
 +                ),
 +              ),
-+              // 默认操作屏三选一（用户 11:0x）：主屏 / 后台屏（不弹窗）/ 虚拟屏（弹窗）。
-+              // AI 的明确指令（background=main/virtual/silent）优先于这里。
-+              for (final option in VirtualScreenTarget.values)
-                 ListPageRow(
--                  leading: const SizedBox(),
--                  title: l10n.phonePreviewTitle,
--                  subtitle: l10n.phonePreviewDescription,
--                  subtitleMaxLines: 4,
--                  trailing: Switch(
--                    value: bg.previewEnabled,
--                    onChanged: !_ready || _busy
++              // 默认操作屏两选一（用户 10:0x）：主屏 / 虚拟屏。
++              // 原来的「后台屏」不是第三条通道——它就是隐藏态的虚拟屏，现在变成
++              // 虚拟屏下面那个「默认隐藏（只留黄条）」开关。
++              // AI 的明确指令（background=main/virtual/silent）仍然优先于这里。
++              for (final option in const [VirtualScreenTarget.main, VirtualScreenTarget.virtual])
++                ListPageRow(
 +                  key: ValueKey('phone-virtual-target-${option.name}'),
 +                  leading: Icon(target == option ? AppIcons.radioOn : AppIcons.radioOff),
 +                  title: switch (option) {
 +                    VirtualScreenTarget.main => '默认操作：主屏',
-+                    VirtualScreenTarget.background => '默认操作：后台屏（不显示窗口）',
-+                    VirtualScreenTarget.virtual => '默认操作：虚拟屏（显示窗口）',
++                    VirtualScreenTarget.virtual => '默认操作：虚拟屏',
++                    _ => '默认操作：虚拟屏',
 +                  },
 +                  subtitle: switch (option) {
 +                    VirtualScreenTarget.main => '任务在手机上做，你能看到',
-+                    VirtualScreenTarget.background => '任务在虚拟屏里默默做，不弹窗口',
-+                    VirtualScreenTarget.virtual => '任务在虚拟屏里做，悬浮窗自动弹出',
++                    VirtualScreenTarget.virtual => hidden
++                        ? '任务在虚拟屏里做；默认隐藏，只出黄条，点条展开'
++                        : '任务在虚拟屏里做，悬浮窗自动弹出',
++                    _ => null,
 +                  },
 +                  subtitleMaxLines: 2,
 +                  trailing: target == option
@@ -88452,6 +88492,38 @@ index 3a23e526..8bea0b8a 100644
 +                    return const PhoneResult(true);
 +                  })),
 +                ),
++              if (target == VirtualScreenTarget.virtual)
+                 ListPageRow(
+-                  leading: const SizedBox(),
+-                  title: l10n.phonePreviewTitle,
+-                  subtitle: l10n.phonePreviewDescription,
+-                  subtitleMaxLines: 4,
++                  key: const ValueKey('phone-virtual-hidden'),
++                  leading: Icon(hidden ? AppIcons.radioOn : AppIcons.radioOff),
++                  title: '虚拟屏默认隐藏（只留黄条）',
++                  subtitle: '开：应用开在虚拟屏里但不弹窗，屏幕上只出黄条，点条随时展开',
++                  subtitleMaxLines: 3,
+                   trailing: Switch(
+-                    value: bg.previewEnabled,
+-                    onChanged: !_ready || _busy
+-                        ? null
+-                        : (enabled) =>
+-                              unawaited(_run(() async => PhoneResult(await _phone.setBackgroundPreview(enabled)))),
++                    value: hidden,
++                    onChanged: (on) => unawaited(
++                      ref.read(virtualScreenSettingsProvider.notifier).setHidden(on),
++                    ),
+                   ),
+                 ),
+-                if (bg.previewEnabled)
+-                  for (final candidate in previewTasks)
+-                    ListPageRow(
+-                      key: ValueKey('phone-preview-task-${candidate.id}'),
+-                      leading: const SizedBox(),
+-                      title: !hasSlotMetadata ? l10n.phonePreviewOpen : l10n.phonePreviewTask(candidate.id!.toString()),
+-                      subtitle: candidate.app,
+-                      onTap: _ready ? () => unawaited(_showPreview(candidate.id!)) : null,
+-                    ),
 +              // 横屏 / 竖屏 / 跟随主屏（第九节 2）：视频类应用要横屏，聊天、信息流要竖屏。
 +              // 建屏那一刻按这一条决定虚拟显示宽高，不是事后旋转。
 +              if (bg.viewport case final viewport?)
@@ -88469,21 +88541,9 @@ index 3a23e526..8bea0b8a 100644
 +                        : null,
 +                    subtitleMaxLines: 2,
 +                    onTap: !_ready || _busy || viewport == preset
-                         ? null
--                        : (enabled) =>
--                              unawaited(_run(() async => PhoneResult(await _phone.setBackgroundPreview(enabled)))),
++                        ? null
 +                        : () => unawaited(_run(() => _phone.setBackgroundViewport(preset))),
-                   ),
--                ),
--                if (bg.previewEnabled)
--                  for (final candidate in previewTasks)
--                    ListPageRow(
--                      key: ValueKey('phone-preview-task-${candidate.id}'),
--                      leading: const SizedBox(),
--                      title: !hasSlotMetadata ? l10n.phonePreviewOpen : l10n.phonePreviewTask(candidate.id!.toString()),
--                      subtitle: candidate.app,
--                      onTap: _ready ? () => unawaited(_showPreview(candidate.id!)) : null,
--                    ),
++                  ),
                ],
 -            ],
            ),
@@ -88495,7 +88555,7 @@ index 3a23e526..8bea0b8a 100644
          if (_error case final error? when error != bg.effectiveReason) PhoneNote(tone: NoteTone.warn, text: error),
          if (bg.keep.enabled && _keepStatus(bg.keep).$1 != null)
            PhoneNote(
-@@ -327,66 +327,6 @@ class _PhoneDndPageState extends ConsumerState<PhoneDndPage> {
+@@ -327,66 +346,6 @@ class _PhoneDndPageState extends ConsumerState<PhoneDndPage> {
            children: [
              if (using != PhonePrivilegedMode.off && bg.privileged != null)
                ListPageCard(margin: _groupMargin, children: [_keepRow(using, bg.keep)]),
