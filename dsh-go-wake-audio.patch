@@ -1,7 +1,7 @@
-From 7a292edc3f51578ef88dbf4688f54aaa331b0f53 Mon Sep 17 00:00:00 2001
+From 1bfd6419f78a5953eb1a7098117ab37203245c58 Mon Sep 17 00:00:00 2001
 From: ci <ci@local>
-Date: Tue, 24 Nov 2026 10:05:08 +0800
-Subject: [PATCH] pb: scene4bo
+Date: Tue, 24 Nov 2026 10:12:53 +0800
+Subject: [PATCH] pb: scene4bp
 
 ---
  .gitattributes                                |    3 +
@@ -15,12 +15,12 @@ Subject: [PATCH] pb: scene4bo
  .../dsh_app/notify/NotifyPlugin.kt            |    5 +-
  .../dsh_app/phone/PhoneAndroidShell.kt        |   10 +-
  .../dsh_app/phone/PhoneBackGuard.kt           |  146 +
- .../dsh_app/phone/PhoneContracts.kt           |  246 ++
+ .../dsh_app/phone/PhoneContracts.kt           |  254 ++
  .../ccch1mneyyy/dsh_app/phone/PhoneControl.kt |  109 +-
  .../ccch1mneyyy/dsh_app/phone/PhoneCore.kt    |  511 ++-
  .../ccch1mneyyy/dsh_app/phone/PhonePlugin.kt  |  596 ++++
  .../dsh_app/phone/PhoneTaskSessions.kt        |   33 +-
- .../ccch1mneyyy/dsh_app/phone/PhoneTasks.kt   |   46 +
+ .../ccch1mneyyy/dsh_app/phone/PhoneTasks.kt   |   62 +-
  .../dsh_app/phone/PhoneToolCatalog.kt         |   35 +-
  .../ccch1mneyyy/dsh_app/phone/SafetyGate.kt   |    4 +-
  .../dsh_app/phone/SingleInstanceApps.kt       |   27 +
@@ -54,7 +54,7 @@ Subject: [PATCH] pb: scene4bo
  .../phone/vscreen/SwitchPromptOverlay.kt      |  142 +
  .../dsh_app/phone/vscreen/TaskMover.kt        |  152 +
  .../dsh_app/phone/vscreen/TransferBall.kt     |  493 +++
- .../phone/vscreen/VirtualScreenOverlay.kt     | 2752 +++++++++++++++++
+ .../phone/vscreen/VirtualScreenOverlay.kt     | 2755 +++++++++++++++++
  .../phone/vscreen/VirtualScreenPlugin.kt      |  249 ++
  .../dsh_app/phone/vscreen/VscreenUi.kt        |  154 +
  .../ccch1mneyyy/dsh_app/runtime/GuestSetup.kt |   47 +-
@@ -62,7 +62,7 @@ Subject: [PATCH] pb: scene4bo
  .../dsh_app/shortcuts/ShortcutsPlugin.kt      |   13 +-
  .../ccch1mneyyy/dsh_app/speech/CallCapture.kt |    6 +-
  .../dsh_app/wake/WakeBootReceiver.kt          |   29 +
- .../ccch1mneyyy/dsh_app/wake/WakeCapture.kt   |  172 ++
+ .../ccch1mneyyy/dsh_app/wake/WakeCapture.kt   |  172 +
  .../ccch1mneyyy/dsh_app/wake/WakeTrace.kt     |   99 +
  .../dsh_app/wake/WakeWordPlugin.kt            |  131 +
  .../dsh_app/wake/WakeWordService.kt           |  216 ++
@@ -132,9 +132,9 @@ Subject: [PATCH] pb: scene4bo
  app/pubspec.lock                              |    8 +
  app/pubspec.yaml                              |    4 +
  docs/wake-word.md                             |  107 +
- dsh-go-wake.patch                             | 2065 +++++++++++++
+ dsh-go-wake.patch                             | 2065 ++++++++++++
  tooling/build-wake-apk.sh                     |   68 +
- 130 files changed, 17662 insertions(+), 570 deletions(-)
+ 130 files changed, 17687 insertions(+), 572 deletions(-)
  create mode 100644 .github/workflows/wake-apk.yml
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallForegroundService.kt
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallOverlay.kt
@@ -1346,7 +1346,7 @@ index 00000000..175e47b7
 +    }
 +}
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneContracts.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneContracts.kt
-index 612f94d1..3bf77379 100644
+index 612f94d1..74b7b69a 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneContracts.kt
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneContracts.kt
 @@ -220,6 +220,13 @@ interface PhoneDriver {
@@ -1363,7 +1363,7 @@ index 612f94d1..3bf77379 100644
  }
  
  data class ConfirmRequest(
-@@ -346,13 +353,252 @@ interface ControlListener {
+@@ -346,13 +353,260 @@ interface ControlListener {
      fun onAccessibilityChanged(connected: Boolean) {}
  }
  
@@ -1528,6 +1528,14 @@ index 612f94d1..3bf77379 100644
 +     * 谁清除：PhoneCore.backgroundTarget() 解析完就清（一次性）。清不掉会怎样：只是多按一次设置，无害。
 +     */
 +    @Volatile var vscreenSettingDirty: Boolean = false
++
++    /**
++     * 【4bp】用户按【✕】关掉虚拟屏之后，允许 AI 下一次手机调用**自动开新的一轮**。
++     * 以前 ✕ 会把本轮判成"已停止"，AI 再调工具就被拒，只能让用户重新发一条消息。
++     * 谁置位：VirtualScreenOverlay.endTask()（✕）。谁清除：PhoneTasks.begin() 消费一次即清，
++     * 或超过 60 秒自动作废（避免聊天里的"停止"按钮被它放行）。
++     */
++    @Volatile var vscreenAutoReopenAt: Long = 0L
 +    /**
 +     * open 成功后应用实际所在的虚拟屏号（0=没有）。真机 22:54 证据：
 +     * open 报 displayId=218，但界面按账本判 hasTask=false、ui=none，窗口从未被要求打开——
@@ -3265,7 +3273,7 @@ index 3fd6e482..6a2410fc 100644
          // An implementation memory bound, not a measured throughput limit. Never evict a fence.
          const val MAX_RUNS_PER_LAUNCH = 256
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneTasks.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneTasks.kt
-index a09015e7..56e99ad4 100644
+index a09015e7..1f42e841 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneTasks.kt
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneTasks.kt
 @@ -73,6 +73,9 @@ class PhoneTasks(
@@ -3278,7 +3286,30 @@ index a09015e7..56e99ad4 100644
      private val listeners = CopyOnWriteArrayList<(Snapshot) -> Unit>()
  
      fun addListener(l: (Snapshot) -> Unit) {
-@@ -237,6 +240,33 @@ class PhoneTasks(
+@@ -93,8 +96,20 @@ class PhoneTasks(
+             if (expectedEpoch != null && expectedEpoch != admissionEpoch) return Begin.Refused(STOPPED_MESSAGE)
+             val now = clock()
+             if (now < stoppedUntil) {
+-                stoppedUntil = now + stopHoldMs
+-                return Begin.Refused(if (stopSource == StopSource.USER) STOPPED_MESSAGE else ENV_STOPPED_MESSAGE)
++                // 【4bp】刚刚按过 ✕（关掉虚拟屏）→ 这一下不当"你停止了本轮"，直接开新的一轮。
++                // 标记一次性、60 秒内有效：聊天里的"停止"按钮不会被它长期放行。
++                val closedAt = io.github.ccch1mneyyy.dsh_app.phone.PhoneRegistry.vscreenAutoReopenAt
++                if (stopSource == StopSource.USER && closedAt > 0L && clock() - closedAt < 60_000L) {
++                    io.github.ccch1mneyyy.dsh_app.phone.PhoneRegistry.vscreenAutoReopenAt = 0L
++                    stoppedUntil = 0L
++                    stopReason = null
++                    interrupted = false
++                    io.github.ccch1mneyyy.dsh_app.wake.WakeTrace.log(
++                        "phone: auto reopen after close (user pressed ×)")
++                } else {
++                    stoppedUntil = now + stopHoldMs
++                    return Begin.Refused(if (stopSource == StopSource.USER) STOPPED_MESSAGE else ENV_STOPPED_MESSAGE)
++                }
+             }
+             interrupted = false
+             // This call is in flight already, so only the pause and the clock count here.
+@@ -237,6 +252,33 @@ class PhoneTasks(
              if (!active && !stopped) return null
              if (active) endLocked() else lifecycle++
              stoppedUntil = 0L
@@ -3312,7 +3343,7 @@ index a09015e7..56e99ad4 100644
              stopReason = null
              interrupted = false
              owner = Owner(taskId, lifecycle, false)
-@@ -261,8 +291,23 @@ class PhoneTasks(
+@@ -261,8 +303,23 @@ class PhoneTasks(
          Owner(taskId, lifecycle, false)
      }
  
@@ -3336,7 +3367,7 @@ index a09015e7..56e99ad4 100644
      /** Result bookkeeping must not adopt the task that replaced its call. Keep [action] short. */
      fun runIfCurrent(owner: Owner, action: () -> Unit): Boolean = synchronized(lock) {
          if (!currentLocked(owner)) return false
-@@ -527,6 +572,7 @@ class PhoneTasks(
+@@ -527,6 +584,7 @@ class PhoneTasks(
      private fun endLocked() {
          lifecycle++
          active = false
@@ -8004,10 +8035,10 @@ index 00000000..ca2f1201
 +}
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenOverlay.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenOverlay.kt
 new file mode 100644
-index 00000000..c2292a96
+index 00000000..9716a882
 --- /dev/null
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenOverlay.kt
-@@ -0,0 +1,2752 @@
+@@ -0,0 +1,2755 @@
 +package io.github.ccch1mneyyy.dsh_app.phone.vscreen
 +
 +import io.github.ccch1mneyyy.dsh_app.phone.PhoneRegistry
@@ -10328,6 +10359,9 @@ index 00000000..c2292a96
 +        io.github.ccch1mneyyy.dsh_app.phone.PhoneRegistry.vscreenUserSilent = false
 +        // 点【✕】= 关屏：解除"任务结束后保住屏"的旗标，后面才会真正交回主屏并释放。
 +        io.github.ccch1mneyyy.dsh_app.phone.PhoneRegistry.vscreenKeepAfterTask = false
++        // 【4bp】✕ 之后让 AI 的下一次手机调用自动开新的一轮（不用用户再发一条消息）。
++        io.github.ccch1mneyyy.dsh_app.phone.PhoneRegistry.vscreenAutoReopenAt =
++            android.os.SystemClock.elapsedRealtime()
 +        // 同时解除 hideWindowOnly 里加的"窗口还在，别放屏"——不然 ✕ 之后屏永远放不掉（资源泄漏）。
 +        runCatching { io.github.ccch1mneyyy.dsh_app.phone.PhoneRegistry.holdDisplayForWindow?.invoke(false) }
 +        // 带上窗口实际绑定的任务号：不带号时原生找不到"当前任务"，停止会静默失败（10:1x）。
