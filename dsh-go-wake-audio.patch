@@ -1,22 +1,12 @@
-From f9d01c4739e4817ffc3878c9fb9ea4a5da997eda Mon Sep 17 00:00:00 2001
+From c6d256c52074bc5d54d082d9603c3b2bc3b02d3a Mon Sep 17 00:00:00 2001
 From: ci <ci@local>
-Date: Tue, 24 Nov 2026 13:23:34 +0800
-Subject: [PATCH] =?UTF-8?q?4ca:=20=E7=AA=97=E5=8F=A3=E4=B8=8D=E5=86=8D?=
- =?UTF-8?q?=E8=A2=AB=20Dart=20=E4=BE=A7=E8=87=AA=E5=8A=A8=E5=85=B3?=
- =?UTF-8?q?=E6=8E=89=EF=BC=88=E6=B2=BB=E2=80=9C=E7=82=B9=E6=9D=A1=E5=BC=80?=
- =?UTF-8?q?=E4=BA=86=E5=8F=88=E8=87=AA=E5=B7=B1=E5=BC=B9=E5=9B=9E=E6=9D=A1?=
- =?UTF-8?q?=E2=80=9D=EF=BC=89?=
+Date: Tue, 24 Nov 2026 14:48:24 +0800
+Subject: [PATCH] b: scene4cb
 MIME-Version: 1.0
 Content-Type: text/plain; charset=UTF-8
 Content-Transfer-Encoding: 8bit
 
-真机 13:20 反复出现：点条 → 1.85s 窗口出来 → 1s 后自己 close() → 黄条又回来。
-日志可见 ball: hide caller=ya2.g:7（TransferBall 被自己的 wanted=false 关掉）。
-
-原因：Dart 的 onVirtual 用 status.backgroundSilent 计算，而它反映的是设置默认
-（默认隐藏 → true），不是这次要不要窗口。用户手动点条打开的窗口因此被判“不该显示”。
-
-改动：删掉两处 onVirtual=false 就关窗的兜底，窗口显隐只认原生 VscreenUi 的判定。
+4cb: 退出血迹改 logNow + 退出瞬间屏状态 + scope/driver 影子日志（零行为）
 ---
  .gitattributes                                |    3 +
  .github/workflows/wake-apk.yml                |  192 ++
@@ -41,14 +31,14 @@ Content-Transfer-Encoding: 8bit
  .../dsh_app/phone/SystemActions.kt            |    7 +-
  .../dsh_app/phone/a11y/ControlOverlay.kt      |   11 +-
  .../dsh_app/phone/a11y/PhoneA11yService.kt    |   20 +
- .../phone/background/BackgroundControl.kt     |  194 +-
+ .../phone/background/BackgroundControl.kt     |  203 +-
  .../phone/background/BackgroundCoordinates.kt |    2 +
  .../phone/background/BackgroundDisplay.kt     |  369 ++-
  .../phone/background/BackgroundDisplayIo.kt   |    6 +
  .../phone/background/BackgroundPolicy.kt      |    8 +-
  .../phone/background/BackgroundPreview.kt     |   10 +-
  .../background/BackgroundProbeActivity.kt     |    4 +-
- .../phone/background/BackgroundTaskSlot.kt    |    4 +
+ .../phone/background/BackgroundTaskSlot.kt    |    7 +
  .../phone/background/BackgroundTree.kt        |    4 +-
  .../dsh_app/phone/background/CoalescedScan.kt |   31 +
  .../dsh_app/phone/background/DisplayAwake.kt  |  154 +
@@ -57,8 +47,10 @@ Content-Transfer-Encoding: 8bit
  .../background/DisplayOrientationKeeper.kt    |  125 +
  .../background/DisplayOrientationWatch.kt     |  100 +
  .../dsh_app/phone/background/KeptTasks.kt     |   39 +
- .../phone/background/PrivilegedDisplayCore.kt | 1280 +++++++-
- .../phone/background/PrivilegedDisplayHost.kt |    6 +-
+ .../dsh_app/phone/background/OwnerScopes.kt   |   17 +-
+ .../phone/background/PrivilegedDisplayCore.kt | 1287 +++++++-
+ .../background/PrivilegedDisplayEntry.kt      |   19 +-
+ .../phone/background/PrivilegedDisplayHost.kt |   10 +-
  .../phone/background/PrivilegedProtocol.kt    |  108 +-
  .../dsh_app/phone/skills/PhoneSkillDraft.kt   |    2 +-
  .../phone/vscreen/CloseActionReceiver.kt      |   79 +
@@ -149,7 +141,7 @@ Content-Transfer-Encoding: 8bit
  docs/wake-word.md                             |  107 +
  dsh-go-wake.patch                             | 2065 ++++++++++++
  tooling/build-wake-apk.sh                     |   68 +
- 131 files changed, 17825 insertions(+), 573 deletions(-)
+ 133 files changed, 17881 insertions(+), 576 deletions(-)
  create mode 100644 .github/workflows/wake-apk.yml
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallForegroundService.kt
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallOverlay.kt
@@ -3689,7 +3681,7 @@ index 8aa204bc..298fc3a9 100644
          super.onConfigurationChanged(newConfig)
          overlay?.onConfigurationChanged()
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/BackgroundControl.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/BackgroundControl.kt
-index 79cae468..8dc4b6d3 100644
+index 79cae468..e558035c 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/BackgroundControl.kt
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/BackgroundControl.kt
 @@ -13,6 +13,8 @@ import android.net.Network
@@ -3856,7 +3848,7 @@ index 79cae468..8dc4b6d3 100644
              "shizuku" to shizukuStatus.map(),
              "adb" to adbStatus.map(),
              "root" to rootStatus.map(),
-@@ -703,6 +837,40 @@ class BackgroundControl private constructor(context: Context) {
+@@ -703,6 +837,43 @@ class BackgroundControl private constructor(context: Context) {
              synchronized(keepGuard) {
                  if (selfCheckBorrow != null || interruptRequested || !current()) return null
                  taskResource.find(owner)?.let { return it.driver }
@@ -3873,6 +3865,9 @@ index 79cae468..8dc4b6d3 100644
 +                    if (alive) {
 +                        io.github.ccch1mneyyy.dsh_app.wake.WakeTrace.log(
 +                            "vscreen: reuse the only screen for new task (no second display)")
++                        // 【4cb·影子】零行为：复用路线的 owner 与任务身份。
++                        io.github.ccch1mneyyy.dsh_app.wake.WakeTrace.log(
++                            "vscreen-shadow: reuse existing driver owner=${existing.driver.ownerToken} newTaskId=${owner.taskId}")
 +                        return existing.driver
 +                    }
 +                    io.github.ccch1mneyyy.dsh_app.wake.WakeTrace.log(
@@ -3897,7 +3892,7 @@ index 79cae468..8dc4b6d3 100644
                  if (selectingResource || restoring?.isDone == false || selectionChange != null) return null
                  keep.selectionTicket()
              }
-@@ -722,7 +890,7 @@ class BackgroundControl private constructor(context: Context) {
+@@ -722,7 +893,7 @@ class BackgroundControl private constructor(context: Context) {
                          channelProvider = { peer },
                          mayUse = { currentOwner() && !interruptRequested },
                          admitUse = { action -> admitOwner { check(!interruptRequested); action() } },
@@ -3906,10 +3901,23 @@ index 79cae468..8dc4b6d3 100644
                          localOcr = ocr,
                          localOcrAllowed = { target -> localOcrAllowed(target) },
                          onResourceReady = { publishPreviewTarget(record, it) },
-@@ -753,6 +921,15 @@ class BackgroundControl private constructor(context: Context) {
+@@ -732,6 +903,9 @@ class BackgroundControl private constructor(context: Context) {
+             }
+         }
+         notifyChanged()
++        // 【4cb·影子】零行为：新驱动必然新 owner（BackgroundDisplayIo 每实例一个 UUID）。
++        io.github.ccch1mneyyy.dsh_app.wake.WakeTrace.log(
++            "vscreen-shadow: new driver owner=${acquired.driver.ownerToken} taskId=${owner.taskId} slots=${taskResource.recordCount()}")
+         return acquired.driver
+     }
+ 
+@@ -753,6 +927,18 @@ class BackgroundControl private constructor(context: Context) {
       * and every later task) waiting on a receipt that may never come.
       */
      fun endTask(expectedTaskId: Long? = null) {
++        // 【4cb·影子】零行为：任务结束的输入事实（保屏旗标、槽位数）。
++        io.github.ccch1mneyyy.dsh_app.wake.WakeTrace.log(
++            "vscreen-shadow: endTask expected=$expectedTaskId keep=${io.github.ccch1mneyyy.dsh_app.phone.PhoneRegistry.vscreenKeepAfterTask} slots=${taskResource.recordCount()}")
 +        // 【4bc】任务自然结束时"保屏"，就连记录都不许封。
 +        // 以前先 seal 再 continue：记录一直封着，driver() 只认未封记录 → 返回 null →
 +        // 用户按 ✕ 时没有任何通道可用（真机 21:41 `endTask toBack ok=false reason=null`），
@@ -3922,7 +3930,7 @@ index 79cae468..8dc4b6d3 100644
          var previewChanged = false
          val captured = synchronized(this) {
              taskResource.seal(expectedTaskId).onEach {
-@@ -762,6 +939,19 @@ class BackgroundControl private constructor(context: Context) {
+@@ -762,6 +948,19 @@ class BackgroundControl private constructor(context: Context) {
          }
          if (previewChanged) onPreviewChanged()
          for (record in captured) {
@@ -4549,7 +4557,7 @@ index 6f0a4508..58c6ea17 100644
      const val NONCE = "nonce"
      const val DISPLAY = "display"
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/BackgroundTaskSlot.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/BackgroundTaskSlot.kt
-index 853ed85e..891aff45 100644
+index 853ed85e..feebfbf9 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/BackgroundTaskSlot.kt
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/BackgroundTaskSlot.kt
 @@ -16,6 +16,10 @@ internal class BackgroundTaskSlot<D : Any, P : Any>(private val lock: Any) {
@@ -4563,6 +4571,16 @@ index 853ed85e..891aff45 100644
  
      fun find(owner: PhoneTasks.Owner): TaskResource<D, P>? = synchronized(lock) {
          resources.firstOrNull { !it.sealed && it.matches(owner) }
+@@ -40,6 +44,9 @@ internal class BackgroundTaskSlot<D : Any, P : Any>(private val lock: Any) {
+ 
+     fun cleanupCandidates(): List<TaskResource<D, P>> = synchronized(lock) { resources.filter { it.sealed } }
+ 
++    /** 【4cb·影子】零行为：当前槽位数，影子日志用。 */
++    internal fun recordCount(): Int = synchronized(lock) { resources.size }
++
+     /** Cleanup does not require an active Owner; cancellation is why it is often needed. */
+     fun seal(taskId: Long? = null): List<TaskResource<D, P>> = synchronized(lock) {
+         resources.filter { taskId == null || it.owner.taskId == taskId }.onEach { it.sealed = true }
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/BackgroundTree.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/BackgroundTree.kt
 index 830cb253..56527963 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/BackgroundTree.kt
@@ -5144,8 +5162,43 @@ index 00000000..c1dcef97
 +
 +    fun logSize() = Log.i(TAG, "vscreen: task-finish kept-total=$size")
 +}
+diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/OwnerScopes.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/OwnerScopes.kt
+index 06faa948..c19c6581 100644
+--- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/OwnerScopes.kt
++++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/OwnerScopes.kt
+@@ -18,7 +18,18 @@ internal class OwnerScopes<C : Any, R : Any>(private val limit: Int = 3, private
+     private var mode: Boolean? = null
+ 
+     fun enter(owner: String, opening: Boolean, maintenance: Boolean, release: Boolean,
+-              create: () -> C): Entry<C, R> = synchronized(lock) {
++              create: () -> C): Entry<C, R> {
++        val result = enterLocked(owner, opening, maintenance, release, create)
++        // 【4cb·影子】零行为：入场判定完整留痕（谁、新建还是复用、拒绝原因、表多大）。
++        io.github.ccch1mneyyy.dsh_app.wake.WakeTrace.log(
++            "scope-shadow: enter owner=$owner opening=$opening active=${activeCount()} " +
++                "-> ${result.javaClass.simpleName}" +
++                (if (result is Entry.Refused<*, *>) " code=${result.code}" else ""))
++        return result
++    }
++
++    private fun enterLocked(owner: String, opening: Boolean, maintenance: Boolean, release: Boolean,
++                            create: () -> C): Entry<C, R> = synchronized(lock) {
+         val known = active.containsKey(owner) || completed.containsKey(owner)
+         fun no(code: String) = Entry.Refused<C, R>(code, !known)
+         if (mode == false) return no("scopeModeMismatch")
+@@ -53,6 +64,10 @@ internal class OwnerScopes<C : Any, R : Any>(private val limit: Int = 3, private
+         } else record.busy = false
+     }
+ 
++    /** 【4cb·影子】零行为：入场判定留痕用的表读数。 */
++    fun activeCount(): Int = synchronized(lock) { active.size }
++    fun activeOwners(): List<String> = synchronized(lock) { active.keys.toList() }
++
+     fun enterGlobal(legacyResource: Boolean = false): String? = synchronized(lock) {
+         if (global || active.isNotEmpty()) return "scopeBusy"
+         if (legacyResource && mode == true) return "scopeModeMismatch"
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/PrivilegedDisplayCore.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/PrivilegedDisplayCore.kt
-index c7ed0f7a..890267d0 100644
+index c7ed0f7a..5aa19b47 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/PrivilegedDisplayCore.kt
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/PrivilegedDisplayCore.kt
 @@ -11,6 +11,7 @@ package io.github.ccch1mneyyy.dsh_app.phone.background
@@ -6537,7 +6590,21 @@ index c7ed0f7a..890267d0 100644
          val ir = lock.withLock {
              if (pendingReader != null || readerAllocationUncertain) throw Fault("releasePending")
              val vd = display ?: throw Fault("displayMissing")
-@@ -1359,8 +2511,23 @@ class PrivilegedDisplayCore internal constructor(
+@@ -1332,6 +2484,13 @@ class PrivilegedDisplayCore internal constructor(
+ 
+     internal fun previewDrained(): Boolean = lock.withLock { previewWorker.drained() }
+ 
++    /** 零行为：服务退出瞬间这块屏的事实（屏号、任务数、有没有交出 surface、是否已释放）。 */
++    internal fun exitFacts(): String {
++        val id = runCatching { display?.display?.displayId ?: -1 }.getOrDefault(-1)
++        val tasks = if (id > Display.DEFAULT_DISPLAY) runCatching { rootTaskInfos(id).size }.getOrDefault(-1) else -1
++        return "display=$id tasks=$tasks surface=${viewSurface != null} released=${released.get()}"
++    }
++
+     private fun renderPreview(ticket: BackgroundPreviewState.Ticket) {
+         var bitmap: Bitmap? = null
+         var thumbnail: Bitmap? = null
+@@ -1359,8 +2518,23 @@ class PrivilegedDisplayCore internal constructor(
                  } finally { image.close() }
                  // All Image/buffer access ends before releaseAll can close its ImageReader.
              } finally { lock.unlock() }
@@ -6562,7 +6629,7 @@ index c7ed0f7a..890267d0 100644
                  bitmap = Bitmap.createBitmap(raw.width, raw.height, Bitmap.Config.ARGB_8888)
                  bitmap!!.copyPixelsFromBuffer(ByteBuffer.wrap(raw.pixels))
              }
-@@ -1382,6 +2549,18 @@ class PrivilegedDisplayCore internal constructor(
+@@ -1382,6 +2556,18 @@ class PrivilegedDisplayCore internal constructor(
                  preview.unavailable(ticket, "frameTooLarge"); return
              }
              preview.publish(ticket, BackgroundPreviewState.Frame(w, h, pixels, bytes), SystemClock.uptimeMillis())
@@ -6581,7 +6648,7 @@ index c7ed0f7a..890267d0 100644
          } catch (_: Exception) {
              preview.unavailable(ticket, "captureFailed")
          } finally {
-@@ -2025,6 +3204,32 @@ class PrivilegedDisplayCore internal constructor(
+@@ -2025,6 +3211,32 @@ class PrivilegedDisplayCore internal constructor(
          if (waitForFinish && !accepted) throw Fault("inputRejected")
      }
  
@@ -6614,7 +6681,7 @@ index c7ed0f7a..890267d0 100644
      private fun setImePolicyHide(displayId: Int) {
          val sm = Class.forName("android.os.ServiceManager")
          val binder = sm.getMethod("getService", String::class.java).invoke(null, "window") as IBinder
-@@ -2079,9 +3284,14 @@ class PrivilegedDisplayCore internal constructor(
+@@ -2079,9 +3291,14 @@ class PrivilegedDisplayCore internal constructor(
  
      companion object {
          private val PACKAGE = Regex("[a-zA-Z][a-zA-Z0-9_]*(\\.[a-zA-Z0-9_]+)+")
@@ -6632,8 +6699,47 @@ index c7ed0f7a..890267d0 100644
          private val KEYS = mapOf(
              "back" to KeyEvent.KEYCODE_BACK, "home" to KeyEvent.KEYCODE_HOME,
              "enter" to KeyEvent.KEYCODE_ENTER, "delete" to KeyEvent.KEYCODE_DEL,
+diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/PrivilegedDisplayEntry.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/PrivilegedDisplayEntry.kt
+index 8eb55617..a066e4e8 100644
+--- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/PrivilegedDisplayEntry.kt
++++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/PrivilegedDisplayEntry.kt
+@@ -100,7 +100,13 @@ object PrivilegedDisplayMain {
+             synchronized(output) { output.write(Frames.MAGIC); output.flush() }
+             var businessSeen = false
+             while (true) {
+-                val frame = Frames.read(input) ?: break
++                val frame = Frames.read(input)
++                if (frame == null) {
++                    // 【诊断】通道被对端关闭（App 侧 close / 进程被回收）：这是虚拟屏服务退出的头号原因。
++                    io.github.ccch1mneyyy.dsh_app.wake.WakeTrace.logNow(
++                        "vdisplay: stdin closed by peer -> service will exit (display will die)")
++                    break
++                }
+                 val request = Bundles.unmarshal(frame)
+                 val optIn = MuxProtocol.isOptIn(request, core.peerInstance)
+                 if (optIn) {
+@@ -121,9 +127,18 @@ object PrivilegedDisplayMain {
+                 if (request.getString(Proto.OP) == Proto.OP_DESTROY &&
+                     (response.get(Proto.OK) as? Boolean) == true) break
+             }
+-        } catch (_: Throwable) {
++        } catch (t: Throwable) {
+             // stream closed or malformed: fall through to exit
++            io.github.ccch1mneyyy.dsh_app.wake.WakeTrace.logNow(
++                "vdisplay: serve loop threw ${t.javaClass.simpleName}: ${t.message}")
+         } finally {
++            io.github.ccch1mneyyy.dsh_app.wake.WakeTrace.logNow(
++                "vdisplay: exiting now (DESTROY + killProcess)")
++            // 零行为：退出瞬间的屏事实（屏号、任务数、surface、scope 表），
++            // 回答"进程死的时候屏上到底还有什么"。
++            io.github.ccch1mneyyy.dsh_app.wake.WakeTrace.logNow(
++                "vdisplay: exit facts ${core.exitFacts()}")
++
+             runCatching { core.handle(Bundle().apply { putString(Proto.OP, Proto.OP_DESTROY) }) }
+             runCatching { Looper.getMainLooper()?.quitSafely() }
+             Process.killProcess(Process.myPid())
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/PrivilegedDisplayHost.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/PrivilegedDisplayHost.kt
-index aa3faff3..4731fbf8 100644
+index aa3faff3..5dfce915 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/PrivilegedDisplayHost.kt
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/PrivilegedDisplayHost.kt
 @@ -70,7 +70,9 @@ internal class PrivilegedDisplayHost(private val context: Context) {
@@ -6647,7 +6753,7 @@ index aa3faff3..4731fbf8 100644
          val initial = if (opening) initial(inner, owner) else null
          // Known identities never receive scopeAccepted=false for malformed subsequent requests.
          val entry = scopes.enter(owner, opening && initial != null, initial?.maintenance == true, op == Proto.OP_RELEASE) {
-@@ -107,7 +109,7 @@ internal class PrivilegedDisplayHost(private val context: Context) {
+@@ -107,10 +109,14 @@ internal class PrivilegedDisplayHost(private val context: Context) {
                  ?.let { HostedScope(it, probe = true) }
              Proto.OP_SELF_CHECK_TARGET_CREATE -> SelfCheckTargetRequest.parse(request.keySet()) { request.get(it) }
                  ?.let { HostedScope(it.owner, target = it) }
@@ -6656,6 +6762,13 @@ index aa3faff3..4731fbf8 100644
              else -> null
          }
      }
+ 
++    /** 零行为：服务退出瞬间的事实快照（legacy 屏状态 + 每个 owner scope 的持有者）。 */
++    internal fun exitFacts(): String =
++        "legacy(${legacy.exitFacts()}) scopes=[${scopes.activeOwners().joinToString(",")}]"
++
+     private fun failure(code: String) = Bundle().apply { putBoolean(Proto.OK, false); putString(Proto.ERROR, code) }
+ }
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/PrivilegedProtocol.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/PrivilegedProtocol.kt
 index 4c327b1e..98b01ed0 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/PrivilegedProtocol.kt
