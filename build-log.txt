@@ -1,7 +1,7 @@
 == resources ==
 /dev/root       145G   49G   97G  34% /
                total        used        free      shared  buff/cache   available
-Mem:           15983        3304         316          49       12755       12678
+Mem:           15983        3192         427          49       12757       12790
 == tail ==
 
 ==> 依赖: flutter pub get
@@ -130,4 +130,29 @@ Downloading packages...
 Got dependencies!
 48 packages have newer versions incompatible with dependency constraints.
 Try `flutter pub outdated` for more information.
+Running Gradle task 'assembleArm64Release'...                   
+
+FAILURE: Build failed with an exception.
+
+* What went wrong:
+Could not resolve all artifacts for configuration 'classpath'.
+> Could not resolve org.jetbrains.kotlin:kotlin-reflect:2.2.21.
+  Required by:
+      settings file 'settings.gradle.kts'
+   > Repository maven is disabled due to earlier error below:
+      > Could not resolve org.jetbrains.kotlin:kotlin-gradle-plugin-idea-proto:2.4.0.
+         > Could not get resource 'https://maven.aliyun.com/repository/google/org/jetbrains/kotlin/kotlin-gradle-plugin-idea-proto/2.4.0/kotlin-gradle-plugin-idea-proto-2.4.0.pom'.
+            > Could not GET 'https://maven.aliyun.com/repository/google/org/jetbrains/kotlin/kotlin-gradle-plugin-idea-proto/2.4.0/kotlin-gradle-plugin-idea-proto-2.4.0.pom'. Received status code 502 from server: Bad Gateway
+> There are 64 more failures with identical causes.
+
+* Try:
+> Run with --stacktrace option to get the stack trace.
+> Run with --info or --debug option to get more log output.
+> Run with --scan to get full insights from a Build Scan (powered by Develocity).
+> Get more help at https://help.gradle.org.
+
+BUILD FAILED in 1m 24s
+Running Gradle task 'assembleArm64Release'...                      85.0s
+[!] Gradle threw an error while downloading artifacts from the network.
+Retrying Gradle Build: #1, wait time: 100ms
 Running Gradle task 'assembleArm64Release'...                   
