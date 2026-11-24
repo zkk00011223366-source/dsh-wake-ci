@@ -1,12 +1,12 @@
-From b1b17bd184a4d0af3e1e998b83bd79936f5255f3 Mon Sep 17 00:00:00 2001
+From 2cc16e6cf8183c01ddc3d0b9d9f86b0590aab5d3 Mon Sep 17 00:00:00 2001
 From: ci <ci@local>
-Date: Tue, 24 Nov 2026 16:16:24 +0800
-Subject: [PATCH] b: scene4cd
+Date: Tue, 24 Nov 2026 17:03:06 +0800
+Subject: [PATCH] b: scene4ce
 MIME-Version: 1.0
 Content-Type: text/plain; charset=UTF-8
 Content-Transfer-Encoding: 8bit
 
-4cd: 会话级 owner 一块屏 + 开新应用切掉旧应用（B1a-1）
+4ce: 点条翻回显示状态 + 删 shown 自指 + 粘性戳（治点条后窗口被拉回条）
 ---
  .gitattributes                                |    3 +
  .github/workflows/wake-apk.yml                |  192 ++
@@ -19,7 +19,7 @@ Content-Transfer-Encoding: 8bit
  .../dsh_app/notify/NotifyPlugin.kt            |    5 +-
  .../dsh_app/phone/PhoneAndroidShell.kt        |   10 +-
  .../dsh_app/phone/PhoneBackGuard.kt           |  146 +
- .../dsh_app/phone/PhoneContracts.kt           |  261 ++
+ .../dsh_app/phone/PhoneContracts.kt           |  263 ++
  .../ccch1mneyyy/dsh_app/phone/PhoneControl.kt |  109 +-
  .../ccch1mneyyy/dsh_app/phone/PhoneCore.kt    |  562 +++-
  .../ccch1mneyyy/dsh_app/phone/PhonePlugin.kt  |  601 ++++
@@ -61,10 +61,10 @@ Content-Transfer-Encoding: 8bit
  .../dsh_app/phone/vscreen/PresentationHost.kt |   69 +
  .../phone/vscreen/SwitchPromptOverlay.kt      |  142 +
  .../dsh_app/phone/vscreen/TaskMover.kt        |  152 +
- .../dsh_app/phone/vscreen/TransferBall.kt     |  493 +++
+ .../dsh_app/phone/vscreen/TransferBall.kt     |  500 +++
  .../phone/vscreen/VirtualScreenOverlay.kt     | 2777 +++++++++++++++++
  .../phone/vscreen/VirtualScreenPlugin.kt      |  249 ++
- .../dsh_app/phone/vscreen/VscreenUi.kt        |  166 +
+ .../dsh_app/phone/vscreen/VscreenUi.kt        |  163 +
  .../ccch1mneyyy/dsh_app/runtime/GuestSetup.kt |   47 +-
  .../dsh_app/shortcuts/EntryActivity.kt        |    3 +
  .../dsh_app/shortcuts/ShortcutsPlugin.kt      |   13 +-
@@ -142,7 +142,7 @@ Content-Transfer-Encoding: 8bit
  docs/wake-word.md                             |  107 +
  dsh-go-wake.patch                             | 2065 ++++++++++++
  tooling/build-wake-apk.sh                     |   68 +
- 134 files changed, 17937 insertions(+), 579 deletions(-)
+ 134 files changed, 17943 insertions(+), 579 deletions(-)
  create mode 100644 .github/workflows/wake-apk.yml
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallForegroundService.kt
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallOverlay.kt
@@ -1355,7 +1355,7 @@ index 00000000..175e47b7
 +    }
 +}
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneContracts.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneContracts.kt
-index 612f94d1..b0de1827 100644
+index 612f94d1..3190b155 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneContracts.kt
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneContracts.kt
 @@ -220,6 +220,13 @@ interface PhoneDriver {
@@ -1372,7 +1372,7 @@ index 612f94d1..b0de1827 100644
  }
  
  data class ConfirmRequest(
-@@ -346,13 +353,267 @@ interface ControlListener {
+@@ -346,13 +353,269 @@ interface ControlListener {
      fun onAccessibilityChanged(connected: Boolean) {}
  }
  
@@ -1552,6 +1552,8 @@ index 612f94d1..b0de1827 100644
 +     * 真机 11:42 现场：微信小窗明明开着、画面在动，顶部却弹"虚拟屏通道已断开（服务未在运行）"。
 +     */
 +    @Volatile var vscreenLastFrameAt: Long = 0L
++    /** 【4ce】用户最近一次点贴边条的时刻（elapsedRealtime）。判定用它粘住窗口 10 秒，防账本瞬时误判把窗拉回条。 */
++    @Volatile var vscreenTapLatchedAt: Long = 0L
 +    /**
 +     * open 成功后应用实际所在的虚拟屏号（0=没有）。真机 22:54 证据：
 +     * open 报 displayId=218，但界面按账本判 hasTask=false、ui=none，窗口从未被要求打开——
@@ -7850,10 +7852,10 @@ index 00000000..19aecfea
 +}
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/TransferBall.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/TransferBall.kt
 new file mode 100644
-index 00000000..ca2f1201
+index 00000000..abe0de2c
 --- /dev/null
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/TransferBall.kt
-@@ -0,0 +1,493 @@
+@@ -0,0 +1,500 @@
 +package io.github.ccch1mneyyy.dsh_app.phone.vscreen
 +
 +import android.annotation.SuppressLint
@@ -8048,10 +8050,17 @@ index 00000000..ca2f1201
 +            holder.setOnClickListener {
 +                io.github.ccch1mneyyy.dsh_app.wake.WakeTrace.log("ball: tap=open reason=strip")
 +                val opened = VirtualScreenOverlay.show(app)
-+                // v3.2（用户 01:1x）：点条 = 打开虚拟屏，**黄条跟着消失**。
-+                // 以前只调 show()，靠状态机下一拍把条收掉；窗口已经开着时 show() 直接复用它、
-+                // 不会走 hide()，条就留在屏幕上和窗口并存——需求明确不许窗和条同时在场。
-+                if (opened) setWanted(false)
++                // 【4ce】点条 = 回到显示状态：通道翻回 virtual、解除眼睛锁、打粘性戳。
++                // 以前只 show() 不翻通道：target 还停在 silent，判定要条、Dart 采纳后把刚出的窗拉回去。
++                if (opened) {
++                    io.github.ccch1mneyyy.dsh_app.phone.PhoneRegistry.vscreenTarget = "virtual"
++                    io.github.ccch1mneyyy.dsh_app.phone.PhoneRegistry.vscreenUserSilent = false
++                    io.github.ccch1mneyyy.dsh_app.phone.PhoneRegistry.vscreenTapLatchedAt =
++                        android.os.SystemClock.elapsedRealtime()
++                    io.github.ccch1mneyyy.dsh_app.wake.WakeTrace.log(
++                        "ball: tap->virtual latched target=virtual userSilent=false (4ce)")
++                    setWanted(false)
++                }
 +            }
 +        }
 +        holder.addView(col, FrameLayout.LayoutParams(-1, -1))
@@ -11387,10 +11396,10 @@ index 00000000..6ec7218a
 +}
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VscreenUi.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VscreenUi.kt
 new file mode 100644
-index 00000000..100b35b0
+index 00000000..b276171b
 --- /dev/null
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VscreenUi.kt
-@@ -0,0 +1,166 @@
+@@ -0,0 +1,163 @@
 +package io.github.ccch1mneyyy.dsh_app.phone.vscreen
 +
 +import io.github.ccch1mneyyy.dsh_app.phone.PhoneRegistry
@@ -11465,16 +11474,18 @@ index 00000000..100b35b0
 +        val screen = PhoneRegistry.vscreenScreenHasTasks?.invoke()
 +        val hasScreen = screen == true
 +        val screenText = screen?.toString() ?: "unknown"
++        // 【4ce】用户刚点过条：窗口粘性 10 秒。防止账本瞬时误判把刚出来的窗又拉回条。
++        val tappedRecently = ch == "virtual" &&
++            PhoneRegistry.vscreenTapLatchedAt > 0L &&
++            android.os.SystemClock.elapsedRealtime() - PhoneRegistry.vscreenTapLatchedAt < 10_000L
 +        val ui = when {
 +            // 【4aq】主屏通道恒为 none，**必须排在 shown 之前**：⇄ 到主屏后 shown 会卡在 true，
 +            // 排在 shown 后面就会一直判 window（真机 14:44:19 起每 10 秒一条 `channel=main … shown=true -> window`，
 +            // 而那时窗和条都不在屏幕上，用户看到的就是"卡住、点什么都没用"）。
 +            ch == "main" -> NONE
-+            shown -> WINDOW                                  // R7：窗口可见 → 窗口（不挂条）
-+            // 主屏通道：**永远零悬浮物**。必须排在 hasScreen 之前——
-+            // 否则用完虚拟屏、屏里还留着任务时，主屏会被判成 ball2 挂出一条双键条，
-+            // 那正是"主屏不显示任何悬浮条"一直没落实的原因之一。
-+            ch == "main" -> NONE
++            // 【4ce】删掉 shown -> WINDOW：shown 是窗口自身状态，判自己 = 每 2 秒震荡的根
++            // （14:15:21-50 真机实锤）。点条回窗现在靠"点条翻 virtual + 粘性戳"驱动。
++            tappedRecently -> WINDOW
 +            // R1'（实测 16:18 修正）：虚拟屏通道下"屏里有内容"意味着**窗口正在开**，
 +            // 这时绝不能挂条——真机就是这样：channel=virtual + hasTask=true 立刻判出 ball2，
 +            // 用户先看到一条黄条，几秒后窗口才出来，体验等同后台屏。必须排在 hasScreen 之前。
@@ -11482,11 +11493,6 @@ index 00000000..100b35b0
 +            // v3.2（用户 01:1x）：后台屏的条**必须带画面一起出现**——"应用没起来、屏里没画面，
 +            // 就不许先把条挂出来"。所以这条要排在 hasScreen 之前，否则屏里一有任务就先把条挂上去了。
 +            // 凭据用"这块屏真的画出过一帧"（用户选的标准：必须真的收到第一帧）。
-+            // 【4ab·撤回一条】本来想在这里加"必须 task||hasScreen"，用来治"没任务也出条"。
-+            // 撤回理由（用户 07:5x 回忆）：那次其实**有声音**，说明腾讯视频还在跑，
-+            // 是我们的探测失明（`open-missing hasTask=false`），不是真没任务。
-+            // 读不到 ≠ 没有：加这条会把真实存在的任务也藏掉，用户更看不到。
-+            // 真正要修的是探测（读不到要报 unknown，不许当 false），不是收紧这里。
 +            ch == "silent" && PhoneRegistry.vscreenFirstFrameAt > 0 -> BALL2
 +            ch == "silent" -> NONE
 +            // R9：屏里还有内容（剧还在放、应用还在跑）且不在虚拟屏通道 → 双键条，眼睛能叫回来
