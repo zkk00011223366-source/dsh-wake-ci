@@ -1,7 +1,7 @@
 == resources ==
-/dev/mapper/cow-root  145G   45G  100G  32% /
+/dev/root       145G   48G   98G  33% /
                total        used        free      shared  buff/cache   available
-Mem:           15700        3310         352          49       12421       12390
+Mem:           15983        1235         381          49       14759       14747
 == tail ==
 
 ==> 依赖: flutter pub get
@@ -72,10 +72,10 @@ To use the command line arguments, delete the l10n.yaml file in the Flutter proj
 ==> 运行时: 已存在 runtime/out/arm64-v8a
 
 ==> 打包: tooling/build-apk.sh -f arm64 --keep-daemon
-dsh-go 1.1.0 (11241023, 2026-11-24 10:23 UTC+8) · release · arm64
+dsh-go 1.1.0 (11241040, 2026-11-24 10:40 UTC+8) · release · arm64
 runtime verified: arm64 (arm64-v8a), schema 1, 5 files
 tawcroot: /home/runner/work/dsh-wake-ci/dsh-wake-ci/runtime/out-tawcroot
-→ flutter build apk --release --flavor arm64 --target-platform android-arm64 --build-name 1.1.0 --build-number 11241023 --dart-define=DSH_APP_VERSION=1.1.0+11241023
+→ flutter build apk --release --flavor arm64 --target-platform android-arm64 --build-name 1.1.0 --build-number 11241040 --dart-define=DSH_APP_VERSION=1.1.0+11241040
 Flutter assets will be downloaded from https://storage.googleapis.com. Make sure you trust this source!
 Resolving dependencies...
 Downloading packages...
@@ -130,28 +130,4 @@ Downloading packages...
 Got dependencies!
 48 packages have newer versions incompatible with dependency constraints.
 Try `flutter pub outdated` for more information.
-Running Gradle task 'assembleArm64Release'...                   
-
-FAILURE: Build failed with an exception.
-
-* What went wrong:
-Could not resolve all artifacts for configuration 'classpath'.
-> Could not resolve org.jetbrains:annotations:13.0.
-  Required by:
-      settings file 'settings.gradle.kts'
-   > Could not resolve org.jetbrains:annotations:13.0.
-      > Could not get resource 'https://maven.aliyun.com/repository/google/org/jetbrains/annotations/13.0/annotations-13.0.pom'.
-         > Could not HEAD 'https://maven.aliyun.com/repository/google/org/jetbrains/annotations/13.0/annotations-13.0.pom'. Received status code 502 from server: Bad Gateway
-> There are 56 more failures with identical causes.
-
-* Try:
-> Run with --stacktrace option to get the stack trace.
-> Run with --info or --debug option to get more log output.
-> Run with --scan to get full insights from a Build Scan (powered by Develocity).
-> Get more help at https://help.gradle.org.
-
-BUILD FAILED in 1m 16s
-Running Gradle task 'assembleArm64Release'...                      76.6s
-[!] Gradle threw an error while downloading artifacts from the network.
-Retrying Gradle Build: #1, wait time: 100ms
 Running Gradle task 'assembleArm64Release'...                   
