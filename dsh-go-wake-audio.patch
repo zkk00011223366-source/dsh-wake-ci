@@ -1,7 +1,7 @@
-From 0aa7ab444c5fe42a3f2c30e5ec2071bc3b99ace4 Mon Sep 17 00:00:00 2001
+From 7a292edc3f51578ef88dbf4688f54aaa331b0f53 Mon Sep 17 00:00:00 2001
 From: ci <ci@local>
-Date: Tue, 24 Nov 2026 10:03:45 +0800
-Subject: [PATCH] pb: scene4bn
+Date: Tue, 24 Nov 2026 10:05:08 +0800
+Subject: [PATCH] pb: scene4bo
 
 ---
  .gitattributes                                |    3 +
@@ -112,7 +112,7 @@ Subject: [PATCH] pb: scene4bn
  app/lib/ui/chat/media/media_format.dart       |   16 +-
  app/lib/ui/phone/android_shell_page.dart      |   33 +
  app/lib/ui/phone/background_preview.dart      |  264 +-
- app/lib/ui/phone/dnd_mode_page.dart           |  203 +-
+ app/lib/ui/phone/dnd_mode_page.dart           |  214 +-
  app/lib/ui/phone/phone_control_screen.dart    |    1 +
  app/lib/ui/phone/phone_task_card.dart         |  430 +++
  app/lib/ui/phone/virtual_screen_host.dart     |  397 +++
@@ -134,7 +134,7 @@ Subject: [PATCH] pb: scene4bn
  docs/wake-word.md                             |  107 +
  dsh-go-wake.patch                             | 2065 +++++++++++++
  tooling/build-wake-apk.sh                     |   68 +
- 130 files changed, 17652 insertions(+), 569 deletions(-)
+ 130 files changed, 17662 insertions(+), 570 deletions(-)
  create mode 100644 .github/workflows/wake-apk.yml
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallForegroundService.kt
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallOverlay.kt
@@ -88387,7 +88387,7 @@ index 173f148a..475ff4b2 100644
 +  _ => '任务迁移没成功，应用还在原处。',
 +};
 diff --git a/app/lib/ui/phone/dnd_mode_page.dart b/app/lib/ui/phone/dnd_mode_page.dart
-index 3a23e526..23ce8741 100644
+index 3a23e526..abee1c96 100644
 --- a/app/lib/ui/phone/dnd_mode_page.dart
 +++ b/app/lib/ui/phone/dnd_mode_page.dart
 @@ -16,8 +16,8 @@ import '../common/row_marks.dart';
@@ -88463,7 +88463,7 @@ index 3a23e526..23ce8741 100644
      final waiting = using == PhonePrivilegedMode.root && bg.root.starting;
      final open = _open ?? (bg.effectiveReady ? PhonePrivilegedMode.off : using);
      final choices = <Widget>[
-@@ -276,36 +239,92 @@ class _PhoneDndPageState extends ConsumerState<PhoneDndPage> {
+@@ -276,36 +239,101 @@ class _PhoneDndPageState extends ConsumerState<PhoneDndPage> {
                  subtitle: bg.effectiveReady ? l10n.phoneReady : (waiting ? bg.effectiveReason : null),
                  trailing: TextButton(onPressed: _ready ? _close : null, child: Text(l10n.commonClose)),
                ),
@@ -88490,7 +88490,14 @@ index 3a23e526..23ce8741 100644
 +              // 虚拟屏下面那个「默认隐藏（只留黄条）」开关。
 +              // AI 的明确指令（background=main/virtual/silent）仍然优先于这里。
 +              for (final option in const [VirtualScreenTarget.main, VirtualScreenTarget.virtual])
-+                ListPageRow(
+                 ListPageRow(
+-                  leading: const SizedBox(),
+-                  title: l10n.phonePreviewTitle,
+-                  subtitle: l10n.phonePreviewDescription,
+-                  subtitleMaxLines: 4,
+-                  trailing: Switch(
+-                    value: bg.previewEnabled,
+-                    onChanged: !_ready || _busy
 +                  key: ValueKey('phone-virtual-target-${option.name}'),
 +                  leading: Icon(target == option ? AppIcons.radioOn : AppIcons.radioOff),
 +                  title: switch (option) {
@@ -88514,38 +88521,29 @@ index 3a23e526..23ce8741 100644
 +                    return const PhoneResult(true);
 +                  })),
 +                ),
-+              if (target == VirtualScreenTarget.virtual)
-                 ListPageRow(
--                  leading: const SizedBox(),
--                  title: l10n.phonePreviewTitle,
--                  subtitle: l10n.phonePreviewDescription,
--                  subtitleMaxLines: 4,
-+                  key: const ValueKey('phone-virtual-hidden'),
-+                  leading: Icon(hidden ? AppIcons.radioOn : AppIcons.radioOff),
-+                  title: '虚拟屏默认隐藏（只留黄条）',
-+                  subtitle: '开：应用开在虚拟屏里但不弹窗，屏幕上只出黄条，点条随时展开',
-+                  subtitleMaxLines: 3,
-                   trailing: Switch(
--                    value: bg.previewEnabled,
--                    onChanged: !_ready || _busy
--                        ? null
--                        : (enabled) =>
--                              unawaited(_run(() async => PhoneResult(await _phone.setBackgroundPreview(enabled)))),
-+                    value: hidden,
-+                    onChanged: (on) => unawaited(
-+                      ref.read(virtualScreenSettingsProvider.notifier).setHidden(on),
-+                    ),
-                   ),
-                 ),
--                if (bg.previewEnabled)
--                  for (final candidate in previewTasks)
--                    ListPageRow(
--                      key: ValueKey('phone-preview-task-${candidate.id}'),
--                      leading: const SizedBox(),
--                      title: !hasSlotMetadata ? l10n.phonePreviewOpen : l10n.phonePreviewTask(candidate.id!.toString()),
--                      subtitle: candidate.app,
--                      onTap: _ready ? () => unawaited(_showPreview(candidate.id!)) : null,
--                    ),
++              // 虚拟屏的**子开关**（用户 10:0x）：「默认隐藏」只属于虚拟屏。
++              // 主屏选中时它跟着失效（灰色不可点），选回虚拟屏时恢复上次的选择。
++              ListPageRow(
++                key: const ValueKey('phone-virtual-hidden'),
++                leading: Icon(
++                  hidden && target == VirtualScreenTarget.virtual
++                      ? AppIcons.radioOn
++                      : AppIcons.radioOff,
++                ),
++                title: '虚拟屏默认隐藏（只留黄条）',
++                subtitle: target == VirtualScreenTarget.virtual
++                    ? '开：应用开在虚拟屏里但不弹窗，屏幕上只出黄条，点条随时展开'
++                    : '仅在「默认操作：虚拟屏」时可用',
++                subtitleMaxLines: 3,
++                trailing: Switch(
++                  value: target == VirtualScreenTarget.virtual && hidden,
++                  onChanged: target == VirtualScreenTarget.virtual
++                      ? (on) => unawaited(
++                            ref.read(virtualScreenSettingsProvider.notifier).setHidden(on),
++                          )
++                      : null,
++                ),
++              ),
 +              // 横屏 / 竖屏 / 跟随主屏（第九节 2）：视频类应用要横屏，聊天、信息流要竖屏。
 +              // 建屏那一刻按这一条决定虚拟显示宽高，不是事后旋转。
 +              if (bg.viewport case final viewport?)
@@ -88563,9 +88561,21 @@ index 3a23e526..23ce8741 100644
 +                        : null,
 +                    subtitleMaxLines: 2,
 +                    onTap: !_ready || _busy || viewport == preset
-+                        ? null
+                         ? null
+-                        : (enabled) =>
+-                              unawaited(_run(() async => PhoneResult(await _phone.setBackgroundPreview(enabled)))),
 +                        : () => unawaited(_run(() => _phone.setBackgroundViewport(preset))),
-+                  ),
+                   ),
+-                ),
+-                if (bg.previewEnabled)
+-                  for (final candidate in previewTasks)
+-                    ListPageRow(
+-                      key: ValueKey('phone-preview-task-${candidate.id}'),
+-                      leading: const SizedBox(),
+-                      title: !hasSlotMetadata ? l10n.phonePreviewOpen : l10n.phonePreviewTask(candidate.id!.toString()),
+-                      subtitle: candidate.app,
+-                      onTap: _ready ? () => unawaited(_showPreview(candidate.id!)) : null,
+-                    ),
                ],
 -            ],
            ),
@@ -88577,7 +88587,7 @@ index 3a23e526..23ce8741 100644
          if (_error case final error? when error != bg.effectiveReason) PhoneNote(tone: NoteTone.warn, text: error),
          if (bg.keep.enabled && _keepStatus(bg.keep).$1 != null)
            PhoneNote(
-@@ -327,66 +346,6 @@ class _PhoneDndPageState extends ConsumerState<PhoneDndPage> {
+@@ -327,66 +355,6 @@ class _PhoneDndPageState extends ConsumerState<PhoneDndPage> {
            children: [
              if (using != PhonePrivilegedMode.off && bg.privileged != null)
                ListPageCard(margin: _groupMargin, children: [_keepRow(using, bg.keep)]),
