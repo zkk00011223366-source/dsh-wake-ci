@@ -1,7 +1,7 @@
-From 65a3e8f121ac4a6ceb7380be86fc09d132bc33b2 Mon Sep 17 00:00:00 2001
+From 9136f8b063f70d687482fa876c0952cf4f174596 Mon Sep 17 00:00:00 2001
 From: ci <ci@local>
-Date: Tue, 24 Nov 2026 11:48:03 +0800
-Subject: [PATCH] pb: scene4bv
+Date: Tue, 24 Nov 2026 11:58:36 +0800
+Subject: [PATCH] pb: scene4bw
 
 ---
  .gitattributes                                |    3 +
@@ -27,7 +27,7 @@ Subject: [PATCH] pb: scene4bv
  .../dsh_app/phone/SystemActions.kt            |    7 +-
  .../dsh_app/phone/a11y/ControlOverlay.kt      |   11 +-
  .../dsh_app/phone/a11y/PhoneA11yService.kt    |   20 +
- .../phone/background/BackgroundControl.kt     |  183 +-
+ .../phone/background/BackgroundControl.kt     |  194 +-
  .../phone/background/BackgroundCoordinates.kt |    2 +
  .../phone/background/BackgroundDisplay.kt     |  369 ++-
  .../phone/background/BackgroundDisplayIo.kt   |    6 +
@@ -135,7 +135,7 @@ Subject: [PATCH] pb: scene4bv
  docs/wake-word.md                             |  107 +
  dsh-go-wake.patch                             | 2065 ++++++++++++
  tooling/build-wake-apk.sh                     |   68 +
- 131 files changed, 17780 insertions(+), 573 deletions(-)
+ 131 files changed, 17791 insertions(+), 573 deletions(-)
  create mode 100644 .github/workflows/wake-apk.yml
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallForegroundService.kt
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallOverlay.kt
@@ -3662,7 +3662,7 @@ index 8aa204bc..298fc3a9 100644
          super.onConfigurationChanged(newConfig)
          overlay?.onConfigurationChanged()
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/BackgroundControl.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/BackgroundControl.kt
-index 79cae468..71e67a3c 100644
+index 79cae468..8dc4b6d3 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/BackgroundControl.kt
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/BackgroundControl.kt
 @@ -13,6 +13,8 @@ import android.net.Network
@@ -3829,7 +3829,7 @@ index 79cae468..71e67a3c 100644
              "shizuku" to shizukuStatus.map(),
              "adb" to adbStatus.map(),
              "root" to rootStatus.map(),
-@@ -703,6 +837,29 @@ class BackgroundControl private constructor(context: Context) {
+@@ -703,6 +837,40 @@ class BackgroundControl private constructor(context: Context) {
              synchronized(keepGuard) {
                  if (selfCheckBorrow != null || interruptRequested || !current()) return null
                  taskResource.find(owner)?.let { return it.driver }
@@ -3855,11 +3855,22 @@ index 79cae468..71e67a3c 100644
 +                    taskResource.cleanupCandidates().forEach { stale ->
 +                        runCatching { taskResource.complete(stale) }
 +                    }
++                    // 【4bw】只丢本地记录不够：旧会话在 core 那边可能还占着名额
++                    // （日志 `release deferred reason=keepAfterTask` → 从来没真正 release），
++                    // 新任务申请同一个 owner 会被拒，表现就是"只能开一次，必须强停 App"。
++                    // 这里把两道闸放开并真的 release 一次，让 core 把名额交回来。
++                    io.github.ccch1mneyyy.dsh_app.phone.PhoneRegistry.vscreenKeepAfterTask = false
++                    runCatching {
++                        io.github.ccch1mneyyy.dsh_app.phone.PhoneRegistry.holdDisplayForWindow?.invoke(false)
++                    }
++                    runCatching { endTask(null) }
++                    io.github.ccch1mneyyy.dsh_app.wake.WakeTrace.log(
++                        "vscreen: stale screen released (keep/hold cleared, endTask ran)")
 +                }
                  if (selectingResource || restoring?.isDone == false || selectionChange != null) return null
                  keep.selectionTicket()
              }
-@@ -722,7 +879,7 @@ class BackgroundControl private constructor(context: Context) {
+@@ -722,7 +890,7 @@ class BackgroundControl private constructor(context: Context) {
                          channelProvider = { peer },
                          mayUse = { currentOwner() && !interruptRequested },
                          admitUse = { action -> admitOwner { check(!interruptRequested); action() } },
@@ -3868,7 +3879,7 @@ index 79cae468..71e67a3c 100644
                          localOcr = ocr,
                          localOcrAllowed = { target -> localOcrAllowed(target) },
                          onResourceReady = { publishPreviewTarget(record, it) },
-@@ -753,6 +910,15 @@ class BackgroundControl private constructor(context: Context) {
+@@ -753,6 +921,15 @@ class BackgroundControl private constructor(context: Context) {
       * and every later task) waiting on a receipt that may never come.
       */
      fun endTask(expectedTaskId: Long? = null) {
@@ -3884,7 +3895,7 @@ index 79cae468..71e67a3c 100644
          var previewChanged = false
          val captured = synchronized(this) {
              taskResource.seal(expectedTaskId).onEach {
-@@ -762,6 +928,19 @@ class BackgroundControl private constructor(context: Context) {
+@@ -762,6 +939,19 @@ class BackgroundControl private constructor(context: Context) {
          }
          if (previewChanged) onPreviewChanged()
          for (record in captured) {
