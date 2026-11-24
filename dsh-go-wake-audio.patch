@@ -1,12 +1,12 @@
-From 42b2dad61995e41e6f1da9b82a6b1facdae2d22e Mon Sep 17 00:00:00 2001
+From 93e19f4f82ebb409f4f745823b42d845bf37c50a Mon Sep 17 00:00:00 2001
 From: ci <ci@local>
-Date: Tue, 24 Nov 2026 22:26:47 +0800
-Subject: [PATCH] b: scene4e
+Date: Tue, 24 Nov 2026 22:53:39 +0800
+Subject: [PATCH] b: scene4g
 MIME-Version: 1.0
 Content-Type: text/plain; charset=UTF-8
 Content-Transfer-Encoding: 8bit
 
-4e+4f: 点条链重做 + stale 真探活确认 + 释放作废会话
+4g: 键轨深色底 + 通话绿条尺寸对齐与拖动
 ---
  .gitattributes                                |    3 +
  .github/workflows/wake-apk.yml                |  192 ++
@@ -14,7 +14,7 @@ Content-Transfer-Encoding: 8bit
  app/android/app/src/main/AndroidManifest.xml  |   43 +-
  .../ccch1mneyyy/dsh_app/MainActivity.kt       |   85 +-
  .../dsh_app/call/CallForegroundService.kt     |   94 +
- .../ccch1mneyyy/dsh_app/call/CallOverlay.kt   |  320 ++
+ .../ccch1mneyyy/dsh_app/call/CallOverlay.kt   |  369 +++
  .../dsh_app/call/CallOverlayPlugin.kt         |   70 +
  .../dsh_app/notify/NotifyPlugin.kt            |    5 +-
  .../dsh_app/phone/PhoneAndroidShell.kt        |   10 +-
@@ -62,7 +62,7 @@ Content-Transfer-Encoding: 8bit
  .../phone/vscreen/SwitchPromptOverlay.kt      |  142 +
  .../dsh_app/phone/vscreen/TaskMover.kt        |  152 +
  .../dsh_app/phone/vscreen/TransferBall.kt     |  500 +++
- .../phone/vscreen/VirtualScreenOverlay.kt     | 2788 +++++++++++++++++
+ .../phone/vscreen/VirtualScreenOverlay.kt     | 2789 +++++++++++++++++
  .../phone/vscreen/VirtualScreenPlugin.kt      |  249 ++
  .../dsh_app/phone/vscreen/VscreenUi.kt        |  166 +
  .../ccch1mneyyy/dsh_app/runtime/GuestSetup.kt |   47 +-
@@ -142,7 +142,7 @@ Content-Transfer-Encoding: 8bit
  docs/wake-word.md                             |  107 +
  dsh-go-wake.patch                             | 2065 ++++++++++++
  tooling/build-wake-apk.sh                     |   68 +
- 134 files changed, 18097 insertions(+), 586 deletions(-)
+ 134 files changed, 18147 insertions(+), 586 deletions(-)
  create mode 100644 .github/workflows/wake-apk.yml
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallForegroundService.kt
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallOverlay.kt
@@ -758,10 +758,10 @@ index 00000000..90a77cf0
 +}
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallOverlay.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallOverlay.kt
 new file mode 100644
-index 00000000..7c5ca73c
+index 00000000..f899a709
 --- /dev/null
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallOverlay.kt
-@@ -0,0 +1,320 @@
+@@ -0,0 +1,369 @@
 +package io.github.ccch1mneyyy.dsh_app.call
 +
 +import android.annotation.SuppressLint
@@ -811,8 +811,9 @@ index 00000000..7c5ca73c
 +    /** A window width (dp) and height (dp) for the two shapes it takes. */
 +    private const val CARD_W = 84f
 +    private const val CARD_H = 104f
-+    private const val SLIVER_W = 12f
-+    private const val SLIVER_H = 56f
++    /** 【4g】绿条尺寸对齐虚拟屏黄条（20×50），更好点。 */
++    private const val SLIVER_W = 20f
++    private const val SLIVER_H = 50f
 +
 +    private var wm: WindowManager? = null
 +    private var card: View? = null
@@ -944,9 +945,56 @@ index 00000000..7c5ca73c
 +
 +        view.setOnTouchListener { _, event ->
 +            if (collapsed) {
-+                // A tap on the sliver only brings the card back; opening the call is the
-+                // card's own tap, one step later. Doing both here skipped the card entirely.
-+                if (event.actionMasked == MotionEvent.ACTION_UP) applyShape(false)
++                // 【4g】绿条也能拖动：按下→超过阈值判拖拽→跟手；没拖才是点击（展开回球）。
++                when (event.actionMasked) {
++                    MotionEvent.ACTION_DOWN -> {
++                        startX = event.rawX
++                        startY = event.rawY
++                        fromX = lp.x
++                        fromY = lp.y
++                        lastX = event.rawX
++                        lastAt = SystemClock.elapsedRealtime()
++                        vx = 0f
++                        dragging = false
++                    }
++                    MotionEvent.ACTION_MOVE -> {
++                        val dx = event.rawX - startX
++                        val dy = event.rawY - startY
++                        if (!dragging && (abs(dx) > 6 * px || abs(dy) > 6 * px)) dragging = true
++                        if (dragging) {
++                            val now = SystemClock.elapsedRealtime()
++                            if (now > lastAt) vx = (event.rawX - lastX) * 1000f / (now - lastAt)
++                            lastX = event.rawX
++                            lastAt = now
++                            lp.x = (fromX + dx).roundToInt().coerceIn(
++                                EdgeSnap.minX(area, margin),
++                                EdgeSnap.maxX(area, lp.width, margin),
++                            )
++                            lp.y = (fromY + dy).roundToInt().coerceIn(
++                                EdgeSnap.minY(area, margin),
++                                EdgeSnap.maxY(area, lp.height, margin),
++                            )
++                            try {
++                                manager.updateViewLayout(view, lp)
++                            } catch (_: Exception) {
++                            }
++                        }
++                    }
++                    MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
++                        if (!dragging) {
++                            // A tap on the sliver only brings the card back; opening the call is the
++                            // card's own tap, one step later. Doing both here skipped the card entirely.
++                            applyShape(false)
++                        } else {
++                            // 已收条：位置已跟手更新，只保存吸附偏好，保持收条。
++                            dock = EdgeSnap.dockFor(lp.x, lp.y, lp.width, lp.height, area, margin, vx)
++                            context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
++                                .putString(KEY_SIDE, if (dock.side == Side.LEFT) "l" else "r")
++                                .putFloat(KEY_FRACTION, dock.yFraction)
++                                .apply()
++                        }
++                    }
++                }
 +                return@setOnTouchListener true
 +            }
 +            when (event.actionMasked) {
@@ -1018,7 +1066,8 @@ index 00000000..7c5ca73c
 +    }
 +
 +    private fun sliverBackground(px: Float) = GradientDrawable().apply {
-+        cornerRadius = 6 * px
++        // 【4g】宽了圆角跟着放大，保持胶囊观感。
++        cornerRadius = 10 * px
 +        // 通话吸边条：绿色（用户 22:22），和虚拟屏的红色区分开。
 +        setColor(Color.argb(220, 52, 211, 153))
 +    }
@@ -8536,10 +8585,10 @@ index 00000000..abe0de2c
 +}
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenOverlay.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenOverlay.kt
 new file mode 100644
-index 00000000..ab147878
+index 00000000..8b2afff5
 --- /dev/null
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenOverlay.kt
-@@ -0,0 +1,2788 @@
+@@ -0,0 +1,2789 @@
 +package io.github.ccch1mneyyy.dsh_app.phone.vscreen
 +
 +import io.github.ccch1mneyyy.dsh_app.phone.PhoneRegistry
@@ -9637,8 +9686,9 @@ index 00000000..ab147878
 +        return GradientDrawable().apply {
 +            shape = GradientDrawable.RECTANGLE
 +            cornerRadii = r
-+            setColor(0x00000000)                                         // 透明
-+            setStroke((1f * px).roundToInt().coerceAtLeast(1), 0x29FFFFFF) // rgba(255,255,255,.16)
++            // 【4g】半透明深色底：亮色界面上按键不再隐形，观感是毛玻璃胶囊。
++            setColor(0x66080A12)
++            setStroke((1f * px).roundToInt().coerceAtLeast(1), 0x3DFFFFFF)
 +        }
 +    }
 +
