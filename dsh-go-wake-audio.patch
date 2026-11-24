@@ -1,7 +1,7 @@
-From 61efc079571fca65f126bc37ba29d77855b537c4 Mon Sep 17 00:00:00 2001
+From d089c4d56b4961de2baeef868c18cf6ea7edb27d Mon Sep 17 00:00:00 2001
 From: ci <ci@local>
-Date: Tue, 24 Nov 2026 09:47:39 +0800
-Subject: [PATCH] pb: scene4bk
+Date: Tue, 24 Nov 2026 09:49:04 +0800
+Subject: [PATCH] pb: scene4bl
 
 ---
  .gitattributes                                |    3 +
@@ -54,7 +54,7 @@ Subject: [PATCH] pb: scene4bk
  .../phone/vscreen/SwitchPromptOverlay.kt      |  142 +
  .../dsh_app/phone/vscreen/TaskMover.kt        |  152 +
  .../dsh_app/phone/vscreen/TransferBall.kt     |  493 +++
- .../phone/vscreen/VirtualScreenOverlay.kt     | 2743 +++++++++++++++++
+ .../phone/vscreen/VirtualScreenOverlay.kt     | 2752 +++++++++++++++++
  .../phone/vscreen/VirtualScreenPlugin.kt      |  249 ++
  .../dsh_app/phone/vscreen/VscreenUi.kt        |  154 +
  .../ccch1mneyyy/dsh_app/runtime/GuestSetup.kt |   47 +-
@@ -134,7 +134,7 @@ Subject: [PATCH] pb: scene4bk
  docs/wake-word.md                             |  107 +
  dsh-go-wake.patch                             | 2065 +++++++++++++
  tooling/build-wake-apk.sh                     |   68 +
- 130 files changed, 17561 insertions(+), 570 deletions(-)
+ 130 files changed, 17570 insertions(+), 570 deletions(-)
  create mode 100644 .github/workflows/wake-apk.yml
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallForegroundService.kt
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallOverlay.kt
@@ -7974,10 +7974,10 @@ index 00000000..ca2f1201
 +}
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenOverlay.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenOverlay.kt
 new file mode 100644
-index 00000000..2220533c
+index 00000000..c2292a96
 --- /dev/null
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenOverlay.kt
-@@ -0,0 +1,2743 @@
+@@ -0,0 +1,2752 @@
 +package io.github.ccch1mneyyy.dsh_app.phone.vscreen
 +
 +import io.github.ccch1mneyyy.dsh_app.phone.PhoneRegistry
@@ -8226,8 +8226,16 @@ index 00000000..2220533c
 +            WakeTrace.log("window: show reused taskId=${this.taskId} revealed=$revealed")
 +            return true
 +        }
-+        detachForReopen()
-+        hide()
++        // 【4bl】从黄条点回来时，如果帧直读还活着，就别拆面、也别关 reader：
++        // 拆一次要重新 attach，真机实测点条到出画面 1.85~2.9 秒（19:02/21:40/07:37 都是 1.85s），
++        // 不拆那次只有 0.05s（19:01:08）。用户口径：点条要立刻有画面。
++        val readerAlive = appReaderActive
++        if (readerAlive) {
++            WakeTrace.log("window: keep app reader on return (no detach) display=$displayId")
++        } else {
++            detachForReopen()
++        }
++        hide(keepReader = readerAlive)
 +        revealed = false
 +        val app = context.applicationContext
 +        val manager = app.getSystemService(Context.WINDOW_SERVICE) as? WindowManager ?: return false
@@ -8466,8 +8474,9 @@ index 00000000..2220533c
 +        if (announce) onAction?.invoke("eyeHidden")
 +    }
 +
-+    fun hide() {
-+        stopAppReader()
++    fun hide(keepReader: Boolean = false) {
++        // 【4bl】keepReader=true：只拆窗口，不动帧直读通道（从黄条点回来走这条，省掉 1.8 秒重挂）。
++        if (!keepReader) stopAppReader()
 +        runCatching { presentationHost?.dismiss() }
 +        presentationHost = null
 +        // 关窗恢复原来的音量（窗口里默认静音，别把手机整体声音一直掐着）。
