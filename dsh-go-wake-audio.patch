@@ -1,16 +1,16 @@
-From 93e19f4f82ebb409f4f745823b42d845bf37c50a Mon Sep 17 00:00:00 2001
+From c39fa7ae28e13c4ed12d291463b2c8b6238f6299 Mon Sep 17 00:00:00 2001
 From: ci <ci@local>
-Date: Tue, 24 Nov 2026 22:53:39 +0800
-Subject: [PATCH] b: scene4g
+Date: Tue, 24 Nov 2026 23:32:40 +0800
+Subject: [PATCH] b: scene4h
 MIME-Version: 1.0
 Content-Type: text/plain; charset=UTF-8
 Content-Transfer-Encoding: 8bit
 
-4g: 键轨深色底 + 通话绿条尺寸对齐与拖动
+4h: versionCode 恒用构建分钟数（治同版本安装不杀旧进程）
 ---
  .gitattributes                                |    3 +
  .github/workflows/wake-apk.yml                |  192 ++
- app/android/app/build.gradle.kts              |    6 +-
+ app/android/app/build.gradle.kts              |   11 +-
  app/android/app/src/main/AndroidManifest.xml  |   43 +-
  .../ccch1mneyyy/dsh_app/MainActivity.kt       |   85 +-
  .../dsh_app/call/CallForegroundService.kt     |   94 +
@@ -142,7 +142,7 @@ Content-Transfer-Encoding: 8bit
  docs/wake-word.md                             |  107 +
  dsh-go-wake.patch                             | 2065 ++++++++++++
  tooling/build-wake-apk.sh                     |   68 +
- 134 files changed, 18147 insertions(+), 586 deletions(-)
+ 134 files changed, 18151 insertions(+), 587 deletions(-)
  create mode 100644 .github/workflows/wake-apk.yml
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallForegroundService.kt
  create mode 100644 app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/call/CallOverlay.kt
@@ -409,7 +409,7 @@ index 00000000..018dd3f6
 +            echo 'first (its local data goes; back it up).'
 +          } >> "$GITHUB_STEP_SUMMARY"
 diff --git a/app/android/app/build.gradle.kts b/app/android/app/build.gradle.kts
-index f2d6b7e7..8b7286ea 100644
+index f2d6b7e7..3d80c598 100644
 --- a/app/android/app/build.gradle.kts
 +++ b/app/android/app/build.gradle.kts
 @@ -35,6 +35,10 @@ fun buildMinuteVersionCode(): Int {
@@ -423,7 +423,7 @@ index f2d6b7e7..8b7286ea 100644
      namespace = "io.github.ccch1mneyyy.dsh_app"
      compileSdk = flutter.compileSdkVersion
      // The device tests under src/androidTest are AndroidTestCase tests; these platform libraries
-@@ -49,7 +53,7 @@ android {
+@@ -49,13 +53,16 @@ android {
      }
  
      defaultConfig {
@@ -432,6 +432,16 @@ index f2d6b7e7..8b7286ea 100644
          // java.nio.file (symlinks while unpacking the rootfs) needs API 26.
          minSdk = 26
          // Target 28 like Termux, so the API 29+ exec restriction on app-private
+         // files does not apply to binaries inside the rootfs.
+         targetSdk = 28
+-        versionCode = flutter.versionCode.takeIf { it > 1 } ?: buildMinuteVersionCode()
++        // 【4h】versionCode 恒用构建分钟数：pubspec 里的 +11210245 被写死，导致所有包同版本号，
++        // 同版本覆盖安装不杀旧进程 → "装完打开还是旧代码/不重启"（真机 2026-11-24 全天怪象的根）。
++        // 构建分钟数单调递增，每次安装必然替换进程。
++        versionCode = buildMinuteVersionCode()
+         versionName = flutter.versionName
+     }
+ 
 diff --git a/app/android/app/src/main/AndroidManifest.xml b/app/android/app/src/main/AndroidManifest.xml
 index 1473ba24..8a6a191e 100644
 --- a/app/android/app/src/main/AndroidManifest.xml
