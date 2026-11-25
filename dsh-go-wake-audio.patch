@@ -1,12 +1,12 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: ci <ci@local>
-Date: Wed, 25 Nov 2026 13:40:58 +0800
+Date: Wed, 25 Nov 2026 13:52:02 +0800
 Subject: [PATCH] b: scene4n
 MIME-Version: 1.0
 Content-Type: text/plain; charset=UTF-8
 Content-Transfer-Encoding: 8bit
 
-4n: 修复全量 + 空空品牌 + 探活误杀修复 + 键盘焦点修复
+4n: 修复全量 + 空空品牌 + 误杀/键盘修复 + 贴边外滑收条
 
 ---
  .gitattributes                                     |    3 +
@@ -66,7 +66,7 @@ Content-Transfer-Encoding: 8bit
  .../dsh_app/phone/vscreen/PresentationHost.kt      |   69 +
  .../ccch1mneyyy/dsh_app/phone/vscreen/TaskMover.kt |  152 ++
  .../dsh_app/phone/vscreen/TransferBall.kt          |  500 ++++
- .../dsh_app/phone/vscreen/VirtualScreenOverlay.kt  | 2848 ++++++++++++++++++++
+ .../dsh_app/phone/vscreen/VirtualScreenOverlay.kt  | 2877 ++++++++++++++++++++
  .../dsh_app/phone/vscreen/VirtualScreenPlugin.kt   |  238 ++
  .../ccch1mneyyy/dsh_app/phone/vscreen/VscreenUi.kt |  166 ++
  .../ccch1mneyyy/dsh_app/runtime/GuestSetup.kt      |   47 +-
@@ -232,7 +232,7 @@ Content-Transfer-Encoding: 8bit
  app/lib/ui/phone/virtual_screen_page.dart          |  114 +
  app/lib/ui/phone/virtual_screen_surface.dart       |  286 ++
  app/lib/ui/settings/settings_screen.dart           |   22 +-
- app/lib/ui/settings/voice_settings_page.dart       |  151 ++
+ app/lib/ui/settings/voice_settings_page.dart       |  151 +
  app/lib/ui/shell/call_overlay_host.dart            |   55 +
  app/lib/ui/shell/home_shell.dart                   |    7 +
  app/lib/ui/shell/system_entry_host.dart            |   44 +
@@ -247,7 +247,7 @@ Content-Transfer-Encoding: 8bit
  docs/wake-word.md                                  |  107 +
  dsh-go-wake.patch                                  | 2065 ++++++++++++++
  tooling/build-wake-apk.sh                          |   68 +
- 238 files changed, 18661 insertions(+), 982 deletions(-)
+ 238 files changed, 18690 insertions(+), 982 deletions(-)
 
 diff --git a/.gitattributes b/.gitattributes
 index 52e3e08a..3e877c7e 100644
@@ -8974,10 +8974,10 @@ index 00000000..abe0de2c
 +}
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenOverlay.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenOverlay.kt
 new file mode 100644
-index 00000000..94755ff1
+index 00000000..6f05dc0e
 --- /dev/null
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenOverlay.kt
-@@ -0,0 +1,2848 @@
+@@ -0,0 +1,2877 @@
 +package io.github.ccch1mneyyy.dsh_app.phone.vscreen
 +
 +import io.github.ccch1mneyyy.dsh_app.phone.PhoneRegistry
@@ -11457,6 +11457,7 @@ index 00000000..94755ff1
 +        var vx = 0f
 +        var dragging = false
 +        var downAt = 0L
++        var startedParked = false
 +        var moved = 0f
 +        var longFired = false
 +        var windowGrab = true
@@ -11619,6 +11620,9 @@ index 00000000..94755ff1
 +                    startY = event.rawY
 +                    fromX = lp.x
 +                    fromY = lp.y
++                    // 【4o】手势收条：拖动开始时窗口已贴边，这次再往边框外滑就收成贴边条。
++                    startedParked = fromX <= EdgeSnap.minX(area, margin) + (16 * px).roundToInt() ||
++                        fromX >= EdgeSnap.maxX(area, lp.width, margin) - (16 * px).roundToInt()
 +                    lastX = event.rawX
 +                    lastAt = SystemClock.elapsedRealtime()
 +                    downAt = lastAt
@@ -11674,7 +11678,18 @@ index 00000000..94755ff1
 +                    }
 +                    val manual = manualAllowed(context) && shape == Shape.EXPAND
 +                    if (dragging && windowGrab) {
-+                        park()
++                        // 【4o】手势收条：贴边状态下继续往边框外滑（≥70px）→ 收成贴边条
++                        // （等同 👁：任务照跑、应用保留）。不满足就照常吸边停靠。
++                        val outDx = event.rawX - startX
++                        val outSwipe = startedParked &&
++                            ((dock.side == Side.LEFT && outDx < -(70 * px)) ||
++                                (dock.side == Side.RIGHT && outDx > (70 * px)))
++                        if (outSwipe) {
++                            WakeTrace.log("window: edge out-swipe -> hide to sliver")
++                            hideWindowOnly()
++                        } else {
++                            park()
++                        }
 +                        return@setOnTouchListener true
 +                    }
 +                    if (!manual) {
@@ -11718,6 +11733,9 @@ index 00000000..94755ff1
 +                    startY = event.rawY
 +                    fromX = lp.x
 +                    fromY = lp.y
++                    // 【4o】手势收条：拖动开始时窗口已贴边，这次再往边框外滑就收成贴边条。
++                    startedParked = fromX <= EdgeSnap.minX(area, margin) + (16 * px).roundToInt() ||
++                        fromX >= EdgeSnap.maxX(area, lp.width, margin) - (16 * px).roundToInt()
 +                    lastX = event.rawX
 +                    lastAt = SystemClock.elapsedRealtime()
 +                    downAt = lastAt
@@ -11773,7 +11791,18 @@ index 00000000..94755ff1
 +                    }
 +                    val manual = manualAllowed(context) && shape == Shape.EXPAND
 +                    if (dragging && windowGrab) {
-+                        park()
++                        // 【4o】手势收条：贴边状态下继续往边框外滑（≥70px）→ 收成贴边条
++                        // （等同 👁：任务照跑、应用保留）。不满足就照常吸边停靠。
++                        val outDx = event.rawX - startX
++                        val outSwipe = startedParked &&
++                            ((dock.side == Side.LEFT && outDx < -(70 * px)) ||
++                                (dock.side == Side.RIGHT && outDx > (70 * px)))
++                        if (outSwipe) {
++                            WakeTrace.log("window: edge out-swipe -> hide to sliver")
++                            hideWindowOnly()
++                        } else {
++                            park()
++                        }
 +                        return@setOnTouchListener true
 +                    }
 +                    if (!manual) {
