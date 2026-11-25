@@ -1,6 +1,6 @@
 From: dsh <dsh@local>
-Date: Thu, 26 Nov 2026 05:17:25 +0800
-Subject: [PATCH] 4ox 状态源单一：判定/回读统一查 core 任务表，账本退役
+Date: Thu, 26 Nov 2026 05:27:11 +0800
+Subject: [PATCH] 4ox+4oz+4oy 状态源单一+挂载冷启动+首开中断等待+IME LOCAL+am 兜底
 
  .gitattributes                                     |    3 +
  .github/workflows/wake-apk.yml                     |  192 ++
@@ -15,9 +15,9 @@ Subject: [PATCH] 4ox 状态源单一：判定/回读统一查 core 任务表，�
  .../ccch1mneyyy/dsh_app/phone/PhoneAndroidShell.kt |   18 +-
  .../ccch1mneyyy/dsh_app/phone/PhoneBackGuard.kt    |  146 +
  .../ccch1mneyyy/dsh_app/phone/PhoneContracts.kt    |  280 ++
- .../ccch1mneyyy/dsh_app/phone/PhoneControl.kt      |  146 +-
- .../github/ccch1mneyyy/dsh_app/phone/PhoneCore.kt  |  633 ++++-
- .../ccch1mneyyy/dsh_app/phone/PhonePlugin.kt       |  509 ++++
+ .../ccch1mneyyy/dsh_app/phone/PhoneControl.kt      |  149 +-
+ .../github/ccch1mneyyy/dsh_app/phone/PhoneCore.kt  |  652 ++++-
+ .../ccch1mneyyy/dsh_app/phone/PhonePlugin.kt       |  528 ++++
  .../ccch1mneyyy/dsh_app/phone/PhoneTaskSessions.kt |   49 +-
  .../github/ccch1mneyyy/dsh_app/phone/PhoneTasks.kt |   97 +-
  .../ccch1mneyyy/dsh_app/phone/PhoneToolCatalog.kt  |   53 +-
@@ -27,7 +27,7 @@ Subject: [PATCH] 4ox 状态源单一：判定/回读统一查 core 任务表，�
  .../dsh_app/phone/a11y/ControlOverlay.kt           |   11 +-
  .../dsh_app/phone/a11y/PhoneA11yService.kt         |   20 +
  .../dsh_app/phone/background/AdbFramedSession.kt   |    5 +
- .../dsh_app/phone/background/BackgroundControl.kt  |  314 +-
+ .../dsh_app/phone/background/BackgroundControl.kt  |  317 ++-
  .../phone/background/BackgroundCoordinates.kt      |    2 +
  .../dsh_app/phone/background/BackgroundDisplay.kt  |  445 ++-
  .../phone/background/BackgroundDisplayIo.kt        |   10 +-
@@ -46,7 +46,7 @@ Subject: [PATCH] 4ox 状态源单一：判定/回读统一查 core 任务表，�
  .../dsh_app/phone/background/KeptTasks.kt          |   39 +
  .../dsh_app/phone/background/OwnerScopes.kt        |   30 +-
  .../dsh_app/phone/background/PrivilegedChannel.kt  |    6 +
- .../phone/background/PrivilegedDisplayCore.kt      | 1404 ++++++++-
+ .../phone/background/PrivilegedDisplayCore.kt      | 1434 +++++++++-
  .../phone/background/PrivilegedDisplayEntry.kt     |   19 +-
  .../phone/background/PrivilegedDisplayHost.kt      |   39 +-
  .../dsh_app/phone/background/PrivilegedProtocol.kt |  113 +-
@@ -239,7 +239,7 @@ Subject: [PATCH] 4ox 状态源单一：判定/回读统一查 core 任务表，�
  docs/wake-word.md                                  |  107 +
  dsh-go-wake.patch                                  | 2065 ++++++++++++++
  tooling/build-wake-apk.sh                          |   68 +
- 237 files changed, 18458 insertions(+), 991 deletions(-)
+ 237 files changed, 18528 insertions(+), 995 deletions(-)
 
 diff --git a/.gitattributes b/.gitattributes
 index 52e3e08a..3e877c7e 100644
@@ -1834,7 +1834,7 @@ index 612f94d1..f8911612 100644
      @Volatile var overlayGate: UserGate? = null
      @Volatile var notificationGate: UserGate? = null
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneControl.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneControl.kt
-index 2fc7cd59..b03d9c8a 100644
+index 2fc7cd59..43dda807 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneControl.kt
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneControl.kt
 @@ -193,7 +193,15 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
@@ -1948,7 +1948,7 @@ index 2fc7cd59..b03d9c8a 100644
      }
  
      override fun a11yState(): A11yState = when {
-@@ -999,18 +1035,114 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
+@@ -999,18 +1035,117 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
          else -> A11yState.DISABLED
      }
  
@@ -2004,13 +2004,16 @@ index 2fc7cd59..b03d9c8a 100644
          // l10n:keep agent stop reason
 -        return "不打扰模式（后台屏）用不了$reason。只能在主屏操作；要用后台屏请用户到 设置 → 手机操控 → 不打扰模式 开通。"
 +        return "虚拟屏用不了$reason。这轮请在主屏操作（background:false），或请用户到 设置 → 手机操控 → 不打扰模式 授权 Shizuku / ADB 后再用虚拟屏。"
-+    }
-+
+     }
+ 
 +    /** 【4ou】通用自愈：open 失败后的全量重置（新身份+清账+断旧通道）。 */
 +    override fun resetVscreenForReopen() {
 +        runCatching { background.resetForReopen() }
-     }
- 
++    }
++
++    /** 【4oy】上一任务"停止"的中断收尾是否还在进行：进行中新任务 open 应等它走完，不硬拒。 */
++    override fun vscreenInterruptInProgress(): Boolean = background.interruptInProgress()
++
      override fun system(): SystemApi = system
  
 +    /**
@@ -2065,7 +2068,7 @@ index 2fc7cd59..b03d9c8a 100644
  
      override fun notifyFix(kind: String) = notifyFixFor(tasks, kind)
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneCore.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneCore.kt
-index 6c701851..bb00be93 100644
+index 6c701851..0dd30977 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneCore.kt
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneCore.kt
 @@ -1,9 +1,12 @@
@@ -2081,12 +2084,16 @@ index 6c701851..bb00be93 100644
  import java.time.ZoneId
  import java.util.concurrent.atomic.AtomicReference
  
-@@ -23,6 +26,16 @@ interface PhoneEnv {
+@@ -23,6 +26,20 @@ interface PhoneEnv {
      fun a11yState(): A11yState
      /** Why the background display can't be used, as a sentence for the model. */
      fun backgroundUnavailable(): String
 +    /** 【4ou】通用自愈：open 失败后全量重置虚拟屏（新身份+清账+断旧通道），下一次重建。 */
 +    fun resetVscreenForReopen() {}
++
++    /** 【4oy】上一任务"停止"的中断收尾是否还在进行：进行中新任务的 open 准入会被拒，
++     *  打开前应等它走完（停止语义=只停 AI 操作，不封屏不封通道）。 */
++    fun vscreenInterruptInProgress(): Boolean = false
 +
 +    /**
 +     * 默认操作目标是不是虚拟屏。工具没有明说 background 时按这个走；主屏是显式的特例
@@ -2098,7 +2105,7 @@ index 6c701851..bb00be93 100644
      fun system(): SystemApi
      fun androidShell(): PhoneShellExecutor? = null
      fun uiText(): PhoneUiText = PhoneUiText.DEFAULT
-@@ -55,7 +68,7 @@ class PhoneCore(
+@@ -55,7 +72,7 @@ class PhoneCore(
      },
  ) {
      private val ui: PhoneUiText get() = env.uiText()
@@ -2107,7 +2114,7 @@ index 6c701851..bb00be93 100644
  
      // An abandoned body may overlap a later execution of the same Owner. Keep its display
      // serial with that body, not a mutable Core-wide field or a fresh lookup when say runs.
-@@ -64,12 +77,26 @@ class PhoneCore(
+@@ -64,12 +81,26 @@ class PhoneCore(
      /** The overlay's status line; 免确认 stays visible the whole time nothing is asked. */
      private fun say(owner: PhoneTasks.Owner, text: String) {
          if (!current(owner)) return
@@ -2135,7 +2142,7 @@ index 6c701851..bb00be93 100644
  
      /**
       * The task's last hard refusal (密码框, 系统设置, 不碰名单), for the `handoff` that usually
-@@ -97,15 +124,30 @@ class PhoneCore(
+@@ -97,15 +128,30 @@ class PhoneCore(
          internal val replayOutcomes: PhoneSkillOutcomes? = null,
          internal val replayDriver: PhoneDriver? = null,
          private val replayApp: PhoneAppIdentity? = null,
@@ -2167,7 +2174,7 @@ index 6c701851..bb00be93 100644
      }
  
      /** Only a first claimed native Selection reaches this path; public args never construct it. */
-@@ -119,14 +161,15 @@ class PhoneCore(
+@@ -119,14 +165,15 @@ class PhoneCore(
          val app = PhoneAppIdentity(selection.app.packageName, selection.app.uid)
          val originalDriver = if (screen == PhoneScreen.BACKGROUND) {
              env.existingReplayDriver(owner, app)?.takeIf { it.screen == PhoneScreen.BACKGROUND }
@@ -2185,7 +2192,7 @@ index 6c701851..bb00be93 100644
      }
  
      private fun replay(call: PreparedCall, scope: SerialWorker.Scope, owner: PhoneTasks.Owner): Out {
-@@ -140,7 +183,7 @@ class PhoneCore(
+@@ -140,7 +187,7 @@ class PhoneCore(
          if (!live()) return stop("原任务或路线已不可继续。") // l10n:keep replay result
          val screen = call.screens.single()
          val driver = if (screen == PhoneScreen.BACKGROUND) {
@@ -2194,7 +2201,7 @@ index 6c701851..bb00be93 100644
          } else when (val result = driverFor(screen, owner)) {
              is Either.Left -> return stop(result.value)
              is Either.Right -> result.value
-@@ -255,7 +298,9 @@ class PhoneCore(
+@@ -255,7 +302,9 @@ class PhoneCore(
              // l10n:keep agent tool result
              return ToolOutput("没有这个手机工具：$name。可用：${PhoneToolCatalog.names.joinToString("、")}", isError = true)
          }
@@ -2205,7 +2212,7 @@ index 6c701851..bb00be93 100644
              // l10n:keep agent tool result
              return ToolOutput("手机操控已在 DSH 设置里关闭。请用户在 设置 → 手机操控 里打开后重启引擎。", isError = true)
          }
-@@ -361,7 +406,7 @@ class PhoneCore(
+@@ -361,7 +410,7 @@ class PhoneCore(
              // MAIN already excludes other app holders. Resolve again after waiting for it,
              // keeping the originally selected package if its label or launcher has changed.
              val refreshMain = name == PhoneToolCatalog.INTENT ||
@@ -2214,7 +2221,7 @@ index 6c701851..bb00be93 100644
              val call = if (prepared != null && !refreshMain) prepared else when (
                  val result = prepare(name, a, owner, prepared?.requestedApp)
              ) {
-@@ -383,6 +428,8 @@ class PhoneCore(
+@@ -383,6 +432,8 @@ class PhoneCore(
                  PhoneToolCatalog.TAP, PhoneToolCatalog.TYPE, PhoneToolCatalog.SCROLL, PhoneToolCatalog.TAP_XY -> act(name, a, scope, owner)
                  PhoneToolCatalog.KEY -> key(a, owner)
                  PhoneToolCatalog.HANDOFF -> handoff(a, scope, owner)
@@ -2223,7 +2230,7 @@ index 6c701851..bb00be93 100644
                  // l10n:keep agent tool result
                  else -> Out("没有这个手机工具：$name", error = true)
              }
-@@ -391,6 +438,18 @@ class PhoneCore(
+@@ -391,6 +442,18 @@ class PhoneCore(
          }
      }
  
@@ -2242,7 +2249,7 @@ index 6c701851..bb00be93 100644
      private fun current(owner: PhoneTasks.Owner): Boolean =
          tasks.isCurrent(owner) && !Thread.currentThread().isInterrupted
  
-@@ -468,7 +527,7 @@ class PhoneCore(
+@@ -468,7 +531,7 @@ class PhoneCore(
                  if (env.isLocked()) return Either.Left(locked("open"))
                  if (url != null) {
                      // l10n:keep agent tool result
@@ -2251,7 +2258,7 @@ index 6c701851..bb00be93 100644
                      UrlPolicy.check(url)?.let {
                          return Either.Left(Out(it, error = true, summary = ui.get("phone_log_open_url", "打开链接"), decision = "refused:url")) // l10n:keep test default
                      }
-@@ -516,14 +575,23 @@ class PhoneCore(
+@@ -516,14 +579,23 @@ class PhoneCore(
              }
          }
          if (!current(owner)) return Either.Left(stoppedOut(name))
@@ -2277,7 +2284,7 @@ index 6c701851..bb00be93 100644
          if (env.isLocked()) return locked("open")
          val plan = checkNotNull(call.launch)
          if (url != null) {
-@@ -543,12 +611,15 @@ class PhoneCore(
+@@ -543,12 +615,15 @@ class PhoneCore(
          // An explicit package is still subject to app rules even when its handler UID is unknown.
          val app = (plan.target as? SystemTarget.Known)?.app
              ?: checkNotNull(call.requestedApp)
@@ -2293,7 +2300,7 @@ index 6c701851..bb00be93 100644
              confirmSystem(plan, scope, owner, summary)?.let { return it }
              val ticket = skillTrace.beginOpen(owner, PhoneScreen.MAIN)
              val result = try {
-@@ -556,50 +627,298 @@ class PhoneCore(
+@@ -556,50 +631,298 @@ class PhoneCore(
                      skillTrace.finish(ticket, it.ok, false, false)
                  }
              } catch (e: Throwable) { skillTrace.fail(ticket); throw e }
@@ -2603,7 +2610,7 @@ index 6c701851..bb00be93 100644
      }
  
      /** The handler is a dispatch fact. Only the following read describes the actual foreground UI. */
-@@ -816,8 +1135,195 @@ class PhoneCore(
+@@ -816,8 +1139,210 @@ class PhoneCore(
          return Either.Right(d)
      }
  
@@ -2698,6 +2705,21 @@ index 6c701851..bb00be93 100644
 +            if (!current(owner)) return Either.Left(PhoneTasks.STOPPED_MESSAGE + "。")
 +            val d = env.driver(PhoneScreen.BACKGROUND, owner)
 +            if (d != null) {
++                // 【4oy】上一任务"停止"的中断收尾没走完时，interruptRequested 会让本任务的
++                // open 在准入处直接失败（真机 05:03:59 首开必败：停止后立刻新指令，
++                // 新驱动刚建好、open 执行前旧中断置位 → mayUse=false → deviceUnavailable）。
++                // 停止语义=只停 AI 操作、不封屏不封通道——这里等它收尾（100ms 起步），
++                // 而不是把瞬时态变成失败甩给模型。
++                if (env.vscreenInterruptInProgress()) {
++                    io.github.ccch1mneyyy.dsh_app.wake.WakeTrace.log(
++                        "open: waiting previous interrupt to finish (4oy)")
++                    if (SystemClock.elapsedRealtime() >= until) {
++                        return Either.Left(last ?: env.backgroundUnavailable())
++                    }
++                    waited = true
++                    Thread.sleep(100)
++                    continue
++                }
 +                val av = try {
 +                    d.availability()
 +                } catch (_: Exception) {
@@ -2799,7 +2821,7 @@ index 6c701851..bb00be93 100644
      /** Admission uses the same argument coercion and routing as the actual tool body. */
      fun requiredScreens(name: String, args: Map<String, Any?>): Either<String, List<PhoneScreen>> {
          return requiredScreens(name, Args(args))
-@@ -825,10 +1331,11 @@ class PhoneCore(
+@@ -825,10 +1350,11 @@ class PhoneCore(
  
      private fun requiredScreens(name: String, a: Args): Either<String, List<PhoneScreen>> {
          return when (name) {
@@ -2814,7 +2836,7 @@ index 6c701851..bb00be93 100644
              // Arbitrary system commands take the main/global unknown-app lease, without reading a screen.
              PhoneToolCatalog.INTENT, PhoneToolCatalog.ANDROID_SHELL -> Either.Right(listOf(PhoneScreen.MAIN))
              PhoneToolCatalog.HANDOFF -> Either.Right(if (lastScreen == PhoneScreen.BACKGROUND)
-@@ -852,7 +1359,7 @@ class PhoneCore(
+@@ -852,7 +1378,7 @@ class PhoneCore(
          if (id == null) return Either.Left("缺少 $parameterName（屏幕号，如 s7）。先调用 screen 拿到屏幕号。")
          return PhoneScreen.ofScreenId(id)?.let { Either.Right(it) }
              // l10n:keep agent tool result
@@ -2823,7 +2845,7 @@ index 6c701851..bb00be93 100644
      }
  
      private fun locked(summary: String) =
-@@ -871,21 +1378,29 @@ class PhoneCore(
+@@ -871,21 +1397,29 @@ class PhoneCore(
  
      private fun screen(a: Args, owner: PhoneTasks.Owner): Out {
          if (!current(owner)) return stoppedOut("screen")
@@ -2859,7 +2881,7 @@ index 6c701851..bb00be93 100644
          return Out(
              // l10n:keep agent tool result
              if (refused) "没有读取这个屏幕的内容。" else "",
-@@ -897,6 +1412,40 @@ class PhoneCore(
+@@ -897,6 +1431,40 @@ class PhoneCore(
          )
      }
  
@@ -2900,7 +2922,7 @@ index 6c701851..bb00be93 100644
      private fun collect(a: Args, owner: PhoneTasks.Owner): Out {
          if (!current(owner)) return stoppedOut("collect")
          val sid = a.str("screen")
-@@ -1314,6 +1863,22 @@ class PhoneCore(
+@@ -1314,6 +1882,22 @@ class PhoneCore(
          } catch (e: Throwable) { skillTrace.fail(ticket); throw e }
      }
  
@@ -2923,7 +2945,7 @@ index 6c701851..bb00be93 100644
      private fun handoff(a: Args, scope: SerialWorker.Scope, owner: PhoneTasks.Owner): Out {
          if (!current(owner)) return stoppedOut("handoff")
          // l10n:keep agent tool result
-@@ -1362,6 +1927,7 @@ class PhoneCore(
+@@ -1362,6 +1946,7 @@ class PhoneCore(
          summary = summary, decision = "stopped")
  
      companion object {
@@ -2931,7 +2953,7 @@ index 6c701851..bb00be93 100644
          internal const val REPLAY = "replay"
          internal const val FOCUS_TEXT = "focus_text"
  
-@@ -1370,6 +1936,9 @@ class PhoneCore(
+@@ -1370,6 +1955,9 @@ class PhoneCore(
          const val PAUSE_WAIT_MS = 600_000L
          const val HANDOFF_MS = 600_000L
  
@@ -2942,7 +2964,7 @@ index 6c701851..bb00be93 100644
          private val WRITES = setOf(FOCUS_TEXT, PhoneToolCatalog.TAP, PhoneToolCatalog.TYPE, PhoneToolCatalog.TAP_XY, PhoneToolCatalog.OPEN)
          /** An uncertain effect call tightens draft eligibility; it does not prove input was dispatched. */
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhonePlugin.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhonePlugin.kt
-index 4a76535f..0e467228 100644
+index 4a76535f..76f87047 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhonePlugin.kt
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhonePlugin.kt
 @@ -2,7 +2,13 @@ package io.github.ccch1mneyyy.dsh_app.phone
@@ -2978,7 +3000,7 @@ index 4a76535f..0e467228 100644
      private val privilegedActions = PrivilegedActionGate()
  
      override fun onAttachedToEngine(binding: FlutterPlugin.FlutterPluginBinding) {
-@@ -77,6 +88,317 @@ class PhonePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
+@@ -77,6 +88,336 @@ class PhonePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
          promptOwner = Any()
          attached = true
          control.background.restoreKeptChannel()
@@ -3127,14 +3149,33 @@ index 4a76535f..0e467228 100644
 +            val ctx = appContext
 +            when (ui) {
 +                "ball1", "ball2" -> {
-+                    // 【4op】窗条互斥：判成条就把窗口切条形态（hideWindowOnly 一体两态后
-+                    // 本身就是"窗口切条"，幂等）。条=窗口条形态，不再另出独立条对象。
-+                    if (VirtualScreenOverlay.isWindowShown()) {
-+                        WakeTrace.log("ball: mutual-exclusion hide window (ui=$ui)")
++                    // 【4oz】挂载冷启动死路修复（B1/B2/B3）：判定要条、窗口却从未建过
++                    // （root=null 且 appContext 只会在 show() 里赋值）→ 主线程当场建窗再切条。
++                    // 建窗必须落主线程：ViewRoot 挂在创建它的线程上，ticker 线程建窗会让
++                    // 后续主线程的 updateViewLayout 全部 WrongThread 崩掉。show 自带防重入。
++                    if (!VirtualScreenOverlay.hasView() && ctx != null) {
++                        main.post {
++                            runCatching { VirtualScreenOverlay.show(ctx, VirtualScreenOverlay.currentTaskId()) }
++                                .onFailure { WakeTrace.log("ball: cold-mount show failed ${it.javaClass.simpleName}") }
++                            runCatching { VirtualScreenOverlay.hideWindowOnly(announce = false) }
++                        }
++                    } else {
++                        // 【4op】窗条互斥：判成条就把窗口切条形态（hideWindowOnly 一体两态后
++                        // 本身就是"窗口切条"，幂等）。条=窗口条形态，不再另出独立条对象。
++                        if (VirtualScreenOverlay.isWindowShown()) {
++                            WakeTrace.log("ball: mutual-exclusion hide window (ui=$ui)")
++                        }
++                        runCatching { VirtualScreenOverlay.hideWindowOnly(announce = false) }
 +                    }
-+                    runCatching { VirtualScreenOverlay.hideWindowOnly(announce = false) }
 +                }
 +                else -> {
++                    // 【4oz】判定要窗、窗口从未建过 → 主线程当场建窗，等首帧 reveal。
++                    if (!VirtualScreenOverlay.hasView() && ctx != null) {
++                        main.post {
++                            runCatching { VirtualScreenOverlay.show(ctx, VirtualScreenOverlay.currentTaskId()) }
++                                .onFailure { WakeTrace.log("ball: cold-mount show failed ${it.javaClass.simpleName}") }
++                        }
++                    }
 +                    runCatching { VirtualScreenOverlay.hideIfSliver() }
 +                    // 【已撤销】这里曾经在 ui-rule 判 none 时直接关悬浮窗，用来清理"没画面的僵尸窗"。
 +                    // 真机 04:01 证明这个判据是错的：hasTask 账本常常是 false（open 走 reuseOrMove
@@ -3296,7 +3337,7 @@ index 4a76535f..0e467228 100644
          methods = MethodChannel(binding.binaryMessenger, "dsh/phone").also { it.setMethodCallHandler(this) }
          events = EventChannel(binding.binaryMessenger, "dsh/phone/events").also { it.setStreamHandler(this) }
          previewEvents = EventChannel(binding.binaryMessenger, "dsh/phone/preview").also { channel ->
-@@ -103,9 +425,99 @@ class PhonePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
+@@ -103,9 +444,99 @@ class PhonePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
          }
      }
  
@@ -3396,7 +3437,7 @@ index 4a76535f..0e467228 100644
          skillSelectionRequest = Any()
          skillInspection = null
          skillClient?.let { control.skillReplaySelections.retireClient(it); control.skillDrafts.retireClient(it) }
-@@ -249,6 +661,103 @@ class PhonePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
+@@ -249,6 +680,103 @@ class PhonePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
                  result.success(if (removed) mapOf("kind" to "discarded") else replayRejected("stale"))
              }
              "setBackgroundPreview" -> result.success(control.preview.setEnabled(call.argument<Boolean>("enabled") == true))
@@ -4157,7 +4198,7 @@ index bebe269d..181201c9 100644
  
      fun exchange(request: ByteArray): ByteArray? = synchronized(lock) {
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/BackgroundControl.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/BackgroundControl.kt
-index 79cae468..22a4ad65 100644
+index 79cae468..34c506a0 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/BackgroundControl.kt
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/BackgroundControl.kt
 @@ -13,6 +13,8 @@ import android.net.Network
@@ -4528,7 +4569,17 @@ index 79cae468..22a4ad65 100644
                  changed = withdrawPreviewTarget(record.driver) || changed
              }
          }
-@@ -942,6 +1223,31 @@ class BackgroundControl private constructor(context: Context) {
+@@ -812,6 +1093,9 @@ class BackgroundControl private constructor(context: Context) {
+         }
+     }
+ 
++    /** 【4oy】上一任务"停止"的中断收尾是否还在进行。新任务的 open 准入读它：进行中先等，不硬拒。 */
++    fun interruptInProgress(): Boolean = interruptRequested
++
+     // ---- channel plumbing --------------------------------------------------
+ 
+     private fun activeChannel(mayStart: () -> Boolean = { true }, explicit: Boolean = false,
+@@ -942,6 +1226,31 @@ class BackgroundControl private constructor(context: Context) {
      } catch (_: InterruptedException) { Thread.currentThread().interrupt(); false }
      catch (_: Exception) { false }
  
@@ -6037,7 +6088,7 @@ index c1c2ed09..b0b1dfe3 100644
          close()
          Bundle().apply { putBoolean(Proto.OK, false); putString(Proto.ERROR, "deviceUnavailable") }
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/PrivilegedDisplayCore.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/PrivilegedDisplayCore.kt
-index c7ed0f7a..69d502f3 100644
+index c7ed0f7a..2163784b 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/PrivilegedDisplayCore.kt
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/PrivilegedDisplayCore.kt
 @@ -11,6 +11,7 @@ package io.github.ccch1mneyyy.dsh_app.phone.background
@@ -7049,9 +7100,9 @@ index c7ed0f7a..69d502f3 100644
 +            rollbackDisplayAttempt()
 +            // SecurityException 原样上抛：调用方据此决定要不要去掉可信标志重开。
 +            throw if (e is Fault || e is SecurityException) e else Fault("displayUnsupported")
-         }
-     }
- 
++        }
++    }
++
 +    /**
 +     * A throwing newInstance returns no reader: nothing is left to close.
 +     * An Honor/Qualcomm GraphicsBuffer on this phone answers the first allocation with an
@@ -7077,9 +7128,9 @@ index c7ed0f7a..69d502f3 100644
 +            releasingDisplayId?.let { DisplayHandles.forget(it) }
 +            display = null; reader = null; pendingReader = null
 +            releasingDisplayId = null; displayCreationAttempted = false
-+        }
-+    }
-+
+         }
+     }
+ 
 +    /**
 +     * 建屏标志（照 Mika 的 displayFlags）。[trusted] 为 false 时去掉只对可信屏可用的几项：
 +     * 有的系统里 shell 没有 ADD_TRUSTED_DISPLAY，带上 TRUSTED 会被系统直接拒；OWN_DISPLAY_GROUP、
@@ -7203,7 +7254,21 @@ index c7ed0f7a..69d502f3 100644
          // A shell/UserService is not an ActivityManager-attached app process: a PendingIntent
          // avoids Context.startActivity's caller check (Phase, after Aether).
          var pending: PendingIntent? = null
-@@ -879,17 +1858,135 @@ class PrivilegedDisplayCore internal constructor(
+@@ -873,23 +1852,161 @@ class PrivilegedDisplayCore internal constructor(
+                 PendingIntent.FLAG_ONE_SHOT or PendingIntent.FLAG_IMMUTABLE,
+             )
+             pending.send(privileged, 0, null, null, null, null, options.toBundle())
+-        } catch (_: SecurityException) { throw Fault("launchDenied") }
+-        catch (_: PendingIntent.CanceledException) { throw Fault("launchCancelled") }
++        } catch (_: SecurityException) {
++            // 【4oz-am】三大改 #2 兜底：asUser 与 PendingIntent 都走不通时，用
++            // `am start --display <id> -n <组件>` 直接落屏（Mika 同路；本 ROM 实测有该命令）。
++            if (!amStartDisplayFallback(pkg, intent, display.display.displayId)) throw Fault("launchDenied")
++        }
++        catch (_: PendingIntent.CanceledException) {
++            if (!amStartDisplayFallback(pkg, intent, display.display.displayId)) throw Fault("launchCancelled")
++        }
+         finally { pending?.let { runCatching { it.cancel() } } }
          // Wait for the target on the owned display. Any app it brought up there instead is reported
          // by the read that follows; only a screen still empty, or a target that went to another
          // display, means the open did not happen here.
@@ -7214,6 +7279,20 @@ index c7ed0f7a..69d502f3 100644
 +    }
 +
 +    /** 等 [pkg] 成为这块屏的前台（最多 4 秒），落错屏就抛错，不再"屏上只要有任务就算成功"。 */
++    /** 【4oz-am】启动兜底：`am start --display <id> -n <组件>`，显式组件直落目标屏（Mika 同路）。 */
++    private fun amStartDisplayFallback(pkg: String, intent: Intent, displayId: Int): Boolean {
++        val component = intent.component?.flattenToString()
++            ?: runCatching { privileged.packageManager.resolveActivity(intent, 0)?.activityInfo }
++                .getOrNull()?.let { ComponentName(it.packageName, it.name).flattenToString() }
++        if (component == null) return false
++        val code = runCatching {
++            ProcessBuilder("am", "start", "--display", displayId.toString(), "-n", component)
++                .redirectErrorStream(true).start().waitFor()
++        }.getOrDefault(-1)
++        io.github.ccch1mneyyy.dsh_app.wake.WakeTrace.log(
++            "open: launch via=amStartDisplay pkg=$pkg display=$displayId rc=$code")
++        return code == 0
++    }
 +    /**
 +     * 启动后 5 秒采样：这个包此刻到底在哪块屏。真机 00:07 现象是"开进虚拟屏 1~3 秒后被迁回主屏"，
 +     * 这 5 行能定位是哪一秒、迁到哪，不再靠现象猜。
@@ -7343,7 +7422,7 @@ index c7ed0f7a..69d502f3 100644
      /** Legacy success shape stays unchanged; failed physical cleanup retains its original handles. */
      private fun releaseAll() = lock.withLock {
          if (strictOwner) throw Fault("releaseReceiptRequired")
-@@ -906,8 +2003,140 @@ class PrivilegedDisplayCore internal constructor(
+@@ -906,8 +2023,140 @@ class PrivilegedDisplayCore internal constructor(
          if (readerAllocationUncertain) throw Fault("releaseUnconfirmed")
      }
  
@@ -7484,7 +7563,7 @@ index c7ed0f7a..69d502f3 100644
          closeTreeConnection()
          visualObservation = null
          stopPreview()
-@@ -925,11 +2154,42 @@ class PrivilegedDisplayCore internal constructor(
+@@ -925,11 +2174,42 @@ class PrivilegedDisplayCore internal constructor(
              closeReaders()
          } else {
              val displayId = releasingDisplayId ?: throw Fault("releaseUnconfirmed")
@@ -7528,7 +7607,7 @@ index c7ed0f7a..69d502f3 100644
              closeReaders()
              val deadline = SystemClock.uptimeMillis() + 1_000
              // The display itself is already released. A ROM whose task query is unreadable cannot
-@@ -944,6 +2204,7 @@ class PrivilegedDisplayCore internal constructor(
+@@ -944,6 +2224,7 @@ class PrivilegedDisplayCore internal constructor(
      }
  
      private fun clearResourceState() {
@@ -7536,7 +7615,7 @@ index c7ed0f7a..69d502f3 100644
          display = null; owner = null; strictOwner = false; selfCheckOwner = false
          targetSequence = null; targetSnapshot = null; targetMain = null
          releasingDisplayId = null; displayCreationAttempted = false; displayApiReleased = false; probeDisplay = false
-@@ -1166,7 +2427,15 @@ class PrivilegedDisplayCore internal constructor(
+@@ -1166,7 +2447,15 @@ class PrivilegedDisplayCore internal constructor(
      private class CaptureResult(val jpeg: ByteArray, val raw: BackgroundPreviewState.RawFrame?, val local: ImageObservation?, val targetMatched: Boolean? = null)
  
      /** Null means only absent/black frames; other capture failures remain distinguishable. */
@@ -7553,7 +7632,7 @@ index c7ed0f7a..69d502f3 100644
          val ir = lock.withLock {
              if (pendingReader != null || readerAllocationUncertain) throw Fault("releasePending")
              val vd = display ?: throw Fault("displayMissing")
-@@ -1332,6 +2601,13 @@ class PrivilegedDisplayCore internal constructor(
+@@ -1332,6 +2621,13 @@ class PrivilegedDisplayCore internal constructor(
  
      internal fun previewDrained(): Boolean = lock.withLock { previewWorker.drained() }
  
@@ -7567,7 +7646,7 @@ index c7ed0f7a..69d502f3 100644
      private fun renderPreview(ticket: BackgroundPreviewState.Ticket) {
          var bitmap: Bitmap? = null
          var thumbnail: Bitmap? = null
-@@ -1359,8 +2635,23 @@ class PrivilegedDisplayCore internal constructor(
+@@ -1359,8 +2655,23 @@ class PrivilegedDisplayCore internal constructor(
                  } finally { image.close() }
                  // All Image/buffer access ends before releaseAll can close its ImageReader.
              } finally { lock.unlock() }
@@ -7592,7 +7671,7 @@ index c7ed0f7a..69d502f3 100644
                  bitmap = Bitmap.createBitmap(raw.width, raw.height, Bitmap.Config.ARGB_8888)
                  bitmap!!.copyPixelsFromBuffer(ByteBuffer.wrap(raw.pixels))
              }
-@@ -1382,6 +2673,18 @@ class PrivilegedDisplayCore internal constructor(
+@@ -1382,6 +2693,18 @@ class PrivilegedDisplayCore internal constructor(
                  preview.unavailable(ticket, "frameTooLarge"); return
              }
              preview.publish(ticket, BackgroundPreviewState.Frame(w, h, pixels, bytes), SystemClock.uptimeMillis())
@@ -7611,7 +7690,7 @@ index c7ed0f7a..69d502f3 100644
          } catch (_: Exception) {
              preview.unavailable(ticket, "captureFailed")
          } finally {
-@@ -2025,6 +3328,32 @@ class PrivilegedDisplayCore internal constructor(
+@@ -2025,14 +3348,42 @@ class PrivilegedDisplayCore internal constructor(
          if (waitForFinish && !accepted) throw Fault("inputRejected")
      }
  
@@ -7644,7 +7723,19 @@ index c7ed0f7a..69d502f3 100644
      private fun setImePolicyHide(displayId: Int) {
          val sm = Class.forName("android.os.ServiceManager")
          val binder = sm.getMethod("getService", String::class.java).invoke(null, "window") as IBinder
-@@ -2079,9 +3408,14 @@ class PrivilegedDisplayCore internal constructor(
+         val wm = Class.forName("android.view.IWindowManager\$Stub")
+             .getMethod("asInterface", IBinder::class.java).invoke(null, binder)
+-        // DISPLAY_IME_POLICY_HIDE == 2
++        // 【4oz-ime】三大改 #3：HIDE(2) → LOCAL(0)。HIDE 下虚拟屏里点输入框不弹键盘
++        // （用户手打无键盘）；LOCAL 让输入法落在虚拟屏、主屏焦点不变（Mika 真机安卓 14 实测）。
++        // 真机行为按此 ROM 实测为准（风险预判：LOCAL 若外溢，回退 HIDE）。
+         wm.javaClass.getMethod("setDisplayImePolicy", Int::class.javaPrimitiveType, Int::class.javaPrimitiveType)
+-            .invoke(wm, displayId, 2)
++            .invoke(wm, displayId, 0)
+     }
+ 
+     /**
+@@ -2079,9 +3430,14 @@ class PrivilegedDisplayCore internal constructor(
  
      companion object {
          private val PACKAGE = Regex("[a-zA-Z][a-zA-Z0-9_]*(\\.[a-zA-Z0-9_]+)+")
