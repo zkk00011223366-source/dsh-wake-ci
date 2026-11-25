@@ -1,12 +1,12 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: ci <ci@local>
-Date: Wed, 25 Nov 2026 13:11:14 +0800
-Subject: [PATCH] b: scene4m
+Date: Wed, 25 Nov 2026 13:34:27 +0800
+Subject: [PATCH] b: scene4n
 MIME-Version: 1.0
 Content-Type: text/plain; charset=UTF-8
 Content-Transfer-Encoding: 8bit
 
-4m: 4k+4l 全量修复 + 空空品牌
+4n: 修复全量 + 空空品牌 + 探活误杀修复
 
 ---
  .gitattributes                                     |    3 +
@@ -34,7 +34,7 @@ Content-Transfer-Encoding: 8bit
  .../dsh_app/phone/a11y/ControlOverlay.kt           |   11 +-
  .../dsh_app/phone/a11y/PhoneA11yService.kt         |   20 +
  .../dsh_app/phone/background/AdbFramedSession.kt   |    5 +
- .../dsh_app/phone/background/BackgroundControl.kt  |  243 +-
+ .../dsh_app/phone/background/BackgroundControl.kt  |  234 +-
  .../phone/background/BackgroundCoordinates.kt      |    2 +
  .../dsh_app/phone/background/BackgroundDisplay.kt  |  389 ++-
  .../phone/background/BackgroundDisplayIo.kt        |   10 +-
@@ -247,7 +247,7 @@ Content-Transfer-Encoding: 8bit
  docs/wake-word.md                                  |  107 +
  dsh-go-wake.patch                                  | 2065 ++++++++++++++
  tooling/build-wake-apk.sh                          |   68 +
- 238 files changed, 18535 insertions(+), 897 deletions(-)
+ 238 files changed, 18526 insertions(+), 897 deletions(-)
 
 diff --git a/.gitattributes b/.gitattributes
 index 52e3e08a..3e877c7e 100644
@@ -4135,7 +4135,7 @@ index bebe269d..181201c9 100644
  
      fun exchange(request: ByteArray): ByteArray? = synchronized(lock) {
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/BackgroundControl.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/BackgroundControl.kt
-index 79cae468..eaa4dbd9 100644
+index 79cae468..288d6752 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/BackgroundControl.kt
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/BackgroundControl.kt
 @@ -13,6 +13,8 @@ import android.net.Network
@@ -4302,7 +4302,7 @@ index 79cae468..eaa4dbd9 100644
              "shizuku" to shizukuStatus.map(),
              "adb" to adbStatus.map(),
              "root" to rootStatus.map(),
-@@ -703,6 +837,58 @@ class BackgroundControl private constructor(context: Context) {
+@@ -703,6 +837,49 @@ class BackgroundControl private constructor(context: Context) {
              synchronized(keepGuard) {
                  if (selfCheckBorrow != null || interruptRequested || !current()) return null
                  taskResource.find(owner)?.let { return it.driver }
@@ -4341,27 +4341,18 @@ index 79cae468..eaa4dbd9 100644
 +                    taskResource.cleanupCandidates().forEach { stale ->
 +                        runCatching { taskResource.complete(stale) }
 +                    }
-+                    // 【4bw】只丢本地记录不够：旧会话在 core 那边可能还占着名额
-+                    // （日志 `release deferred reason=keepAfterTask` → 从来没真正 release），
-+                    // 新任务申请同一个 owner 会被拒，表现就是"只能开一次，必须强停 App"。
-+                    // 这里把两道闸放开并真的 release 一次，让 core 把名额交回来。
-+                    io.github.ccch1mneyyy.dsh_app.phone.PhoneRegistry.vscreenKeepAfterTask = false
-+                    runCatching {
-+                        io.github.ccch1mneyyy.dsh_app.phone.PhoneRegistry.holdDisplayForWindow?.invoke(false)
-+                    }
-+                    runCatching { endTask(null) }
-+                    // 【4f】stale 释放必须同步作废会话：endTask 把 host 侧 owner 放进了 completed，
-+                    // 会话不结束的话，下一个驱动还会拿同一个 owner 敲门 → 全部 identityChanged
-+                    // （真机 22:10 起每次 open 全被拒、虚拟屏整体死亡）。作废后下一驱动自动拿新 owner。
++                    // 【4n】只丢本地记录、不释放屏：4bw 在这里放闸 + endTask 释放，本意是给
++                    // "名额被占"腾位置，但探活对已 abort 的旧通道永远答不上（4i seal 会 abort 通道），
++                    // 健康屏被误杀连应用一起搬走（真机 13:19：微信屏 408 活得好好的被判死释放，
++                    // 美团开新屏 409，窗口还显示微信，用户点输入框无键盘——全是这次误杀的次生）。
++                    // 屏和应用按 kept 语义留着，会话照旧作废，下一个任务开新屏，窗口重绑即可。
 +                    io.github.ccch1mneyyy.dsh_app.wake.WakeTrace.log("vscreen: stale drop -> session ended (4f)")
 +                    VscreenSession.end()
-+                    io.github.ccch1mneyyy.dsh_app.wake.WakeTrace.log(
-+                        "vscreen: stale screen released (keep/hold cleared, endTask ran)")
 +                }
                  if (selectingResource || restoring?.isDone == false || selectionChange != null) return null
                  keep.selectionTicket()
              }
-@@ -722,7 +908,7 @@ class BackgroundControl private constructor(context: Context) {
+@@ -722,7 +899,7 @@ class BackgroundControl private constructor(context: Context) {
                          channelProvider = { peer },
                          mayUse = { currentOwner() && !interruptRequested },
                          admitUse = { action -> admitOwner { check(!interruptRequested); action() } },
@@ -4370,7 +4361,7 @@ index 79cae468..eaa4dbd9 100644
                          localOcr = ocr,
                          localOcrAllowed = { target -> localOcrAllowed(target) },
                          onResourceReady = { publishPreviewTarget(record, it) },
-@@ -732,6 +918,9 @@ class BackgroundControl private constructor(context: Context) {
+@@ -732,6 +909,9 @@ class BackgroundControl private constructor(context: Context) {
              }
          }
          notifyChanged()
@@ -4380,7 +4371,7 @@ index 79cae468..eaa4dbd9 100644
          return acquired.driver
      }
  
-@@ -753,6 +942,18 @@ class BackgroundControl private constructor(context: Context) {
+@@ -753,6 +933,18 @@ class BackgroundControl private constructor(context: Context) {
       * and every later task) waiting on a receipt that may never come.
       */
      fun endTask(expectedTaskId: Long? = null) {
@@ -4399,7 +4390,7 @@ index 79cae468..eaa4dbd9 100644
          var previewChanged = false
          val captured = synchronized(this) {
              taskResource.seal(expectedTaskId).onEach {
-@@ -762,6 +963,19 @@ class BackgroundControl private constructor(context: Context) {
+@@ -762,6 +954,19 @@ class BackgroundControl private constructor(context: Context) {
          }
          if (previewChanged) onPreviewChanged()
          for (record in captured) {
@@ -4419,7 +4410,7 @@ index 79cae468..eaa4dbd9 100644
              if (!record.driver.release()) discardPeer(record.peer)
              taskResource.complete(record)
          }
-@@ -942,6 +1156,31 @@ class BackgroundControl private constructor(context: Context) {
+@@ -942,6 +1147,31 @@ class BackgroundControl private constructor(context: Context) {
      } catch (_: InterruptedException) { Thread.currentThread().interrupt(); false }
      catch (_: Exception) { false }
  
