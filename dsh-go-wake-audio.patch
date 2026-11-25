@@ -1,12 +1,12 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: ci <ci@local>
-Date: Wed, 25 Nov 2026 09:32:46 +0800
-Subject: [PATCH] b: scene4i
+Date: Wed, 25 Nov 2026 09:59:49 +0800
+Subject: [PATCH] b: scene4j
 MIME-Version: 1.0
 Content-Type: text/plain; charset=UTF-8
 Content-Transfer-Encoding: 8bit
 
-4i: reader 保活 + shell 免确认诊断 + 读屏说明书 + 删切换前台胶囊 + 切换后 AI 继续操作主屏
+4j: 全授权开关（含 4i 全部修复）
 
 ---
  .gitattributes                                     |    3 +
@@ -21,13 +21,13 @@ Content-Transfer-Encoding: 8bit
  .../ccch1mneyyy/dsh_app/phone/PhoneAndroidShell.kt |   18 +-
  .../ccch1mneyyy/dsh_app/phone/PhoneBackGuard.kt    |  146 +
  .../ccch1mneyyy/dsh_app/phone/PhoneContracts.kt    |  265 ++
- .../ccch1mneyyy/dsh_app/phone/PhoneControl.kt      |  117 +-
- .../github/ccch1mneyyy/dsh_app/phone/PhoneCore.kt  |  578 +++-
- .../ccch1mneyyy/dsh_app/phone/PhonePlugin.kt       |  618 +++++
+ .../ccch1mneyyy/dsh_app/phone/PhoneControl.kt      |  124 +-
+ .../github/ccch1mneyyy/dsh_app/phone/PhoneCore.kt  |  582 +++-
+ .../ccch1mneyyy/dsh_app/phone/PhonePlugin.kt       |  623 +++++
  .../ccch1mneyyy/dsh_app/phone/PhoneTaskSessions.kt |   49 +-
  .../github/ccch1mneyyy/dsh_app/phone/PhoneTasks.kt |   85 +-
  .../ccch1mneyyy/dsh_app/phone/PhoneToolCatalog.kt  |   36 +-
- .../github/ccch1mneyyy/dsh_app/phone/SafetyGate.kt |    4 +-
+ .../github/ccch1mneyyy/dsh_app/phone/SafetyGate.kt |   39 +-
  .../dsh_app/phone/SingleInstanceApps.kt            |   27 +
  .../ccch1mneyyy/dsh_app/phone/SystemActions.kt     |    7 +-
  .../dsh_app/phone/a11y/ControlOverlay.kt           |   11 +-
@@ -145,7 +145,7 @@ Content-Transfer-Encoding: 8bit
  docs/wake-word.md                                  |  107 +
  dsh-go-wake.patch                                  | 2065 ++++++++++++++
  tooling/build-wake-apk.sh                          |   68 +
- 136 files changed, 18024 insertions(+), 589 deletions(-)
+ 136 files changed, 18067 insertions(+), 597 deletions(-)
 
 diff --git a/.gitattributes b/.gitattributes
 index 52e3e08a..3e877c7e 100644
@@ -1660,7 +1660,7 @@ index 612f94d1..4debf107 100644
      @Volatile var overlayGate: UserGate? = null
      @Volatile var notificationGate: UserGate? = null
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneControl.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneControl.kt
-index 2fc7cd59..caaf4a64 100644
+index 2fc7cd59..a0a3a709 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneControl.kt
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneControl.kt
 @@ -201,6 +201,8 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
@@ -1681,6 +1681,15 @@ index 2fc7cd59..caaf4a64 100644
              }
          }
          task.addListener { state -> onSessionTask(task, state) }
+@@ -353,7 +355,7 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
+         background.onPreviewChanged = { main.post { preview.refresh() } }
+         background.localOcrAllowed = { target ->
+             isEnabled() && !isLocked() && target.packageName != app.packageName &&
+-                target.packageName !in policies().denyPackages
++                (allGranted() || target.packageName !in policies().denyPackages)
+         }
+         (app as? Application)?.let { AppVisibility.register(it) }
+         tasks.addListener { onTask(it) }
 @@ -682,7 +684,8 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
                  selfCheck.stop()
                  preview.refresh()
@@ -1734,7 +1743,7 @@ index 2fc7cd59..caaf4a64 100644
      }
  
      override fun a11yState(): A11yState = when {
-@@ -999,15 +1020,101 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
+@@ -999,18 +1020,109 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
          else -> A11yState.DISABLED
      }
  
@@ -1837,8 +1846,16 @@ index 2fc7cd59..caaf4a64 100644
          shell.execute(ownerId, command, timeoutMs, live, confirm)
      }
  
++    /** 【4j】全授权开关：与 androidShell 读同一个偏好键。 */
++    override fun allGranted(): Boolean =
++        app.getSharedPreferences("FlutterSharedPreferences", Context.MODE_PRIVATE)
++            .getBoolean("flutter.androidShellNoConfirm", false)
++
+     override fun zone(): ZoneId = ZoneId.systemDefault()
+ 
+     override fun notifyFix(kind: String) = notifyFixFor(tasks, kind)
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneCore.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneCore.kt
-index 6c701851..27ba21f1 100644
+index 6c701851..dbe9dff5 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneCore.kt
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneCore.kt
 @@ -1,9 +1,12 @@
@@ -1854,7 +1871,7 @@ index 6c701851..27ba21f1 100644
  import java.time.ZoneId
  import java.util.concurrent.atomic.AtomicReference
  
-@@ -23,6 +26,12 @@ interface PhoneEnv {
+@@ -23,6 +26,14 @@ interface PhoneEnv {
      fun a11yState(): A11yState
      /** Why the background display can't be used, as a sentence for the model. */
      fun backgroundUnavailable(): String
@@ -1864,10 +1881,21 @@ index 6c701851..27ba21f1 100644
 +     * （background:false）。虚拟屏通道此刻没起来不算数：执行时按需创建，失败才明确报错。
 +     */
 +    fun prefersBackground(): Boolean = false
++    /** 【4j】全授权开关：打开时一切操作确认直接放行（设置里原「不再逐条确认」改名而来）。 */
++    fun allGranted(): Boolean = false
      fun system(): SystemApi
      fun androidShell(): PhoneShellExecutor? = null
      fun uiText(): PhoneUiText = PhoneUiText.DEFAULT
-@@ -64,12 +73,26 @@ class PhoneCore(
+@@ -55,7 +66,7 @@ class PhoneCore(
+     },
+ ) {
+     private val ui: PhoneUiText get() = env.uiText()
+-    val safety = SafetyGate(env::policies, tasks, env::gate, uiText = env.uiText())
++    val safety = SafetyGate(env::policies, tasks, env::gate, uiText = env.uiText(), allGranted = env::allGranted)
+ 
+     // An abandoned body may overlap a later execution of the same Owner. Keep its display
+     // serial with that body, not a mutable Core-wide field or a fresh lookup when say runs.
+@@ -64,12 +75,26 @@ class PhoneCore(
      /** The overlay's status line; 免确认 stays visible the whole time nothing is asked. */
      private fun say(owner: PhoneTasks.Owner, text: String) {
          if (!current(owner)) return
@@ -1895,7 +1923,7 @@ index 6c701851..27ba21f1 100644
  
      /**
       * The task's last hard refusal (密码框, 系统设置, 不碰名单), for the `handoff` that usually
-@@ -97,15 +120,30 @@ class PhoneCore(
+@@ -97,15 +122,30 @@ class PhoneCore(
          internal val replayOutcomes: PhoneSkillOutcomes? = null,
          internal val replayDriver: PhoneDriver? = null,
          private val replayApp: PhoneAppIdentity? = null,
@@ -1927,7 +1955,7 @@ index 6c701851..27ba21f1 100644
      }
  
      /** Only a first claimed native Selection reaches this path; public args never construct it. */
-@@ -119,14 +157,15 @@ class PhoneCore(
+@@ -119,14 +159,15 @@ class PhoneCore(
          val app = PhoneAppIdentity(selection.app.packageName, selection.app.uid)
          val originalDriver = if (screen == PhoneScreen.BACKGROUND) {
              env.existingReplayDriver(owner, app)?.takeIf { it.screen == PhoneScreen.BACKGROUND }
@@ -1945,7 +1973,7 @@ index 6c701851..27ba21f1 100644
      }
  
      private fun replay(call: PreparedCall, scope: SerialWorker.Scope, owner: PhoneTasks.Owner): Out {
-@@ -140,7 +179,7 @@ class PhoneCore(
+@@ -140,7 +181,7 @@ class PhoneCore(
          if (!live()) return stop("原任务或路线已不可继续。") // l10n:keep replay result
          val screen = call.screens.single()
          val driver = if (screen == PhoneScreen.BACKGROUND) {
@@ -1954,7 +1982,7 @@ index 6c701851..27ba21f1 100644
          } else when (val result = driverFor(screen, owner)) {
              is Either.Left -> return stop(result.value)
              is Either.Right -> result.value
-@@ -255,7 +294,9 @@ class PhoneCore(
+@@ -255,7 +296,9 @@ class PhoneCore(
              // l10n:keep agent tool result
              return ToolOutput("没有这个手机工具：$name。可用：${PhoneToolCatalog.names.joinToString("、")}", isError = true)
          }
@@ -1965,7 +1993,7 @@ index 6c701851..27ba21f1 100644
              // l10n:keep agent tool result
              return ToolOutput("手机操控已在 DSH 设置里关闭。请用户在 设置 → 手机操控 里打开后重启引擎。", isError = true)
          }
-@@ -361,7 +402,7 @@ class PhoneCore(
+@@ -361,7 +404,7 @@ class PhoneCore(
              // MAIN already excludes other app holders. Resolve again after waiting for it,
              // keeping the originally selected package if its label or launcher has changed.
              val refreshMain = name == PhoneToolCatalog.INTENT ||
@@ -1974,7 +2002,7 @@ index 6c701851..27ba21f1 100644
              val call = if (prepared != null && !refreshMain) prepared else when (
                  val result = prepare(name, a, owner, prepared?.requestedApp)
              ) {
-@@ -383,6 +424,7 @@ class PhoneCore(
+@@ -383,6 +426,7 @@ class PhoneCore(
                  PhoneToolCatalog.TAP, PhoneToolCatalog.TYPE, PhoneToolCatalog.SCROLL, PhoneToolCatalog.TAP_XY -> act(name, a, scope, owner)
                  PhoneToolCatalog.KEY -> key(a, owner)
                  PhoneToolCatalog.HANDOFF -> handoff(a, scope, owner)
@@ -1982,7 +2010,7 @@ index 6c701851..27ba21f1 100644
                  // l10n:keep agent tool result
                  else -> Out("没有这个手机工具：$name", error = true)
              }
-@@ -391,6 +433,18 @@ class PhoneCore(
+@@ -391,6 +435,18 @@ class PhoneCore(
          }
      }
  
@@ -2001,7 +2029,7 @@ index 6c701851..27ba21f1 100644
      private fun current(owner: PhoneTasks.Owner): Boolean =
          tasks.isCurrent(owner) && !Thread.currentThread().isInterrupted
  
-@@ -468,7 +522,7 @@ class PhoneCore(
+@@ -468,7 +524,7 @@ class PhoneCore(
                  if (env.isLocked()) return Either.Left(locked("open"))
                  if (url != null) {
                      // l10n:keep agent tool result
@@ -2010,7 +2038,7 @@ index 6c701851..27ba21f1 100644
                      UrlPolicy.check(url)?.let {
                          return Either.Left(Out(it, error = true, summary = ui.get("phone_log_open_url", "打开链接"), decision = "refused:url")) // l10n:keep test default
                      }
-@@ -516,14 +570,23 @@ class PhoneCore(
+@@ -516,14 +572,23 @@ class PhoneCore(
              }
          }
          if (!current(owner)) return Either.Left(stoppedOut(name))
@@ -2036,7 +2064,7 @@ index 6c701851..27ba21f1 100644
          if (env.isLocked()) return locked("open")
          val plan = checkNotNull(call.launch)
          if (url != null) {
-@@ -543,12 +606,15 @@ class PhoneCore(
+@@ -543,12 +608,15 @@ class PhoneCore(
          // An explicit package is still subject to app rules even when its handler UID is unknown.
          val app = (plan.target as? SystemTarget.Known)?.app
              ?: checkNotNull(call.requestedApp)
@@ -2052,7 +2080,7 @@ index 6c701851..27ba21f1 100644
              confirmSystem(plan, scope, owner, summary)?.let { return it }
              val ticket = skillTrace.beginOpen(owner, PhoneScreen.MAIN)
              val result = try {
-@@ -556,50 +622,258 @@ class PhoneCore(
+@@ -556,50 +624,258 @@ class PhoneCore(
                      skillTrace.finish(ticket, it.ok, false, false)
                  }
              } catch (e: Throwable) { skillTrace.fail(ticket); throw e }
@@ -2322,7 +2350,7 @@ index 6c701851..27ba21f1 100644
      }
  
      /** The handler is a dispatch fact. Only the following read describes the actual foreground UI. */
-@@ -816,8 +1090,203 @@ class PhoneCore(
+@@ -816,8 +1092,203 @@ class PhoneCore(
          return Either.Right(d)
      }
  
@@ -2526,7 +2554,7 @@ index 6c701851..27ba21f1 100644
      /** Admission uses the same argument coercion and routing as the actual tool body. */
      fun requiredScreens(name: String, args: Map<String, Any?>): Either<String, List<PhoneScreen>> {
          return requiredScreens(name, Args(args))
-@@ -825,10 +1294,11 @@ class PhoneCore(
+@@ -825,10 +1296,11 @@ class PhoneCore(
  
      private fun requiredScreens(name: String, a: Args): Either<String, List<PhoneScreen>> {
          return when (name) {
@@ -2541,7 +2569,7 @@ index 6c701851..27ba21f1 100644
              // Arbitrary system commands take the main/global unknown-app lease, without reading a screen.
              PhoneToolCatalog.INTENT, PhoneToolCatalog.ANDROID_SHELL -> Either.Right(listOf(PhoneScreen.MAIN))
              PhoneToolCatalog.HANDOFF -> Either.Right(if (lastScreen == PhoneScreen.BACKGROUND)
-@@ -852,7 +1322,7 @@ class PhoneCore(
+@@ -852,7 +1324,7 @@ class PhoneCore(
          if (id == null) return Either.Left("缺少 $parameterName（屏幕号，如 s7）。先调用 screen 拿到屏幕号。")
          return PhoneScreen.ofScreenId(id)?.let { Either.Right(it) }
              // l10n:keep agent tool result
@@ -2550,7 +2578,7 @@ index 6c701851..27ba21f1 100644
      }
  
      private fun locked(summary: String) =
-@@ -871,21 +1341,29 @@ class PhoneCore(
+@@ -871,21 +1343,29 @@ class PhoneCore(
  
      private fun screen(a: Args, owner: PhoneTasks.Owner): Out {
          if (!current(owner)) return stoppedOut("screen")
@@ -2586,7 +2614,7 @@ index 6c701851..27ba21f1 100644
          return Out(
              // l10n:keep agent tool result
              if (refused) "没有读取这个屏幕的内容。" else "",
-@@ -897,6 +1375,40 @@ class PhoneCore(
+@@ -897,6 +1377,40 @@ class PhoneCore(
          )
      }
  
@@ -2627,7 +2655,7 @@ index 6c701851..27ba21f1 100644
      private fun collect(a: Args, owner: PhoneTasks.Owner): Out {
          if (!current(owner)) return stoppedOut("collect")
          val sid = a.str("screen")
-@@ -1362,6 +1874,7 @@ class PhoneCore(
+@@ -1362,6 +1876,7 @@ class PhoneCore(
          summary = summary, decision = "stopped")
  
      companion object {
@@ -2635,7 +2663,7 @@ index 6c701851..27ba21f1 100644
          internal const val REPLAY = "replay"
          internal const val FOCUS_TEXT = "focus_text"
  
-@@ -1370,6 +1883,9 @@ class PhoneCore(
+@@ -1370,6 +1885,9 @@ class PhoneCore(
          const val PAUSE_WAIT_MS = 600_000L
          const val HANDOFF_MS = 600_000L
  
@@ -2646,7 +2674,7 @@ index 6c701851..27ba21f1 100644
          private val WRITES = setOf(FOCUS_TEXT, PhoneToolCatalog.TAP, PhoneToolCatalog.TYPE, PhoneToolCatalog.TAP_XY, PhoneToolCatalog.OPEN)
          /** An uncertain effect call tightens draft eligibility; it does not prove input was dispatched. */
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhonePlugin.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhonePlugin.kt
-index 4a76535f..9698cd79 100644
+index 4a76535f..7970f1f3 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhonePlugin.kt
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhonePlugin.kt
 @@ -2,7 +2,14 @@ package io.github.ccch1mneyyy.dsh_app.phone
@@ -2683,7 +2711,7 @@ index 4a76535f..9698cd79 100644
      private val privilegedActions = PrivilegedActionGate()
  
      override fun onAttachedToEngine(binding: FlutterPlugin.FlutterPluginBinding) {
-@@ -77,6 +89,330 @@ class PhonePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
+@@ -77,6 +89,335 @@ class PhonePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
          promptOwner = Any()
          attached = true
          control.background.restoreKeptChannel()
@@ -2775,6 +2803,11 @@ index 4a76535f..9698cd79 100644
 +        PhoneRegistry.askExitFront = { channel ->
 +            val ctx = appContext
 +            if (ctx == null) {
++                true
++            } else if (ctx.getSharedPreferences("FlutterSharedPreferences", android.content.Context.MODE_PRIVATE)
++                .getBoolean("flutter.androidShellNoConfirm", false)) {
++                // 【4j】全授权开关开着：不弹「退出前台」确认条，直接同意。
++                WakeTrace.log("prompt: front-exit auto-accepted (all-granted 4j)")
 +                true
 +            } else {
 +                val latch = java.util.concurrent.CountDownLatch(1)
@@ -3014,7 +3047,7 @@ index 4a76535f..9698cd79 100644
          methods = MethodChannel(binding.binaryMessenger, "dsh/phone").also { it.setMethodCallHandler(this) }
          events = EventChannel(binding.binaryMessenger, "dsh/phone/events").also { it.setStreamHandler(this) }
          previewEvents = EventChannel(binding.binaryMessenger, "dsh/phone/preview").also { channel ->
-@@ -103,9 +439,194 @@ class PhonePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
+@@ -103,9 +444,194 @@ class PhonePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
          }
      }
  
@@ -3209,7 +3242,7 @@ index 4a76535f..9698cd79 100644
          skillSelectionRequest = Any()
          skillInspection = null
          skillClient?.let { control.skillReplaySelections.retireClient(it); control.skillDrafts.retireClient(it) }
-@@ -249,6 +770,103 @@ class PhonePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
+@@ -249,6 +775,103 @@ class PhonePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
                  result.success(if (removed) mapOf("kind" to "discarded") else replayRejected("stale"))
              }
              "setBackgroundPreview" -> result.success(control.preview.setEnabled(call.argument<Boolean>("enabled") == true))
@@ -3673,7 +3706,7 @@ index cbfb0de3..2713b173 100644
              DIAGNOSTICS,
              // l10n:keep agent tool catalog
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/SafetyGate.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/SafetyGate.kt
-index e50373c8..5e1126bb 100644
+index e50373c8..f10e837b 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/SafetyGate.kt
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/SafetyGate.kt
 @@ -113,7 +113,9 @@ enum class ConfirmMode(val wire: String) {
@@ -3687,6 +3720,100 @@ index e50373c8..5e1126bb 100644
  
      /**
       * The word that makes tapping [label] sensitive, or null. Delegates to [SensitiveWords] (shared
+@@ -193,6 +195,8 @@ class SafetyGate(
+     private val gate: () -> UserGate?,
+     private val ownPackage: String = SafetyRules.OWN_PACKAGE,
+     private val uiText: PhoneUiText = PhoneUiText.DEFAULT,
++    /** 【4j】全授权开关：打开时一切软确认直接放行（硬规则不受影响）。 */
++    private val allGranted: () -> Boolean = { false },
+ ) {
+     sealed interface Verdict {
+         object Allow : Verdict
+@@ -226,6 +230,10 @@ class SafetyGate(
+         packages.firstNotNullOfOrNull { checkRead(p, it, null) }
+ 
+     private fun checkRead(p: PhonePolicies, pkg: String?, appLabel: String?): Verdict.Refuse? {
++        // 【4j】用户自列的黑名单（APK 预设之外）永远拒绝，全授权开关也不放行。
++        if (pkg != null && pkg in p.denyPackages && pkg !in SafetyRules.DEFAULT_DENY)
++            return Verdict.Refuse(denied(labelOf(pkg, appLabel)), "deny-list")
++        if (allGranted()) return null
+         if (pkg == ownPackage && !p.unlocks.ownApp) return Verdict.Refuse(OWN_APP, "own-app")
+         if (pkg != null && pkg in p.denyPackages) return Verdict.Refuse(denied(labelOf(pkg, appLabel)), "deny-list")
+         return null
+@@ -234,6 +242,10 @@ class SafetyGate(
+     /** Opening an app (main or background screen). */
+     fun checkOpen(pkg: String, appLabel: String?): Verdict.Refuse? {
+         val p = policies()
++        // 【4j】用户自列的黑名单（APK 预设之外）永远拒绝，全授权开关也不放行。
++        if (pkg in p.denyPackages && pkg !in SafetyRules.DEFAULT_DENY)
++            return Verdict.Refuse(denied(labelOf(pkg, appLabel)), "deny-list")
++        if (allGranted()) return null
+         // l10n:keep agent safety result
+         if (pkg == ownPackage && !p.unlocks.ownApp) return Verdict.Refuse("DSH 自己不需要用 open 打开。", "own-app")
+         if (pkg in p.denyPackages) return Verdict.Refuse(denied(labelOf(pkg, appLabel)), "deny-list")
+@@ -260,19 +272,25 @@ class SafetyGate(
+         if (kind == WriteKind.KEY) return Verdict.Allow // back / home / recents / shade: always a way out
+         val p = policies()
+         val lifted = p.unlocks
+-        if (pkg == ownPackage && !lifted.ownApp) return Verdict.Refuse(OWN_APP, "own-app")
+-        if (pkg != null && pkg in p.denyPackages) return Verdict.Refuse(denied(app), "deny-list")
++        // 【4j】用户自列的黑名单（APK 预设之外）永远拒绝，全授权开关也不放行。
++        if (pkg != null && pkg in p.denyPackages && pkg !in SafetyRules.DEFAULT_DENY)
++            return Verdict.Refuse(denied(app), "deny-list")
++        // 下面的硬规则（自家界面/预设黑名单/系统页/密码框）全授权开关开着就放行。
++        if (pkg == ownPackage && !lifted.ownApp && !allGranted()) return Verdict.Refuse(OWN_APP, "own-app")
++        if (pkg != null && pkg in p.denyPackages && !allGranted()) return Verdict.Refuse(denied(app), "deny-list")
+         if (kind == WriteKind.SCROLL) return Verdict.Allow
+-        if (SafetyRules.isSystemPackage(pkg) && !lifted.systemPages) {
++        if (SafetyRules.isSystemPackage(pkg) && !lifted.systemPages && !allGranted()) {
+             // l10n:keep agent safety result
+             return Verdict.Refuse("系统设置 / 权限 / 安装页（「$app」）只看不动。请 handoff 让用户自己完成。", "system-page")
+         }
+         val secret = SafetyRules.isSecretTarget(target)
+-        if (secret && !lifted.secretFields) {
++        if (secret && !lifted.secretFields && !allGranted()) {
+             // l10n:keep agent safety result
+             return Verdict.Refuse("密码 / 验证码 / 支付框不代填也不代点。请 handoff 让用户输入。", "secret-field")
+         }
+         // Everything above is a hard rule (or one the person lifted); everything below only asks.
++        // 【4j】全授权开关开着：软确认直接放行；关着：回到原来的确认卡流程。
++        if (allGranted()) return Verdict.Allow
+         val eligibleVisual = kind == WriteKind.TAP_XY && coordinate != null && eligibleCoordinate(coordinate, visual, p)
+         val forceOnce = kind == WriteKind.TAP_XY && !eligibleVisual
+         val everyWrite = pkg != null && pkg in p.confirmEveryWritePackages
+@@ -321,6 +339,8 @@ class SafetyGate(
+             coordinate = action, point = action.x to action.y, screen = visual.scope.screen, visual = visual)
+         if (ordinary is Verdict.Refuse) return ordinary
+         if (ordinary is Verdict.Confirm && ordinary.reason == "tap_xy") return ordinary
++        // 【4j】全授权开关：截图点击的二次确认直接放行；关着走原流程。
++        if (allGranted()) return Verdict.Allow
+         if (tasks.hasVisualGrant(owner, visual.scope)) return Verdict.Allow
+         val app = labelOf(visual.scope.packageName, t.appLabel)
+         val sentence = if (visual.scope.screen == PhoneScreen.MAIN)
+@@ -341,6 +361,8 @@ class SafetyGate(
+      */
+     fun confirmation(sentence: String, pkg: String?, appLabel: String?, reason: String,
+                      inheritWaiver: Boolean = true): Verdict {
++        // 【4j】全授权开关开着：搬屏/未知应用的确认直接放行；关着走原流程。
++        if (allGranted()) return Verdict.Allow
+         val p = policies()
+         if ((inheritWaiver && waived(p)) || roundGranted(p, pkg, reason)) return Verdict.Allow
+         val request = ConfirmRequest(sentence = sentence, appLabel = appLabel ?: pkg, packageName = pkg, firstInApp = false)
+@@ -350,9 +372,12 @@ class SafetyGate(
+     /** Independent operation consent only; callers must check target/policy hard rules first.
+      * This never grants authority over a new target or waives subsequent checks.
+      */
+-    internal fun confirmationOnce(sentence: String, pkg: String?, appLabel: String?, reason: String): Verdict =
+-        Verdict.Confirm(ConfirmRequest(sentence = sentence, appLabel = appLabel ?: pkg,
++    internal fun confirmationOnce(sentence: String, pkg: String?, appLabel: String?, reason: String): Verdict {
++        // 【4j】全授权开关开着：独立操作确认直接放行。
++        if (allGranted()) return Verdict.Allow
++        return Verdict.Confirm(ConfirmRequest(sentence = sentence, appLabel = appLabel ?: pkg,
+             packageName = pkg, firstInApp = false, allowRound = false), pkg, reason, onlyOnce = true)
++    }
+ 
+     /** Resolves a verdict, asking the person if needed. InterruptedException means stop. */
+     fun resolve(verdict: Verdict, scope: SerialWorker.Scope, owner: PhoneTasks.Owner? = null): Result = when (verdict) {
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/SingleInstanceApps.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/SingleInstanceApps.kt
 new file mode 100644
 index 00000000..c5fe7218
@@ -86773,7 +86900,7 @@ index c66b20de..c9a6aa22 100644
    String starPromptTitle(int hours) {
      String _temp0 = intl.Intl.pluralLogic(
 diff --git a/app/lib/l10n/parts/android_shell_en.arb b/app/lib/l10n/parts/android_shell_en.arb
-index 9592bae3..68a9156c 100644
+index 9592bae3..944fb5c0 100644
 --- a/app/lib/l10n/parts/android_shell_en.arb
 +++ b/app/lib/l10n/parts/android_shell_en.arb
 @@ -80,5 +80,6 @@
@@ -86782,10 +86909,10 @@ index 9592bae3..68a9156c 100644
    "androidShellErrorStopFailed": "Stopping was not confirmed. Refresh the status and retry stopping.",
 -  "androidShellErrorUnknown": "The outcome could not be confirmed. Verify it first; never automatically retry a dispatched command."
 +  "androidShellErrorUnknown": "The outcome could not be confirmed. Verify it first; never automatically retry a dispatched command.",
-+  "androidShellNoConfirm": "Don't confirm each command (at your own risk)"
++  "androidShellNoConfirm": "Grant everything without asking (at your own risk)"
  }
 diff --git a/app/lib/l10n/parts/android_shell_zh.arb b/app/lib/l10n/parts/android_shell_zh.arb
-index 104780b5..a2b020d2 100644
+index 104780b5..c3cc6b7d 100644
 --- a/app/lib/l10n/parts/android_shell_zh.arb
 +++ b/app/lib/l10n/parts/android_shell_zh.arb
 @@ -80,5 +80,6 @@
@@ -86794,7 +86921,7 @@ index 104780b5..a2b020d2 100644
    "androidShellErrorStopFailed": "未确认已停止，请刷新状态并重试停止。",
 -  "androidShellErrorUnknown": "未能确认操作结果。先核实结果；已派发的命令不要自动重试。"
 +  "androidShellErrorUnknown": "未能确认操作结果。先核实结果；已派发的命令不要自动重试。",
-+  "androidShellNoConfirm": "不再逐条确认（风险自负）"
++  "androidShellNoConfirm": "全部授权免确认（风险自负）"
  }
 diff --git a/app/lib/l10n/parts/phone_en.arb b/app/lib/l10n/parts/phone_en.arb
 index 47d0cdf6..07b1f843 100644
