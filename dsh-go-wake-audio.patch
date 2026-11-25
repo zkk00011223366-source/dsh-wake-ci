@@ -1,12 +1,12 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: ci <ci@local>
-Date: Wed, 25 Nov 2026 19:29:30 +0800
+Date: Wed, 25 Nov 2026 20:11:37 +0800
 Subject: [PATCH] b: scene4n
 MIME-Version: 1.0
 Content-Type: text/plain; charset=UTF-8
 Content-Transfer-Encoding: 8bit
 
-4n: 通话球模式 + 自动reveal门控
+4n: 点条即藏条 + 条钉窗口位置
 
 ---
  .gitattributes                                     |    3 +
@@ -24,7 +24,7 @@ Content-Transfer-Encoding: 8bit
  .../ccch1mneyyy/dsh_app/phone/PhoneContracts.kt    |  271 ++
  .../ccch1mneyyy/dsh_app/phone/PhoneControl.kt      |  141 +-
  .../github/ccch1mneyyy/dsh_app/phone/PhoneCore.kt  |  584 +++-
- .../ccch1mneyyy/dsh_app/phone/PhonePlugin.kt       |  628 +++++
+ .../ccch1mneyyy/dsh_app/phone/PhonePlugin.kt       |  631 +++++
  .../ccch1mneyyy/dsh_app/phone/PhoneTaskSessions.kt |   49 +-
  .../github/ccch1mneyyy/dsh_app/phone/PhoneTasks.kt |   96 +-
  .../ccch1mneyyy/dsh_app/phone/PhoneToolCatalog.kt  |   36 +-
@@ -65,8 +65,8 @@ Content-Transfer-Encoding: 8bit
  .../dsh_app/phone/vscreen/FrontExitPrompt.kt       |  270 ++
  .../dsh_app/phone/vscreen/PresentationHost.kt      |   69 +
  .../ccch1mneyyy/dsh_app/phone/vscreen/TaskMover.kt |  152 +
- .../dsh_app/phone/vscreen/TransferBall.kt          |  519 ++++
- .../dsh_app/phone/vscreen/VirtualScreenOverlay.kt  | 2910 ++++++++++++++++++++
+ .../dsh_app/phone/vscreen/TransferBall.kt          |  541 ++++
+ .../dsh_app/phone/vscreen/VirtualScreenOverlay.kt  | 2912 ++++++++++++++++++++
  .../dsh_app/phone/vscreen/VirtualScreenPlugin.kt   |  238 ++
  .../ccch1mneyyy/dsh_app/phone/vscreen/VscreenUi.kt |  181 ++
  .../ccch1mneyyy/dsh_app/runtime/GuestSetup.kt      |   47 +-
@@ -247,7 +247,7 @@ Content-Transfer-Encoding: 8bit
  docs/wake-word.md                                  |  107 +
  dsh-go-wake.patch                                  | 2065 ++++++++++++++
  tooling/build-wake-apk.sh                          |   68 +
- 238 files changed, 18820 insertions(+), 987 deletions(-)
+ 238 files changed, 18847 insertions(+), 987 deletions(-)
 
 diff --git a/.gitattributes b/.gitattributes
 index 52e3e08a..3e877c7e 100644
@@ -2875,7 +2875,7 @@ index 6c701851..019144d3 100644
          private val WRITES = setOf(FOCUS_TEXT, PhoneToolCatalog.TAP, PhoneToolCatalog.TYPE, PhoneToolCatalog.TAP_XY, PhoneToolCatalog.OPEN)
          /** An uncertain effect call tightens draft eligibility; it does not prove input was dispatched. */
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhonePlugin.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhonePlugin.kt
-index 4a76535f..73f61228 100644
+index 4a76535f..653efbc3 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhonePlugin.kt
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhonePlugin.kt
 @@ -2,7 +2,14 @@ package io.github.ccch1mneyyy.dsh_app.phone
@@ -2912,7 +2912,7 @@ index 4a76535f..73f61228 100644
      private val privilegedActions = PrivilegedActionGate()
  
      override fun onAttachedToEngine(binding: FlutterPlugin.FlutterPluginBinding) {
-@@ -77,6 +89,340 @@ class PhonePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
+@@ -77,6 +89,343 @@ class PhonePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
          promptOwner = Any()
          attached = true
          control.background.restoreKeptChannel()
@@ -3216,6 +3216,9 @@ index 4a76535f..73f61228 100644
 +                            PhoneRegistry.vscreenTarget = "virtual"
 +                            PhoneRegistry.vscreenTapLatchedAt = android.os.SystemClock.elapsedRealtime()
 +                            WakeTrace.log("ball: eye->virtual latched (4ce-2)")
++                            // 【4o】点条瞬间藏条：窗口马上出来，条不再陪跑 1-2 秒
++                            // （真机 20:0x 点条后条窗并存才消失；判定链的 sync 有 1 秒节流）。
++                            runCatching { TransferBall.setWanted(false, appContext) }
 +                            runCatching {
 +                                VirtualScreenOverlay.show(appContext, VirtualScreenOverlay.currentTaskId())
 +                            }.onFailure { WakeTrace.log("ball: eye show threw ${it.javaClass.simpleName}") }
@@ -3253,7 +3256,7 @@ index 4a76535f..73f61228 100644
          methods = MethodChannel(binding.binaryMessenger, "dsh/phone").also { it.setMethodCallHandler(this) }
          events = EventChannel(binding.binaryMessenger, "dsh/phone/events").also { it.setStreamHandler(this) }
          previewEvents = EventChannel(binding.binaryMessenger, "dsh/phone/preview").also { channel ->
-@@ -103,9 +449,194 @@ class PhonePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
+@@ -103,9 +452,194 @@ class PhonePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
          }
      }
  
@@ -3448,7 +3451,7 @@ index 4a76535f..73f61228 100644
          skillSelectionRequest = Any()
          skillInspection = null
          skillClient?.let { control.skillReplaySelections.retireClient(it); control.skillDrafts.retireClient(it) }
-@@ -249,6 +780,103 @@ class PhonePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
+@@ -249,6 +783,103 @@ class PhonePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
                  result.success(if (removed) mapOf("kind" to "discarded") else replayRejected("stale"))
              }
              "setBackgroundPreview" -> result.success(control.preview.setEnabled(call.argument<Boolean>("enabled") == true))
@@ -8568,10 +8571,10 @@ index 00000000..19aecfea
 +}
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/TransferBall.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/TransferBall.kt
 new file mode 100644
-index 00000000..c4b91396
+index 00000000..be9ee1f7
 --- /dev/null
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/TransferBall.kt
-@@ -0,0 +1,519 @@
+@@ -0,0 +1,541 @@
 +package io.github.ccch1mneyyy.dsh_app.phone.vscreen
 +
 +import android.annotation.SuppressLint
@@ -8616,6 +8619,8 @@ index 00000000..c4b91396
 +    private const val PREFS = "transfer_ball"
 +    private const val KEY_SIDE = "side"
 +    private const val KEY_FRACTION = "fraction"
++    /** 【4o】窗口收窗时的绝对 y 中心（像素）：条钉在这个位置，不再忽上忽下。 */
++    private const val KEY_Y_CENTER = "yCenter"
 +    private const val SLIVER_W = 20f
 +    // 长度按用户 06:4x 要求缩短 1/4：200 → 150dp；07:2x 用户定：长度取当时的 1/3（150 → 50dp）。宽度不变（20dp）。
 +    private const val SLIVER_H = 50f
@@ -8646,6 +8651,8 @@ index 00000000..c4b91396
 +    private var singleKey = false
 +    private var params: WindowManager.LayoutParams? = null
 +    private var dock = Dock(side = Side.RIGHT, yFraction = 0.5f)
++    /** 【4o】收窗钉住的 y 中心（像素）；-1 = 未钉住，按 fraction 摆。用户拖过条后清掉。 */
++    private var pinnedYCenter = -1f
 +    private var open = false
 +
 +    /** The app asked for the ball; it stays off screen whenever nothing is handable. */
@@ -8880,23 +8887,38 @@ index 00000000..c4b91396
 +        io.github.ccch1mneyyy.dsh_app.wake.WakeTrace.log("ball: length=${sliverHeightDp}dp size=${w}x$h")
 +    }
 +
-+    /** 【4o】窗口收条时继承窗口的贴边位置：窗口在左，条就贴左（用户 14:4x：窗口在左、条总在右）。 */
-+    fun follow(side: Side, yFraction: Float) {
-+        dock = Dock(side = side, yFraction = yFraction)
++    /** 【4o】窗口收条时继承窗口的位置：贴哪边 + 条的 y 中心钉在窗口 y 中心
++     * （用户 20:0x：条位置忽上忽下；期望"窗口在哪个位置收的，条就出现在那个位置"）。 */
++    fun follow(side: Side, yCenter: Float) {
++        dock = Dock(side = side, yFraction = 0.5f)
++        pinnedYCenter = yCenter
 +        appContext?.getSharedPreferences(PREFS, Context.MODE_PRIVATE)?.edit()
 +            ?.putString(KEY_SIDE, if (side == Side.LEFT) "l" else "r")
-+            ?.putFloat(KEY_FRACTION, yFraction)?.apply()
++            ?.putFloat(KEY_Y_CENTER, yCenter)?.apply()
 +        val view = root ?: return
 +        val manager = wm ?: return
 +        val lp = params ?: return
 +        val app = appContext ?: return
 +        val px = app.resources.displayMetrics.density
 +        val (w, h) = sizeOf(open, px)
-+        val at = EdgeSnap.position(dock, w, h, area(app, manager), (10 * px).roundToInt())
++        val at = dockedAt(w, h, area(app, manager), px)
 +        lp.x = at.x
 +        lp.y = at.y
 +        runCatching { manager.updateViewLayout(view, lp) }
-+        io.github.ccch1mneyyy.dsh_app.wake.WakeTrace.log("ball: follow side=$side y=$yFraction")
++        io.github.ccch1mneyyy.dsh_app.wake.WakeTrace.log("ball: follow side=$side yCenter=$yCenter")
++    }
++
++    /** 【4o】条的位置：钉住的 y 中心优先；否则按 fraction。 */
++    private fun dockedAt(w: Int, h: Int, area: SafeArea, px: Float): WindowPos {
++        val margin = (10 * px).roundToInt()
++        if (pinnedYCenter > 0) {
++            val lo = EdgeSnap.minY(area, margin)
++            val hi = EdgeSnap.maxY(area, h, margin)
++            val y = (pinnedYCenter - h / 2).toInt().coerceIn(lo, hi)
++            val x = if (dock.side == Side.LEFT) EdgeSnap.minX(area, margin) else EdgeSnap.maxX(area, w, margin)
++            return WindowPos(x, y)
++        }
++        return EdgeSnap.position(dock, w, h, area, margin)
 +    }
 +
 +    private fun setOpen(expanded: Boolean) {
@@ -8997,9 +9019,12 @@ index 00000000..c4b91396
 +                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
 +                    if (dragging) {
 +                        dock = EdgeSnap.dockFor(lp.x, lp.y, lp.width, lp.height, area, margin, vx)
++                        // 【4o】用户拖过条：钉住位置作废，位置跟用户走。
++                        pinnedYCenter = -1f
 +                        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
 +                            .putString(KEY_SIDE, if (dock.side == Side.LEFT) "l" else "r")
 +                            .putFloat(KEY_FRACTION, dock.yFraction)
++                            .putFloat(KEY_Y_CENTER, -1f)
 +                            .apply()
 +                        setOpen(false)
 +                        return@setOnTouchListener true
@@ -9093,10 +9118,10 @@ index 00000000..c4b91396
 +}
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenOverlay.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenOverlay.kt
 new file mode 100644
-index 00000000..047ced14
+index 00000000..be79015a
 --- /dev/null
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenOverlay.kt
-@@ -0,0 +1,2910 @@
+@@ -0,0 +1,2912 @@
 +package io.github.ccch1mneyyy.dsh_app.phone.vscreen
 +
 +import io.github.ccch1mneyyy.dsh_app.phone.PhoneRegistry
@@ -9652,8 +9677,10 @@ index 00000000..047ced14
 +        // 配合"首帧凭据只升不降"，按 👁 的那一刻凭据成立，判定立刻给出 ball2，
 +        // 条出现后也不会再被"core 报 0"擦掉，所以不会闪。
 +        if (forceBall) {
-+            // 【4o】条继承窗口的贴边位置：窗口在左，条贴左（用户 14:4x）。
-+            runCatching { TransferBall.follow(dock.side, dock.yFraction) }
++            // 【4o】条继承窗口位置：贴同一边，条的 y 中心钉在窗口 y 中心（用户 20:0x）。
++            val winLp = (view.layoutParams as? WindowManager.LayoutParams)
++            val winYCenter = if (winLp != null) (winLp.y + winLp.height / 2).toFloat() else -1f
++            runCatching { TransferBall.follow(dock.side, winYCenter) }
 +            runCatching { VscreenUi.decide(false, why = "eye") }
 +                .onFailure { WakeTrace.log("ball: eye decide threw ${it.javaClass.simpleName}") }
 +        }
