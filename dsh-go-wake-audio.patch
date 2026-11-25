@@ -1,12 +1,12 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: ci <ci@local>
-Date: Wed, 25 Nov 2026 12:01:31 +0800
+Date: Wed, 25 Nov 2026 12:51:38 +0800
 Subject: [PATCH] b: scene4k
 MIME-Version: 1.0
 Content-Type: text/plain; charset=UTF-8
 Content-Transfer-Encoding: 8bit
 
-4k: 探活重试 + 唤窗竞态 + 误触防护 + 操作指引（含 4i/4j 全部）
+4k: 探活+唤窗竞态+误触+操作指引；4l: inUseByOther搬屏+浮窗全屏+技能通知
 
 ---
  .gitattributes                                     |    3 +
@@ -18,10 +18,11 @@ Content-Transfer-Encoding: 8bit
  .../github/ccch1mneyyy/dsh_app/call/CallOverlay.kt |  369 +++
  .../ccch1mneyyy/dsh_app/call/CallOverlayPlugin.kt  |   70 +
  .../ccch1mneyyy/dsh_app/notify/NotifyPlugin.kt     |    5 +-
+ .../ccch1mneyyy/dsh_app/phone/NotificationGate.kt  |   41 +
  .../ccch1mneyyy/dsh_app/phone/PhoneAndroidShell.kt |   18 +-
  .../ccch1mneyyy/dsh_app/phone/PhoneBackGuard.kt    |  146 +
  .../ccch1mneyyy/dsh_app/phone/PhoneContracts.kt    |  265 ++
- .../ccch1mneyyy/dsh_app/phone/PhoneControl.kt      |  124 +-
+ .../ccch1mneyyy/dsh_app/phone/PhoneControl.kt      |  141 +-
  .../github/ccch1mneyyy/dsh_app/phone/PhoneCore.kt  |  582 +++-
  .../ccch1mneyyy/dsh_app/phone/PhonePlugin.kt       |  623 +++++
  .../ccch1mneyyy/dsh_app/phone/PhoneTaskSessions.kt |   49 +-
@@ -52,7 +53,7 @@ Content-Transfer-Encoding: 8bit
  .../dsh_app/phone/background/KeptTasks.kt          |   39 +
  .../dsh_app/phone/background/OwnerScopes.kt        |   17 +-
  .../dsh_app/phone/background/PrivilegedChannel.kt  |    6 +
- .../phone/background/PrivilegedDisplayCore.kt      | 1315 ++++++++-
+ .../phone/background/PrivilegedDisplayCore.kt      | 1364 +++++++++-
  .../phone/background/PrivilegedDisplayEntry.kt     |   19 +-
  .../phone/background/PrivilegedDisplayHost.kt      |   10 +-
  .../dsh_app/phone/background/PrivilegedProtocol.kt |  108 +-
@@ -80,8 +81,10 @@ Content-Transfer-Encoding: 8bit
  .../app/src/main/res/values-zh/i18n_strings.xml    |   20 +-
  .../src/main/res/values-zh/phone_a11y_strings.xml  |    6 +-
  .../values-zh/phone_background_setup_strings.xml   |    2 +-
+ .../main/res/values-zh/phone_prompt_strings.xml    |    3 +
  .../src/main/res/values-zh/phone_task_strings.xml  |    2 +-
  .../app/src/main/res/values/i18n_strings.xml       |   10 +
+ .../src/main/res/values/phone_prompt_strings.xml   |    3 +
  .../main/res/xml/phone_accessibility_service.xml   |    3 +-
  app/android/app/src/main/res/xml/shortcuts.xml     |   18 +-
  .../dsh_app/phone/background/DisplayAwakeTest.kt   |  105 +
@@ -108,7 +111,8 @@ Content-Transfer-Encoding: 8bit
  app/lib/l10n/parts/speech_en.arb                   |   21 +-
  app/lib/l10n/parts/speech_zh.arb                   |   21 +-
  app/lib/links/launcher_entries.dart                |    7 +-
- app/lib/phone/phone_channel.dart                   |  135 +-
+ app/lib/phone/phone_channel.dart                   |  141 +-
+ app/lib/phone/phone_skill.dart                     |   14 +
  app/lib/phone/virtual_screen_window.dart           |  144 +
  app/lib/speech/call/active_call.dart               |  110 +
  app/lib/speech/call/chat_call.dart                 |    3 +
@@ -116,6 +120,7 @@ Content-Transfer-Encoding: 8bit
  app/lib/speech/call/voice_call.dart                |   57 +-
  app/lib/speech/wake_reply.dart                     |  175 ++
  app/lib/state/app_info.dart                        |    5 +
+ app/lib/state/phone_state.dart                     |   17 +
  app/lib/state/update_state.dart                    |   19 +-
  app/lib/state/virtual_screen_state.dart            |  462 ++++
  app/lib/ui/chat/chat_rows.dart                     |    2 +
@@ -125,6 +130,7 @@ Content-Transfer-Encoding: 8bit
  app/lib/ui/phone/background_preview.dart           |  264 +-
  app/lib/ui/phone/dnd_mode_page.dart                |  214 +-
  app/lib/ui/phone/phone_control_screen.dart         |    1 +
+ app/lib/ui/phone/phone_skill_section.dart          |   13 +-
  app/lib/ui/phone/phone_task_card.dart              |  430 +++
  app/lib/ui/phone/virtual_screen_host.dart          |  378 +++
  app/lib/ui/phone/virtual_screen_page.dart          |  114 +
@@ -145,7 +151,7 @@ Content-Transfer-Encoding: 8bit
  docs/wake-word.md                                  |  107 +
  dsh-go-wake.patch                                  | 2065 ++++++++++++++
  tooling/build-wake-apk.sh                          |   68 +
- 136 files changed, 18109 insertions(+), 600 deletions(-)
+ 142 files changed, 18266 insertions(+), 606 deletions(-)
 
 diff --git a/.gitattributes b/.gitattributes
 index 52e3e08a..3e877c7e 100644
@@ -1180,6 +1186,64 @@ index 12b600d4..63d16e02 100644
      }
  
      override fun onDetachedFromActivityForConfigChanges() = onDetachedFromActivity()
+diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/NotificationGate.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/NotificationGate.kt
+index 9856b79f..2bcb366d 100644
+--- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/NotificationGate.kt
++++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/NotificationGate.kt
+@@ -190,6 +190,41 @@ class NotificationGate(
+     private fun builder(channel: String): Notification.Builder = if (Build.VERSION.SDK_INT >= 26) Notification.Builder(app, channel)
+         else @Suppress("DEPRECATION") Notification.Builder(app).setPriority(Notification.PRIORITY_HIGH)
+ 
++    /** 【4l】技能候选生成后调用：通知 + 「存为技能」按钮，点按钮回调 [skillSaveListener]。 */
++    @Volatile var skillSaveListener: ((Long, Long) -> Unit)? = null
++    @Volatile private var skillReceiverRegistered = false
++    private val skillSaveReceiver = object : BroadcastReceiver() {
++        override fun onReceive(context: Context?, intent: Intent?) {
++            val id = intent?.getLongExtra(EXTRA_TASK_ID, 0L) ?: 0L
++            val gen = intent?.getLongExtra(EXTRA_GENERATION, 0L) ?: 0L
++            skillSaveListener?.invoke(id, gen)
++        }
++    }
++
++    fun notifySkillSave(taskId: Long, generation: Long): Boolean = runCatching {
++        if (!channelAvailable(CHANNEL_RESULT, NotificationManager.IMPORTANCE_HIGH)) return false
++        val action = "${app.packageName}.SKILL_SAVE"
++        if (!skillReceiverRegistered) {
++            if (Build.VERSION.SDK_INT >= 33) app.registerReceiver(skillSaveReceiver, IntentFilter(action), Context.RECEIVER_NOT_EXPORTED)
++            else app.registerReceiver(skillSaveReceiver, IntentFilter(action))
++            skillReceiverRegistered = true
++        }
++        val save = PendingIntent.getBroadcast(app, SKILL_SAVE_REQ,
++            Intent(action).setPackage(app.packageName)
++                .putExtra(EXTRA_TASK_ID, taskId).putExtra(EXTRA_GENERATION, generation),
++            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
++        val open = PendingIntent.getActivity(app, SKILL_SAVE_REQ + 1, EntryActivity.openApp(app),
++            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
++        nm.notify(skillTag(taskId, generation), SKILL_SAVE_ID,
++            builder(CHANNEL_RESULT).setSmallIcon(R.drawable.ic_stat_dsh)
++                .setContentTitle(AppStrings.get(app, R.string.phone_skill_save_title))
++                .setContentText(AppStrings.get(app, R.string.phone_skill_save_text))
++                .setContentIntent(open).setAutoCancel(true).setVisibility(Notification.VISIBILITY_PRIVATE)
++                .addAction(Notification.Action.Builder(null, AppStrings.get(app, R.string.phone_skill_save_action), save).build())
++                .build())
++        true
++    }.getOrDefault(false)
++
+     /** Posts the question and blocks for a button; null on timeout. */
+     private fun ask(
+         title: String,
+@@ -275,5 +310,11 @@ class NotificationGate(
+             "$RESULT_TAG:$taskId:${sessionId?.length ?: -1}:${sessionId.orEmpty()}:${host?.length ?: -1}:${host.orEmpty()}"
+         private const val RESULT_ID = 4300
+         private const val EXTRA_CHOICE = "choice"
++        // 【4l】技能保存询问通知
++        internal fun skillTag(taskId: Long, generation: Long): String = "dsh-phone-skill:$taskId:$generation"
++        private const val SKILL_SAVE_ID = 4310
++        private const val SKILL_SAVE_REQ = 8600
++        private const val EXTRA_TASK_ID = "skillTaskId"
++        private const val EXTRA_GENERATION = "skillGeneration"
+     }
+ }
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneAndroidShell.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneAndroidShell.kt
 index bb9c8031..1a9f4d29 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneAndroidShell.kt
@@ -1660,10 +1724,27 @@ index 612f94d1..4debf107 100644
      @Volatile var overlayGate: UserGate? = null
      @Volatile var notificationGate: UserGate? = null
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneControl.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneControl.kt
-index 2fc7cd59..a0a3a709 100644
+index 2fc7cd59..d279dbdc 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneControl.kt
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneControl.kt
-@@ -201,6 +201,8 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
+@@ -193,7 +193,15 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
+         screenRecoveryReady = { isEnabled() && !isLocked() },
+         prepareBackground = { task, owner -> background.prepareForTask(owner) { task.tasks.isCurrent(owner) } },
+         startSkillScope = skillLifecycle::startManaged,
+-        completeSkillScope = skillLifecycle::completeDrained,
++        completeSkillScope = { owner, epoch, completion ->
++            val offered = skillLifecycle.completeDrained(owner, epoch, completion)
++            // 【4l】候选生成成功 + 用户开了"任务成功后询问存技能" → 发系统通知。
++            // 原来只在手机操控页可见时才弹窗，全程自动化的用户永远看不到（真机反馈）。
++            if (offered && completion == "completed" && prefs.getBoolean(K_SKILL_PROMPT, false)) {
++                notificationGate.notifySkillSave(owner.taskId, owner.lifecycle)
++            }
++            offered
++        },
+         cancelScope = { record, state ->
+             // Registry admission stays sealed until these lock-free side effects finish.
+             background.sealTask(state.id)
+@@ -201,6 +209,8 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
              if (state.stopped) record.activeWorker?.interruptCurrent(record.tasks)
              prompts.stopTask(record.tasks)
          })
@@ -1672,7 +1753,7 @@ index 2fc7cd59..a0a3a709 100644
      private val server = McpServer(PhoneToolCatalog.listJson(), { name, args, _ -> sessions.run(sessions.admit(null), name, args) }, SERVER_VERSION,
          diagnostics = { args, caller -> RuntimeController.get(app).diagnosticsTool.call(args, caller) })
      private val bridge = PhoneBridge(server, { line -> logger(line) }, { call ->
-@@ -297,7 +299,7 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
+@@ -297,7 +307,7 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
              override fun beforeHandoff(screen: PhoneScreen, owner: PhoneTasks.Owner): String? {
                  if (screen != PhoneScreen.BACKGROUND) return null
                  background.endTask(owner.taskId)
@@ -1681,7 +1762,21 @@ index 2fc7cd59..a0a3a709 100644
              }
          }
          task.addListener { state -> onSessionTask(task, state) }
-@@ -353,7 +355,7 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
+@@ -345,6 +355,13 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
+ 
+     init {
+         PhoneRegistry.notificationGate = notificationGate
++        // 【4l】「存为技能」通知按钮 → 推给 Dart 打开技能编辑器。
++        notificationGate.skillSaveListener = { taskId, generation ->
++            if (sinks.isNotEmpty()) {
++                val event = mapOf("skillSave" to mapOf("taskId" to taskId, "generation" to generation))
++                sinks.forEach { runCatching { it(event) } }
++            }
++        }
+         PhoneRegistry.promptGate = prompts
+         PhoneRegistry.controlListener = this
+         PhoneRegistry.unlocks = { policies().unlocks }
+@@ -353,7 +370,7 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
          background.onPreviewChanged = { main.post { preview.refresh() } }
          background.localOcrAllowed = { target ->
              isEnabled() && !isLocked() && target.packageName != app.packageName &&
@@ -1690,7 +1785,7 @@ index 2fc7cd59..a0a3a709 100644
          }
          (app as? Application)?.let { AppVisibility.register(it) }
          tasks.addListener { onTask(it) }
-@@ -682,7 +684,8 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
+@@ -682,7 +699,8 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
                  selfCheck.stop()
                  preview.refresh()
                  background.requestInterrupt {
@@ -1700,7 +1795,7 @@ index 2fc7cd59..a0a3a709 100644
                  }
                  cleanupIo.execute { background.finishInterrupt() }
              }
-@@ -806,6 +809,17 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
+@@ -806,6 +824,17 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
              "notifications" to nm.areNotificationsEnabled(),
              "confirmationNotifications" to notificationGate.available(),
              "background" to backgroundStatus(),
@@ -1718,7 +1813,7 @@ index 2fc7cd59..a0a3a709 100644
              "a11yKeeper" to keeperStatus(),
              "task" to tasks.snapshot().toMap(),
              "taskInterruption" to taskJournal.status(),
-@@ -943,7 +957,14 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
+@@ -943,7 +972,14 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
      override fun shownControls(): TaskControls? =
          displaySelection.controls { task, owner, reason -> stopOwner(task, owner, reason) }
  
@@ -1734,7 +1829,7 @@ index 2fc7cd59..a0a3a709 100644
  
      override fun onAccessibilityChanged(connected: Boolean) = emitStatus()
  
-@@ -990,7 +1011,7 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
+@@ -990,7 +1026,7 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
          if (screen != PhoneScreen.BACKGROUND) return null
          background.endTask(owner.taskId)
          // l10n:keep agent stop reason
@@ -1743,7 +1838,7 @@ index 2fc7cd59..a0a3a709 100644
      }
  
      override fun a11yState(): A11yState = when {
-@@ -999,18 +1020,109 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
+@@ -999,18 +1035,109 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
          else -> A11yState.DISABLED
      }
  
@@ -5668,7 +5763,7 @@ index c1c2ed09..b0b1dfe3 100644
          close()
          Bundle().apply { putBoolean(Proto.OK, false); putString(Proto.ERROR, "deviceUnavailable") }
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/PrivilegedDisplayCore.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/PrivilegedDisplayCore.kt
-index c7ed0f7a..1b5ce7cc 100644
+index c7ed0f7a..48bc6d2f 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/PrivilegedDisplayCore.kt
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/PrivilegedDisplayCore.kt
 @@ -11,6 +11,7 @@ package io.github.ccch1mneyyy.dsh_app.phone.background
@@ -5802,7 +5897,7 @@ index c7ed0f7a..1b5ce7cc 100644
          val pkg = request.getString(Proto.PKG).orEmpty()
          if (!PACKAGE.matches(pkg)) throw Fault("invalidArguments")
          val opening = op == Proto.OP_CREATE || op == Proto.OP_LAUNCH
-@@ -340,12 +412,82 @@ class PrivilegedDisplayCore internal constructor(
+@@ -340,12 +412,96 @@ class PrivilegedDisplayCore internal constructor(
                  // A task keeps the screen it opened first; its driver always asks for the same viewport.
                  if (display == null) createDisplay(request)
                  response.putInt(Proto.DISPLAY_ID, displayId())
@@ -5811,9 +5906,23 @@ index c7ed0f7a..1b5ce7cc 100644
 +                val prevPkg = runCatching { topTask(displayId())?.second }.getOrNull()
 +                // B3 双开检查：这个包正在我们另一块虚拟屏上用 → 不抢，明确拒绝（带原因码）。
 +                usageElsewhere(pkg)?.let { refusal ->
-+                    io.github.ccch1mneyyy.dsh_app.wake.WakeTrace.log(
-+                        "vscreen: open refused pkg=$pkg reason=$refusal")
-+                    throw Fault(refusal)
++                    // 【4l】会话遗留场景：应用还在旧会话的屏上（kept），新会话建了新屏撞 B3。
++                    // 真机 15:10 qqlive 被拒 8 次、拖 17 秒，AI 最后只能换应用。
++                    // 改：先把旧屏上的应用搬回当前屏复用（moveRootTask 不重启、状态保留），
++                    // 搬不动才拒绝。搬成功后 fallthrough 到 reuseOrMove 把它提到前台。
++                    val elsewhereTask = DisplayHandles.snapshot().keys
++                        .filter { it != displayId() }
++                        .firstNotNullOfOrNull { sid ->
++                            rootTaskInfos(sid).firstNotNullOfOrNull { taskRow(it)?.takeIf { r -> r.second == pkg }?.first }
++                        }
++                    if (elsewhereTask != null && moveRootTask(elsewhereTask, displayId()) == null) {
++                        io.github.ccch1mneyyy.dsh_app.wake.WakeTrace.log(
++                            "vscreen: reclaimed pkg=$pkg task=$elsewhereTask -> display=${displayId()}")
++                    } else {
++                        io.github.ccch1mneyyy.dsh_app.wake.WakeTrace.log(
++                            "vscreen: open refused pkg=$pkg reason=$refusal")
++                        throw Fault(refusal)
++                    }
 +                }
 +                // G：同一个应用重复 open。虚拟屏里已有就复用，主屏上有就搬进来，都没有才 launch。
 +                // 以前每次 open 都 startActivity，重复打开会在主屏留一份任务，或干脆卡住。
@@ -5887,7 +5996,7 @@ index c7ed0f7a..1b5ce7cc 100644
              Proto.OP_COORDINATE -> coordinate(pkg, expected?.uid, request, response)
              Proto.OP_TAP -> {
                  requireShown(pkg, expected?.uid)
-@@ -379,6 +521,8 @@ class PrivilegedDisplayCore internal constructor(
+@@ -379,6 +535,8 @@ class PrivilegedDisplayCore internal constructor(
          }
          // Every reply names the app now on top (none when the screen is empty). A read already did.
          if (!response.containsKey(Proto.TARGET_IDENTITY_VERSION)) putShown(response, openedPackage(request, pkg), shownApp())
@@ -5896,7 +6005,7 @@ index c7ed0f7a..1b5ce7cc 100644
          if (op == Proto.OP_LAUNCH && expected != null) {
              val shown = TargetIdentity.shown(response.get(Proto.PKG), response.get(Proto.TARGET_UID))
              val actualDisplay = display?.display
-@@ -729,57 +873,744 @@ class PrivilegedDisplayCore internal constructor(
+@@ -729,57 +887,779 @@ class PrivilegedDisplayCore internal constructor(
      private fun displayId(): Int = display?.display?.displayId ?: throw Fault("displayMissing")
      private fun requireDisplay() { if (display == null) throw Fault("displayMissing") }
  
@@ -6076,7 +6185,10 @@ index c7ed0f7a..1b5ce7cc 100644
 +                }
 +            }
 +        } ?: "noMoveApi"
-+        if (reflection == null) return null
++        if (reflection == null) {
++            if (displayId != Display.DEFAULT_DISPLAY) restoreFullscreenWindow(taskId)
++            return null
++        }
 +        val (code, text) = runCatching {
 +            val process = ProcessBuilder("am", "display", "move-stack", taskId.toString(), displayId.toString())
 +                .redirectErrorStream(true).start()
@@ -6105,10 +6217,42 @@ index c7ed0f7a..1b5ce7cc 100644
 +            "vscreen: move-stack task=$taskId display=$displayId code=$code alreadyThere=$alreadyThere " +
 +                "onTarget=$onTarget reflection=$reflection by=$caller detail=${text.trim().take(100)}")
 +        return when {
-+            code == 0 -> null
-+            alreadyThere -> null
-+            onTarget -> null
++            code == 0 -> {
++                if (displayId != Display.DEFAULT_DISPLAY) restoreFullscreenWindow(taskId)
++                null
++            }
++            alreadyThere -> {
++                if (displayId != Display.DEFAULT_DISPLAY) restoreFullscreenWindow(taskId)
++                null
++            }
++            onTarget -> {
++                if (displayId != Display.DEFAULT_DISPLAY) restoreFullscreenWindow(taskId)
++                null
++            }
 +            else -> reflection
++        }
++    }
++
++    /**
++     * 【4l】搬进虚拟屏后把任务窗口恢复全屏。微信浮窗/悬浮球等小尺寸窗口搬进来会保持小界面，
++     * 虚拟屏上显示不完整、读屏也读不到文字（真机 22:0x 微信发早安场景）。
++     * 反射不到就静默：搬屏本身已成功，窗口尺寸问题留给下一次机会。
++     */
++    private fun restoreFullscreenWindow(taskId: Int) {
++        runCatching {
++            val m = taskManager.javaClass.getMethod(
++                "setTaskWindowingMode",
++                Int::class.javaPrimitiveType,
++                Int::class.javaPrimitiveType,
++                Boolean::class.javaPrimitiveType,
++            )
++            // WINDOWING_MODE_FULLSCREEN = 1；toTop=false 只改模式不抢前台。
++            m.invoke(taskManager, taskId, 1, false)
++            io.github.ccch1mneyyy.dsh_app.wake.WakeTrace.log(
++                "vscreen: restoreFullscreen task=$taskId ok")
++        }.onFailure {
++            io.github.ccch1mneyyy.dsh_app.wake.WakeTrace.log(
++                "vscreen: restoreFullscreen task=$taskId threw ${it.javaClass.simpleName}")
 +        }
 +    }
 +
@@ -6662,7 +6806,7 @@ index c7ed0f7a..1b5ce7cc 100644
      private fun resolveLaunch(pkg: String, expected: PhoneAppIdentity?): Intent {
          val pm = privileged.packageManager
          val intent = runCatching { pm.getLaunchIntentForPackage(pkg) }.getOrNull() ?: throw Fault("notLaunchable")
-@@ -821,6 +1652,44 @@ class PrivilegedDisplayCore internal constructor(
+@@ -821,6 +1701,44 @@ class PrivilegedDisplayCore internal constructor(
      }
  
      /** (displayId, packages of that task) rows of one running-task read. */
@@ -6707,7 +6851,7 @@ index c7ed0f7a..1b5ce7cc 100644
      private fun taskRows(): List<Pair<Int, Set<String>>>? {
          val field = taskDisplayIdField ?: return null
          @Suppress("DEPRECATION")
-@@ -862,8 +1731,29 @@ class PrivilegedDisplayCore internal constructor(
+@@ -862,8 +1780,29 @@ class PrivilegedDisplayCore internal constructor(
  
      private fun launchPackage(pkg: String, intent: Intent) {
          val display = this.display ?: throw Fault("displayMissing")
@@ -6738,7 +6882,7 @@ index c7ed0f7a..1b5ce7cc 100644
          // A shell/UserService is not an ActivityManager-attached app process: a PendingIntent
          // avoids Context.startActivity's caller check (Phase, after Aether).
          var pending: PendingIntent? = null
-@@ -879,17 +1769,135 @@ class PrivilegedDisplayCore internal constructor(
+@@ -879,17 +1818,135 @@ class PrivilegedDisplayCore internal constructor(
          // Wait for the target on the owned display. Any app it brought up there instead is reported
          // by the read that follows; only a screen still empty, or a target that went to another
          // display, means the open did not happen here.
@@ -6878,7 +7022,7 @@ index c7ed0f7a..1b5ce7cc 100644
      /** Legacy success shape stays unchanged; failed physical cleanup retains its original handles. */
      private fun releaseAll() = lock.withLock {
          if (strictOwner) throw Fault("releaseReceiptRequired")
-@@ -906,8 +1914,140 @@ class PrivilegedDisplayCore internal constructor(
+@@ -906,8 +1963,140 @@ class PrivilegedDisplayCore internal constructor(
          if (readerAllocationUncertain) throw Fault("releaseUnconfirmed")
      }
  
@@ -7019,7 +7163,7 @@ index c7ed0f7a..1b5ce7cc 100644
          closeTreeConnection()
          visualObservation = null
          stopPreview()
-@@ -925,11 +2065,42 @@ class PrivilegedDisplayCore internal constructor(
+@@ -925,11 +2114,42 @@ class PrivilegedDisplayCore internal constructor(
              closeReaders()
          } else {
              val displayId = releasingDisplayId ?: throw Fault("releaseUnconfirmed")
@@ -7063,7 +7207,7 @@ index c7ed0f7a..1b5ce7cc 100644
              closeReaders()
              val deadline = SystemClock.uptimeMillis() + 1_000
              // The display itself is already released. A ROM whose task query is unreadable cannot
-@@ -944,6 +2115,7 @@ class PrivilegedDisplayCore internal constructor(
+@@ -944,6 +2164,7 @@ class PrivilegedDisplayCore internal constructor(
      }
  
      private fun clearResourceState() {
@@ -7071,7 +7215,7 @@ index c7ed0f7a..1b5ce7cc 100644
          display = null; owner = null; strictOwner = false; selfCheckOwner = false
          targetSequence = null; targetSnapshot = null; targetMain = null
          releasingDisplayId = null; displayCreationAttempted = false; displayApiReleased = false; probeDisplay = false
-@@ -1166,7 +2338,15 @@ class PrivilegedDisplayCore internal constructor(
+@@ -1166,7 +2387,15 @@ class PrivilegedDisplayCore internal constructor(
      private class CaptureResult(val jpeg: ByteArray, val raw: BackgroundPreviewState.RawFrame?, val local: ImageObservation?, val targetMatched: Boolean? = null)
  
      /** Null means only absent/black frames; other capture failures remain distinguishable. */
@@ -7088,7 +7232,7 @@ index c7ed0f7a..1b5ce7cc 100644
          val ir = lock.withLock {
              if (pendingReader != null || readerAllocationUncertain) throw Fault("releasePending")
              val vd = display ?: throw Fault("displayMissing")
-@@ -1332,6 +2512,13 @@ class PrivilegedDisplayCore internal constructor(
+@@ -1332,6 +2561,13 @@ class PrivilegedDisplayCore internal constructor(
  
      internal fun previewDrained(): Boolean = lock.withLock { previewWorker.drained() }
  
@@ -7102,7 +7246,7 @@ index c7ed0f7a..1b5ce7cc 100644
      private fun renderPreview(ticket: BackgroundPreviewState.Ticket) {
          var bitmap: Bitmap? = null
          var thumbnail: Bitmap? = null
-@@ -1359,8 +2546,23 @@ class PrivilegedDisplayCore internal constructor(
+@@ -1359,8 +2595,23 @@ class PrivilegedDisplayCore internal constructor(
                  } finally { image.close() }
                  // All Image/buffer access ends before releaseAll can close its ImageReader.
              } finally { lock.unlock() }
@@ -7127,7 +7271,7 @@ index c7ed0f7a..1b5ce7cc 100644
                  bitmap = Bitmap.createBitmap(raw.width, raw.height, Bitmap.Config.ARGB_8888)
                  bitmap!!.copyPixelsFromBuffer(ByteBuffer.wrap(raw.pixels))
              }
-@@ -1382,6 +2584,18 @@ class PrivilegedDisplayCore internal constructor(
+@@ -1382,6 +2633,18 @@ class PrivilegedDisplayCore internal constructor(
                  preview.unavailable(ticket, "frameTooLarge"); return
              }
              preview.publish(ticket, BackgroundPreviewState.Frame(w, h, pixels, bytes), SystemClock.uptimeMillis())
@@ -7146,7 +7290,7 @@ index c7ed0f7a..1b5ce7cc 100644
          } catch (_: Exception) {
              preview.unavailable(ticket, "captureFailed")
          } finally {
-@@ -2025,6 +3239,32 @@ class PrivilegedDisplayCore internal constructor(
+@@ -2025,6 +3288,32 @@ class PrivilegedDisplayCore internal constructor(
          if (waitForFinish && !accepted) throw Fault("inputRejected")
      }
  
@@ -7179,7 +7323,7 @@ index c7ed0f7a..1b5ce7cc 100644
      private fun setImePolicyHide(displayId: Int) {
          val sm = Class.forName("android.os.ServiceManager")
          val binder = sm.getMethod("getService", String::class.java).invoke(null, "window") as IBinder
-@@ -2079,9 +3319,14 @@ class PrivilegedDisplayCore internal constructor(
+@@ -2079,9 +3368,14 @@ class PrivilegedDisplayCore internal constructor(
  
      companion object {
          private val PACKAGE = Regex("[a-zA-Z][a-zA-Z0-9_]*(\\.[a-zA-Z0-9_]+)+")
@@ -12871,6 +13015,18 @@ index a549c2bd..7389a43c 100644
      <string name="background_setup_old_service">App 更新前的旧后台服务仍在运行，未能替换。请在 Shizuku 中停止 DSH Go 服务后重新连接。</string>
      <string name="background_setup_bind_timeout">连接 Shizuku 服务超时，请确认它正在运行后重连。</string>
      <string name="background_setup_unbind_wait">旧连接尚未释放，请稍后重连。</string>
+diff --git a/app/android/app/src/main/res/values-zh/phone_prompt_strings.xml b/app/android/app/src/main/res/values-zh/phone_prompt_strings.xml
+index ea737cad..a8d4e680 100644
+--- a/app/android/app/src/main/res/values-zh/phone_prompt_strings.xml
++++ b/app/android/app/src/main/res/values-zh/phone_prompt_strings.xml
+@@ -15,4 +15,7 @@
+     <string name="phone_prompt_result_channel">手机操控结果</string>
+     <string name="phone_prompt_result_title">DSH Go · 任务完成</string>
+     <string name="phone_prompt_result_text">查看结果</string>
++    <string name="phone_skill_save_title">DSH Go · 任务完成，存为技能？</string>
++    <string name="phone_skill_save_text">这次操作成功了，存为技能后，下次同类任务按这次流程执行。</string>
++    <string name="phone_skill_save_action">存为技能</string>
+ </resources>
 diff --git a/app/android/app/src/main/res/values-zh/phone_task_strings.xml b/app/android/app/src/main/res/values-zh/phone_task_strings.xml
 index d05796fd..56572b8e 100644
 --- a/app/android/app/src/main/res/values-zh/phone_task_strings.xml
@@ -12902,6 +13058,18 @@ index f4c452da..66c0db1e 100644
      <string name="pet_window_title">DSH pet</string>
      <string name="pet_label">Pet</string>
      <string name="pet_open_channel">Open from pet</string>
+diff --git a/app/android/app/src/main/res/values/phone_prompt_strings.xml b/app/android/app/src/main/res/values/phone_prompt_strings.xml
+index 61ba2fd1..b64a4a75 100644
+--- a/app/android/app/src/main/res/values/phone_prompt_strings.xml
++++ b/app/android/app/src/main/res/values/phone_prompt_strings.xml
+@@ -15,4 +15,7 @@
+     <string name="phone_prompt_result_channel">Phone control results</string>
+     <string name="phone_prompt_result_title">DSH Go · Task complete</string>
+     <string name="phone_prompt_result_text">View results</string>
++    <string name="phone_skill_save_title">DSH Go · Task done, save as skill?</string>
++    <string name="phone_skill_save_text">This task succeeded. Save it as a skill so the next similar task follows this flow.</string>
++    <string name="phone_skill_save_action">Save as skill</string>
+ </resources>
 diff --git a/app/android/app/src/main/res/xml/phone_accessibility_service.xml b/app/android/app/src/main/res/xml/phone_accessibility_service.xml
 index 1617f97d..72f31ad1 100644
 --- a/app/android/app/src/main/res/xml/phone_accessibility_service.xml
@@ -87227,7 +87395,7 @@ index d0e32a53..73484ed0 100644
    final String text;
  
 diff --git a/app/lib/phone/phone_channel.dart b/app/lib/phone/phone_channel.dart
-index 61789e5d..7affbe46 100644
+index 61789e5d..2010f65a 100644
 --- a/app/lib/phone/phone_channel.dart
 +++ b/app/lib/phone/phone_channel.dart
 @@ -226,7 +226,10 @@ class AdbStatus {
@@ -87250,7 +87418,7 @@ index 61789e5d..7affbe46 100644
        _ => null,
      };
    }
-@@ -597,6 +601,9 @@ class PhoneStatus {
+@@ -597,10 +601,14 @@ class PhoneStatus {
      this.notifications = false,
      this.confirmationNotifications,
      this.background = const PhoneBackgroundStatus(),
@@ -87260,7 +87428,12 @@ index 61789e5d..7affbe46 100644
      this.task = const PhoneTaskStatus(),
      this.taskProtocol = 0,
      this.callerCapability,
-@@ -609,7 +616,10 @@ class PhoneStatus {
+     this.tasks = const [],
++    this.skillSave,
+     this.parallelLimit = 1,
+     this.device = const PhoneDevice(),
+     this.skills = const PhoneSkillStatus(),
+@@ -609,7 +617,10 @@ class PhoneStatus {
  
    /// The native module isn't there (or failed to answer): "未就绪".
    const PhoneStatus.notReady([this.error])
@@ -87272,7 +87445,15 @@ index 61789e5d..7affbe46 100644
        statusRevision = null,
        statusRevisionPresent = false,
        enabled = false,
-@@ -641,6 +651,9 @@ class PhoneStatus {
+@@ -627,6 +638,7 @@ class PhoneStatus {
+       parallelLimit = 1,
+       device = const PhoneDevice(),
+       skills = const PhoneSkillStatus(),
++      skillSave = null,
+       taskInterruption = const PhoneTaskInterruption();
+ 
+   factory PhoneStatus.fromMap(Map<Object?, Object?> m) => PhoneStatus(
+@@ -641,6 +653,9 @@ class PhoneStatus {
      notifications: _flag(m['notifications']),
      confirmationNotifications: _maybeFlag(m['confirmationNotifications']),
      background: PhoneBackgroundStatus.fromMap(_map(m['background'])),
@@ -87282,7 +87463,15 @@ index 61789e5d..7affbe46 100644
      task: _selectedPhoneTask(m),
      taskProtocol: m['taskProtocol'] == 1 ? 1 : 0,
      callerCapability: PhoneCallerCapability.parse(m['callerCapability']),
-@@ -676,6 +689,16 @@ class PhoneStatus {
+@@ -648,6 +663,7 @@ class PhoneStatus {
+     parallelLimit: _int(m['parallelLimit']) ?? 1,
+     device: PhoneDevice.fromMap(_map(m['device'])),
+     skills: PhoneSkillStatus.parse(m['skills']),
++    skillSave: PhoneSkillSaveEvent.parse(_map(m['skillSave'])),
+     taskInterruption: PhoneTaskInterruption.parse(m['taskInterruption']),
+   );
+ 
+@@ -676,6 +692,16 @@ class PhoneStatus {
    /// Null on older native modules; it does not replace the global switch.
    final bool? confirmationNotifications;
    final PhoneBackgroundStatus background;
@@ -87299,7 +87488,24 @@ index 61789e5d..7affbe46 100644
    final PhoneTaskStatus task;
    final int taskProtocol;
    final PhoneCallerCapability? callerCapability;
-@@ -847,6 +870,36 @@ class PhoneResult {
+@@ -683,6 +709,7 @@ class PhoneStatus {
+   final int parallelLimit;
+   final PhoneDevice device;
+   final PhoneSkillStatus skills;
++  final PhoneSkillSaveEvent? skillSave;
+   final PhoneTaskInterruption taskInterruption;
+ 
+   /// Some task may still act, the selected one or any other conversation's: active, a call
+@@ -709,6 +736,8 @@ class PhoneStatus {
+     parallelLimit: parallelLimit,
+     device: device,
+     skills: skills,
++    // 一次性事件：copyWith 产生的后续快照不再携带它，避免监听方重复处理。
++    skillSave: null,
+     taskInterruption: taskInterruption,
+   );
+ }
+@@ -847,6 +876,36 @@ class PhoneResult {
    final bool pending;
  }
  
@@ -87336,7 +87542,7 @@ index 61789e5d..7affbe46 100644
  /// Reply of `testScreen`: the main screen read once.
  class ScreenTestResult {
    const ScreenTestResult({required this.ok, this.text, this.reason});
-@@ -1355,6 +1408,84 @@ class PhoneChannel {
+@@ -1355,6 +1414,84 @@ class PhoneChannel {
      return controller.stream.map(PhonePreviewFrame.parse);
    }
  
@@ -87421,6 +87627,31 @@ index 61789e5d..7affbe46 100644
    Future<bool> setSkillSavePrompt(bool enabled) => _bool('setSkillSavePrompt', {'enabled': enabled});
  
    Future<PhoneSkillReply> openSkillDraft(PhoneSkillCandidate candidate, {required bool confirmed}) =>
+diff --git a/app/lib/phone/phone_skill.dart b/app/lib/phone/phone_skill.dart
+index f7b0da28..c489c067 100644
+--- a/app/lib/phone/phone_skill.dart
++++ b/app/lib/phone/phone_skill.dart
+@@ -3,6 +3,20 @@ import 'dart:convert';
+ final _draftId = RegExp(r'^[a-f0-9]{32}$');
+ final _skillName = RegExp(r'^phone-task-[a-f0-9]{32}$');
+ 
++/// One-shot event from the native 「存为技能」 notification action.
++class PhoneSkillSaveEvent {
++  const PhoneSkillSaveEvent({required this.taskId, required this.generation});
++  final int taskId;
++  final int generation;
++
++  static PhoneSkillSaveEvent? parse(Object? raw) {
++    if (raw is! Map) return null;
++    final taskId = raw['taskId'], generation = raw['generation'];
++    if (taskId is! int || taskId <= 0 || generation is! int || generation <= 0) return null;
++    return PhoneSkillSaveEvent(taskId: taskId, generation: generation);
++  }
++}
++
+ /// Completed native trace candidate; the person still has to confirm the goal succeeded.
+ class PhoneSkillCandidate {
+   const PhoneSkillCandidate({required this.taskId, required this.generation, required this.steps});
 diff --git a/app/lib/phone/virtual_screen_window.dart b/app/lib/phone/virtual_screen_window.dart
 new file mode 100644
 index 00000000..adcf1544
@@ -88050,6 +88281,48 @@ index 18b01c2e..f532b20a 100644
    /// "1.0.0 (1)" for display.
    static String get displayVersion {
      final parts = version.split('+');
+diff --git a/app/lib/state/phone_state.dart b/app/lib/state/phone_state.dart
+index a99b77b5..ef299ea2 100644
+--- a/app/lib/state/phone_state.dart
++++ b/app/lib/state/phone_state.dart
+@@ -4,6 +4,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
+ import 'package:shared_preferences/shared_preferences.dart';
+ 
+ import '../phone/phone_channel.dart';
++import '../ui/phone/phone_skill_section.dart';
++import '../app_navigator.dart';
+ import '../l10n/l10n.dart';
+ import '../runtime/runtime_bridge.dart';
+ import '../runtime/runtime_state.dart';
+@@ -142,6 +144,9 @@ class PhoneController extends Notifier<PhoneState> {
+ 
+   bool _apply(PhoneStatus status) {
+     if (!ref.mounted) return false;
++    // 【4l】「存为技能」通知按钮 → 打开候选编辑器（全局，不依赖手机操控页可见）。
++    final skillSave = status.skillSave;
++    if (skillSave != null) unawaited(_handleSkillSave(skillSave));
+     final revision = status.statusRevision;
+     if (status.statusRevisionPresent && revision == null) return false;
+     final previous = _statusRevision;
+@@ -153,6 +158,18 @@ class PhoneController extends Notifier<PhoneState> {
+     return true;
+   }
+ 
++  /// 打开与事件匹配的候选；找不到就静默（候选可能已被保存或作废）。
++  Future<void> _handleSkillSave(PhoneSkillSaveEvent event) async {
++    final candidate = state.status.skills.candidates
++        .where((c) => c.taskId == event.taskId && c.generation == event.generation)
++        .firstOrNull;
++    if (candidate == null) return;
++    final context = appNavigatorKey.currentContext;
++    if (context == null) return;
++    await openPhoneSkillCandidate(context, ref.read(phoneChannelProvider),
++        () => ref.read(phoneProvider.notifier).refreshStatus(), candidate);
++  }
++
+   Future<void> refreshPolicies() async {
+     final policies = await _channel.getPolicies();
+     if (!ref.mounted) return;
 diff --git a/app/lib/state/update_state.dart b/app/lib/state/update_state.dart
 index c089d192..5f01b451 100644
 --- a/app/lib/state/update_state.dart
@@ -89424,6 +89697,53 @@ index fc641e25..5d22fc94 100644
  import '../common/app_dialog.dart';
  import '../common/ask_ai.dart';
  import '../common/brief_notice.dart';
+diff --git a/app/lib/ui/phone/phone_skill_section.dart b/app/lib/ui/phone/phone_skill_section.dart
+index 23358526..2b6b33d4 100644
+--- a/app/lib/ui/phone/phone_skill_section.dart
++++ b/app/lib/ui/phone/phone_skill_section.dart
+@@ -82,7 +82,8 @@ class _PhoneSkillAutoPromptState extends ConsumerState<PhoneSkillAutoPrompt> {
+   }
+ 
+   Future<void> _ask(PhoneSkillCandidate candidate) async {
+-    await openPhoneSkillCandidate(context, ref, candidate);
++    await openPhoneSkillCandidate(context, ref.read(phoneChannelProvider),
++        () => ref.read(phoneProvider.notifier).refreshStatus(), candidate);
+     if (mounted) _presenting = false;
+   }
+ 
+@@ -91,7 +92,8 @@ class _PhoneSkillAutoPromptState extends ConsumerState<PhoneSkillAutoPrompt> {
+ }
+ 
+ /// Confirms the goal first; only a confirmed candidate opens the draft editor.
+-Future<void> openPhoneSkillCandidate(BuildContext context, WidgetRef ref, PhoneSkillCandidate candidate) async {
++Future<void> openPhoneSkillCandidate(BuildContext context, PhoneChannel channel,
++    Future<void> Function() refreshStatus, PhoneSkillCandidate candidate) async {
+   final confirmed = await showDialog<bool>(
+     context: context,
+     builder: (context) => AlertDialog(
+@@ -107,10 +109,10 @@ Future<void> openPhoneSkillCandidate(BuildContext context, WidgetRef ref, PhoneS
+   await showDialog<void>(
+     context: context,
+     barrierDismissible: false,
+-    builder: (_) => PhoneSkillEditor(channel: ref.read(phoneChannelProvider), candidate: candidate),
++    builder: (_) => PhoneSkillEditor(channel: channel, candidate: candidate),
+   );
+   if (!context.mounted) return;
+-  unawaited(ref.read(phoneProvider.notifier).refreshStatus());
++  unawaited(refreshStatus());
+ }
+ 
+ /// Only offers local, completed native candidates; opening and saving are separate decisions.
+@@ -129,7 +131,8 @@ class _PhoneSkillSectionState extends ConsumerState<PhoneSkillSection> {
+   Future<void> _open(PhoneSkillCandidate candidate) async {
+     if (_presenting) return;
+     setState(() => _presenting = true);
+-    await openPhoneSkillCandidate(context, ref, candidate);
++    await openPhoneSkillCandidate(context, ref.read(phoneChannelProvider),
++        () => ref.read(phoneProvider.notifier).refreshStatus(), candidate);
+     if (!mounted) return;
+     setState(() => _presenting = false);
+   }
 diff --git a/app/lib/ui/phone/phone_task_card.dart b/app/lib/ui/phone/phone_task_card.dart
 new file mode 100644
 index 00000000..26e07421
