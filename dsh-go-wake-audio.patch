@@ -1,6 +1,6 @@
 From: dsh <dsh@local>
-Date: Thu, 26 Nov 2026 05:27:11 +0800
-Subject: [PATCH] 4ox+4oz+4oy 状态源单一+挂载冷启动+首开中断等待+IME LOCAL+am 兜底
+Date: Thu, 26 Nov 2026 07:32:19 +0800
+Subject: [PATCH] 4ox..4oz-cache/admit 状态源单一+挂载+首开+缓存+准入脱钩
 
  .gitattributes                                     |    3 +
  .github/workflows/wake-apk.yml                     |  192 ++
@@ -17,7 +17,7 @@ Subject: [PATCH] 4ox+4oz+4oy 状态源单一+挂载冷启动+首开中断等待+
  .../ccch1mneyyy/dsh_app/phone/PhoneContracts.kt    |  280 ++
  .../ccch1mneyyy/dsh_app/phone/PhoneControl.kt      |  149 +-
  .../github/ccch1mneyyy/dsh_app/phone/PhoneCore.kt  |  652 ++++-
- .../ccch1mneyyy/dsh_app/phone/PhonePlugin.kt       |  528 ++++
+ .../ccch1mneyyy/dsh_app/phone/PhonePlugin.kt       |  547 ++++
  .../ccch1mneyyy/dsh_app/phone/PhoneTaskSessions.kt |   49 +-
  .../github/ccch1mneyyy/dsh_app/phone/PhoneTasks.kt |   97 +-
  .../ccch1mneyyy/dsh_app/phone/PhoneToolCatalog.kt  |   53 +-
@@ -27,7 +27,7 @@ Subject: [PATCH] 4ox+4oz+4oy 状态源单一+挂载冷启动+首开中断等待+
  .../dsh_app/phone/a11y/ControlOverlay.kt           |   11 +-
  .../dsh_app/phone/a11y/PhoneA11yService.kt         |   20 +
  .../dsh_app/phone/background/AdbFramedSession.kt   |    5 +
- .../dsh_app/phone/background/BackgroundControl.kt  |  317 ++-
+ .../dsh_app/phone/background/BackgroundControl.kt  |  326 ++-
  .../phone/background/BackgroundCoordinates.kt      |    2 +
  .../dsh_app/phone/background/BackgroundDisplay.kt  |  445 ++-
  .../phone/background/BackgroundDisplayIo.kt        |   10 +-
@@ -60,7 +60,7 @@ Subject: [PATCH] 4ox+4oz+4oy 状态源单一+挂载冷启动+首开中断等待+
  .../ccch1mneyyy/dsh_app/phone/vscreen/TaskMover.kt |  152 +
  .../dsh_app/phone/vscreen/VirtualScreenOverlay.kt  | 2995 ++++++++++++++++++++
  .../dsh_app/phone/vscreen/VirtualScreenPlugin.kt   |  251 ++
- .../ccch1mneyyy/dsh_app/phone/vscreen/VscreenUi.kt |  131 +
+ .../ccch1mneyyy/dsh_app/phone/vscreen/VscreenUi.kt |  133 +
  .../ccch1mneyyy/dsh_app/runtime/GuestSetup.kt      |   47 +-
  .../ccch1mneyyy/dsh_app/shortcuts/EntryActivity.kt |    3 +
  .../dsh_app/shortcuts/ShortcutsPlugin.kt           |   13 +-
@@ -239,7 +239,7 @@ Subject: [PATCH] 4ox+4oz+4oy 状态源单一+挂载冷启动+首开中断等待+
  docs/wake-word.md                                  |  107 +
  dsh-go-wake.patch                                  | 2065 ++++++++++++++
  tooling/build-wake-apk.sh                          |   68 +
- 237 files changed, 18528 insertions(+), 995 deletions(-)
+ 237 files changed, 18556 insertions(+), 997 deletions(-)
 
 diff --git a/.gitattributes b/.gitattributes
 index 52e3e08a..3e877c7e 100644
@@ -2964,7 +2964,7 @@ index 6c701851..0dd30977 100644
          private val WRITES = setOf(FOCUS_TEXT, PhoneToolCatalog.TAP, PhoneToolCatalog.TYPE, PhoneToolCatalog.TAP_XY, PhoneToolCatalog.OPEN)
          /** An uncertain effect call tightens draft eligibility; it does not prove input was dispatched. */
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhonePlugin.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhonePlugin.kt
-index 4a76535f..76f87047 100644
+index 4a76535f..1fb1b7c5 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhonePlugin.kt
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhonePlugin.kt
 @@ -2,7 +2,13 @@ package io.github.ccch1mneyyy.dsh_app.phone
@@ -2990,7 +2990,17 @@ index 4a76535f..76f87047 100644
      private var previewTaskId: Long? = null
      private var previewSink: EventChannel.EventSink? = null
      private val previewLifecycle = object : Application.ActivityLifecycleCallbacks {
-@@ -67,6 +75,9 @@ class PhonePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
+@@ -53,6 +61,9 @@ class PhonePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
+         override fun onActivityDestroyed(host: Activity) {}
+     }
+     private lateinit var appContext: Context
++    /** 【4oz-cache】任务表事实快照（ticker 刷新，主线程只读）。 */
++    @Volatile private var vscreenFactsSnapshot: Map<String, Any?>? = null
++    @Volatile private var vscreenFactsSnapshotAt: Long = 0L
+     private lateinit var control: PhoneControl
+     private var activity: ActivityPluginBinding? = null
+     private var sink: ((Map<String, Any?>) -> Unit)? = null
+@@ -67,6 +78,9 @@ class PhonePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
          val choices: List<PhoneSkillReplayApps.Choice>)
      private var skillInspection: SkillInspection? = null
      private var skillSelectionRequest = Any()
@@ -3000,7 +3010,7 @@ index 4a76535f..76f87047 100644
      private val privilegedActions = PrivilegedActionGate()
  
      override fun onAttachedToEngine(binding: FlutterPlugin.FlutterPluginBinding) {
-@@ -77,6 +88,336 @@ class PhonePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
+@@ -77,6 +91,352 @@ class PhonePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
          promptOwner = Any()
          attached = true
          control.background.restoreKeptChannel()
@@ -3139,11 +3149,27 @@ index 4a76535f..76f87047 100644
 +        // 虚拟屏里"真的还有任务"：预览登记还在，而且这个 owner 没被【切换】搬回主屏。
 +        // 界面落地（v2 §3）：判定 → 条/窗（【4op】条=窗口条形态，同一份窗口入口）。
 +        // 【状态源单一】唯一事实查询接线：判定（hasTask/hasScreen）与 open 回读都走这里。
-+        // 返回 core 任务表快照（onVirtual/topPkg/displayOfPkg）；null=unknown，判定沿用上次。
++        // 【4oz-cache】事实快照缓存：心跳线程（ticker）负责刷新（TTL 2 秒），主线程只读快照、
++        // 绝不同步 IPC——切换（点条/眼睛/拖动）不再被"查屏"卡住。忙时/刚失效时回退到
++        // 最近一次成功快照（5 秒宽限），"忙即无事实"的假 false 从根上消除。
 +        PhoneRegistry.vscreenFacts = {
-+            runCatching {
-+                (control.driver(PhoneScreen.BACKGROUND) as? BackgroundDisplay)?.taskFacts()
-+            }.getOrNull()
++            val now = android.os.SystemClock.elapsedRealtime()
++            val cache = vscreenFactsSnapshot
++            val onMain = android.os.Looper.myLooper() == android.os.Looper.getMainLooper()
++            if (onMain) {
++                if (cache != null && now - vscreenFactsSnapshotAt < 5_000L) cache else null
++            } else if (cache != null && now - vscreenFactsSnapshotAt < 2_000L) {
++                cache
++            } else {
++                val fresh = runCatching {
++                    (control.driver(PhoneScreen.BACKGROUND) as? BackgroundDisplay)?.taskFacts()
++                }.getOrNull()
++                if (fresh != null) {
++                    vscreenFactsSnapshot = fresh
++                    vscreenFactsSnapshotAt = now
++                }
++                fresh ?: if (cache != null && now - vscreenFactsSnapshotAt < 5_000L) cache else null
++            }
 +        }
 +        PhoneRegistry.vscreenUiApply = { ui ->
 +            val ctx = appContext
@@ -3337,7 +3363,7 @@ index 4a76535f..76f87047 100644
          methods = MethodChannel(binding.binaryMessenger, "dsh/phone").also { it.setMethodCallHandler(this) }
          events = EventChannel(binding.binaryMessenger, "dsh/phone/events").also { it.setStreamHandler(this) }
          previewEvents = EventChannel(binding.binaryMessenger, "dsh/phone/preview").also { channel ->
-@@ -103,9 +444,99 @@ class PhonePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
+@@ -103,9 +463,99 @@ class PhonePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
          }
      }
  
@@ -3437,7 +3463,7 @@ index 4a76535f..76f87047 100644
          skillSelectionRequest = Any()
          skillInspection = null
          skillClient?.let { control.skillReplaySelections.retireClient(it); control.skillDrafts.retireClient(it) }
-@@ -249,6 +680,103 @@ class PhonePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
+@@ -249,6 +699,103 @@ class PhonePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
                  result.success(if (removed) mapOf("kind" to "discarded") else replayRejected("stale"))
              }
              "setBackgroundPreview" -> result.success(control.preview.setEnabled(call.argument<Boolean>("enabled") == true))
@@ -4198,7 +4224,7 @@ index bebe269d..181201c9 100644
  
      fun exchange(request: ByteArray): ByteArray? = synchronized(lock) {
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/BackgroundControl.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/BackgroundControl.kt
-index 79cae468..34c506a0 100644
+index 79cae468..bbba451d 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/BackgroundControl.kt
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/BackgroundControl.kt
 @@ -13,6 +13,8 @@ import android.net.Network
@@ -4453,16 +4479,25 @@ index 79cae468..34c506a0 100644
                  if (selectingResource || restoring?.isDone == false || selectionChange != null) return null
                  keep.selectionTicket()
              }
-@@ -722,7 +933,7 @@ class BackgroundControl private constructor(context: Context) {
+@@ -720,9 +931,14 @@ class BackgroundControl private constructor(context: Context) {
+                 record = taskResource.acquire(owner, peer, peer.backgroundLimit, ::allowed) {
+                     BackgroundDisplay(
                          channelProvider = { peer },
-                         mayUse = { currentOwner() && !interruptRequested },
-                         admitUse = { action -> admitOwner { check(!interruptRequested); action() } },
+-                        mayUse = { currentOwner() && !interruptRequested },
+-                        admitUse = { action -> admitOwner { check(!interruptRequested); action() } },
 -                        viewport = viewport,
++                        // 【4oz-admit】通道与任务脱钩：open/observe 等资源操作只认"任务当前"，
++                        // 不再问 interruptRequested。上一任务"停止"的中断收尾是异步的，
++                        // 会与新任务 open 竞速 → 首开必败（真机 07:16/07:17 三次不打扰模式暂不可用）。
++                        // 旧任务在飞调用由 runIfCurrent/stopTasks 收掉；通道建链的保护
++                        // （activeChannel 的 interruptRequested 检查）原样保留。
++                        mayUse = { currentOwner() },
++                        admitUse = { action -> admitOwner { action() } },
 +                        viewport = displayViewport(),
                          localOcr = ocr,
                          localOcrAllowed = { target -> localOcrAllowed(target) },
                          onResourceReady = { publishPreviewTarget(record, it) },
-@@ -732,11 +943,52 @@ class BackgroundControl private constructor(context: Context) {
+@@ -732,11 +948,52 @@ class BackgroundControl private constructor(context: Context) {
              }
          }
          notifyChanged()
@@ -4515,7 +4550,7 @@ index 79cae468..34c506a0 100644
          var changed = false
          synchronized(this) {
              for (record in taskResource.seal(expectedTaskId)) {
-@@ -753,6 +1005,18 @@ class BackgroundControl private constructor(context: Context) {
+@@ -753,6 +1010,18 @@ class BackgroundControl private constructor(context: Context) {
       * and every later task) waiting on a receipt that may never come.
       */
      fun endTask(expectedTaskId: Long? = null) {
@@ -4534,7 +4569,7 @@ index 79cae468..34c506a0 100644
          var previewChanged = false
          val captured = synchronized(this) {
              taskResource.seal(expectedTaskId).onEach {
-@@ -762,6 +1026,19 @@ class BackgroundControl private constructor(context: Context) {
+@@ -762,6 +1031,19 @@ class BackgroundControl private constructor(context: Context) {
          }
          if (previewChanged) onPreviewChanged()
          for (record in captured) {
@@ -4554,7 +4589,7 @@ index 79cae468..34c506a0 100644
              if (!record.driver.release()) discardPeer(record.peer)
              taskResource.complete(record)
          }
-@@ -775,8 +1052,12 @@ class BackgroundControl private constructor(context: Context) {
+@@ -775,8 +1057,12 @@ class BackgroundControl private constructor(context: Context) {
          synchronized(this) {
              interruptStopping = true
              interruptRequested = true
@@ -4569,7 +4604,7 @@ index 79cae468..34c506a0 100644
                  changed = withdrawPreviewTarget(record.driver) || changed
              }
          }
-@@ -812,6 +1093,9 @@ class BackgroundControl private constructor(context: Context) {
+@@ -812,6 +1098,9 @@ class BackgroundControl private constructor(context: Context) {
          }
      }
  
@@ -4579,7 +4614,7 @@ index 79cae468..34c506a0 100644
      // ---- channel plumbing --------------------------------------------------
  
      private fun activeChannel(mayStart: () -> Boolean = { true }, explicit: Boolean = false,
-@@ -942,6 +1226,31 @@ class BackgroundControl private constructor(context: Context) {
+@@ -942,6 +1231,31 @@ class BackgroundControl private constructor(context: Context) {
      } catch (_: InterruptedException) { Thread.currentThread().interrupt(); false }
      catch (_: Exception) { false }
  
@@ -12068,10 +12103,10 @@ index 00000000..d54d04c1
 +}
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VscreenUi.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VscreenUi.kt
 new file mode 100644
-index 00000000..4770856e
+index 00000000..058c9f4b
 --- /dev/null
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VscreenUi.kt
-@@ -0,0 +1,131 @@
+@@ -0,0 +1,133 @@
 +package io.github.ccch1mneyyy.dsh_app.phone.vscreen
 +
 +import io.github.ccch1mneyyy.dsh_app.phone.PhoneRegistry
@@ -12145,6 +12180,8 @@ index 00000000..4770856e
 +        val wantsBar = PhoneRegistry.vscreenUserSilent
 +        val ui = when {
 +            ch == "main" -> NONE                        // 主屏：零悬浮物（用户 2026-11-22 定稿）
++            ch == "none" -> NONE                        // 【4oz-cache】通道没开过/✕后：快照缓存可能还带着
++                                                        // 旧事实（onVirtual=true），不许据此把条挂回来。
 +            !(task || hasScreen) -> NONE                // 屏上没东西：什么都不挂
 +            wantsBar -> BALL2                           // 用户要条：窗口条形态
 +            else -> WINDOW                              // 用户要窗：窗口显示（画面没到则透明等，reveal 管）
