@@ -1,6 +1,6 @@
 From: dsh <dsh@local>
-Date: Thu, 26 Nov 2026 07:32:19 +0800
-Subject: [PATCH] 4ox..4oz-cache/admit 状态源单一+挂载+首开+缓存+准入脱钩
+Date: Thu, 26 Nov 2026 07:35:49 +0800
+Subject: [PATCH] 4ox..4oz-main 状态源+挂载+首开+缓存+准入脱钩+形态主线程化
 
  .gitattributes                                     |    3 +
  .github/workflows/wake-apk.yml                     |  192 ++
@@ -17,7 +17,7 @@ Subject: [PATCH] 4ox..4oz-cache/admit 状态源单一+挂载+首开+缓存+准�
  .../ccch1mneyyy/dsh_app/phone/PhoneContracts.kt    |  280 ++
  .../ccch1mneyyy/dsh_app/phone/PhoneControl.kt      |  149 +-
  .../github/ccch1mneyyy/dsh_app/phone/PhoneCore.kt  |  652 ++++-
- .../ccch1mneyyy/dsh_app/phone/PhonePlugin.kt       |  547 ++++
+ .../ccch1mneyyy/dsh_app/phone/PhonePlugin.kt       |  548 ++++
  .../ccch1mneyyy/dsh_app/phone/PhoneTaskSessions.kt |   49 +-
  .../github/ccch1mneyyy/dsh_app/phone/PhoneTasks.kt |   97 +-
  .../ccch1mneyyy/dsh_app/phone/PhoneToolCatalog.kt  |   53 +-
@@ -239,7 +239,7 @@ Subject: [PATCH] 4ox..4oz-cache/admit 状态源单一+挂载+首开+缓存+准�
  docs/wake-word.md                                  |  107 +
  dsh-go-wake.patch                                  | 2065 ++++++++++++++
  tooling/build-wake-apk.sh                          |   68 +
- 237 files changed, 18556 insertions(+), 997 deletions(-)
+ 237 files changed, 18557 insertions(+), 997 deletions(-)
 
 diff --git a/.gitattributes b/.gitattributes
 index 52e3e08a..3e877c7e 100644
@@ -2964,7 +2964,7 @@ index 6c701851..0dd30977 100644
          private val WRITES = setOf(FOCUS_TEXT, PhoneToolCatalog.TAP, PhoneToolCatalog.TYPE, PhoneToolCatalog.TAP_XY, PhoneToolCatalog.OPEN)
          /** An uncertain effect call tightens draft eligibility; it does not prove input was dispatched. */
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhonePlugin.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhonePlugin.kt
-index 4a76535f..1fb1b7c5 100644
+index 4a76535f..877ae779 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhonePlugin.kt
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhonePlugin.kt
 @@ -2,7 +2,13 @@ package io.github.ccch1mneyyy.dsh_app.phone
@@ -2990,17 +2990,20 @@ index 4a76535f..1fb1b7c5 100644
      private var previewTaskId: Long? = null
      private var previewSink: EventChannel.EventSink? = null
      private val previewLifecycle = object : Application.ActivityLifecycleCallbacks {
-@@ -53,6 +61,9 @@ class PhonePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
+@@ -53,6 +61,12 @@ class PhonePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
          override fun onActivityDestroyed(host: Activity) {}
      }
      private lateinit var appContext: Context
 +    /** 【4oz-cache】任务表事实快照（ticker 刷新，主线程只读）。 */
 +    @Volatile private var vscreenFactsSnapshot: Map<String, Any?>? = null
 +    @Volatile private var vscreenFactsSnapshotAt: Long = 0L
++    /** 【4oz-main】形态应用合并投递：连发只留最新、一次一帧。 */
++    @Volatile private var requestedUi: String = "none"
++    private val uiApplyPosted = java.util.concurrent.atomic.AtomicBoolean(false)
      private lateinit var control: PhoneControl
      private var activity: ActivityPluginBinding? = null
      private var sink: ((Map<String, Any?>) -> Unit)? = null
-@@ -67,6 +78,9 @@ class PhonePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
+@@ -67,6 +81,9 @@ class PhonePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
          val choices: List<PhoneSkillReplayApps.Choice>)
      private var skillInspection: SkillInspection? = null
      private var skillSelectionRequest = Any()
@@ -3010,7 +3013,7 @@ index 4a76535f..1fb1b7c5 100644
      private val privilegedActions = PrivilegedActionGate()
  
      override fun onAttachedToEngine(binding: FlutterPlugin.FlutterPluginBinding) {
-@@ -77,6 +91,352 @@ class PhonePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
+@@ -77,6 +94,350 @@ class PhonePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
          promptOwner = Any()
          attached = true
          control.background.restoreKeptChannel()
@@ -3172,46 +3175,44 @@ index 4a76535f..1fb1b7c5 100644
 +            }
 +        }
 +        PhoneRegistry.vscreenUiApply = { ui ->
-+            val ctx = appContext
-+            when (ui) {
-+                "ball1", "ball2" -> {
-+                    // 【4oz】挂载冷启动死路修复（B1/B2/B3）：判定要条、窗口却从未建过
-+                    // （root=null 且 appContext 只会在 show() 里赋值）→ 主线程当场建窗再切条。
-+                    // 建窗必须落主线程：ViewRoot 挂在创建它的线程上，ticker 线程建窗会让
-+                    // 后续主线程的 updateViewLayout 全部 WrongThread 崩掉。show 自带防重入。
-+                    if (!VirtualScreenOverlay.hasView() && ctx != null) {
-+                        main.post {
-+                            runCatching { VirtualScreenOverlay.show(ctx, VirtualScreenOverlay.currentTaskId()) }
-+                                .onFailure { WakeTrace.log("ball: cold-mount show failed ${it.javaClass.simpleName}") }
++            // 【4oz-main】形态应用统一落主线程：窗口 ViewRoot 属于创建它的主线程，而心跳判定
++            // 跑在 ticker 线程。从 ticker 直接调 updateViewLayout/removeView 会 WrongThread 且被
++            // 代码里 catch(_:Exception){} 静默吞掉 → 屏幕形态没变（切换卡）+ 把手窗 removeView
++            // 失败残留、下次又新建（双条，真机 07:3x）。这里把连发合并成一次主线程应用。
++            requestedUi = ui
++            if (uiApplyPosted.compareAndSet(false, true)) {
++                main.post {
++                    uiApplyPosted.set(false)
++                    val u = requestedUi
++                    val ctx = appContext
++                    when (u) {
++                        "ball1", "ball2" -> {
++                            // 【4oz】挂载冷启动死路修复（B1/B2/B3）：判定要条、窗口却从未建过
++                            // （root=null 且 appContext 只会在 show() 里赋值）→ 当场建窗再切条。
++                            if (!VirtualScreenOverlay.hasView() && ctx != null) {
++                                runCatching { VirtualScreenOverlay.show(ctx, VirtualScreenOverlay.currentTaskId()) }
++                                    .onFailure { WakeTrace.log("ball: cold-mount show failed ${it.javaClass.simpleName}") }
++                            }
++                            if (VirtualScreenOverlay.isWindowShown()) {
++                                WakeTrace.log("ball: mutual-exclusion hide window (ui=$u)")
++                            }
 +                            runCatching { VirtualScreenOverlay.hideWindowOnly(announce = false) }
 +                        }
-+                    } else {
-+                        // 【4op】窗条互斥：判成条就把窗口切条形态（hideWindowOnly 一体两态后
-+                        // 本身就是"窗口切条"，幂等）。条=窗口条形态，不再另出独立条对象。
-+                        if (VirtualScreenOverlay.isWindowShown()) {
-+                            WakeTrace.log("ball: mutual-exclusion hide window (ui=$ui)")
-+                        }
-+                        runCatching { VirtualScreenOverlay.hideWindowOnly(announce = false) }
-+                    }
-+                }
-+                else -> {
-+                    // 【4oz】判定要窗、窗口从未建过 → 主线程当场建窗，等首帧 reveal。
-+                    if (!VirtualScreenOverlay.hasView() && ctx != null) {
-+                        main.post {
-+                            runCatching { VirtualScreenOverlay.show(ctx, VirtualScreenOverlay.currentTaskId()) }
-+                                .onFailure { WakeTrace.log("ball: cold-mount show failed ${it.javaClass.simpleName}") }
++                        else -> {
++                            // 【4oz】判定要窗、窗口从未建过 → 当场建窗，等首帧 reveal。
++                            if (!VirtualScreenOverlay.hasView() && ctx != null) {
++                                runCatching { VirtualScreenOverlay.show(ctx, VirtualScreenOverlay.currentTaskId()) }
++                                    .onFailure { WakeTrace.log("ball: cold-mount show failed ${it.javaClass.simpleName}") }
++                            }
++                            runCatching { VirtualScreenOverlay.hideIfSliver() }
++                            // 【已撤销】这里曾经在 ui-rule 判 none 时直接关悬浮窗（僵尸窗清理），
++                            // 真机 04:01 证明该判据是错的；帧模式下没画面时窗口本就全透明、
++                            // FLAG_NOT_TOUCHABLE 不吃触摸，不需要这条激进兜底。
 +                        }
 +                    }
-+                    runCatching { VirtualScreenOverlay.hideIfSliver() }
-+                    // 【已撤销】这里曾经在 ui-rule 判 none 时直接关悬浮窗，用来清理"没画面的僵尸窗"。
-+                    // 真机 04:01 证明这个判据是错的：hasTask 账本常常是 false（open 走 reuseOrMove
-+                    // 时不登记），于是 ui-rule 一直判 none，窗口刚 reveal 出来 1.05 秒就被这里关掉
-+                    // （日志：`window: revealed` 14.423 → `close zombie window` 15.478）。
-+                    // 僵尸窗现在由"帧模式下不再创建 SurfaceView"从根上解决（没画面时窗口本来就全透明、
-+                    // 且 FLAG_NOT_TOUCHABLE 不吃触摸），不需要这条激进兜底。
++                    WakeTrace.log("ball: sync-applied ui=$u visible=${VirtualScreenOverlay.currentShape() == "SLIVER"}")
 +                }
 +            }
-+            WakeTrace.log("ball: sync-applied ui=$ui visible=${VirtualScreenOverlay.currentShape() == "SLIVER"}")
 +        }
 +        PhoneRegistry.vscreenTaskAlive = {
 +            // 【4ac】先看通道本身：没就绪/进程不在时，任何"查不到"都只能算 unknown，
@@ -3363,7 +3364,7 @@ index 4a76535f..1fb1b7c5 100644
          methods = MethodChannel(binding.binaryMessenger, "dsh/phone").also { it.setMethodCallHandler(this) }
          events = EventChannel(binding.binaryMessenger, "dsh/phone/events").also { it.setStreamHandler(this) }
          previewEvents = EventChannel(binding.binaryMessenger, "dsh/phone/preview").also { channel ->
-@@ -103,9 +463,99 @@ class PhonePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
+@@ -103,9 +464,99 @@ class PhonePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
          }
      }
  
@@ -3463,7 +3464,7 @@ index 4a76535f..1fb1b7c5 100644
          skillSelectionRequest = Any()
          skillInspection = null
          skillClient?.let { control.skillReplaySelections.retireClient(it); control.skillDrafts.retireClient(it) }
-@@ -249,6 +699,103 @@ class PhonePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
+@@ -249,6 +700,103 @@ class PhonePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
                  result.success(if (removed) mapOf("kind" to "discarded") else replayRejected("stale"))
              }
              "setBackgroundPreview" -> result.success(control.preview.setEnabled(call.argument<Boolean>("enabled") == true))
