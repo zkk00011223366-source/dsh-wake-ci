@@ -1,12 +1,12 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: ci <ci@local>
-Date: Wed, 25 Nov 2026 17:10:30 +0800
+Date: Wed, 25 Nov 2026 17:24:43 +0800
 Subject: [PATCH] b: scene4n
 MIME-Version: 1.0
 Content-Type: text/plain; charset=UTF-8
 Content-Transfer-Encoding: 8bit
 
-4n: 全量修复 + 品牌 + 灵敏收条 + 防抖 + 滞回 + 名额满自愈
+4n: 全量修复 + 收条 + 防抖 + 滞回 + 名额自愈(含0任务防护)
 
 ---
  .gitattributes                                     |    3 +
@@ -53,9 +53,9 @@ Content-Transfer-Encoding: 8bit
  .../dsh_app/phone/background/KeptTasks.kt          |   39 +
  .../dsh_app/phone/background/OwnerScopes.kt        |   30 +-
  .../dsh_app/phone/background/PrivilegedChannel.kt  |    6 +
- .../phone/background/PrivilegedDisplayCore.kt      | 1386 +++++++++-
+ .../phone/background/PrivilegedDisplayCore.kt      | 1391 +++++++++-
  .../phone/background/PrivilegedDisplayEntry.kt     |   19 +-
- .../phone/background/PrivilegedDisplayHost.kt      |   27 +-
+ .../phone/background/PrivilegedDisplayHost.kt      |   35 +-
  .../dsh_app/phone/background/PrivilegedProtocol.kt |  108 +-
  .../dsh_app/phone/background/VscreenSession.kt     |   39 +
  .../dsh_app/phone/skills/PhoneSkillDraft.kt        |    2 +-
@@ -247,7 +247,7 @@ Content-Transfer-Encoding: 8bit
  docs/wake-word.md                                  |  107 +
  dsh-go-wake.patch                                  | 2065 ++++++++++++++
  tooling/build-wake-apk.sh                          |   68 +
- 238 files changed, 18768 insertions(+), 983 deletions(-)
+ 238 files changed, 18781 insertions(+), 983 deletions(-)
 
 diff --git a/.gitattributes b/.gitattributes
 index 52e3e08a..3e877c7e 100644
@@ -5878,7 +5878,7 @@ index c1c2ed09..b0b1dfe3 100644
          close()
          Bundle().apply { putBoolean(Proto.OK, false); putString(Proto.ERROR, "deviceUnavailable") }
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/PrivilegedDisplayCore.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/PrivilegedDisplayCore.kt
-index c7ed0f7a..b24dce50 100644
+index c7ed0f7a..3b2efb3c 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/PrivilegedDisplayCore.kt
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/PrivilegedDisplayCore.kt
 @@ -11,6 +11,7 @@ package io.github.ccch1mneyyy.dsh_app.phone.background
@@ -6120,7 +6120,7 @@ index c7ed0f7a..b24dce50 100644
          if (op == Proto.OP_LAUNCH && expected != null) {
              val shown = TargetIdentity.shown(response.get(Proto.PKG), response.get(Proto.TARGET_UID))
              val actualDisplay = display?.display
-@@ -729,57 +887,801 @@ class PrivilegedDisplayCore internal constructor(
+@@ -729,57 +887,806 @@ class PrivilegedDisplayCore internal constructor(
      private fun displayId(): Int = display?.display?.displayId ?: throw Fault("displayMissing")
      private fun requireDisplay() { if (display == null) throw Fault("displayMissing") }
  
@@ -6139,6 +6139,11 @@ index c7ed0f7a..b24dce50 100644
 +        val rows = rootTaskInfos(id).mapNotNull { info -> taskRow(info)?.let { it to visibleTask(info) } }
 +        return (rows.firstOrNull { it.second } ?: rows.firstOrNull())?.first
 +    }
++
++    /** 【4o】名额回收防护：这块屏上有没有任务（0 任务不释放，见 §8 坑 1 的 08:23 卡死事故）。 */
++    internal fun hasTasksOnDisplay(): Boolean = runCatching {
++        display != null && rootTaskInfos(displayId()).any { taskRow(it) != null }
++    }.getOrDefault(false)
 +
 +    /**
 +     * The app on the phone's own screen worth handing over: not this app, not the launcher.
@@ -6943,7 +6948,7 @@ index c7ed0f7a..b24dce50 100644
      private fun resolveLaunch(pkg: String, expected: PhoneAppIdentity?): Intent {
          val pm = privileged.packageManager
          val intent = runCatching { pm.getLaunchIntentForPackage(pkg) }.getOrNull() ?: throw Fault("notLaunchable")
-@@ -821,6 +1723,44 @@ class PrivilegedDisplayCore internal constructor(
+@@ -821,6 +1728,44 @@ class PrivilegedDisplayCore internal constructor(
      }
  
      /** (displayId, packages of that task) rows of one running-task read. */
@@ -6988,7 +6993,7 @@ index c7ed0f7a..b24dce50 100644
      private fun taskRows(): List<Pair<Int, Set<String>>>? {
          val field = taskDisplayIdField ?: return null
          @Suppress("DEPRECATION")
-@@ -862,8 +1802,29 @@ class PrivilegedDisplayCore internal constructor(
+@@ -862,8 +1807,29 @@ class PrivilegedDisplayCore internal constructor(
  
      private fun launchPackage(pkg: String, intent: Intent) {
          val display = this.display ?: throw Fault("displayMissing")
@@ -7019,7 +7024,7 @@ index c7ed0f7a..b24dce50 100644
          // A shell/UserService is not an ActivityManager-attached app process: a PendingIntent
          // avoids Context.startActivity's caller check (Phase, after Aether).
          var pending: PendingIntent? = null
-@@ -879,17 +1840,135 @@ class PrivilegedDisplayCore internal constructor(
+@@ -879,17 +1845,135 @@ class PrivilegedDisplayCore internal constructor(
          // Wait for the target on the owned display. Any app it brought up there instead is reported
          // by the read that follows; only a screen still empty, or a target that went to another
          // display, means the open did not happen here.
@@ -7159,7 +7164,7 @@ index c7ed0f7a..b24dce50 100644
      /** Legacy success shape stays unchanged; failed physical cleanup retains its original handles. */
      private fun releaseAll() = lock.withLock {
          if (strictOwner) throw Fault("releaseReceiptRequired")
-@@ -906,8 +1985,140 @@ class PrivilegedDisplayCore internal constructor(
+@@ -906,8 +1990,140 @@ class PrivilegedDisplayCore internal constructor(
          if (readerAllocationUncertain) throw Fault("releaseUnconfirmed")
      }
  
@@ -7300,7 +7305,7 @@ index c7ed0f7a..b24dce50 100644
          closeTreeConnection()
          visualObservation = null
          stopPreview()
-@@ -925,11 +2136,42 @@ class PrivilegedDisplayCore internal constructor(
+@@ -925,11 +2141,42 @@ class PrivilegedDisplayCore internal constructor(
              closeReaders()
          } else {
              val displayId = releasingDisplayId ?: throw Fault("releaseUnconfirmed")
@@ -7344,7 +7349,7 @@ index c7ed0f7a..b24dce50 100644
              closeReaders()
              val deadline = SystemClock.uptimeMillis() + 1_000
              // The display itself is already released. A ROM whose task query is unreadable cannot
-@@ -944,6 +2186,7 @@ class PrivilegedDisplayCore internal constructor(
+@@ -944,6 +2191,7 @@ class PrivilegedDisplayCore internal constructor(
      }
  
      private fun clearResourceState() {
@@ -7352,7 +7357,7 @@ index c7ed0f7a..b24dce50 100644
          display = null; owner = null; strictOwner = false; selfCheckOwner = false
          targetSequence = null; targetSnapshot = null; targetMain = null
          releasingDisplayId = null; displayCreationAttempted = false; displayApiReleased = false; probeDisplay = false
-@@ -1166,7 +2409,15 @@ class PrivilegedDisplayCore internal constructor(
+@@ -1166,7 +2414,15 @@ class PrivilegedDisplayCore internal constructor(
      private class CaptureResult(val jpeg: ByteArray, val raw: BackgroundPreviewState.RawFrame?, val local: ImageObservation?, val targetMatched: Boolean? = null)
  
      /** Null means only absent/black frames; other capture failures remain distinguishable. */
@@ -7369,7 +7374,7 @@ index c7ed0f7a..b24dce50 100644
          val ir = lock.withLock {
              if (pendingReader != null || readerAllocationUncertain) throw Fault("releasePending")
              val vd = display ?: throw Fault("displayMissing")
-@@ -1332,6 +2583,13 @@ class PrivilegedDisplayCore internal constructor(
+@@ -1332,6 +2588,13 @@ class PrivilegedDisplayCore internal constructor(
  
      internal fun previewDrained(): Boolean = lock.withLock { previewWorker.drained() }
  
@@ -7383,7 +7388,7 @@ index c7ed0f7a..b24dce50 100644
      private fun renderPreview(ticket: BackgroundPreviewState.Ticket) {
          var bitmap: Bitmap? = null
          var thumbnail: Bitmap? = null
-@@ -1359,8 +2617,23 @@ class PrivilegedDisplayCore internal constructor(
+@@ -1359,8 +2622,23 @@ class PrivilegedDisplayCore internal constructor(
                  } finally { image.close() }
                  // All Image/buffer access ends before releaseAll can close its ImageReader.
              } finally { lock.unlock() }
@@ -7408,7 +7413,7 @@ index c7ed0f7a..b24dce50 100644
                  bitmap = Bitmap.createBitmap(raw.width, raw.height, Bitmap.Config.ARGB_8888)
                  bitmap!!.copyPixelsFromBuffer(ByteBuffer.wrap(raw.pixels))
              }
-@@ -1382,6 +2655,18 @@ class PrivilegedDisplayCore internal constructor(
+@@ -1382,6 +2660,18 @@ class PrivilegedDisplayCore internal constructor(
                  preview.unavailable(ticket, "frameTooLarge"); return
              }
              preview.publish(ticket, BackgroundPreviewState.Frame(w, h, pixels, bytes), SystemClock.uptimeMillis())
@@ -7427,7 +7432,7 @@ index c7ed0f7a..b24dce50 100644
          } catch (_: Exception) {
              preview.unavailable(ticket, "captureFailed")
          } finally {
-@@ -2025,6 +3310,32 @@ class PrivilegedDisplayCore internal constructor(
+@@ -2025,6 +3315,32 @@ class PrivilegedDisplayCore internal constructor(
          if (waitForFinish && !accepted) throw Fault("inputRejected")
      }
  
@@ -7460,7 +7465,7 @@ index c7ed0f7a..b24dce50 100644
      private fun setImePolicyHide(displayId: Int) {
          val sm = Class.forName("android.os.ServiceManager")
          val binder = sm.getMethod("getService", String::class.java).invoke(null, "window") as IBinder
-@@ -2079,9 +3390,14 @@ class PrivilegedDisplayCore internal constructor(
+@@ -2079,9 +3395,14 @@ class PrivilegedDisplayCore internal constructor(
  
      companion object {
          private val PACKAGE = Regex("[a-zA-Z][a-zA-Z0-9_]*(\\.[a-zA-Z0-9_]+)+")
@@ -7518,10 +7523,10 @@ index 8eb55617..a066e4e8 100644
              runCatching { Looper.getMainLooper()?.quitSafely() }
              Process.killProcess(Process.myPid())
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/PrivilegedDisplayHost.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/PrivilegedDisplayHost.kt
-index aa3faff3..93377cd5 100644
+index aa3faff3..4847023c 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/PrivilegedDisplayHost.kt
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/PrivilegedDisplayHost.kt
-@@ -70,12 +70,29 @@ internal class PrivilegedDisplayHost(private val context: Context) {
+@@ -70,12 +70,37 @@ internal class PrivilegedDisplayHost(private val context: Context) {
          if (request.get(Proto.OWNER_SCOPE_VERSION) !is Int || request.get(Proto.OWNER_SCOPE_VERSION) != 1 ||
              owner == null || !TargetContract.validRun(owner)) return failure("invalidArguments")
          val inner = Bundle(request).apply { remove(Proto.OWNER_SCOPE_VERSION) }
@@ -7540,11 +7545,19 @@ index aa3faff3..93377cd5 100644
 +        if (opening && entry is OwnerScopes.Entry.Refused && entry.code == "scopeCapacity") {
 +            val victim = scopes.reapOldest()
 +            if (victim != null) {
-+                val rel = Bundle().apply { putString(Proto.OP, Proto.OP_RELEASE); putInt(Proto.RELEASE_RECEIPT, 1) }
-+                runCatching { victim.core.handle(rel) }
++                // 【4o】§8坑1 防护：0 任务的屏 release 会卡死（08:23 事故）。
++                // 有任务 → 走完整 releasePhysical（搬应用回主屏+释放）；无任务 → 只腾名额不释放，
++                // 屏留给 createDisplay 的僵尸清理收。
++                if (victim.core.hasTasksOnDisplay()) {
++                    val rel = Bundle().apply { putString(Proto.OP, Proto.OP_RELEASE); putInt(Proto.RELEASE_RECEIPT, 1) }
++                    runCatching { victim.core.handle(rel) }
++                    io.github.ccch1mneyyy.dsh_app.wake.WakeTrace.log(
++                        "scope-shadow: capacity reap owner=${victim.owner} released -> retry enter")
++                } else {
++                    io.github.ccch1mneyyy.dsh_app.wake.WakeTrace.log(
++                        "scope-shadow: capacity reap owner=${victim.owner} empty-screen -> evict only (no release)")
++                }
 +                scopes.evict(victim)
-+                io.github.ccch1mneyyy.dsh_app.wake.WakeTrace.log(
-+                    "scope-shadow: capacity reap owner=${victim.owner} -> retry enter")
 +                entry = scopes.enter(owner, opening && initial != null, initial?.maintenance == true, op == Proto.OP_RELEASE) {
 +                    PrivilegedDisplayCore(context, trees, checkNotNull(initial))
 +                }
@@ -7553,7 +7566,7 @@ index aa3faff3..93377cd5 100644
          val response = when (entry) {
              is OwnerScopes.Entry.Refused -> failure(if (opening && initial == null) "invalidArguments" else entry.code).apply {
                  if (opening) {
-@@ -107,10 +124,14 @@ internal class PrivilegedDisplayHost(private val context: Context) {
+@@ -107,10 +132,14 @@ internal class PrivilegedDisplayHost(private val context: Context) {
                  ?.let { HostedScope(it, probe = true) }
              Proto.OP_SELF_CHECK_TARGET_CREATE -> SelfCheckTargetRequest.parse(request.keySet()) { request.get(it) }
                  ?.let { HostedScope(it.owner, target = it) }
