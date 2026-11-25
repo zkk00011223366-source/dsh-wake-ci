@@ -1,12 +1,12 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: ci <ci@local>
-Date: Wed, 25 Nov 2026 17:35:30 +0800
+Date: Wed, 25 Nov 2026 18:11:17 +0800
 Subject: [PATCH] b: scene4n
 MIME-Version: 1.0
 Content-Type: text/plain; charset=UTF-8
 Content-Transfer-Encoding: 8bit
 
-4n: 两遍审查最终版 + 名额收紧2
+4n: 最终版 + 旧画面揭示
 
 ---
  .gitattributes                                     |    3 +
@@ -66,7 +66,7 @@ Content-Transfer-Encoding: 8bit
  .../dsh_app/phone/vscreen/PresentationHost.kt      |   69 +
  .../ccch1mneyyy/dsh_app/phone/vscreen/TaskMover.kt |  152 +
  .../dsh_app/phone/vscreen/TransferBall.kt          |  519 ++++
- .../dsh_app/phone/vscreen/VirtualScreenOverlay.kt  | 2892 ++++++++++++++++++++
+ .../dsh_app/phone/vscreen/VirtualScreenOverlay.kt  | 2890 ++++++++++++++++++++
  .../dsh_app/phone/vscreen/VirtualScreenPlugin.kt   |  238 ++
  .../ccch1mneyyy/dsh_app/phone/vscreen/VscreenUi.kt |  181 ++
  .../ccch1mneyyy/dsh_app/runtime/GuestSetup.kt      |   47 +-
@@ -247,7 +247,7 @@ Content-Transfer-Encoding: 8bit
  docs/wake-word.md                                  |  107 +
  dsh-go-wake.patch                                  | 2065 ++++++++++++++
  tooling/build-wake-apk.sh                          |   68 +
- 238 files changed, 18802 insertions(+), 987 deletions(-)
+ 238 files changed, 18800 insertions(+), 987 deletions(-)
 
 diff --git a/.gitattributes b/.gitattributes
 index 52e3e08a..3e877c7e 100644
@@ -9093,10 +9093,10 @@ index 00000000..c4b91396
 +}
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenOverlay.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenOverlay.kt
 new file mode 100644
-index 00000000..6e5c8230
+index 00000000..52cfcba5
 --- /dev/null
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenOverlay.kt
-@@ -0,0 +1,2892 @@
+@@ -0,0 +1,2890 @@
 +package io.github.ccch1mneyyy.dsh_app.phone.vscreen
 +
 +import io.github.ccch1mneyyy.dsh_app.phone.PhoneRegistry
@@ -9413,13 +9413,11 @@ index 00000000..6e5c8230
 +        // 每次开窗都重新确认"接的是哪块屏"：上一块屏可能已经被释放（display 141 → 142 实测）。
 +        // 留着旧 id 会让 attach 打到不存在的屏上，回 scopeBusy/空窗，用户看到的就是主屏在跑。
 +        displayId = 0
-+        // 旧窗口遗留的抓帧也不算"有画面"：否则新窗一开就被 stale 帧揭成黑色。
-+        // hide() 只在 root 非空时才清帧，而 show() 失败过一次之后 root 一直是空，
-+        // 那份旧帧就会跨窗存活，被 hasPicture() 当成"有画面"（判据不要靠 hide 顺手清）。
++        // 旧窗口遗留的抓帧不算"有画面"：否则新窗一开就被 stale 帧揭成黑色。
++        // 【4o】但同一块屏上画面连续时，旧图就是当前真实画面：任务刚结束立刻点条，
++        // reader 重建会撞服务端收尾忙碌、新首帧迟迟不来（真机 18:08 窗口永远不 reveal、
++        // 条已藏 → 两头空）。保留旧图让窗口先用它揭示，新帧到了自动刷新。
 +        lastFrameAt = 0L
-+        lastBitmap?.recycle()
-+        lastBitmap = null
-+        lastBitmapAt = 0L
 +        frameDumpCount = 0
 +        // 【4by】开窗不再清零"有画面"凭据。
 +        // 真机 12:49：点条 → 凭据被清 → 判定 0.6 秒后落到 none → 黄条先闪没；
