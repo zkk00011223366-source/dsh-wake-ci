@@ -1,6 +1,6 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: ci <ci@local>
-Date: Wed, 25 Nov 2026 13:34:27 +0800
+Date: Wed, 25 Nov 2026 13:35:11 +0800
 Subject: [PATCH] b: scene4n
 MIME-Version: 1.0
 Content-Type: text/plain; charset=UTF-8
@@ -21,10 +21,10 @@ Content-Transfer-Encoding: 8bit
  .../ccch1mneyyy/dsh_app/phone/NotificationGate.kt  |   41 +
  .../ccch1mneyyy/dsh_app/phone/PhoneAndroidShell.kt |   18 +-
  .../ccch1mneyyy/dsh_app/phone/PhoneBackGuard.kt    |  146 +
- .../ccch1mneyyy/dsh_app/phone/PhoneContracts.kt    |  265 ++
+ .../ccch1mneyyy/dsh_app/phone/PhoneContracts.kt    |  271 ++
  .../ccch1mneyyy/dsh_app/phone/PhoneControl.kt      |  141 +-
- .../github/ccch1mneyyy/dsh_app/phone/PhoneCore.kt  |  582 +++-
- .../ccch1mneyyy/dsh_app/phone/PhonePlugin.kt       |  623 +++++
+ .../github/ccch1mneyyy/dsh_app/phone/PhoneCore.kt  |  584 +++-
+ .../ccch1mneyyy/dsh_app/phone/PhonePlugin.kt       |  628 +++++
  .../ccch1mneyyy/dsh_app/phone/PhoneTaskSessions.kt |   49 +-
  .../github/ccch1mneyyy/dsh_app/phone/PhoneTasks.kt |   85 +-
  .../ccch1mneyyy/dsh_app/phone/PhoneToolCatalog.kt  |   36 +-
@@ -66,7 +66,7 @@ Content-Transfer-Encoding: 8bit
  .../dsh_app/phone/vscreen/PresentationHost.kt      |   69 +
  .../ccch1mneyyy/dsh_app/phone/vscreen/TaskMover.kt |  152 ++
  .../dsh_app/phone/vscreen/TransferBall.kt          |  500 ++++
- .../dsh_app/phone/vscreen/VirtualScreenOverlay.kt  | 2833 ++++++++++++++++++++
+ .../dsh_app/phone/vscreen/VirtualScreenOverlay.kt  | 2848 ++++++++++++++++++++
  .../dsh_app/phone/vscreen/VirtualScreenPlugin.kt   |  238 ++
  .../ccch1mneyyy/dsh_app/phone/vscreen/VscreenUi.kt |  166 ++
  .../ccch1mneyyy/dsh_app/runtime/GuestSetup.kt      |   47 +-
@@ -169,7 +169,7 @@ Content-Transfer-Encoding: 8bit
  app/lib/app.dart                                   |    6 +
  app/lib/app_navigator.dart                         |    4 +
  app/lib/l10n/app_en.arb                            |   27 +
- app/lib/l10n/app_zh.arb                            |   51 +-
+ app/lib/l10n/app_zh.arb                            |  221 +-
  app/lib/l10n/gen/app_localizations.dart            |  356 ++-
  app/lib/l10n/gen/app_localizations_en.dart         |   84 +
  app/lib/l10n/gen/app_localizations_zh.dart         |  279 +-
@@ -247,7 +247,7 @@ Content-Transfer-Encoding: 8bit
  docs/wake-word.md                                  |  107 +
  dsh-go-wake.patch                                  | 2065 ++++++++++++++
  tooling/build-wake-apk.sh                          |   68 +
- 238 files changed, 18526 insertions(+), 897 deletions(-)
+ 238 files changed, 18639 insertions(+), 982 deletions(-)
 
 diff --git a/.gitattributes b/.gitattributes
 index 52e3e08a..3e877c7e 100644
@@ -1530,7 +1530,7 @@ index 00000000..175e47b7
 +    }
 +}
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneContracts.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneContracts.kt
-index 612f94d1..4debf107 100644
+index 612f94d1..47838e54 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneContracts.kt
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneContracts.kt
 @@ -220,6 +220,13 @@ interface PhoneDriver {
@@ -1547,7 +1547,7 @@ index 612f94d1..4debf107 100644
  }
  
  data class ConfirmRequest(
-@@ -346,13 +353,271 @@ interface ControlListener {
+@@ -346,13 +353,277 @@ interface ControlListener {
      fun onAccessibilityChanged(connected: Boolean) {}
  }
  
@@ -1621,6 +1621,12 @@ index 612f94d1..4debf107 100644
 +
 +    /** 关窗时把虚拟屏上的应用交回手机主屏（不杀应用、内容连续）。 */
 +    @Volatile var handBackToMain: (() -> Unit)? = null
++
++    /**
++     * 【4n】新任务 open 成功落在新屏时触发：窗口 viewer 重挂当前任务的屏
++     * （真机 13:19 美团开新屏、窗口还显示旧微信）。
++     */
++    @Volatile var vscreenWindowRebind: (() -> Unit)? = null
 +
 +    /**
 +     * 【4ae】✕ 的收尾：结束任务后把应用退到普通后台（像按 Home），
@@ -2046,7 +2052,7 @@ index 2fc7cd59..d279dbdc 100644
  
      override fun notifyFix(kind: String) = notifyFixFor(tasks, kind)
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneCore.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneCore.kt
-index 6c701851..dbe9dff5 100644
+index 6c701851..019144d3 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneCore.kt
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneCore.kt
 @@ -1,9 +1,12 @@
@@ -2271,7 +2277,7 @@ index 6c701851..dbe9dff5 100644
              confirmSystem(plan, scope, owner, summary)?.let { return it }
              val ticket = skillTrace.beginOpen(owner, PhoneScreen.MAIN)
              val result = try {
-@@ -556,50 +624,258 @@ class PhoneCore(
+@@ -556,50 +624,260 @@ class PhoneCore(
                      skillTrace.finish(ticket, it.ok, false, false)
                  }
              } catch (e: Throwable) { skillTrace.fail(ticket); throw e }
@@ -2384,6 +2390,8 @@ index 6c701851..dbe9dff5 100644
 +            android.os.SystemClock.elapsedRealtime()
 +        io.github.ccch1mneyyy.dsh_app.wake.WakeTrace.log(
 +            "open: done ok=${res.ok} pkg=${res.screen?.packageName} msg=${res.message.take(80)}")
++        // 【4n】新任务落新屏：窗口 viewer 重挂当前任务（真机 13:19 窗口显示旧应用）。
++        if (res.ok) runCatching { io.github.ccch1mneyyy.dsh_app.phone.PhoneRegistry.vscreenWindowRebind?.invoke() }
 +        // G：记下这一下是"复用/搬进来/新启动"。第二次打开同一个应用时，日志里必须能看到
 +        // `vscreen: reuse … ok=true` 或 `vscreen: move … ok=true`；复用了就不会再 launch 一份。
 +        runCatching { noteOpenPath(app, driver, res.ok) }
@@ -2541,7 +2549,7 @@ index 6c701851..dbe9dff5 100644
      }
  
      /** The handler is a dispatch fact. Only the following read describes the actual foreground UI. */
-@@ -816,8 +1092,203 @@ class PhoneCore(
+@@ -816,8 +1094,203 @@ class PhoneCore(
          return Either.Right(d)
      }
  
@@ -2745,7 +2753,7 @@ index 6c701851..dbe9dff5 100644
      /** Admission uses the same argument coercion and routing as the actual tool body. */
      fun requiredScreens(name: String, args: Map<String, Any?>): Either<String, List<PhoneScreen>> {
          return requiredScreens(name, Args(args))
-@@ -825,10 +1296,11 @@ class PhoneCore(
+@@ -825,10 +1298,11 @@ class PhoneCore(
  
      private fun requiredScreens(name: String, a: Args): Either<String, List<PhoneScreen>> {
          return when (name) {
@@ -2760,7 +2768,7 @@ index 6c701851..dbe9dff5 100644
              // Arbitrary system commands take the main/global unknown-app lease, without reading a screen.
              PhoneToolCatalog.INTENT, PhoneToolCatalog.ANDROID_SHELL -> Either.Right(listOf(PhoneScreen.MAIN))
              PhoneToolCatalog.HANDOFF -> Either.Right(if (lastScreen == PhoneScreen.BACKGROUND)
-@@ -852,7 +1324,7 @@ class PhoneCore(
+@@ -852,7 +1326,7 @@ class PhoneCore(
          if (id == null) return Either.Left("缺少 $parameterName（屏幕号，如 s7）。先调用 screen 拿到屏幕号。")
          return PhoneScreen.ofScreenId(id)?.let { Either.Right(it) }
              // l10n:keep agent tool result
@@ -2769,7 +2777,7 @@ index 6c701851..dbe9dff5 100644
      }
  
      private fun locked(summary: String) =
-@@ -871,21 +1343,29 @@ class PhoneCore(
+@@ -871,21 +1345,29 @@ class PhoneCore(
  
      private fun screen(a: Args, owner: PhoneTasks.Owner): Out {
          if (!current(owner)) return stoppedOut("screen")
@@ -2805,7 +2813,7 @@ index 6c701851..dbe9dff5 100644
          return Out(
              // l10n:keep agent tool result
              if (refused) "没有读取这个屏幕的内容。" else "",
-@@ -897,6 +1377,40 @@ class PhoneCore(
+@@ -897,6 +1379,40 @@ class PhoneCore(
          )
      }
  
@@ -2846,7 +2854,7 @@ index 6c701851..dbe9dff5 100644
      private fun collect(a: Args, owner: PhoneTasks.Owner): Out {
          if (!current(owner)) return stoppedOut("collect")
          val sid = a.str("screen")
-@@ -1362,6 +1876,7 @@ class PhoneCore(
+@@ -1362,6 +1878,7 @@ class PhoneCore(
          summary = summary, decision = "stopped")
  
      companion object {
@@ -2854,7 +2862,7 @@ index 6c701851..dbe9dff5 100644
          internal const val REPLAY = "replay"
          internal const val FOCUS_TEXT = "focus_text"
  
-@@ -1370,6 +1885,9 @@ class PhoneCore(
+@@ -1370,6 +1887,9 @@ class PhoneCore(
          const val PAUSE_WAIT_MS = 600_000L
          const val HANDOFF_MS = 600_000L
  
@@ -2865,7 +2873,7 @@ index 6c701851..dbe9dff5 100644
          private val WRITES = setOf(FOCUS_TEXT, PhoneToolCatalog.TAP, PhoneToolCatalog.TYPE, PhoneToolCatalog.TAP_XY, PhoneToolCatalog.OPEN)
          /** An uncertain effect call tightens draft eligibility; it does not prove input was dispatched. */
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhonePlugin.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhonePlugin.kt
-index 4a76535f..7970f1f3 100644
+index 4a76535f..73f61228 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhonePlugin.kt
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhonePlugin.kt
 @@ -2,7 +2,14 @@ package io.github.ccch1mneyyy.dsh_app.phone
@@ -2902,7 +2910,7 @@ index 4a76535f..7970f1f3 100644
      private val privilegedActions = PrivilegedActionGate()
  
      override fun onAttachedToEngine(binding: FlutterPlugin.FlutterPluginBinding) {
-@@ -77,6 +89,335 @@ class PhonePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
+@@ -77,6 +89,340 @@ class PhonePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
          promptOwner = Any()
          attached = true
          control.background.restoreKeptChannel()
@@ -2952,6 +2960,11 @@ index 4a76535f..7970f1f3 100644
 +                    WakeTrace.log("vscreen: release-now reason=$reason threw ${it.javaClass.simpleName}")
 +                }
 +            }.apply { name = "vscreen-release-now"; isDaemon = true }.start()
++        }
++        // 【4n】新任务落新屏：窗口 viewer 重挂当前任务的屏（真机 13:19 窗口显示旧应用）。
++        PhoneRegistry.vscreenWindowRebind = {
++            runCatching { VirtualScreenOverlay.rebindToCurrentTask(appContext) }
++                .onFailure { WakeTrace.log("window: rebind threw ${it.javaClass.simpleName}") }
 +        }
 +        // 前端退出确认（v3.2 §7.3）：要操作的应用正占着主屏前台时先问一句。
 +        // 调用方在后台线程，这里投到主线程弹条，然后**阻塞**到他点或 30 秒超时——
@@ -3238,7 +3251,7 @@ index 4a76535f..7970f1f3 100644
          methods = MethodChannel(binding.binaryMessenger, "dsh/phone").also { it.setMethodCallHandler(this) }
          events = EventChannel(binding.binaryMessenger, "dsh/phone/events").also { it.setStreamHandler(this) }
          previewEvents = EventChannel(binding.binaryMessenger, "dsh/phone/preview").also { channel ->
-@@ -103,9 +444,194 @@ class PhonePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
+@@ -103,9 +449,194 @@ class PhonePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
          }
      }
  
@@ -3433,7 +3446,7 @@ index 4a76535f..7970f1f3 100644
          skillSelectionRequest = Any()
          skillInspection = null
          skillClient?.let { control.skillReplaySelections.retireClient(it); control.skillDrafts.retireClient(it) }
-@@ -249,6 +775,103 @@ class PhonePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
+@@ -249,6 +780,103 @@ class PhonePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
                  result.success(if (removed) mapOf("kind" to "discarded") else replayRejected("stale"))
              }
              "setBackgroundPreview" -> result.success(control.preview.setEnabled(call.argument<Boolean>("enabled") == true))
@@ -8939,10 +8952,10 @@ index 00000000..abe0de2c
 +}
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenOverlay.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenOverlay.kt
 new file mode 100644
-index 00000000..d7a2505a
+index 00000000..94755ff1
 --- /dev/null
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenOverlay.kt
-@@ -0,0 +1,2833 @@
+@@ -0,0 +1,2848 @@
 +package io.github.ccch1mneyyy.dsh_app.phone.vscreen
 +
 +import io.github.ccch1mneyyy.dsh_app.phone.PhoneRegistry
@@ -9182,6 +9195,22 @@ index 00000000..d7a2505a
 +    val shown: Boolean get() = root != null && revealed && (root?.isAttachedToWindow == true)
 +
 +    fun show(context: Context, taskId: Long = 0): Boolean {
++        return showInternal(context, taskId)
++    }
++
++    /**
++     * 【4n】新任务落在新屏：窗口 reader 还挂在上一块屏（真机 13:19 美团开新屏 409、
++     * 窗口仍显示微信 408）。停旧 reader、按当前会话重挂新屏；窗口不在显示中则不动。
++     */
++    fun rebindToCurrentTask(context: Context) {
++        if (root == null) return
++        io.github.ccch1mneyyy.dsh_app.wake.WakeTrace.log("window: rebind to current task (new screen)")
++        stopAppReader()
++        lastFrameAt = 0L
++        runCatching { startAppReader(context.applicationContext, ++surfaceGen) }
++    }
++
++    private fun showInternal(context: Context, taskId: Long): Boolean {
 +        // H：唤回/新建窗口前先把旧 surface 从虚拟屏上摘掉。VirtualDisplay 只认一个输出面，
 +        // 旧面还挂着时直接换面，新窗口十有八九是全黑；hideWindowOnly() 之后旧面已经销毁，
 +        // 引擎却还捏着它，画面就画进了空气里。
@@ -9388,8 +9417,7 @@ index 00000000..d7a2505a
 +     * 切到后台：只把窗口从屏幕上拿掉，**不释放直显 surface、不注销预览**
 +     * （与用户决策一致：任务继续、AI 继续读屏、点球回来立刻有画面）。
 +     */
-+    fun hideWindowOnly(announce: Boolean = true, forceBall: Boolean = true) {
-+        // 【4ao】👁 收起**不关 reader**：屏还在合成，关掉它点条回来就得等新帧（用户看到"回来是空的"）。
++    fun hideWindowOnly(announce: Boolean = true, forceBall: Boolean = true) {        // 【4ao】👁 收起**不关 reader**：屏还在合成，关掉它点条回来就得等新帧（用户看到"回来是空的"）。
 +        // 只有 ✕/释放（hide()）才关。下面把面膜交回 core 那一步同理跳过——已有 reader 时再交一次，
 +        // 就是 12:57:44/45 连着两次 "window: detach for reopen" + attach 的来源。
 +        // 3w 第 5 条：收窗的唯一入口先无条件留一行。实测 15:21 收窗（display 186）时
@@ -25967,7 +25995,7 @@ index 1617f97d..72f31ad1 100644
      android:notificationTimeout="100"
      android:description="@string/phone_a11y_description"
 diff --git a/app/android/app/src/main/res/xml/shortcuts.xml b/app/android/app/src/main/res/xml/shortcuts.xml
-index 3540cb26..8a4282ec 100644
+index 3540cb26..efa8536b 100644
 --- a/app/android/app/src/main/res/xml/shortcuts.xml
 +++ b/app/android/app/src/main/res/xml/shortcuts.xml
 @@ -2,7 +2,8 @@
@@ -25998,7 +26026,7 @@ index 3540cb26..8a4282ec 100644
 +    </shortcut>
 +    <shortcut
 +        android:shortcutId="voice_call"
-+        android:enabled="true"
++        android:enabled="false"
 +        android:icon="@drawable/ic_shortcut_voice"
 +        android:shortcutShortLabel="@string/shortcut_voice_call"
 +        android:shortcutLongLabel="@string/shortcut_voice_call">
@@ -99130,14 +99158,14 @@ index 00000000..8e1a253a
 +/// 全局导航键：通话悬浮球等"不挂在某个页面下"的入口用它在任何界面 push/pop。
 +final GlobalKey<NavigatorState> appNavigatorKey = GlobalKey<NavigatorState>();
 diff --git a/app/lib/l10n/app_en.arb b/app/lib/l10n/app_en.arb
-index e1de7125..7f6016a8 100644
+index e1de7125..94dd2213 100644
 --- a/app/lib/l10n/app_en.arb
 +++ b/app/lib/l10n/app_en.arb
 @@ -563,6 +563,7 @@
    "androidShellErrorStopped": "This round has ended or is paused. Turn it on again and retry.",
    "androidShellErrorStopFailed": "Stopping was not confirmed. Refresh the status and retry stopping.",
    "androidShellErrorUnknown": "The outcome could not be confirmed. Verify it first; never automatically retry a dispatched command.",
-+  "androidShellNoConfirm": "Don't confirm each command (at your own risk)",
++  "androidShellNoConfirm": "Grant everything without asking (at your own risk)",
    "botsFolderGone": "This folder is gone",
    "botsFolderReadFailed": "Couldn’t read this folder",
    "botsFolderOpenFailed": "Couldn’t open this folder",
@@ -99197,18 +99225,186 @@ index e1de7125..7f6016a8 100644
    "starPromptBody": "DSH Go is free and open source. If it’s made your phone a little nicer to use, please give it a Star — it means so much to this little whale!",
    "starPromptPlea": "Pretty please~ It really matters!!",
 diff --git a/app/lib/l10n/app_zh.arb b/app/lib/l10n/app_zh.arb
-index ec1a316d..bc268613 100644
+index ec1a316d..e915abf3 100644
 --- a/app/lib/l10n/app_zh.arb
 +++ b/app/lib/l10n/app_zh.arb
+@@ -3,8 +3,8 @@
+   "a11yRestoreTitle": "自动恢复无障碍",
+   "searchKwA11yRestore": "无障碍,恢复,重连,自动恢复,掉线,授权,ADB,Shizuku,Sui,root",
+   "a11yRestoreNeedsGrant": "需要授权",
+-  "a11yRestoreNotice": "开启后，在系统设置里关掉无障碍会被自动打开；要关闭手机操控，请在 DSH Go 里关。",
+-  "a11yRestoreForceStop": "被强制停止后，重新打开 DSH Go 才能恢复。",
++  "a11yRestoreNotice": "开启后，在系统设置里关掉无障碍会被自动打开；要关闭手机操控，请在 空空 里关。",
++  "a11yRestoreForceStop": "被强制停止后，重新打开 空空 才能恢复。",
+   "a11yRestoreGrant": "授权并开启",
+   "a11yRestoreGrantShizuku": "通过 Shizuku 授予",
+   "a11yRestoreGrantShizukuPermission": "先授权 Shizuku，再授予权限",
+@@ -16,7 +16,7 @@
+   "a11yRestoreComputer": "也可以连接电脑，执行一次：",
+   "a11yRestoreCopy": "复制授权命令",
+   "a11yRestoreCopied": "授权命令已复制",
+-  "accessPickTitle": "想让 DSH Go 帮你做哪些事",
++  "accessPickTitle": "想让 空空 帮你做哪些事",
+   "accessPickMessage": "选好后逐项开启",
+   "accessPickConfirm": "开启所选",
+   "accessSkip": "跳过",
+@@ -99,7 +99,7 @@
+   "accessA11yTitle": "打开无障碍",
+   "accessA11yWhy": "手机操控靠它看屏幕、点按",
+   "accessPopupTitle": "允许后台弹出界面",
+-  "accessPopupWhy": "手机操控做完能回到 DSH Go",
++  "accessPopupWhy": "手机操控做完能回到 空空",
+   "accessVivoPopupPath": "权限管理 › {app} › 后台弹出界面",
+   "@accessVivoPopupPath": {
+     "placeholders": {
 @@ -1062,6 +1062,7 @@
    "androidShellErrorStopped": "本轮已结束或暂停，请重新开启后再试。",
    "androidShellErrorStopFailed": "未确认已停止，请刷新状态并重试停止。",
    "androidShellErrorUnknown": "未能确认操作结果。先核实结果；已派发的命令不要自动重试。",
-+  "androidShellNoConfirm": "不再逐条确认（风险自负）",
++  "androidShellNoConfirm": "全部授权免确认（风险自负）",
    "botsFolderGone": "这个文件夹已经不在了",
    "botsFolderReadFailed": "没能读取这个文件夹",
    "botsFolderOpenFailed": "打不开这个文件夹",
-@@ -6673,7 +6674,7 @@
+@@ -1692,7 +1693,7 @@
+   "botsCommunity": "社区",
+   "botsForum": "论坛",
+   "botsForumSubtitle": "提问、分享、找同好",
+-  "botsProjectHome": "DSH Go 项目主页",
++  "botsProjectHome": "空空 项目主页",
+   "botsOpenSource": "开源项目",
+   "botsPluginCatalogFailed": "插件目录没打开",
+   "botsTapRetry": "点一下重试",
+@@ -3586,7 +3587,7 @@
+   "engineAccountPreparingSignIn": "正在准备登录",
+   "engineAccountOpenDeepSeekNext": "马上打开 DeepSeek 登录页",
+   "engineAccountFinishInBrowser": "在浏览器中完成登录",
+-  "engineAccountReturnToDsh": "登录完成后回到 DSH Go",
++  "engineAccountReturnToDsh": "登录完成后回到 空空",
+   "engineAccountFinishingSignIn": "正在完成登录",
+   "engineAccountSavingSignIn": "正在保存登录信息",
+   "engineAccountAwaitingResult": "还没收到登录结果",
+@@ -5220,7 +5221,7 @@
+   "harmonyLiveUnavailable": "这个版本没有进度通知",
+   "harmonySchedulesLocal": "本机的任务只在应用运行时触发：应用被系统挂起时，到点不会运行",
+   "harmonyPageUnavailable": "这个版本没有这个页面",
+-  "harmonyNotificationSettingsFailed": "没能打开系统设置。到「设置 → 通知和状态栏 → DSH Go」里开启",
++  "harmonyNotificationSettingsFailed": "没能打开系统设置。到「设置 → 通知和状态栏 → 空空」里开启",
+   "harmonySearchUnavailable": "这个版本没有这项功能",
+   "harmonyCredentialsSection": "密钥",
+   "harmonyCredentialsUnreadable": "已保存的密钥无法读取",
+@@ -5264,7 +5265,7 @@
+   "harmonyLiveFooter": "这是普通通知，应用被系统挂起后不再更新。",
+   "harmonyLockScreenPrivacy": "锁屏是否显示对话内容由系统决定：设置 › 通知和状态栏 › 锁屏通知",
+   "harmonyLiveBlockedTitle": "系统没有允许进度通知",
+-  "harmonyLiveBlockedText": "在系统设置里为 DSH Go 打开通知",
++  "harmonyLiveBlockedText": "在系统设置里为 空空 打开通知",
+   "harmonyAlertsOffTitle": "提醒通知已关闭",
+   "harmonyAlertsOffText": "回复跑完和等你确认都不会提醒",
+   "harmonyEnableBanner": "横幅默认关闭，要弹出来请开启「横幅通知」",
+@@ -5356,7 +5357,7 @@
+   "hubSettingsFullAccessBody": "AI 执行命令、改动文件前不再问你。",
+   "hubSettingsStorageTitle": "让 AI 访问手机文件？",
+   "hubSettingsStorageAllow": "允许读写",
+-  "hubSettingsStorageDenied": "没有拿到存储权限。到系统设置里给 DSH Go 开启「所有文件访问」后再试",
++  "hubSettingsStorageDenied": "没有拿到存储权限。到系统设置里给 空空 开启「所有文件访问」后再试",
+   "hubSettingsRestartRequired": "重启引擎后生效",
+   "hubSettingsRestartNow": "立即重启",
+   "hubSettingsInterface": "界面",
+@@ -5618,8 +5619,8 @@
+   "hubTableTintFillHint": "隔行淡一档，长表格更好扫读",
+   "hubTableTintFollowHint": "表头浅底，表身跟随正文",
+   "hubTableTintNoneHint": "只剩网格线，最轻",
+-  "hubAbout": "关于 DSH Go",
+-  "hubAboutAuthor": "DSH Go 原作者",
++  "hubAbout": "关于 空空",
++  "hubAboutAuthor": "空空 原作者",
+   "hubAboutBilibili": "B站主页",
+   "hubAboutX": "X 主页",
+   "hubAboutGithub": "GitHub 主页",
+@@ -5658,11 +5659,11 @@
+   "hubQuickPanelItems": "显示的入口",
+   "hubQuickPanelItemsNone": "没有选择，左滑不会打开",
+   "iosSaveToFiles": "存到「文件」",
+-  "iosFilesFolderHint": "文件 App 的 DSH Go 文件夹",
++  "iosFilesFolderHint": "文件 App 的 空空 文件夹",
+   "iosSavingToFiles": "正在存到「文件」…",
+   "iosCommandExportDescription": "把这个对话的完整记录打包成 ZIP，分享或存到「文件」",
+   "iosEnableBanners": "横幅不弹时，到系统设置打开「横幅」",
+-  "iosNotificationSettingsFailed": "没能打开系统设置。到「设置 → DSH Go → 通知」里开启",
++  "iosNotificationSettingsFailed": "没能打开系统设置。到「设置 → 空空 → 通知」里开启",
+   "iosVoiceSystemHint": "使用系统的语音识别",
+   "iosVoiceAllowSystem": "请在系统设置里允许语音识别",
+   "iosPluginsPermissionLocalThirdParty": "插件以 DSH 的权限运行：能读写文件、执行命令、读取 API Key，不受工作区沙箱限制。由第三方提供，DSH 官方未审核。",
+@@ -5838,10 +5839,10 @@
+   "iconShortcutHint": "拖动或双指缩放",
+   "iconShortcutName": "名称",
+   "iconShortcutAdd": "添加到桌面",
+-  "iconShortcutNote": "系统不允许把桌面图标换成任意图片，这里会另放一个打开 DSH Go 的快捷方式；部分桌面会在它的角上加一个小标",
++  "iconShortcutNote": "系统不允许把桌面图标换成任意图片，这里会另放一个打开 空空 的快捷方式；部分桌面会在它的角上加一个小标",
+   "iconShortcutAdded": "已添加到桌面",
+   "iconShortcutConfirm": "在弹出的窗口里确认",
+-  "iconShortcutNoDialog": "没有弹窗？在系统设置里允许 DSH Go 创建桌面快捷方式",
++  "iconShortcutNoDialog": "没有弹窗？在系统设置里允许 空空 创建桌面快捷方式",
+   "iconShortcutSettings": "去设置",
+   "iconShortcutUnsupported": "这个桌面不支持添加快捷方式",
+   "iconShortcutFailed": "没能添加，稍后再试",
+@@ -5942,7 +5943,7 @@
+   "liveSettingsFooter": "Android 16 的实时活动（Live Updates）：小米 HyperOS 3.1+、OPPO / 一加 ColorOS 16、荣耀 MagicOS 10 和 Pixel 会显示；vivo 原子岛和三星 Now Bar 目前只对厂商合作的应用开放。",
+   "liveUnsupported": "这台手机的系统还不支持实时活动",
+   "liveBlockedTitle": "系统没有允许实时活动",
+-  "liveBlockedText": "在系统设置里为 DSH Go 打开「实时活动」（有的手机叫「在流体云中显示」）",
++  "liveBlockedText": "在系统设置里为 空空 打开「实时活动」（有的手机叫「在流体云中显示」）",
+   "localeTitle": "语言",
+   "localeSystem": "跟随系统",
+   "localeZh": "简体中文",
+@@ -6033,13 +6034,13 @@
+   "localEnvTavernTitle": "和角色聊天",
+   "localEnvTavernDetail": "接回 DeepSeek 的对话也在这里 · 不用安装",
+   "marketSectionOfficial": "官方",
+-  "marketSectionAdapted": "适配 DSH Go",
++  "marketSectionAdapted": "适配 空空",
+   "marketSectionAll": "全部",
+   "marketSectionLoading": "正在载入…",
+   "marketSectionFailed": "官方目录没打开",
+   "marketSectionEmpty": "暂无",
+   "marketTierOfficial": "官方",
+-  "marketTierAdapted": "适配 DSH Go",
++  "marketTierAdapted": "适配 空空",
+   "marketRiskMedium": "中风险",
+   "marketRiskHigh": "高风险",
+   "marketFlagInstallScripts": "安装时运行脚本",
+@@ -6054,8 +6055,8 @@
+   "marketFlagFilesystemBody": "会写入工作区以外的路径",
+   "marketFlagObfuscated": "代码难以审阅",
+   "marketFlagObfuscatedBody": "有压缩或混淆过的大文件，看不出它做什么",
+-  "marketFlagNotAdapted": "未适配 DSH Go",
+-  "marketFlagNotAdaptedBody": "没有声明 DSH Go 原生协议，在 App 里没有原生界面",
++  "marketFlagNotAdapted": "未适配 空空",
++  "marketFlagNotAdaptedBody": "没有声明 空空 原生协议，在 App 里没有原生界面",
+   "marketFlagOtherBody": "自动检查报告的其他特征",
+   "marketChecksTitle": "自动检查",
+   "marketChecksClean": "没有发现风险特征",
+@@ -6086,8 +6087,8 @@
+   },
+   "marketRiskConfirmAction": "仍然安装",
+   "marketPinnedVersion": "锁定版本",
+-  "marketRequiresApp": "需要 DSH Go",
+-  "marketNeedsApp": "需要 DSH Go {version} 或更高版本",
++  "marketRequiresApp": "需要 空空",
++  "marketNeedsApp": "需要 空空 {version} 或更高版本",
+   "@marketNeedsApp": {
+     "placeholders": {
+       "version": {
+@@ -6642,7 +6643,7 @@
+   "phoneActionFailedLater": "没有成功，稍后再试",
+   "phoneDndDisabled": "不打扰模式已关闭",
+   "phoneDndEnabled": "不打扰模式已启用",
+-  "phoneDndShizukuPermissionFailed": "没有拿到授权。可以在 Shizuku 的「应用管理」里给 DSH Go 授权",
++  "phoneDndShizukuPermissionFailed": "没有拿到授权。可以在 Shizuku 的「应用管理」里给 空空 授权",
+   "phoneDndPairedConnect": "配对成功，点「连接」",
+   "phoneDndTitle": "不打扰模式",
+   "phoneDndSubtitle": "在看不见的屏幕上操作，不耽误你用手机",
+@@ -6673,21 +6674,21 @@
    "phoneDndSuiMissing": "没有检测到 Sui。在 Magisk 或 KernelSU 里装好 Sui 模块并重启手机，再回到这里。",
    "phoneDndSuiRunning": "Sui 接口可用",
    "phoneDndSuiStopped": "Sui 接口当前不可用。确认 Sui 模块已启用，重启手机后再试。",
@@ -99216,16 +99412,36 @@ index ec1a316d..bc268613 100644
 +  "phoneDndSuiAllSet": "Sui 已启动并授权，接下来连接虚拟屏。",
    "phoneDndSuiPermissionFailed": "没能请求 Sui 授权。确认 Sui 模块已启用后再试。",
    "phoneDndRootWaiting": "正在等待 root 授权，请在 root 管理器的弹窗里选择。",
-   "phoneDndRootConnected": "root 已连接。断开后要回到这里再选一次；打开「更多设置」中的「保持 root 通道」，DSH Go 才会自己再去申请。",
-@@ -6684,7 +6685,7 @@
+-  "phoneDndRootConnected": "root 已连接。断开后要回到这里再选一次；打开「更多设置」中的「保持 root 通道」，DSH Go 才会自己再去申请。",
+-  "phoneDndRootConnectedKept": "root 已连接。断开后 DSH Go 会自己向 root 管理器再次申请。",
++  "phoneDndRootConnected": "root 已连接。断开后要回到这里再选一次；打开「更多设置」中的「保持 root 通道」，空空 才会自己再去申请。",
++  "phoneDndRootConnectedKept": "root 已连接。断开后 空空 会自己向 root 管理器再次申请。",
+   "phoneDndRootRetry": "重新申请 root 授权",
+   "phoneDndInstallShizuku": "先安装 Shizuku（免费、开源）。",
+   "phoneDndOpenShizukuSite": "打开 Shizuku 官网",
    "phoneDndStartShizuku": "打开 Shizuku，按里面「通过无线调试启动」的说明做一遍（要连 Wi‑Fi）。回到这里会自动刷新。",
-   "phoneDndGrantShizukuHint": "Shizuku 已在运行，还要给 DSH Go 授权。",
-   "phoneDndGrantShizuku": "授权给 DSH Go",
+-  "phoneDndGrantShizukuHint": "Shizuku 已在运行，还要给 DSH Go 授权。",
+-  "phoneDndGrantShizuku": "授权给 DSH Go",
 -  "phoneDndShizukuAllSet": "Shizuku 已启动并授权，接下来连接后台屏。",
++  "phoneDndGrantShizukuHint": "Shizuku 已在运行，还要给 空空 授权。",
++  "phoneDndGrantShizuku": "授权给 空空",
 +  "phoneDndShizukuAllSet": "Shizuku 已启动并授权，接下来连接虚拟屏。",
    "phoneDndShizukuInstalled": "已安装 Shizuku",
    "phoneDndShizukuRunning": "Shizuku 正在运行",
-   "phoneDndShizukuGranted": "已授权给 DSH Go",
+-  "phoneDndShizukuGranted": "已授权给 DSH Go",
++  "phoneDndShizukuGranted": "已授权给 空空",
+   "phoneDndShizukuCompatibility": "这版 Android 与官方版 Shizuku 存在兼容问题。",
+   "phoneDndWirelessDebuggingOn": "无线调试已打开",
+   "phoneDndPaired": "已配对",
+@@ -6723,7 +6724,7 @@
+   "phoneEnabled": "已开启",
+   "phoneDisabled": "已关闭",
+   "phoneOpenAccessibilityFailed": "打不开系统设置，请到「设置 → 无障碍」里找到 DSH",
+-  "phoneOpenAppInfoFailed": "打不开应用信息，请到「设置 → 应用」里找到 DSH Go",
++  "phoneOpenAppInfoFailed": "打不开应用信息，请到「设置 → 应用」里找到 空空",
+   "phoneStopFailed": "没能停止，可以点悬浮条或通知上的「停止」",
+   "phoneControlTitle": "手机操控",
+   "phoneControlSubtitle": "看屏幕、帮你点按，随时可以停",
 @@ -6764,6 +6765,9 @@
    "phoneControlReadScreenHint": "看看 DSH 读到了什么，不发给模型",
    "phoneControlEnableAccessibilityFirst": "先打开无障碍服务",
@@ -99236,6 +99452,28 @@ index ec1a316d..bc268613 100644
    "phoneControlRules": "规则",
    "phoneControlRecentActions": "最近操作",
    "phoneControlRecentActionsHint": "每一步都会记下，不含屏幕内容",
+@@ -6806,9 +6810,9 @@
+   "phoneRestrictedOpenInfoStep": "回到这里，点「打开应用信息」。",
+   "phoneRestrictedBackAccessibility": "回到「无障碍」，打开 DSH。",
+   "phoneRestrictedMenuStep": "点右上角的三个点，选「允许受限制的设置」，按提示验证锁屏密码。",
+-  "phoneRestrictedTryOverlay": "先去「悬浮窗」设置里点一次 DSH Go 的开关，看到「受限制的设置」提示后点「确定」。做过这一步，下面的选项才会出现。",
+-  "phoneRestrictedBackOverlay": "回到「悬浮窗」设置，打开 DSH Go。",
+-  "phoneRestrictedHuaweiOverlay": "华为 HarmonyOS 4 及更早的系统大多没有这一步，直接去「悬浮窗」设置打开 DSH Go。",
++  "phoneRestrictedTryOverlay": "先去「悬浮窗」设置里点一次 空空 的开关，看到「受限制的设置」提示后点「确定」。做过这一步，下面的选项才会出现。",
++  "phoneRestrictedBackOverlay": "回到「悬浮窗」设置，打开 空空。",
++  "phoneRestrictedHuaweiOverlay": "华为 HarmonyOS 4 及更早的系统大多没有这一步，直接去「悬浮窗」设置打开 空空。",
+   "phoneRestrictedHuaweiAccessibility": "华为 HarmonyOS 4 及更早的系统大多没有这一步，直接去「无障碍」打开 DSH。",
+   "phoneRestrictedVivoNote": "不同 OriginOS 版本位置可能不同。右上角没有三个点时，把应用信息页往下翻到底找一找。",
+   "phoneRestrictedAdvancedStep": "在「高级设置」里找到「允许受限制的设置」，打开它。",
+@@ -7159,7 +7163,7 @@
+   "phoneControlEnabledRestarting": "已开启，引擎正在重启",
+   "phoneControlDisabledRestarting": "已关闭，引擎正在重启",
+   "phoneControlEnabledPending": "已开启，引擎启动后生效",
+-  "phoneReturnAfterDone": "完成后返回 DSH Go",
++  "phoneReturnAfterDone": "完成后返回 空空",
+   "phoneReturnAfterDoneHint": "收起悬浮条，回到对话看结果",
+   "phoneFloatingBar": "悬浮条",
+   "phoneIdleOpacity": "闲置时不透明度",
 @@ -7205,9 +7209,9 @@
    "phoneDndManualConnect": "按端口连接",
    "phoneDndConnectPortLabel": "连接端口",
@@ -99307,7 +99545,7 @@ index ec1a316d..bc268613 100644
    "phoneInterruptionTitle": "上次手机任务未确认结束",
    "phoneInterruptionLoading": "正在读取任务中断记录…",
    "phoneInterruptionStorageError": "无法保存或读取任务结束记录。请重试；这不表示后台资源已清理。",
-@@ -7431,6 +7435,10 @@
+@@ -7431,17 +7435,21 @@
    "phoneIosSetupHint": "保持 LocalDevVPN 已连接，首次使用时允许 30 分钟操控。",
    "phoneIosReturnHint": "任务完成后回到当前对话，并停止手机操控服务。",
    "phoneIosNeedsSetup": "运行器尚未就绪，请确认本机引擎和开发者环境已配置。",
@@ -99318,6 +99556,214 @@ index ec1a316d..bc268613 100644
    "phoneTaskResultReady": "任务完成 · 查看结果",
    "phoneTaskEndedResult": "任务已结束 · 查看结果",
    "phoneBackgroundGuideTitle": "后台确认与返回",
+   "phoneBackgroundGuideSubtitle": "让确认卡和任务结果及时出现",
+-  "phoneBackgroundGuideBody": "需要你确认时，会显示 DSH Go 卡片。卡片不可用时会尝试通知或回到 App。请在系统设置中允许手机操控通知和弹出提醒。",
+-  "phoneBackgroundOemHint": "在 DSH Go 的系统权限页检查「后台弹出界面」（若提供）。允许后可改善自动返回；菜单名称随系统版本变化。",
+-  "phoneBackgroundReturnHint": "如果任务完成后没有自动返回，可点通知「任务完成 · 查看结果」。系统关闭通知或限制后台弹出时，可能需要手动打开 DSH Go。",
++  "phoneBackgroundGuideBody": "需要你确认时，会显示 空空 卡片。卡片不可用时会尝试通知或回到 App。请在系统设置中允许手机操控通知和弹出提醒。",
++  "phoneBackgroundOemHint": "在 空空 的系统权限页检查「后台弹出界面」（若提供）。允许后可改善自动返回；菜单名称随系统版本变化。",
++  "phoneBackgroundReturnHint": "如果任务完成后没有自动返回，可点通知「任务完成 · 查看结果」。系统关闭通知或限制后台弹出时，可能需要手动打开 空空。",
+   "phoneBackgroundGotIt": "知道了",
+   "phoneBackgroundOpenSettings": "打开系统设置",
+   "phoneBackgroundNotificationBlocked": "请允许手机操控通知的弹出提醒",
+-  "phonePrivilegedUpgrade": "此版本尚不支持该特权通道，请更新 DSH Go 后使用。",
++  "phonePrivilegedUpgrade": "此版本尚不支持该特权通道，请更新 空空 后使用。",
+   "phonePrivilegedSui": "Sui",
+   "phonePrivilegedRoot": "Root",
+   "phonePrivilegedSuiDescription": "使用 Sui 模块提供的接口，仅在主动点击时申请授权。",
+@@ -7452,8 +7460,8 @@
+   "phonePrivilegedGrantSui": "通过 Sui 授予",
+   "phonePrivilegedGrantSuiPermission": "先授权 Sui，再授予权限",
+   "phonePrivilegedSuggested": "建议",
+-  "phonePrivilegedRootRiskTitle": "给 DSH Go root 权限？",
+-  "phonePrivilegedRootRiskBody": "root 管理器（Magisk、KernelSU 或 APatch）会弹窗问你。允许后，DSH Go 以 root 运行自己的后台服务；只有打开「保持 root 通道」，断开或重启后才会自己再去申请。",
++  "phonePrivilegedRootRiskTitle": "给 空空 root 权限？",
++  "phonePrivilegedRootRiskBody": "root 管理器（Magisk、KernelSU 或 APatch）会弹窗问你。允许后，空空 以 root 运行自己的后台服务；只有打开「保持 root 通道」，断开或重启后才会自己再去申请。",
+   "phoneKeepTitle": "{mode, select, shizuku{保持 Shizuku 通道} sui{保持 Sui 通道} root{保持 root 通道} adb{保持自连 ADB 通道} other{保持这个通道}}",
+   "@phoneKeepTitle": {
+     "placeholders": {
+@@ -7462,9 +7470,9 @@
+       }
+     }
+   },
+-  "phoneKeepRootDescription": "断开、重开 App 或重启手机后，DSH Go 会自己再向 root 管理器申请；给不给仍由管理器决定。",
+-  "phoneKeepSharedDescription": "断开、重开 App 或重启手机后，DSH Go 用已有的授权自己连回去，不会替你申请授权。",
+-  "phoneKeepAdbDescription": "断开、重开 App 或重启手机后，DSH Go 用已有的配对在 Wi‑Fi 下自己连回去；有「自动恢复无障碍」的权限时，还会试着打开一次无线调试。",
++  "phoneKeepRootDescription": "断开、重开 App 或重启手机后，空空 会自己再向 root 管理器申请；给不给仍由管理器决定。",
++  "phoneKeepSharedDescription": "断开、重开 App 或重启手机后，空空 用已有的授权自己连回去，不会替你申请授权。",
++  "phoneKeepAdbDescription": "断开、重开 App 或重启手机后，空空 用已有的配对在 Wi‑Fi 下自己连回去；有「自动恢复无障碍」的权限时，还会试着打开一次无线调试。",
+   "phoneKeepRestoring": "正在重新连接",
+   "phoneKeepWaiting": "等通道可用后再连",
+   "phoneKeepWaitingService": "等所选服务运行后再连",
+@@ -7526,13 +7534,13 @@
+   "phoneModeAuto": "全程自动",
+   "phoneModeAutoHint": "不再询问，全程免打扰",
+   "phoneModeAutoNoteTitle": "这些仍由你来操作",
+-  "phoneModeAutoNote": "系统设置和权限页面、密码和验证码、DSH Go 自身仍由你来操作；银行、支付类 App 默认不碰，可在设置里调整。",
++  "phoneModeAutoNote": "系统设置和权限页面、密码和验证码、空空 自身仍由你来操作；银行、支付类 App 默认不碰，可在设置里调整。",
+   "phoneModeAutoUnlockNote": "如需让 AI 操作系统设置、密码等，可在 设置 › 手机操控 › 解除限制 中开启。",
+   "phoneModeConfirmAuto": "开启全程自动",
+   "phoneYoursTitle": "这些由你来操作",
+   "phoneYoursSystem": "系统设置和权限页面",
+   "phoneYoursSecrets": "密码和验证码",
+-  "phoneYoursOwnApp": "DSH Go 自身",
++  "phoneYoursOwnApp": "空空 自身",
+   "phoneYoursDenyList": "应用名单里「不碰」的 App，默认含银行、支付类",
+   "phoneUnlockTitle": "解除限制",
+   "phoneUnlockSubtitle": "让 AI 去做默认由你来做的事",
+@@ -7540,8 +7548,8 @@
+   "phoneUnlockSystemHint": "含权限页、安装器、安全中心、通知栏",
+   "phoneUnlockSecrets": "密码和验证码",
+   "phoneUnlockSecretsHint": "填写密码、验证码和支付密码",
+-  "phoneUnlockOwnApp": "DSH Go 自身",
+-  "phoneUnlockOwnAppHint": "在 DSH Go 里点按和输入",
++  "phoneUnlockOwnApp": "空空 自身",
++  "phoneUnlockOwnAppHint": "在 空空 里点按和输入",
+   "phoneUnlockBusy": "任务进行中，结束后才能开启",
+   "phoneUnlockFootnote": "开启后的后果由你承担。建议只在需要时开启，用完关闭。",
+   "phoneUnlockBanks": "银行、支付类 App",
+@@ -7558,7 +7566,7 @@
+   "phoneUnlockedBadge": "已解除限制",
+   "phoneUnlockConfirmSystemTitle": "允许 AI 操作系统设置？",
+   "phoneUnlockConfirmSecretsTitle": "允许 AI 填写密码和验证码？",
+-  "phoneUnlockConfirmOwnAppTitle": "允许 AI 操作 DSH Go 自身？",
++  "phoneUnlockConfirmOwnAppTitle": "允许 AI 操作 空空 自身？",
+   "phoneUnlockCanTitle": "开启后，AI 可以",
+   "phoneUnlockRiskTitle": "可能出什么事",
+   "phoneUnlockDisclaimerTitle": "免责声明",
+@@ -7572,13 +7580,13 @@
+   "phoneUnlockSecretsCan3": "操作记录里只显示 ••••，不记下填写的内容",
+   "phoneUnlockSecretsRisk1": "恶意指令可能诱导 AI 把验证码填到别处，让他人登录你的账号",
+   "phoneUnlockSecretsRisk2": "可能完成你并不想要的付款或转账",
+-  "phoneUnlockOwnAppCan1": "在 DSH Go 里点按和输入，包括修改设置",
+-  "phoneUnlockOwnAppCan2": "读取 DSH Go 界面上的对话和设置",
++  "phoneUnlockOwnAppCan1": "在 空空 里点按和输入，包括修改设置",
++  "phoneUnlockOwnAppCan2": "读取 空空 界面上的对话和设置",
+   "phoneUnlockOwnAppRisk1": "恶意指令可能诱导 AI 批准它自己发起的操作，或关掉确认",
+   "phoneUnlockOwnAppRisk2": "这些界面上的内容会发给模型",
+   "phoneUnlockDisclaimer1": "开启后，AI 可以在无人确认的情况下执行上述操作。",
+   "phoneUnlockDisclaimer2": "AI 可能被网页、消息或文件中的内容误导。",
+-  "phoneUnlockDisclaimer3": "由此造成的账号、资金、数据或设备损失由你自行承担，DSH Go 及其开发者不承担责任。",
++  "phoneUnlockDisclaimer3": "由此造成的账号、资金、数据或设备损失由你自行承担，空空 及其开发者不承担责任。",
+   "phoneUnlockDisclaimer4": "建议只在需要时临时开启，用完关闭。",
+   "phoneUnlockDisclaimer5": "不建议在存有支付或银行信息的设备上开启。",
+   "phoneUnlockHold": "我了解风险，开启",
+@@ -7848,7 +7856,7 @@
+   "pluginsWriteFailed": "没能写入",
+   "pluginsHostUnreachable": "没能连上主机",
+   "pluginsFileWriteFailed": "没能写入文件",
+-  "pluginsProfileTitle": "DSH Go 配置",
++  "pluginsProfileTitle": "空空 配置",
+   "pluginsGistTokenInvalid": "GitHub 令牌无效或没有 Gist 权限",
+   "pluginsGistCreateHttpFailed": "没能创建 Gist（HTTP {status}）",
+   "@pluginsGistCreateHttpFailed": {
+@@ -8286,7 +8294,7 @@
+   "pluginsNotificationsBlocked": "系统已关闭",
+   "pluginsTurnedOn": "已开启",
+   "pluginsNotifications": "通知",
+-  "pluginsNotificationSettingsFailed": "没能打开系统设置。到「设置 → 应用 → DSH Go → 通知」里开启",
++  "pluginsNotificationSettingsFailed": "没能打开系统设置。到「设置 → 应用 → 空空 → 通知」里开启",
+   "pluginsSystemNotificationsOff": "系统通知已关闭",
+   "pluginsBackgroundNoAlerts": "App 在后台时收不到任何提醒",
+   "pluginsApprovalNotificationsOff": "「等你确认」通知已关闭",
+@@ -8434,7 +8442,7 @@
+   "pluginsShareDamaged": "这个分享码不完整或已损坏",
+   "pluginsShareFileReadFailed": "没能读取这个文件",
+   "pluginsShareOpenFailed": "没能打开这个分享码",
+-  "pluginsPluginShareTitle": "DSH Go 插件",
++  "pluginsPluginShareTitle": "空空 插件",
+   "pluginsShareSheetOpenFailed": "没能打开分享",
+   "pluginsSavePermissionDenied": "没有存储权限，没能保存",
+   "pluginsQrCode": "二维码",
+@@ -8690,7 +8698,7 @@
+       }
+     }
+   },
+-  "plugslotsIssueNeedsApp": "需要 DSH Go {version} 或更新版本",
++  "plugslotsIssueNeedsApp": "需要 空空 {version} 或更新版本",
+   "@plugslotsIssueNeedsApp": {
+     "placeholders": {
+       "version": {
+@@ -9053,7 +9061,7 @@
+   "remoteErrConnectionReplaced": "远程连接已被替换",
+   "remoteErrHostRejected": "主机拒绝了连接",
+   "remoteErrHostNotOwned": "主机不在你的 DSH Remote 账号下",
+-  "remoteErrUpdateNeeded": "版本不匹配，请更新 DSH Go 和主机上的远程插件",
++  "remoteErrUpdateNeeded": "版本不匹配，请更新 空空 和主机上的远程插件",
+   "remoteErrVersionIncompatible": "主机上的 DSH 或远程插件需要更新",
+   "remoteErrSignInTimeout": "登录超时",
+   "remoteSignInCancelled": "已取消登录",
+@@ -10076,7 +10084,7 @@
+   "remotePairTitle": "扫码配对电脑",
+   "remotePairSubtitle": "不用注册 Remote 账号，也不会传 DeepSeek 密码或登录凭据",
+   "remotePairNeedsDeepSeek": "先登录 DeepSeek 账号",
+-  "remotePairNeedsDeepSeekBody": "扫码配对要先在 DSH Go 里登录 DeepSeek 账号。配对时只附带账号 ID 用来标记这台手机，不传密码、Cookie 或 Token。",
++  "remotePairNeedsDeepSeekBody": "扫码配对要先在 空空 里登录 DeepSeek 账号。配对时只附带账号 ID 用来标记这台手机，不传密码、Cookie 或 Token。",
+   "remotePairScanHint": "对准电脑上 Remote 插件显示的配对二维码",
+   "remotePairPasteLink": "粘贴配对链接",
+   "remotePairPasteEmpty": "剪贴板里没有配对链接",
+@@ -10126,7 +10134,7 @@
+     }
+   },
+   "remotePairFailedTitle": "没能配对",
+-  "remotePairOtherServerBody": "这个二维码来自 {server}，和 DSH Go 现在用的 Remote 服务器不同。切换过去继续吗？两个服务器的登录各自保留。",
++  "remotePairOtherServerBody": "这个二维码来自 {server}，和 空空 现在用的 Remote 服务器不同。切换过去继续吗？两个服务器的登录各自保留。",
+   "@remotePairOtherServerBody": {
+     "placeholders": {
+       "server": {
+@@ -10136,7 +10144,7 @@
+   },
+   "remotePairSwitchServer": "切换服务器并继续",
+   "remotePairScanAgain": "重新扫码",
+-  "remotePairErrInvalidCode": "这不是 DSH Go 的配对二维码",
++  "remotePairErrInvalidCode": "这不是 空空 的配对二维码",
+   "remotePairErrOtherServer": "这个二维码来自另一个 Remote 服务器",
+   "remotePairErrUnsupported": "这个 Remote 服务器还不支持扫码配对",
+   "remotePairErrExpired": "二维码已过期或已经用过了。请在电脑上重新生成二维码",
+@@ -10174,12 +10182,12 @@
+   "riskAllowForChatBody": "这个对话之后的命令和改动都直接放行，可在输入框上方随时关闭。",
+   "riskAllowForChatAction": "全部允许",
+   "riskPetOverlayTitle": "显示在其他应用上层？",
+-  "riskPetOverlayBody": "要在系统设置里为 DSH Go 打开「显示在其他应用上层」，宠物才能出现在别的 App 上。",
++  "riskPetOverlayBody": "要在系统设置里为 空空 打开「显示在其他应用上层」，宠物才能出现在别的 App 上。",
+   "riskPetOverlayAction": "去设置",
+   "askAiTooltip": "问 AI",
+   "askAiHelpTitle": "使用帮助",
+   "askAiHelpSubtitle": "不懂的地方，问 AI",
+-  "askAiAboutApp": "关于 DSH Go App：{question}",
++  "askAiAboutApp": "关于 空空 App：{question}",
+   "@askAiAboutApp": {
+     "placeholders": {
+       "question": {
+@@ -10187,7 +10195,7 @@
+       }
+     }
+   },
+-  "askAiWithGuide": "关于 DSH Go App：{question}\n请按附件里的使用说明回答。",
++  "askAiWithGuide": "关于 空空 App：{question}\n请按附件里的使用说明回答。",
+   "@askAiWithGuide": {
+     "placeholders": {
+       "question": {
+@@ -10195,8 +10203,8 @@
+       }
+     }
+   },
+-  "askAiNoGuide": "这台主机没有 DSH Go 使用说明，回答可能不准确",
+-  "askAiQuestionOverview": "DSH Go 能做什么？我该从哪里开始？",
++  "askAiNoGuide": "这台主机没有 空空 使用说明，回答可能不准确",
++  "askAiQuestionOverview": "空空 能做什么？我该从哪里开始？",
+   "askAiQuestionPhoneControl": "手机操控是怎么工作的？有什么风险？",
+   "askAiQuestionPhoneAlways": "手机操控选「始终免确认」会怎样？和「每次都询问」比风险在哪？",
+   "askAiQuestionAppRules": "手机操控的应用名单有什么用？放开银行、支付类 App 有什么风险？",
+@@ -10980,7 +10988,7 @@
+   "shellJsonStringNewline": "字符串里不能直接换行",
+   "shellJsonControlCharacter": "字符串里有控制字符",
+   "shellJsonBadNumber": "数字格式不对",
+-  "shellSkillInstallPrompt": "请在这台主机上安装 DSH Go 的界面技能 {skill}：",
++  "shellSkillInstallPrompt": "请在这台主机上安装 空空 的界面技能 {skill}：",
+   "@shellSkillInstallPrompt": {
+     "placeholders": {
+       "skill": {
 @@ -11200,6 +11208,7 @@
    "speechCallEarpiece": "听筒",
    "speechBackdropTitle": "通话背景",
@@ -99326,7 +99772,7 @@ index ec1a316d..bc268613 100644
    "speechCallPause": "停顿多久算说完",
    "speechCallPauseQuick": "快",
    "speechCallPauseNormal": "适中",
-@@ -11221,7 +11230,25 @@
+@@ -11221,8 +11230,26 @@
    "speechCallVisualRing": "光环",
    "speechCallVisualMono": "细线",
    "speechCallVisualGlass": "光球",
@@ -99347,11 +99793,178 @@ index ec1a316d..bc268613 100644
 +  "speechWakeStateFailed": "监听没能启动",
 +  "speechWakeStateOff": "已关闭",
    "speechInsecure": "这个云端服务的地址不是 https，Key 不能这样发出去",
+-  "starPromptTitle": "{hours, plural, =0{本鱼已经在 DSH Go 里陪你半个小时啦⁠~} =1{本鱼已经在 DSH Go 里陪你一个小时啦⁠~} other{本鱼已经在 DSH Go 里陪你 {hours} 个小时啦⁠~}}",
 +  "speechWakeFreshChat": "唤醒后开新对话",
 +  "speechWakeFreshChatHint": "关：接着上次那个对话；开：每次都新建一个（唤醒词和 AI 键共用）",
-   "starPromptTitle": "{hours, plural, =0{本鱼已经在 DSH Go 里陪你半个小时啦⁠~} =1{本鱼已经在 DSH Go 里陪你一个小时啦⁠~} other{本鱼已经在 DSH Go 里陪你 {hours} 个小时啦⁠~}}",
++  "starPromptTitle": "{hours, plural, =0{本鱼已经在 空空 里陪你半个小时啦⁠~} =1{本鱼已经在 空空 里陪你一个小时啦⁠~} other{本鱼已经在 空空 里陪你 {hours} 个小时啦⁠~}}",
    "@starPromptTitle": {
      "description": "The star prompt's first line. hours is the whole hours of use so far, rounded down; 0 is half an hour (the first ask comes after 30 minutes). The word joiner keeps the ~ on the line of the word before it.",
+     "placeholders": {
+@@ -11236,7 +11263,7 @@
+   "starPromptStar": "去 GitHub 点 Star",
+   "starPromptDone": "已经点过啦",
+   "starPromptLater": "下次再说",
+-  "starSettingsTitle": "给 DSH Go 点个 star",
++  "starSettingsTitle": "给 空空 点个 star",
+   "hubStartPage": "起始页",
+   "hubChatSuggestions": "聊天建议",
+   "hubChatSuggestionsHint": "显示起始页的聊天建议",
+@@ -11252,7 +11279,7 @@
+   },
+   "phoneStartupTokenTimeout": "启动等待已超时（180 秒内未收到启动标记），请查看日志",
+   "phoneStartupPortNotReady": "已收到启动标记，但本机服务端口尚未就绪，请查看日志",
+-  "stateDiagnosticsSubject": "DSH Go 诊断包",
++  "stateDiagnosticsSubject": "空空 诊断包",
+   "stateStoragePermission": "没有存储权限，存不进「下载」",
+   "stateDiagnosticsStorageFull": "存储空间不足，没能生成诊断包",
+   "stateDiagnosticsExportFailed": "没能导出诊断包",
+@@ -12047,15 +12074,15 @@
+   "systemActionsSubtitle": "让 AI 帮你打开应用和系统页面，随时可以关",
+   "systemActionsReady": "已开启",
+   "systemActionsWaitingEngine": "已开启，等本机引擎启动",
+-  "systemActionsOffScreen": "已开启，回到 DSH Go 才能用",
++  "systemActionsOffScreen": "已开启，回到 空空 才能用",
+   "systemActionsConnecting": "正在连接",
+   "systemActionsUnavailable": "已开启，暂时连不上，正在重试",
+   "systemActionsUnsupported": "这个版本用不了",
+   "systemActionsToggleFailed": "没能保存，再试一次",
+   "systemActionsRemoteTitle": "当前连的是远程主机",
+   "systemActionsRemoteHint": "系统操作只在本机引擎的对话里有效",
+-  "systemActionsOnScreenTitle": "只在 DSH Go 在屏幕上时有效",
+-  "systemActionsOnScreenBody": "系统不让后台应用做这些。AI 打开别的应用后，要等你回到 DSH Go 才能接着做。",
++  "systemActionsOnScreenTitle": "只在 空空 在屏幕上时有效",
++  "systemActionsOnScreenBody": "系统不让后台应用做这些。AI 打开别的应用后，要等你回到 空空 才能接着做。",
+   "systemActionsCanTitle": "能做的",
+   "systemActionsCanOpen": "打开应用或链接",
+   "systemActionsCanOpenHint": "应用要写包名，不能按名字找",
+@@ -12089,7 +12116,7 @@
+   "systemActionsDisclosureWhatTitle": "能做什么",
+   "systemActionsDisclosureWhatBody": "打开应用或链接，打开日历、拨号、分享、导航界面，发通知，写剪贴板，把步骤交还给你。这个版本开通了系统提醒时，还能设闹钟和计时器。",
+   "systemActionsDisclosureWhenTitle": "什么时候做",
+-  "systemActionsDisclosureWhenBody": "只在对话用到、DSH Go 在屏幕上时。默认每次先问你，选了完全权限的对话不问。",
++  "systemActionsDisclosureWhenBody": "只在对话用到、空空 在屏幕上时。默认每次先问你，选了完全权限的对话不问。",
+   "systemActionsDisclosureWhoTitle": "发给谁",
+   "systemActionsDisclosureWhoBody": "动作的结果会回到对话，发给你选的模型。",
+   "systemActionsDisclosureNeverTitle": "不会做什么",
+@@ -12097,7 +12124,7 @@
+   "systemActionsDisclosureStopTitle": "怎么停",
+   "systemActionsDisclosureStopBody": "随时在这里关掉。交还提示可以点停止。",
+   "systemActionsHandoffTitle": "轮到你来操作",
+-  "systemActionsHandoffNote": "做完回到 DSH Go 点继续。继续只表示你确认了，AI 看不到其他应用里发生了什么。",
++  "systemActionsHandoffNote": "做完回到 空空 点继续。继续只表示你确认了，AI 看不到其他应用里发生了什么。",
+   "systemActionsHandoffFailed": "这次没算上，提示如果还在可以再点一次",
+   "systemActionsResultOpened": "已打开界面，还没确认里面的事办完。",
+   "systemActionsResultContinued": "你点了继续。这只说明你确认了，不代表其他应用里的操作完成了。",
+@@ -12106,7 +12133,7 @@
+   "systemActionsResultClipboard": "文字已写入剪贴板。",
+   "systemActionsResultUnknownDetail": "系统调用可能已经发出，结果未知。不会自动重试，请自己看一下实际状态。",
+   "systemActionsResultUnsupported": "鸿蒙版不支持这个动作，没有执行。",
+-  "systemActionsResultOffScreen": "DSH Go 不在屏幕上，没有执行。",
++  "systemActionsResultOffScreen": "空空 不在屏幕上，没有执行。",
+   "systemActionsResultUnavailable": "系统操作没开或暂时连不上，没有执行。到「设置 → 系统操作」看看。",
+   "systemActionsResultStopped": "已停止。",
+   "systemActionsResultTimeout": "等待超时，没有结果。",
+@@ -12789,7 +12816,7 @@
+       }
+     }
+   },
+-  "tavernStorybookMadeWith": "用 DSH Go 酒馆写成",
++  "tavernStorybookMadeWith": "用 空空 酒馆写成",
+   "tavernStorybookContents": "目录",
+   "tavernStorybookChapter": "第 {n} 章",
+   "@tavernStorybookChapter": {
+@@ -14579,13 +14606,13 @@
+     }
+   },
+   "updateSettingsOpenFailed": "没能打开系统设置",
+-  "updateSettingsOpenFailedMessage": "到「设置 → 应用 → DSH Go」里允许「安装未知应用」，再回来安装。",
++  "updateSettingsOpenFailedMessage": "到「设置 → 应用 → 空空」里允许「安装未知应用」，再回来安装。",
+   "updateInstallCancelled": "已取消安装",
+   "updateInstallCancelledMessage": "安装包还在，随时可以再装。",
+   "updateInstallUnconfirmed": "尚未确认安装结果",
+   "updateInstallUnconfirmedMessage": "安装包已保留。可先检查系统提示，再重试或用系统安装器打开。",
+   "updateSignatureMismatch": "签名不一致，不能直接覆盖",
+-  "updateSignatureMismatchMessage": "手机上的 DSH Go 签名不同（多半是测试包），需要先卸载旧版再装新版。卸载会清空对话、Linux 环境和设置。",
++  "updateSignatureMismatchMessage": "手机上的 空空 签名不同（多半是测试包），需要先卸载旧版再装新版。卸载会清空对话、Linux 环境和设置。",
+   "updateWrongPackage": "不是 DSH 的安装包",
+   "updateWrongPackageMessage": "下载到的文件不对，已删除，请稍后重试。",
+   "updateDowngradeBlocked": "不能降级安装",
+@@ -14628,7 +14655,7 @@
+   "updateNewVersionFound": "发现新版本",
+   "updateReleaseNotes": "更新内容",
+   "updateNoReleaseNotes": "这个版本没有写更新说明。",
+-  "updateInstallKeepsData": "安装时 DSH Go 会退出，对话和设置都会保留",
++  "updateInstallKeepsData": "安装时 空空 会退出，对话和设置都会保留",
+   "updateNoCompatiblePackage": "没有适合本机的安装包",
+   "updateDownloading": "正在下载",
+   "updateDownloadSource": "经由 {source}",
+@@ -14646,7 +14673,7 @@
+   "updateConfirmInstallNote": "在系统弹窗里确认安装",
+   "updatePackageDownloaded": "安装包已下载",
+   "updateReadyToInstall": "校验通过，可以安装了。",
+-  "updateAllowInstall": "允许 DSH Go 安装应用",
++  "updateAllowInstall": "允许 空空 安装应用",
+   "updateAllowInstallMessage": "在系统设置里打开「安装未知应用」，回来后自动继续。",
+   "updateOpenReleasePage": "打开发布页",
+   "updateUpdateNow": "立即更新",
+@@ -14689,10 +14716,10 @@
+     }
+   },
+   "usageStatsTitle": "发送匿名使用统计",
+-  "usageStatsSection": "改进 DSH Go",
++  "usageStatsSection": "改进 空空",
+   "usageStatsFooter": "这个开关只控制 dsh-go 自身的统计：各功能使用次数（含酒馆消息、伙伴小屋、语音通话）、模型回复报告的 token 数、版本、手机品牌和型号、系统版本，不含对话、角色卡、文件和账号；它不控制 Google ML Kit SDK 的统计。",
+   "usageNoticeBody": "不含对话和个人信息，可随时关闭",
+-  "usageUpgradeNotice": "新增匿名使用统计，帮助改进 DSH Go。\n不含对话和个人信息",
++  "usageUpgradeNotice": "新增匿名使用统计，帮助改进 空空。\n不含对话和个人信息",
+   "usageUpgradeLearn": "了解",
+   "usageUpgradeOff": "关闭",
+   "viewArtifactSaved": "已存到 {value}",
+@@ -15401,7 +15428,7 @@
+   "viewTipImageZoom": "看图时双击放大、双指缩放，长按可以保存",
+   "viewTipQueuedRecall": "排队中的消息可以撤回到输入框再改",
+   "viewTipKeyboard": "接了键盘：Ctrl+Enter 发送，连按两次 Esc 停止",
+-  "viewTipShareIn": "在别的 App 里分享文字或图片给 DSH Go，会填进新对话",
++  "viewTipShareIn": "在别的 App 里分享文字或图片给 空空，会填进新对话",
+   "viewTipShareSelect": "分享对话时长按再滑动，可以一次选中多条消息",
+   "viewTipChartDrag": "回复里的图表可以左右拖动，看每个点的数值",
+   "viewTipCopyPath": "改动卡里长按某个文件，可以复制它的路径",
+@@ -15571,7 +15598,7 @@
+       }
+     }
+   },
+-  "viewContinueHeader": "> 分享的 DSH Go 对话 · {value}\n",
++  "viewContinueHeader": "> 分享的 空空 对话 · {value}\n",
+   "@viewContinueHeader": {
+     "placeholders": {
+       "value": {
+@@ -15608,7 +15635,7 @@
+   "viewShareNoPermission": "没有存储权限，没能保存",
+   "viewShareOpenFailed": "没能打开分享",
+   "viewShareLinkFailed": "没能生成链接，稍后再试",
+-  "viewShareLinkText": "「{first}」· DSH Go 对话\n{second}",
++  "viewShareLinkText": "「{first}」· 空空 对话\n{second}",
+   "@viewShareLinkText": {
+     "placeholders": {
+       "first": {
+@@ -15636,7 +15663,7 @@
+       }
+     }
+   },
+-  "viewShareFileHint": "在 DSH Go 里回放、接着聊",
++  "viewShareFileHint": "在 空空 里回放、接着聊",
+   "viewShareWebHint": "任何浏览器都能打开，不用联网",
+   "viewShareMarkdownHint": "纯文本，随处可读",
+   "viewShareLinkHint": "端到端加密，服务器看不到内容",
+@@ -16364,7 +16391,7 @@
+   "workshopAbout": "简介",
+   "workshopNoDescription": "作者没有写简介。",
+   "workshopSource": "来源",
+-  "workshopMinApp": "需要 DSH Go {version} 或更新的版本。",
++  "workshopMinApp": "需要 空空 {version} 或更新的版本。",
+   "@workshopMinApp": {
+     "placeholders": {
+       "version": {
 diff --git a/app/lib/l10n/gen/app_localizations.dart b/app/lib/l10n/gen/app_localizations.dart
 index 05ad2de7..d7297751 100644
 --- a/app/lib/l10n/gen/app_localizations.dart
