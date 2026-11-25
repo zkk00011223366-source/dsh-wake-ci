@@ -1,7 +1,7 @@
 == resources ==
-/dev/root       145G   48G   97G  33% /
+/dev/root       145G   49G   96G  34% /
                total        used        free      shared  buff/cache   available
-Mem:           15983        1159         299          49       14917       14823
+Mem:           15983        2116         283          49       13976       13866
 == tail ==
 
 ==> 依赖: flutter pub get
@@ -132,3 +132,4 @@ Downloading packages...
 Got dependencies!
 49 packages have newer versions incompatible with dependency constraints.
 Try `flutter pub outdated` for more information.
+Running Gradle task 'assembleArm64Release'...                   
