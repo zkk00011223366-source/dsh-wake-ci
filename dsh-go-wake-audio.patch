@@ -1,12 +1,12 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: ci <ci@local>
-Date: Wed, 25 Nov 2026 16:55:29 +0800
+Date: Wed, 25 Nov 2026 17:10:30 +0800
 Subject: [PATCH] b: scene4n
 MIME-Version: 1.0
 Content-Type: text/plain; charset=UTF-8
 Content-Transfer-Encoding: 8bit
 
-4n: 全量修复 + 品牌 + 灵敏收条 + 收开防抖 + 判定滞回
+4n: 全量修复 + 品牌 + 灵敏收条 + 防抖 + 滞回 + 名额满自愈
 
 ---
  .gitattributes                                     |    3 +
@@ -51,11 +51,11 @@ Content-Transfer-Encoding: 8bit
  .../phone/background/DisplayOrientationWatch.kt    |  100 +
  .../dsh_app/phone/background/FramedMuxSession.kt   |   25 +-
  .../dsh_app/phone/background/KeptTasks.kt          |   39 +
- .../dsh_app/phone/background/OwnerScopes.kt        |   17 +-
+ .../dsh_app/phone/background/OwnerScopes.kt        |   30 +-
  .../dsh_app/phone/background/PrivilegedChannel.kt  |    6 +
  .../phone/background/PrivilegedDisplayCore.kt      | 1386 +++++++++-
  .../phone/background/PrivilegedDisplayEntry.kt     |   19 +-
- .../phone/background/PrivilegedDisplayHost.kt      |   10 +-
+ .../phone/background/PrivilegedDisplayHost.kt      |   27 +-
  .../dsh_app/phone/background/PrivilegedProtocol.kt |  108 +-
  .../dsh_app/phone/background/VscreenSession.kt     |   39 +
  .../dsh_app/phone/skills/PhoneSkillDraft.kt        |    2 +-
@@ -247,7 +247,7 @@ Content-Transfer-Encoding: 8bit
  docs/wake-word.md                                  |  107 +
  dsh-go-wake.patch                                  | 2065 ++++++++++++++
  tooling/build-wake-apk.sh                          |   68 +
- 238 files changed, 18739 insertions(+), 982 deletions(-)
+ 238 files changed, 18768 insertions(+), 983 deletions(-)
 
 diff --git a/.gitattributes b/.gitattributes
 index 52e3e08a..3e877c7e 100644
@@ -5799,7 +5799,7 @@ index 00000000..c1dcef97
 +    fun logSize() = Log.i(TAG, "vscreen: task-finish kept-total=$size")
 +}
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/OwnerScopes.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/OwnerScopes.kt
-index 06faa948..c19c6581 100644
+index 06faa948..57334de0 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/OwnerScopes.kt
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/OwnerScopes.kt
 @@ -18,7 +18,18 @@ internal class OwnerScopes<C : Any, R : Any>(private val limit: Int = 3, private
@@ -5822,13 +5822,26 @@ index 06faa948..c19c6581 100644
          val known = active.containsKey(owner) || completed.containsKey(owner)
          fun no(code: String) = Entry.Refused<C, R>(code, !known)
          if (mode == false) return no("scopeModeMismatch")
-@@ -53,6 +64,10 @@ internal class OwnerScopes<C : Any, R : Any>(private val limit: Int = 3, private
+@@ -53,6 +64,23 @@ internal class OwnerScopes<C : Any, R : Any>(private val limit: Int = 3, private
          } else record.busy = false
      }
  
 +    /** 【4cb·影子】零行为：入场判定留痕用的表读数。 */
 +    fun activeCount(): Int = synchronized(lock) { active.size }
 +    fun activeOwners(): List<String> = synchronized(lock) { active.keys.toList() }
++
++    /** 【4o】名额满时取最老的空闲记录并标记 closing（Host 执行释放后 evict）。 */
++    fun reapOldest(): Record<C>? = synchronized(lock) {
++        active.values.firstOrNull { !it.busy }?.also { it.closing = true }
++    }
++
++    /** 【4o】强制移除一条记录（名额满自愈用）：已释放的 core 连同其 owner 一起出表。 */
++    fun evict(record: Record<C>, receipt: R? = null) = synchronized(lock) {
++        if (active[record.owner] === record) {
++            active.remove(record.owner)
++            if (receipt != null) completed[record.owner] = receipt
++        }
++    }
 +
      fun enterGlobal(legacyResource: Boolean = false): String? = synchronized(lock) {
          if (global || active.isNotEmpty()) return "scopeBusy"
@@ -7505,10 +7518,10 @@ index 8eb55617..a066e4e8 100644
              runCatching { Looper.getMainLooper()?.quitSafely() }
              Process.killProcess(Process.myPid())
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/PrivilegedDisplayHost.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/PrivilegedDisplayHost.kt
-index aa3faff3..5dfce915 100644
+index aa3faff3..93377cd5 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/PrivilegedDisplayHost.kt
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/PrivilegedDisplayHost.kt
-@@ -70,7 +70,9 @@ internal class PrivilegedDisplayHost(private val context: Context) {
+@@ -70,12 +70,29 @@ internal class PrivilegedDisplayHost(private val context: Context) {
          if (request.get(Proto.OWNER_SCOPE_VERSION) !is Int || request.get(Proto.OWNER_SCOPE_VERSION) != 1 ||
              owner == null || !TargetContract.validRun(owner)) return failure("invalidArguments")
          val inner = Bundle(request).apply { remove(Proto.OWNER_SCOPE_VERSION) }
@@ -7518,8 +7531,29 @@ index aa3faff3..5dfce915 100644
 +        val opening = op in setOf(Proto.OP_CREATE, Proto.OP_LAUNCH, Proto.OP_SELF_CHECK_PROBE, Proto.OP_SELF_CHECK_TARGET_CREATE, Proto.OP_MOVE_TASK)
          val initial = if (opening) initial(inner, owner) else null
          // Known identities never receive scopeAccepted=false for malformed subsequent requests.
-         val entry = scopes.enter(owner, opening && initial != null, initial?.maintenance == true, op == Proto.OP_RELEASE) {
-@@ -107,10 +109,14 @@ internal class PrivilegedDisplayHost(private val context: Context) {
+-        val entry = scopes.enter(owner, opening && initial != null, initial?.maintenance == true, op == Proto.OP_RELEASE) {
++        var entry = scopes.enter(owner, opening && initial != null, initial?.maintenance == true, op == Proto.OP_RELEASE) {
+             PrivilegedDisplayCore(context, trees, checkNotNull(initial))
+         }
++        // 【4o】名额满自愈：回收最老的空闲屏（应用搬回主屏、屏释放）再试一次。
++        // 真机 17:0x：多块 kept 旧屏占满 3 个名额 → 微信 open 被 scopeCapacity 拒。
++        if (opening && entry is OwnerScopes.Entry.Refused && entry.code == "scopeCapacity") {
++            val victim = scopes.reapOldest()
++            if (victim != null) {
++                val rel = Bundle().apply { putString(Proto.OP, Proto.OP_RELEASE); putInt(Proto.RELEASE_RECEIPT, 1) }
++                runCatching { victim.core.handle(rel) }
++                scopes.evict(victim)
++                io.github.ccch1mneyyy.dsh_app.wake.WakeTrace.log(
++                    "scope-shadow: capacity reap owner=${victim.owner} -> retry enter")
++                entry = scopes.enter(owner, opening && initial != null, initial?.maintenance == true, op == Proto.OP_RELEASE) {
++                    PrivilegedDisplayCore(context, trees, checkNotNull(initial))
++                }
++            }
++        }
+         val response = when (entry) {
+             is OwnerScopes.Entry.Refused -> failure(if (opening && initial == null) "invalidArguments" else entry.code).apply {
+                 if (opening) {
+@@ -107,10 +124,14 @@ internal class PrivilegedDisplayHost(private val context: Context) {
                  ?.let { HostedScope(it, probe = true) }
              Proto.OP_SELF_CHECK_TARGET_CREATE -> SelfCheckTargetRequest.parse(request.keySet()) { request.get(it) }
                  ?.let { HostedScope(it.owner, target = it) }
