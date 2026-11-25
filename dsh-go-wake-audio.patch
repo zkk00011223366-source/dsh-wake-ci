@@ -1,12 +1,12 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: ci <ci@local>
-Date: Wed, 25 Nov 2026 10:45:11 +0800
+Date: Wed, 25 Nov 2026 12:01:31 +0800
 Subject: [PATCH] b: scene4k
 MIME-Version: 1.0
 Content-Type: text/plain; charset=UTF-8
 Content-Transfer-Encoding: 8bit
 
-4k: 探活误判修复（含 4i/4j 全部）
+4k: 探活重试 + 唤窗竞态 + 误触防护 + 操作指引（含 4i/4j 全部）
 
 ---
  .gitattributes                                     |    3 +
@@ -35,13 +35,13 @@ Content-Transfer-Encoding: 8bit
  .../dsh_app/phone/background/AdbFramedSession.kt   |    5 +
  .../dsh_app/phone/background/BackgroundControl.kt  |  243 +-
  .../phone/background/BackgroundCoordinates.kt      |    2 +
- .../dsh_app/phone/background/BackgroundDisplay.kt  |  385 ++-
+ .../dsh_app/phone/background/BackgroundDisplay.kt  |  389 ++-
  .../phone/background/BackgroundDisplayIo.kt        |   10 +-
  .../dsh_app/phone/background/BackgroundPolicy.kt   |    8 +-
  .../dsh_app/phone/background/BackgroundPreview.kt  |   10 +-
  .../phone/background/BackgroundProbeActivity.kt    |    4 +-
  .../dsh_app/phone/background/BackgroundTaskSlot.kt |    7 +
- .../dsh_app/phone/background/BackgroundTree.kt     |    4 +-
+ .../dsh_app/phone/background/BackgroundTree.kt     |   13 +-
  .../dsh_app/phone/background/CoalescedScan.kt      |   31 +
  .../dsh_app/phone/background/DisplayAwake.kt       |  154 ++
  .../dsh_app/phone/background/DisplayHandles.kt     |   31 +
@@ -65,7 +65,7 @@ Content-Transfer-Encoding: 8bit
  .../dsh_app/phone/vscreen/PresentationHost.kt      |   69 +
  .../ccch1mneyyy/dsh_app/phone/vscreen/TaskMover.kt |  152 ++
  .../dsh_app/phone/vscreen/TransferBall.kt          |  500 ++++
- .../dsh_app/phone/vscreen/VirtualScreenOverlay.kt  | 2813 ++++++++++++++++++++
+ .../dsh_app/phone/vscreen/VirtualScreenOverlay.kt  | 2833 ++++++++++++++++++++
  .../dsh_app/phone/vscreen/VirtualScreenPlugin.kt   |  238 ++
  .../ccch1mneyyy/dsh_app/phone/vscreen/VscreenUi.kt |  166 ++
  .../ccch1mneyyy/dsh_app/runtime/GuestSetup.kt      |   47 +-
@@ -145,7 +145,7 @@ Content-Transfer-Encoding: 8bit
  docs/wake-word.md                                  |  107 +
  dsh-go-wake.patch                                  | 2065 ++++++++++++++
  tooling/build-wake-apk.sh                          |   68 +
- 136 files changed, 18079 insertions(+), 597 deletions(-)
+ 136 files changed, 18109 insertions(+), 600 deletions(-)
 
 diff --git a/.gitattributes b/.gitattributes
 index 52e3e08a..3e877c7e 100644
@@ -4274,7 +4274,7 @@ index f6b83a0a..2eb59f32 100644
          val result = receipt.takeIf { accepted && screen == screenId }
          clear()
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/BackgroundDisplay.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/BackgroundDisplay.kt
-index bc1810a3..bd9582fb 100644
+index bc1810a3..52bd1e05 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/BackgroundDisplay.kt
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/BackgroundDisplay.kt
 @@ -3,6 +3,7 @@ package io.github.ccch1mneyyy.dsh_app.phone.background
@@ -4706,6 +4706,15 @@ index bc1810a3..bd9582fb 100644
      }
  
      /**
+@@ -528,7 +843,7 @@ class BackgroundDisplay internal constructor(
+         if (!coordinateEpochCurrent()) return ActionResult(false, Reasons.of("staleSnapshot"), staleSnapshot = true)
+         val image = coordinateImage.take(action.screenId)
+             // l10n:keep agent coordinate protocol
+-            ?: return ActionResult(false, "没有本任务最近一次已返回图片的后台坐标凭据。请显式 screen(image:true, background:true) 后核对；仍无凭据请用元素操作或交给用户，不要盲点。")
++            ?: return ActionResult(false, "没有本任务最近一次已返回图片的后台坐标凭据。请显式 screen(image:true, background:true) 后核对；仍无凭据请用元素操作或交给用户，不要盲点。若刚弹出系统浮动层（粘贴/选择菜单、键盘），先按返回收起它再重新读屏。")
+         val gesture = action.gesture.name.lowercase()
+         val points = BackgroundCoordinateRequest(image.nonce, gesture, action.x, action.y, action.x2, action.y2, action.durationMs.toInt())
+         // l10n:keep agent coordinate protocol
 @@ -573,8 +888,44 @@ class BackgroundDisplay internal constructor(
  
      override fun foregroundPackage(): String? = currentTarget?.packageName
@@ -4776,6 +4785,15 @@ index bc1810a3..bd9582fb 100644
              return@commitObservation ScreenSnapshot(id, text, appLabel, pkg, secure = false, poorTree = true, readPackages = setOf(pkg))
          }
          val elements = buildElements(response, markNew)
+@@ -732,7 +1083,7 @@ class BackgroundDisplay internal constructor(
+             text += "\n截图坐标范围：${coordinate.width}×${coordinate.height}像素；30秒内可单次使用；只有明确普通目标可使用独立的本任务视觉许可，未知目标及长按/滑动仍逐次确认。未证明画布没有敏感内容或目标像素未变。"
+         } else if (image != null && coordinateSupported) {
+             // l10n:keep agent coordinate protocol
+-            text += "\n本次截图没有可用坐标凭据（窗口、隐私、几何或帧条件未满足）。请用元素操作或交给用户。"
++            text += "\n本次截图没有可用坐标凭据（窗口、隐私、几何或帧条件未满足）。常见原因是画面被系统浮动层遮挡（粘贴菜单、键盘、弹窗）：先按返回收起浮动层，画面稳定后再 screen(image:true) 取新凭据；仍无凭据请用元素操作或交给用户。"
+         }
+         if (localText != null) text += "\n" + localText.text
+         val shownImage = image.takeIf { publishImage }
 @@ -789,14 +1140,14 @@ class BackgroundDisplay internal constructor(
          if (opened.packageName == shown.packageName) return ""
          val name = appLabel?.let { "「$it」（${shown.packageName}）" } ?: shown.packageName
@@ -4927,7 +4945,7 @@ index 853ed85e..feebfbf9 100644
      fun seal(taskId: Long? = null): List<TaskResource<D, P>> = synchronized(lock) {
          resources.filter { taskId == null || it.owner.taskId == taskId }.onEach { it.sealed = true }
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/BackgroundTree.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/BackgroundTree.kt
-index 830cb253..56527963 100644
+index 830cb253..a1bcc87c 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/BackgroundTree.kt
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/BackgroundTree.kt
 @@ -123,7 +123,7 @@ object BackgroundTree {
@@ -4948,6 +4966,22 @@ index 830cb253..56527963 100644
              appLabel?.let { append(" · ").append(it) }
              // l10n:keep model screen format and matchers
              append(" · ").append(if (portrait) "竖屏" else "横屏")
+@@ -154,7 +154,14 @@ object BackgroundTree {
+         val lines = ArrayList<String>()
+         lines.add(header)
+         // l10n:keep model screen format and matchers
+-        if (poorTree) lines.add("（本页文字信息不足，可能是游戏、画布或小程序）")
++        if (poorTree) {
++            // l10n:keep model screen format
++            lines.add("（本页文字信息不足，可能是游戏、画布或小程序）")
++            // 【4k】树空时直接给行动指引，别让模型停下来问用户
++            // （真机 11:16 微信搜索"老婆"：树空 → AI 卡住给选项）。
++            // l10n:keep model screen format
++            lines.add("（控件树为空时不必停下询问用户：用 screen(image:true) 取截图，结合 OCR 文字与截图坐标继续操作）")
++        }
+         var lastRegion: Region? = null
+         for (e in elements) {
+             if (e.region != lastRegion) {
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/CoalescedScan.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/CoalescedScan.kt
 new file mode 100644
 index 00000000..e8f326d2
@@ -8674,10 +8708,10 @@ index 00000000..abe0de2c
 +}
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenOverlay.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenOverlay.kt
 new file mode 100644
-index 00000000..bdca4308
+index 00000000..d7a2505a
 --- /dev/null
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenOverlay.kt
-@@ -0,0 +1,2813 @@
+@@ -0,0 +1,2833 @@
 +package io.github.ccch1mneyyy.dsh_app.phone.vscreen
 +
 +import io.github.ccch1mneyyy.dsh_app.phone.PhoneRegistry
@@ -8809,6 +8843,8 @@ index 00000000..bdca4308
 +    private var taskId = 0L
 +    /** attach 成功时预览目标的任务号：转主屏/手动操作都用它兜底。 */
 +    private var previewTaskId = 0L
++    /** 【4k】最后一次窗口拖动时刻：✕ 键的误触防护参照。 */
++    @Volatile private var lastManualAt = 0L
 +    /**
 +     * 帧模式（用户 21:5x 拍板）：窗口只负责"能看"，不再直连虚拟屏的 surface。
 +     * 直连一断就黑，用户现在的诉求是"先能用"，所以宁可 10–15fps，也不要黑屏。
@@ -8923,7 +8959,11 @@ index 00000000..bdca4308
 +        // "窗口不在" → ball1，下一拍又回到 window → show()，形成 ball1↔window 抖动，
 +        // 每一圈都把 revealed 打回 false，窗口永远揭不开（实测 14604 次、全屏黑）。
 +        val already = root
-+        if (already != null && (taskId == 0L || taskId == this.taskId)) {
++        if (already != null && (taskId == 0L || taskId == this.taskId || this.taskId == 0L)) {
++            // 【4k】窗口已建但还没绑任务号（点条唤窗常拿不到号），状态机带号再来一次时
++            // 补绑号、复用旧窗，不要拆窗重建：拆窗会让 reader 的 gen 跳号被杀、下一轮又
++            // 被防重入挡住 → 窗口永远等不到首帧（真机 11:30:58/11:30:59 汽水音乐点条）。
++            if (taskId > 0 && this.taskId == 0L) this.taskId = taskId
 +            if (!revealed) main.post { reveal(already) }
 +            WakeTrace.log("window: show reused taskId=${this.taskId} revealed=$revealed")
 +            return true
@@ -9495,7 +9535,10 @@ index 00000000..bdca4308
 +                WakeTrace.log("frame: appReader size unknown $probe")
 +                return@execute
 +            }
-+            if (gen != surfaceGen) return@execute
++            if (gen != surfaceGen) {
++                WakeTrace.log("frame: appReader aborted stale gen=$gen cur=$surfaceGen (window rebuilt)")
++                return@execute
++            }
 +            val ir = runCatching {
 +                ImageReader.newInstance(dw, dh, PixelFormat.RGBA_8888, 2)
 +            }.getOrNull()
@@ -10798,7 +10841,15 @@ index 00000000..bdca4308
 +            toggleMute()
 +        }.also { hit(it, "sound") }
 +        val eye = roundKey(app, ICON_EYE, px) { toggleEye() }.also { hit(it, "eye") }
-+        val close = roundKey(app, ICON_CLOSE, px) { endTask() }.also { hit(it, "close") }
++        val close = roundKey(app, ICON_CLOSE, px) {
++            // 【4k】误触防护：窗口刚被拖过（1.2 秒内），这一下 ✕ 不算数——拖拽时手指常落在键上
++            // （真机 11:19:31 拖窗口、11:19:32 双指落 ✕ → 应用被误搬回主屏、条消失）。
++            if (SystemClock.elapsedRealtime() - lastManualAt < 1200) {
++                WakeTrace.log("window: close ignored right after drag (miss-touch guard)")
++            } else {
++                endTask()
++            }
++        }.also { hit(it, "close") }
 +        // 顶栏已彻底删除（键全部进竖排键轨）。这里**绝对不能**再把 close/eye/volume 加进任何容器：
 +        // 一个 View 只能有一个父容器，先加进 topRow 再加进 rail 会抛
 +        // IllegalStateException: The specified child already has a parent —— 真机 01:55 现场。
@@ -11225,6 +11276,9 @@ index 00000000..bdca4308
 +
 +        fun dragTo(event: MotionEvent, dx: Int, dy: Int) {
 +            val now = SystemClock.elapsedRealtime()
++            // 【4k】误触防护的参照：窗口刚被拖过，紧接着落在 ✕ 上的手指不算"点 ✕"
++            // （真机 11:19：拖窗口时第二指落在 ✕ 键上，应用被误搬回主屏）。
++            lastManualAt = now
 +            if (now > lastAt) vx = (event.rawX - lastX) * 1000f / (now - lastAt)
 +            lastX = event.rawX
 +            lastAt = now
