@@ -13,6 +13,8 @@
 # 60-minute timeout still makes the next one fast.
 name: Wake APK
 
+# trigger-4i (gh-proxy.com relay push; remove after build)
+
 on:
   push:
     branches: [main]
