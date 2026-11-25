@@ -1,6 +1,6 @@
 From: dsh <dsh@local>
-Date: Thu, 26 Nov 2026 02:29:31 +0800
-Subject: [PATCH] 4o2-4or 一体两态/判定瘦身/自愈闭环/形态归位/取证
+Date: Thu, 26 Nov 2026 02:36:18 +0800
+Subject: [PATCH] 4o2-4os 一体两态/判定瘦身/自愈闭环/形态归位/AI键通话
 
  .gitattributes                                     |    3 +
  .github/workflows/wake-apk.yml                     |  192 ++
@@ -25787,7 +25787,7 @@ index 1617f97d..72f31ad1 100644
      android:notificationTimeout="100"
      android:description="@string/phone_a11y_description"
 diff --git a/app/android/app/src/main/res/xml/shortcuts.xml b/app/android/app/src/main/res/xml/shortcuts.xml
-index 3540cb26..efa8536b 100644
+index 3540cb26..c420582a 100644
 --- a/app/android/app/src/main/res/xml/shortcuts.xml
 +++ b/app/android/app/src/main/res/xml/shortcuts.xml
 @@ -2,7 +2,8 @@
@@ -25818,13 +25818,13 @@ index 3540cb26..efa8536b 100644
 +    </shortcut>
 +    <shortcut
 +        android:shortcutId="voice_call"
-+        android:enabled="false"
++        android:enabled="true"
 +        android:icon="@drawable/ic_shortcut_voice"
 +        android:shortcutShortLabel="@string/shortcut_voice_call"
 +        android:shortcutLongLabel="@string/shortcut_voice_call">
 +        <intent
 +            android:action="io.github.ccch1mneyyy.dsh_app.action.VOICE_CALL"
-+            android:targetClass="io.github.ccch1mneyyy.dsh_app.MainActivity"
++            android:targetClass="io.github.ccch1mneyyy.dsh_app.shortcuts.EntryActivity"
 +            android:targetPackage="io.github.ccch1mneyyy.dsh_app.private" />
      </shortcut>
  </shortcuts>
