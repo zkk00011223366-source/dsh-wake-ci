@@ -1,12 +1,12 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: ci <ci@local>
-Date: Wed, 25 Nov 2026 20:52:04 +0800
+Date: Wed, 25 Nov 2026 21:27:13 +0800
 Subject: [PATCH] b: scene4n
 MIME-Version: 1.0
 Content-Type: text/plain; charset=UTF-8
 Content-Transfer-Encoding: 8bit
 
-4n: 账本单一化+判死删除+名额1+条钉位置
+4n: 账本直写 + reader保活防重入
 
 ---
  .gitattributes                                     |    3 +
@@ -36,7 +36,7 @@ Content-Transfer-Encoding: 8bit
  .../dsh_app/phone/background/AdbFramedSession.kt   |    5 +
  .../dsh_app/phone/background/BackgroundControl.kt  |  217 +-
  .../phone/background/BackgroundCoordinates.kt      |    2 +
- .../dsh_app/phone/background/BackgroundDisplay.kt  |  389 ++-
+ .../dsh_app/phone/background/BackgroundDisplay.kt  |  397 ++-
  .../phone/background/BackgroundDisplayIo.kt        |   10 +-
  .../dsh_app/phone/background/BackgroundPolicy.kt   |    8 +-
  .../dsh_app/phone/background/BackgroundPreview.kt  |   10 +-
@@ -247,7 +247,7 @@ Content-Transfer-Encoding: 8bit
  docs/wake-word.md                                  |  107 +
  dsh-go-wake.patch                                  | 2065 ++++++++++++++
  tooling/build-wake-apk.sh                          |   68 +
- 238 files changed, 18831 insertions(+), 987 deletions(-)
+ 238 files changed, 18839 insertions(+), 987 deletions(-)
 
 diff --git a/.gitattributes b/.gitattributes
 index 52e3e08a..3e877c7e 100644
@@ -4498,7 +4498,7 @@ index f6b83a0a..2eb59f32 100644
          val result = receipt.takeIf { accepted && screen == screenId }
          clear()
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/BackgroundDisplay.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/BackgroundDisplay.kt
-index bc1810a3..52bd1e05 100644
+index bc1810a3..0b7cdfd6 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/BackgroundDisplay.kt
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/BackgroundDisplay.kt
 @@ -3,6 +3,7 @@ package io.github.ccch1mneyyy.dsh_app.phone.background
@@ -4685,7 +4685,7 @@ index bc1810a3..52bd1e05 100644
                  putBoolean(Proto.LOCAL_VISUAL, true)
                  putInt(Proto.WANT_IMAGE, 0)
              }
-@@ -126,7 +243,39 @@ class BackgroundDisplay internal constructor(
+@@ -126,7 +243,47 @@ class BackgroundDisplay internal constructor(
                  }) { Reasons.of("deviceUnavailable") }
              }
              onResourceReady(active)
@@ -4701,6 +4701,14 @@ index bc1810a3..52bd1e05 100644
 +            lastOpenTaskId = response.getInt(Proto.TASK_ID, 0)
 +            lastOpenDisplayId = (response.get(Proto.DISPLAY_ID) as? Int) ?: 0
 +            lastOpenPkgDisplay = (response.get("pkgDisplay") as? Int) ?: 0
++            // 【4o】账本单一化：open 成功后直接把真实屏号写进全局账本，不再让 PhoneCore
++            // 回头读 driver（多实例复用下读空 → ledger=0 → 任务结束后点条全收，真机 21:25）。
++            if (lastOpenDisplayId > 0) {
++                io.github.ccch1mneyyy.dsh_app.phone.PhoneRegistry.vscreenScreenDisplayId = lastOpenDisplayId
++            }
++            if (lastOpenPkgDisplay > 0) {
++                io.github.ccch1mneyyy.dsh_app.phone.PhoneRegistry.vscreenObservedDisplayId = lastOpenPkgDisplay
++            }
 +            // 【4ab】首帧事实（core 记的，以值传来）：open 后立刻落到 App 侧，黄条门控才看得到。
 +            runCatching {
 +                val coreFirst = response.getLong("firstFrameAt")
@@ -4726,7 +4734,7 @@ index bc1810a3..52bd1e05 100644
              result.copy(backgroundOpenConfirmed = result.ok && TargetIdentity.backgroundOpenConfirmed(target,
                  response.get(Proto.OK), response.get(Proto.BACKGROUND_OPEN_EVIDENCE), response.get(Proto.DISPLAY_ID),
                  response.get(Proto.TARGET_IDENTITY_VERSION), response.get(Proto.PKG), response.get(Proto.TARGET_UID)))
-@@ -165,6 +314,29 @@ class BackgroundDisplay internal constructor(
+@@ -165,6 +322,29 @@ class BackgroundDisplay internal constructor(
              throw e
          }
          requireObservation(response.getBoolean(Proto.OK), response.getString(Proto.ERROR), response.getString(Proto.ERROR_DETAIL))
@@ -4756,7 +4764,7 @@ index bc1810a3..52bd1e05 100644
          val shown = shownApp(response) ?: return emptySnapshot(response)
          // Local OCR follows the app actually read, under that app's own permission.
          val local = if (requestLocalText) readLocalText(response, shown, ocrEpoch, started) else null
-@@ -345,7 +517,7 @@ class BackgroundDisplay internal constructor(
+@@ -345,7 +525,7 @@ class BackgroundDisplay internal constructor(
          val peer = resourceIo.peer()
          if (step.relation != relation || target == null || peer == null || !navigationSupported ||
              target.packageName != step.app.packageName || target.uid != step.app.uid || !existingReplayTarget(target))
@@ -4765,7 +4773,7 @@ index bc1810a3..52bd1e05 100644
          val request = navigationRequest(step, null)
          val parsed = checkNotNull(BackgroundNavigationProtocol.request(request.keySet(), request::get))
          val response = dispatch({ navigationCurrent(target, peer) }) {
-@@ -449,10 +621,10 @@ class BackgroundDisplay internal constructor(
+@@ -449,10 +629,10 @@ class BackgroundDisplay internal constructor(
          val started = if (afterVisualSupported) SystemClock.uptimeMillis() else 0L
          val epoch = localOcr?.enabledEpoch()
          // l10n:keep agent screen protocol
@@ -4778,7 +4786,7 @@ index bc1810a3..52bd1e05 100644
          }
          // Explicit element ids are checked by PhoneCore before perform; collect owns its internal scrolls.
          if (action is PhoneAction.Scroll && action.elementId == null && action.screenId != lastScreenId) {
-@@ -502,7 +674,150 @@ class BackgroundDisplay internal constructor(
+@@ -502,7 +682,150 @@ class BackgroundDisplay internal constructor(
              dispatch(allowed) { OwnerScopeProtocol.execute(channel(), ownerToken, request, it) }
          } catch (error: Exception) { clearSnapshot(); throw error }
              ?: return ActionResult(false, PhoneTasks.STOPPED_MESSAGE)
@@ -4930,7 +4938,7 @@ index bc1810a3..52bd1e05 100644
      }
  
      /**
-@@ -528,7 +843,7 @@ class BackgroundDisplay internal constructor(
+@@ -528,7 +851,7 @@ class BackgroundDisplay internal constructor(
          if (!coordinateEpochCurrent()) return ActionResult(false, Reasons.of("staleSnapshot"), staleSnapshot = true)
          val image = coordinateImage.take(action.screenId)
              // l10n:keep agent coordinate protocol
@@ -4939,7 +4947,7 @@ index bc1810a3..52bd1e05 100644
          val gesture = action.gesture.name.lowercase()
          val points = BackgroundCoordinateRequest(image.nonce, gesture, action.x, action.y, action.x2, action.y2, action.durationMs.toInt())
          // l10n:keep agent coordinate protocol
-@@ -573,8 +888,44 @@ class BackgroundDisplay internal constructor(
+@@ -573,8 +896,44 @@ class BackgroundDisplay internal constructor(
  
      override fun foregroundPackage(): String? = currentTarget?.packageName
  
@@ -4984,7 +4992,7 @@ index bc1810a3..52bd1e05 100644
          val acknowledged = try {
              resourceIo.release { pinned -> OwnerScopeProtocol.release(pinned, ownerToken) }
          } catch (_: Exception) { false }
-@@ -659,7 +1010,7 @@ class BackgroundDisplay internal constructor(
+@@ -659,7 +1018,7 @@ class BackgroundDisplay internal constructor(
              clearSnapshot()
              val now = response.getString(Proto.FG_PKG)
              // l10n:keep agent target identity
@@ -4993,7 +5001,7 @@ index bc1810a3..52bd1e05 100644
              return ActionResult(false, Reasons.withDetail(message, detail), staleSnapshot = true)
          }
          if (!ok) clearSnapshot()
-@@ -693,13 +1044,13 @@ class BackgroundDisplay internal constructor(
+@@ -693,13 +1052,13 @@ class BackgroundDisplay internal constructor(
          if (response.getBoolean(Proto.SECURE)) {
              lastScreenId = id; lastElements = emptyList(); previousLabels = emptySet()
              // l10n:keep agent screen protocol
@@ -5009,7 +5017,7 @@ index bc1810a3..52bd1e05 100644
              return@commitObservation ScreenSnapshot(id, text, appLabel, pkg, secure = false, poorTree = true, readPackages = setOf(pkg))
          }
          val elements = buildElements(response, markNew)
-@@ -732,7 +1083,7 @@ class BackgroundDisplay internal constructor(
+@@ -732,7 +1091,7 @@ class BackgroundDisplay internal constructor(
              text += "\n截图坐标范围：${coordinate.width}×${coordinate.height}像素；30秒内可单次使用；只有明确普通目标可使用独立的本任务视觉许可，未知目标及长按/滑动仍逐次确认。未证明画布没有敏感内容或目标像素未变。"
          } else if (image != null && coordinateSupported) {
              // l10n:keep agent coordinate protocol
@@ -5018,7 +5026,7 @@ index bc1810a3..52bd1e05 100644
          }
          if (localText != null) text += "\n" + localText.text
          val shownImage = image.takeIf { publishImage }
-@@ -789,14 +1140,14 @@ class BackgroundDisplay internal constructor(
+@@ -789,14 +1148,14 @@ class BackgroundDisplay internal constructor(
          if (opened.packageName == shown.packageName) return ""
          val name = appLabel?.let { "「$it」（${shown.packageName}）" } ?: shown.packageName
          // l10n:keep agent target identity
@@ -5035,7 +5043,7 @@ index bc1810a3..52bd1e05 100644
          // l10n:keep agent target identity
          "closed" -> "；${openedTarget?.packageName} 已经退出，需要时重新打开"
          else -> ""
-@@ -810,7 +1161,7 @@ class BackgroundDisplay internal constructor(
+@@ -810,7 +1169,7 @@ class BackgroundDisplay internal constructor(
          val id = "b${++counter}"
          lastScreenId = id; lastElements = emptyList(); previousLabels = emptySet()
          // l10n:keep agent target identity
@@ -5044,7 +5052,7 @@ index bc1810a3..52bd1e05 100644
              // l10n:keep agent target identity
              "。可以用 open 重新打开应用。", null, null)
      }
-@@ -821,7 +1172,7 @@ class BackgroundDisplay internal constructor(
+@@ -821,7 +1180,7 @@ class BackgroundDisplay internal constructor(
          val id = "b${++counter}"
          lastScreenId = id; lastElements = emptyList()
          // l10n:keep agent screen protocol
@@ -9102,7 +9110,7 @@ index 00000000..be9ee1f7
 +}
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenOverlay.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenOverlay.kt
 new file mode 100644
-index 00000000..be79015a
+index 00000000..508a0b52
 --- /dev/null
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenOverlay.kt
 @@ -0,0 +1,2912 @@
@@ -9599,7 +9607,7 @@ index 00000000..be79015a
 +        // 以前交回去之后，点条回来要重新挂一次，真机实测 1.85~1.9 秒
 +        // （19:02:08 / 19:02:32 / 19:02:47 / 21:40:55 / 07:37:52 / 12:22:59 每次都是）。
 +        // 现在反过来：确保 app reader 在跑，屏还在合成、帧继续来，点条 0.05~0.1 秒出画面。
-+        if (!appReaderActive) {
++        if (!appReaderActive && !appReaderStarting) {
 +            val app = context
 +            if (app != null) {
 +                runCatching { startAppReader(app, ++surfaceGen) }
