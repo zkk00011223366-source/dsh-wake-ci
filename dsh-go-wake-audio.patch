@@ -1,6 +1,6 @@
 From: dsh <dsh@local>
-Date: Thu, 26 Nov 2026 02:36:18 +0800
-Subject: [PATCH] 4o2-4os 一体两态/判定瘦身/自愈闭环/形态归位/AI键通话
+Date: Thu, 26 Nov 2026 03:03:38 +0800
+Subject: [PATCH] 4o2-4ot 一体两态/判定瘦身/自愈闭环(换会话)/形态归位/AI键通话
 
  .gitattributes                                     |    3 +
  .github/workflows/wake-apk.yml                     |  192 ++
@@ -27,7 +27,7 @@ Subject: [PATCH] 4o2-4os 一体两态/判定瘦身/自愈闭环/形态归位/AI�
  .../dsh_app/phone/a11y/ControlOverlay.kt           |   11 +-
  .../dsh_app/phone/a11y/PhoneA11yService.kt         |   20 +
  .../dsh_app/phone/background/AdbFramedSession.kt   |    5 +
- .../dsh_app/phone/background/BackgroundControl.kt  |  272 +-
+ .../dsh_app/phone/background/BackgroundControl.kt  |  276 +-
  .../phone/background/BackgroundCoordinates.kt      |    2 +
  .../dsh_app/phone/background/BackgroundDisplay.kt  |  422 ++-
  .../phone/background/BackgroundDisplayIo.kt        |   10 +-
@@ -239,7 +239,7 @@ Subject: [PATCH] 4o2-4os 一体两态/判定瘦身/自愈闭环/形态归位/AI�
  docs/wake-word.md                                  |  107 +
  dsh-go-wake.patch                                  | 2065 ++++++++++++++
  tooling/build-wake-apk.sh                          |   68 +
- 237 files changed, 18381 insertions(+), 989 deletions(-)
+ 237 files changed, 18385 insertions(+), 989 deletions(-)
 
 diff --git a/.gitattributes b/.gitattributes
 index 52e3e08a..3e877c7e 100644
@@ -4159,7 +4159,7 @@ index bebe269d..181201c9 100644
  
      fun exchange(request: ByteArray): ByteArray? = synchronized(lock) {
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/BackgroundControl.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/BackgroundControl.kt
-index 79cae468..f08fa2a3 100644
+index 79cae468..6f4cdb07 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/BackgroundControl.kt
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/BackgroundControl.kt
 @@ -13,6 +13,8 @@ import android.net.Network
@@ -4326,7 +4326,7 @@ index 79cae468..f08fa2a3 100644
              "shizuku" to shizukuStatus.map(),
              "adb" to adbStatus.map(),
              "root" to rootStatus.map(),
-@@ -699,10 +833,83 @@ class BackgroundControl private constructor(context: Context) {
+@@ -699,10 +833,87 @@ class BackgroundControl private constructor(context: Context) {
                        admitOwner: ((() -> Unit) -> Boolean)): BackgroundDisplay? {
          fun current() = currentOwner() && !Thread.currentThread().isInterrupted
          if (mode == "off" || !androidOk()) return null
@@ -4371,6 +4371,10 @@ index 79cae468..f08fa2a3 100644
 +            }.getOrDefault(false)
 +            if (!released) runCatching { discardPeer(bound.peer) }
 +            runCatching { bound.driver.seal() }
++            // 【4ot】释放会作废服务端这个 owner 的身份（OwnerScopes 记 completed），
++            // 同会话再用同 owner 敲门必被拒 identityChanged（真机 03:02 死循环）。
++            // 自愈 = 换一个全新会话：作废旧 owner，重建用新身份，host 重新受理。
++            runCatching { VscreenSession.end() }
 +            synchronized(this) {
 +                synchronized(keepGuard) {
 +                    runCatching { taskResource.complete(bound) }
@@ -4410,7 +4414,7 @@ index 79cae468..f08fa2a3 100644
                  if (selectingResource || restoring?.isDone == false || selectionChange != null) return null
                  keep.selectionTicket()
              }
-@@ -722,7 +929,7 @@ class BackgroundControl private constructor(context: Context) {
+@@ -722,7 +933,7 @@ class BackgroundControl private constructor(context: Context) {
                          channelProvider = { peer },
                          mayUse = { currentOwner() && !interruptRequested },
                          admitUse = { action -> admitOwner { check(!interruptRequested); action() } },
@@ -4419,7 +4423,7 @@ index 79cae468..f08fa2a3 100644
                          localOcr = ocr,
                          localOcrAllowed = { target -> localOcrAllowed(target) },
                          onResourceReady = { publishPreviewTarget(record, it) },
-@@ -732,11 +939,22 @@ class BackgroundControl private constructor(context: Context) {
+@@ -732,11 +943,22 @@ class BackgroundControl private constructor(context: Context) {
              }
          }
          notifyChanged()
@@ -4442,7 +4446,7 @@ index 79cae468..f08fa2a3 100644
          var changed = false
          synchronized(this) {
              for (record in taskResource.seal(expectedTaskId)) {
-@@ -753,6 +971,18 @@ class BackgroundControl private constructor(context: Context) {
+@@ -753,6 +975,18 @@ class BackgroundControl private constructor(context: Context) {
       * and every later task) waiting on a receipt that may never come.
       */
      fun endTask(expectedTaskId: Long? = null) {
@@ -4461,7 +4465,7 @@ index 79cae468..f08fa2a3 100644
          var previewChanged = false
          val captured = synchronized(this) {
              taskResource.seal(expectedTaskId).onEach {
-@@ -762,6 +992,19 @@ class BackgroundControl private constructor(context: Context) {
+@@ -762,6 +996,19 @@ class BackgroundControl private constructor(context: Context) {
          }
          if (previewChanged) onPreviewChanged()
          for (record in captured) {
@@ -4481,7 +4485,7 @@ index 79cae468..f08fa2a3 100644
              if (!record.driver.release()) discardPeer(record.peer)
              taskResource.complete(record)
          }
-@@ -942,6 +1185,31 @@ class BackgroundControl private constructor(context: Context) {
+@@ -942,6 +1189,31 @@ class BackgroundControl private constructor(context: Context) {
      } catch (_: InterruptedException) { Thread.currentThread().interrupt(); false }
      catch (_: Exception) { false }
  
