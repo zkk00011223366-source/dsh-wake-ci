@@ -1,12 +1,12 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: ci <ci@local>
-Date: Wed, 25 Nov 2026 14:56:56 +0800
+Date: Wed, 25 Nov 2026 16:35:45 +0800
 Subject: [PATCH] b: scene4n
 MIME-Version: 1.0
 Content-Type: text/plain; charset=UTF-8
 Content-Transfer-Encoding: 8bit
 
-4n: 修复全量 + 品牌 + 手势收条(fling)+条跟随窗口位置+通话入口改写
+4n: 全量修复 + 品牌 + 通话球式收条 + 条跟随窗口 + 通话入口改写
 
 ---
  .gitattributes                                     |    3 +
@@ -66,7 +66,7 @@ Content-Transfer-Encoding: 8bit
  .../dsh_app/phone/vscreen/PresentationHost.kt      |   69 +
  .../ccch1mneyyy/dsh_app/phone/vscreen/TaskMover.kt |  152 ++
  .../dsh_app/phone/vscreen/TransferBall.kt          |  519 ++++
- .../dsh_app/phone/vscreen/VirtualScreenOverlay.kt  | 2881 ++++++++++++++++++++
+ .../dsh_app/phone/vscreen/VirtualScreenOverlay.kt  | 2877 ++++++++++++++++++++
  .../dsh_app/phone/vscreen/VirtualScreenPlugin.kt   |  238 ++
  .../ccch1mneyyy/dsh_app/phone/vscreen/VscreenUi.kt |  166 ++
  .../ccch1mneyyy/dsh_app/runtime/GuestSetup.kt      |   47 +-
@@ -247,7 +247,7 @@ Content-Transfer-Encoding: 8bit
  docs/wake-word.md                                  |  107 +
  dsh-go-wake.patch                                  | 2065 ++++++++++++++
  tooling/build-wake-apk.sh                          |   68 +
- 238 files changed, 18715 insertions(+), 982 deletions(-)
+ 238 files changed, 18711 insertions(+), 982 deletions(-)
 
 diff --git a/.gitattributes b/.gitattributes
 index 52e3e08a..3e877c7e 100644
@@ -8995,10 +8995,10 @@ index 00000000..c4b91396
 +}
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenOverlay.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenOverlay.kt
 new file mode 100644
-index 00000000..9b9fbc95
+index 00000000..be3f34a2
 --- /dev/null
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenOverlay.kt
-@@ -0,0 +1,2881 @@
+@@ -0,0 +1,2877 @@
 +package io.github.ccch1mneyyy.dsh_app.phone.vscreen
 +
 +import io.github.ccch1mneyyy.dsh_app.phone.PhoneRegistry
@@ -11701,15 +11701,13 @@ index 00000000..9b9fbc95
 +                    }
 +                    val manual = manualAllowed(context) && shape == Shape.EXPAND
 +                    if (dragging && windowGrab) {
-+                        // 【4o】手势收条：贴边状态下**快速外甩**（≥1200px/s）→ 收成贴边条
-+                        // （等同 👁：任务照跑、应用保留）。慢拖不触发——用户要把窗口
-+                        // 从贴边拖出来时也是先往外滑，慢拖必须照常拖出（真机 14:30 连续
-+                        // 4 次正常拖动被误收）。
-+                        val outFling = startedParked &&
-+                            ((dock.side == Side.LEFT && vx < -EdgeSnap.FLING_PX_PER_S) ||
-+                                (dock.side == Side.RIGHT && vx > EdgeSnap.FLING_PX_PER_S))
-+                        if (outFling) {
-+                            WakeTrace.log("window: edge out-fling -> hide to sliver")
++                        // 【4o】照通话悬浮球机制：窗口拖动松手时**位置贴边或甩到边** → 收条
++                        // （等同 👁：任务照跑、应用保留）。不贴边就照常吸边停靠。
++                        val flung = abs(vx) >= EdgeSnap.FLING_PX_PER_S
++                        val nearEdge = lp.x <= EdgeSnap.minX(area, margin) + (12 * px).roundToInt() ||
++                            lp.x >= EdgeSnap.maxX(area, lp.width, margin) - (12 * px).roundToInt()
++                        if (flung || nearEdge) {
++                            WakeTrace.log("window: parked at edge -> hide to sliver")
 +                            hideWindowOnly()
 +                        } else {
 +                            park()
@@ -11815,15 +11813,13 @@ index 00000000..9b9fbc95
 +                    }
 +                    val manual = manualAllowed(context) && shape == Shape.EXPAND
 +                    if (dragging && windowGrab) {
-+                        // 【4o】手势收条：贴边状态下**快速外甩**（≥1200px/s）→ 收成贴边条
-+                        // （等同 👁：任务照跑、应用保留）。慢拖不触发——用户要把窗口
-+                        // 从贴边拖出来时也是先往外滑，慢拖必须照常拖出（真机 14:30 连续
-+                        // 4 次正常拖动被误收）。
-+                        val outFling = startedParked &&
-+                            ((dock.side == Side.LEFT && vx < -EdgeSnap.FLING_PX_PER_S) ||
-+                                (dock.side == Side.RIGHT && vx > EdgeSnap.FLING_PX_PER_S))
-+                        if (outFling) {
-+                            WakeTrace.log("window: edge out-fling -> hide to sliver")
++                        // 【4o】照通话悬浮球机制：窗口拖动松手时**位置贴边或甩到边** → 收条
++                        // （等同 👁：任务照跑、应用保留）。不贴边就照常吸边停靠。
++                        val flung = abs(vx) >= EdgeSnap.FLING_PX_PER_S
++                        val nearEdge = lp.x <= EdgeSnap.minX(area, margin) + (12 * px).roundToInt() ||
++                            lp.x >= EdgeSnap.maxX(area, lp.width, margin) - (12 * px).roundToInt()
++                        if (flung || nearEdge) {
++                            WakeTrace.log("window: parked at edge -> hide to sliver")
 +                            hideWindowOnly()
 +                        } else {
 +                            park()
