@@ -1,7 +1,7 @@
 == resources ==
 /dev/root       145G   54G   91G  38% /
                total        used        free      shared  buff/cache   available
-Mem:           15983        6273         245          49        9859        9709
+Mem:           15983        6090         890          49        9396        9892
 == tail ==
 
 ==> 依赖: flutter pub get
@@ -198,3 +198,5 @@ an issue against a plugin: https://docs.flutter.dev/release/breaking-changes/mig
 
 If you are a plugin author, please migrate your plugin to Built-in Kotlin using this guide: https://docs.flutter.dev/release/breaking-changes/migrate-to-built-in-kotlin/for-plugin-authors
 Flutter assets will be downloaded from https://storage.googleapis.com. Make sure you trust this source!
+Font asset "DshIcons.ttf" was tree-shaken, reducing it from 53796 to 50204 bytes (6.7% reduction). Tree-shaking can be disabled by providing the --no-tree-shake-icons flag when building your app.
+Font asset "MaterialIcons-Regular.otf" was tree-shaken, reducing it from 1645184 to 3924 bytes (99.8% reduction). Tree-shaking can be disabled by providing the --no-tree-shake-icons flag when building your app.
