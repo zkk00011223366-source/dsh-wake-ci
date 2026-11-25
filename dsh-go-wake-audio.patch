@@ -1,6 +1,6 @@
 From: dsh <dsh@local>
-Date: Wed, 25 Nov 2026 22:51:42 +0800
-Subject: [PATCH] 4o2-4o7 点条唤窗帧流/收起态互斥/外滑上锁/真探活/账本不覆盖
+Date: Wed, 25 Nov 2026 23:41:10 +0800
+Subject: [PATCH] 4o2-4o9 保活收窗/点条唤窗帧流/真探活/账本不覆盖
 
  .gitattributes                                     |    3 +
  .github/workflows/wake-apk.yml                     |  192 ++
@@ -60,7 +60,7 @@ Subject: [PATCH] 4o2-4o7 点条唤窗帧流/收起态互斥/外滑上锁/真探�
  .../ccch1mneyyy/dsh_app/phone/vscreen/TaskMover.kt |  152 +
  .../dsh_app/phone/vscreen/TransferBall.kt          |  541 ++++
  .../dsh_app/phone/vscreen/VirtualScreenOverlay.kt  | 2928 ++++++++++++++++++++
- .../dsh_app/phone/vscreen/VirtualScreenPlugin.kt   |  238 ++
+ .../dsh_app/phone/vscreen/VirtualScreenPlugin.kt   |  243 ++
  .../ccch1mneyyy/dsh_app/phone/vscreen/VscreenUi.kt |  181 ++
  .../ccch1mneyyy/dsh_app/runtime/GuestSetup.kt      |   47 +-
  .../ccch1mneyyy/dsh_app/shortcuts/EntryActivity.kt |    3 +
@@ -240,7 +240,7 @@ Subject: [PATCH] 4o2-4o7 点条唤窗帧流/收起态互斥/外滑上锁/真探�
  docs/wake-word.md                                  |  107 +
  dsh-go-wake.patch                                  | 2065 ++++++++++++++
  tooling/build-wake-apk.sh                          |   68 +
- 238 files changed, 18887 insertions(+), 987 deletions(-)
+ 238 files changed, 18892 insertions(+), 987 deletions(-)
 
 diff --git a/.gitattributes b/.gitattributes
 index 52e3e08a..3e877c7e 100644
@@ -12069,10 +12069,10 @@ index 00000000..bbef6099
 +}
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenPlugin.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenPlugin.kt
 new file mode 100644
-index 00000000..08e4ec4d
+index 00000000..227d4d3f
 --- /dev/null
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenPlugin.kt
-@@ -0,0 +1,238 @@
+@@ -0,0 +1,243 @@
 +package io.github.ccch1mneyyy.dsh_app.phone.vscreen
 +
 +import android.content.Context
@@ -12248,7 +12248,12 @@ index 00000000..08e4ec4d
 +                result.success(true)
 +            }
 +            "hide" -> {
-+                VirtualScreenOverlay.hide()
++                // 【4o9】Dart 关窗统一走保活收窗（视图常驻、只置透明），不再走 hide() 完整拆窗。
++                // 真机 23:22：👁 收窗后判定采纳 ball2 → Dart close() 走 hide() 把 root 置空，
++                // 下次点条只能重建（+0.4 秒），连续两次 show 双挂载还把帧流杀了
++                // （`aborted stale gen=29 cur=31` → 窗口再无帧 → 条窗全消失）。
++                // 完整拆窗只属于 ✕/⇄（native endTask/moveTask），不走 Dart 这条。
++                VirtualScreenOverlay.hideWindowOnly(announce = false)
 +                // 【4w】收窗 ≠ 把应用搬回主屏。
 +                // 需求：👁 = 先不看了，应用继续在虚拟屏里跑，边上留黄条；只有【✕】才
 +                // "清应用 + 释放屏"（那条链在 VirtualScreenOverlay.endTask()，自己会 handBackToMain）。
