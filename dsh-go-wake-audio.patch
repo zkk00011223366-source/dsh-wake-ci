@@ -1,10 +1,10 @@
 From: dsh <dsh@local>
-Date: Thu, 26 Nov 2026 19:09:01 +0800
-Subject: [PATCH] 4oz-wx-doc 微信说明统一
+Date: Thu, 26 Nov 2026 19:42:38 +0800
+Subject: [PATCH] 4oz-keep-early
 
  dsh-go-wake.patch                                  | 2065 +++++++++++++
  tooling/build-wake-apk.sh                          |   68 +
- 240 files changed, 18899 insertions(+), 1009 deletions(-)
+ 240 files changed, 18906 insertions(+), 1009 deletions(-)
 
 diff --git a/.gitattributes b/.gitattributes
 index 52e3e08a..3e877c7e 100644
@@ -1848,7 +1848,7 @@ index 2fc7cd59..1931b87c 100644
  
      override fun notifyFix(kind: String) = notifyFixFor(tasks, kind)
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneCore.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneCore.kt
-index 6c701851..a6e93689 100644
+index 6c701851..28ce380e 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneCore.kt
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneCore.kt
 @@ -1,9 +1,12 @@
@@ -2080,7 +2080,7 @@ index 6c701851..a6e93689 100644
              confirmSystem(plan, scope, owner, summary)?.let { return it }
              val ticket = skillTrace.beginOpen(owner, PhoneScreen.MAIN)
              val result = try {
-@@ -556,50 +631,298 @@ class PhoneCore(
+@@ -556,50 +631,305 @@ class PhoneCore(
                      skillTrace.finish(ticket, it.ok, false, false)
                  }
              } catch (e: Throwable) { skillTrace.fail(ticket); throw e }
@@ -2318,6 +2318,13 @@ index 6c701851..a6e93689 100644
 +            return r ?: ActionResult(false, "虚拟屏 ${took / 1000} 秒没有回包（通道可能卡住），请重试或重启 App")
 +        }
 +        var r = doOpen(driver)
++        if (r.ok) {
++            // 【4oz-keep-early】保屏旗标提前到 open 成功时置位：任务结束收尾（引擎 end 回调）跑得
++            // 比自然结束置位快，曾在"旗标未置"窗口里 seal 驱动并释放屏（真机 19:33 发消息中
++            // 屏被收、微信搬主屏、通道身份作废、后续全链卡死）。从打开那一刻就声明"这屏要留着"，
++            // 任何结束路径都动不了它；✕/⇄ 仍先清旗标再走真释放，不受影响。
++            io.github.ccch1mneyyy.dsh_app.phone.PhoneRegistry.vscreenKeepAfterTask = true
++        }
 +        if (!r.ok) {
 +            // 【4ou】通用自愈：不管什么原因打不开（屏没了、通道断、身份作废、名额满），
 +            // 全量重置（新身份+清账+断旧通道）后拿新驱动重试一次。失败原因与自愈动作解耦。
@@ -2390,7 +2397,7 @@ index 6c701851..a6e93689 100644
      }
  
      /** The handler is a dispatch fact. Only the following read describes the actual foreground UI. */
-@@ -816,8 +1139,210 @@ class PhoneCore(
+@@ -816,8 +1146,210 @@ class PhoneCore(
          return Either.Right(d)
      }
  
@@ -2601,7 +2608,7 @@ index 6c701851..a6e93689 100644
      /** Admission uses the same argument coercion and routing as the actual tool body. */
      fun requiredScreens(name: String, args: Map<String, Any?>): Either<String, List<PhoneScreen>> {
          return requiredScreens(name, Args(args))
-@@ -825,10 +1350,11 @@ class PhoneCore(
+@@ -825,10 +1357,11 @@ class PhoneCore(
  
      private fun requiredScreens(name: String, a: Args): Either<String, List<PhoneScreen>> {
          return when (name) {
@@ -2616,7 +2623,7 @@ index 6c701851..a6e93689 100644
              // Arbitrary system commands take the main/global unknown-app lease, without reading a screen.
              PhoneToolCatalog.INTENT, PhoneToolCatalog.ANDROID_SHELL -> Either.Right(listOf(PhoneScreen.MAIN))
              PhoneToolCatalog.HANDOFF -> Either.Right(if (lastScreen == PhoneScreen.BACKGROUND)
-@@ -852,7 +1378,7 @@ class PhoneCore(
+@@ -852,7 +1385,7 @@ class PhoneCore(
          if (id == null) return Either.Left("缺少 $parameterName（屏幕号，如 s7）。先调用 screen 拿到屏幕号。")
          return PhoneScreen.ofScreenId(id)?.let { Either.Right(it) }
              // l10n:keep agent tool result
@@ -2625,7 +2632,7 @@ index 6c701851..a6e93689 100644
      }
  
      private fun locked(summary: String) =
-@@ -871,21 +1397,29 @@ class PhoneCore(
+@@ -871,21 +1404,29 @@ class PhoneCore(
  
      private fun screen(a: Args, owner: PhoneTasks.Owner): Out {
          if (!current(owner)) return stoppedOut("screen")
@@ -2661,7 +2668,7 @@ index 6c701851..a6e93689 100644
          return Out(
              // l10n:keep agent tool result
              if (refused) "没有读取这个屏幕的内容。" else "",
-@@ -897,6 +1431,40 @@ class PhoneCore(
+@@ -897,6 +1438,40 @@ class PhoneCore(
          )
      }
  
@@ -2702,7 +2709,7 @@ index 6c701851..a6e93689 100644
      private fun collect(a: Args, owner: PhoneTasks.Owner): Out {
          if (!current(owner)) return stoppedOut("collect")
          val sid = a.str("screen")
-@@ -1270,8 +1838,12 @@ class PhoneCore(
+@@ -1270,8 +1845,12 @@ class PhoneCore(
              "home" -> PhoneAction.GlobalKey.HOME
              "recents" -> PhoneAction.GlobalKey.RECENTS
              "notifications" -> PhoneAction.GlobalKey.NOTIFICATIONS
@@ -2716,7 +2723,7 @@ index 6c701851..a6e93689 100644
          }
          val sid = a.str("screen")
          val which = if (sid == null) {
-@@ -1288,12 +1860,21 @@ class PhoneCore(
+@@ -1288,12 +1867,21 @@ class PhoneCore(
              is Either.Right -> d.value
          }
          if (env.isLocked()) return locked(summary)
@@ -2738,7 +2745,7 @@ index 6c701851..a6e93689 100644
          }))
          if (!current(owner)) return stoppedOut(summary)
          val action = PhoneAction.Key(sid ?: "${which.prefix}0", key)
-@@ -1314,6 +1895,22 @@ class PhoneCore(
+@@ -1314,6 +1902,22 @@ class PhoneCore(
          } catch (e: Throwable) { skillTrace.fail(ticket); throw e }
      }
  
@@ -2761,7 +2768,7 @@ index 6c701851..a6e93689 100644
      private fun handoff(a: Args, scope: SerialWorker.Scope, owner: PhoneTasks.Owner): Out {
          if (!current(owner)) return stoppedOut("handoff")
          // l10n:keep agent tool result
-@@ -1362,6 +1959,7 @@ class PhoneCore(
+@@ -1362,6 +1966,7 @@ class PhoneCore(
          summary = summary, decision = "stopped")
  
      companion object {
@@ -2769,7 +2776,7 @@ index 6c701851..a6e93689 100644
          internal const val REPLAY = "replay"
          internal const val FOCUS_TEXT = "focus_text"
  
-@@ -1370,6 +1968,9 @@ class PhoneCore(
+@@ -1370,6 +1975,9 @@ class PhoneCore(
          const val PAUSE_WAIT_MS = 600_000L
          const val HANDOFF_MS = 600_000L
  
