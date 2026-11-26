@@ -1,7 +1,7 @@
 == resources ==
-/dev/mapper/cow-root  145G   51G   94G  36% /
+/dev/mapper/cow-root  145G   52G   93G  36% /
                total        used        free      shared  buff/cache   available
-Mem:           15700        7336         268          49        8479        8364
+Mem:           15700        7161         406          50        8516        8538
 == tail ==
 
 ==> 依赖: flutter pub get
@@ -164,3 +164,5 @@ Note: Some input files use or override a deprecated API.
 Note: Recompile with -Xlint:deprecation for details.
 Note: Some input files use unchecked or unsafe operations.
 Note: Recompile with -Xlint:unchecked for details.
+Running Gradle task 'assembleArm64Release'...                     634.8s
+✓ Built build/app/outputs/flutter-apk/app-arm64-release.apk (236.3MB)
