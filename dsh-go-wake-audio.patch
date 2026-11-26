@@ -1,6 +1,6 @@
 From: dsh <dsh@local>
-Date: Thu, 26 Nov 2026 19:42:38 +0800
-Subject: [PATCH] 4oz-keep-early
+Date: Thu, 26 Nov 2026 20:54:30 +0800
+Subject: [PATCH] 自绘窗口现象判断说明
 
  dsh-go-wake.patch                                  | 2065 +++++++++++++
  tooling/build-wake-apk.sh                          |   68 +
@@ -3689,7 +3689,7 @@ index a09015e7..b9c4bf15 100644
          /** No confirmation surface is reachable, so this one action did not run. */
          // l10n:keep agent no-gate protocol
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneToolCatalog.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneToolCatalog.kt
-index cbfb0de3..9dc3e644 100644
+index cbfb0de3..ea4429f0 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneToolCatalog.kt
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneToolCatalog.kt
 @@ -22,8 +22,10 @@ object PhoneToolCatalog {
@@ -3778,7 +3778,7 @@ index cbfb0de3..9dc3e644 100644
              TYPE,
              // l10n:keep agent tool catalog
 -            "在输入框输入文字（替换原内容），返回回读和新屏幕。submit:true 后按回车 / 发送，要确认。密码、验证码、支付框默认拒绝，被拒绝就 handoff。",
-+            "在输入框输入文字（替换原内容），返回回读和新屏幕。submit:true 后按回车 / 发送，要确认。密码、验证码、支付框默认拒绝，被拒绝就 handoff。微信输入框是自绘控件：不认直接注入、无障碍树恒 0 项（读不到字是正常的，别反复读屏找文字）。正解是 key 工具固定连招：写剪贴板 → 点输入框 → paste →（框里有旧字先 selectAll+delete）→ 截图核对文字进了框 → 点发送按钮。别长按出菜单、别换着法乱试。"
++            "在输入框输入文字（替换原内容），返回回读和新屏幕。submit:true 后按回车 / 发送，要确认。密码、验证码、支付框默认拒绝，被拒绝就 handoff。微信、QQ、TIM 等自绘输入窗口不认直接注入（读屏 0 项、注入不进字都正常）：这类应用不用本工具，按 key 工具说明里的自绘窗口机理走（剪贴板 + selectAll/delete + paste 按键注入）。"
 +                + "**虚拟屏里点输入框不会弹软键盘，属正常现象**：键盘不跟虚拟屏，输入框仍能获得焦点。"
 +                + "发消息/填表的标准做法=点一下输入框（拿焦点）→ 直接 type 文字 → 点发送；"
 +                + "不要因为键盘没弹出就判定失败或反复点击输入框。",
@@ -3790,7 +3790,7 @@ index cbfb0de3..9dc3e644 100644
              KEY,
              // l10n:keep agent tool catalog
 -            "按系统键（back / home / recents / notifications），返回新屏幕。",
-+            "按系统键（back / home / recents / notifications），返回新屏幕。虚拟屏（screen 用 b）额外支持 paste（粘贴剪贴板到焦点输入框）、enter（回车；微信输入框里 enter 是换行，发送点发送按钮）、selectAll（全选焦点框文字）。微信输入框已有旧文字需要换内容时，固定连招：selectAll → delete → paste → 截图核对 → 点发送按钮，别用其他方法乱试。微信界面无障碍树恒 0 项是正常的，不要反复读屏找文字，按连招执行即可。",
++            "按系统键（back / home / recents / notifications），返回新屏幕。虚拟屏（screen 用 b）额外支持 paste（粘贴剪贴板到焦点输入框）、enter（回车）、selectAll（全选焦点框文字）。【自绘输入窗口：先按现象判断，别背名单】有些应用的输入框是应用自己画的、不交给系统（自绘控件），三个识别现象：①读屏 0 项（读不到文字节点是正常的，别反复读屏）；②把文字直接注入输入框无效；③但它响应键盘按键。满足①②就是自绘窗口——例：微信 com.tencent.mm、QQ com.tencent.mobileqq、TIM com.tencent.tim（清单不全，名单外的应用出现①②现象同样按此处理）。正解是按键注入：剪贴板放好文字 → 点输入框 → selectAll+delete 清旧字 → paste（等于按了 Ctrl+V，应用自己把剪贴板内容贴进去）→ 点发送按钮（这类应用里 enter 是换行不是发送）。名单内应用打开进入会话后直接按此开干，不先截图判断；发送后截一张图确认：输入框回到占位符=成功，直接结束；框里还有字=没发出，重试一次。长任务持续聊天：发完一轮后每隔约 5 秒截一张看对方有没有新消息（新气泡在我上一条之后），有新消息进下一轮，没有继续等，不狂截、不瞎点，直到用户叫停。",
              // l10n:keep agent tool catalog
              linkedMapOf("key" to enum(KEYS, "按键"), "screen" to str("屏幕号；省略时作用于主屏")),
              listOf("key"),
@@ -3799,7 +3799,7 @@ index cbfb0de3..9dc3e644 100644
              TAP_XY,
              // l10n:keep agent tool catalog
 -            "按本任务最近一次实际返回截图的像素坐标操作，只在元素里找不到目标时用。action 默认为 tap；long 长按；swipe 从 (x,y) 滑到 (x2,y2)。主屏用 s 号、后台屏用 b 号；截图超过 30 秒或上下文核对失败要重读。每张图只供一次坐标手势；需通过安全检查与所需用户确认，长按和滑动仍逐次确认。结果可报告画面变化，但不表示目标业务成功；结果未知或未变化先读屏，不自动重试。",
-+            "按本任务最近一次实际返回截图的像素坐标操作，只在元素里找不到目标时用。action 默认为 tap；long 长按；swipe 从 (x,y) 滑到 (x2,y2)。主屏用 s 号、虚拟屏用 b 号；截图超过 30 秒或上下文核对失败要重读。每张图只供一次坐标手势；需通过安全检查与所需用户确认，长按和滑动仍逐次确认。结果可报告画面变化，但不表示目标业务成功；结果未知或未变化先读屏，不自动重试。",
++            "按本任务最近一次实际返回截图的像素坐标操作，只在元素里找不到目标时用。action 默认为 tap；long 长按；swipe 从 (x,y) 滑到 (x2,y2)。主屏用 s 号、虚拟屏用 b 号；截图超过 30 秒或上下文核对失败要重读。每张图只供一次坐标手势；需通过安全检查与所需用户确认，长按和滑动仍逐次确认。结果可报告画面变化，但不表示目标业务成功；结果未知或未变化先读屏，不自动重试。微信等自绘窗口的发送按钮在输入框右下，坐标随输入框高度浮动（多行时上移）：默认单行位置约在屏宽的 0.93、屏高的 0.89 处；点了没反应就截一张图按实际位置点。",
              linkedMapOf(
                  // l10n:keep agent tool catalog
 -                "observation" to str("本任务最近一次实际返回截图的屏幕号（主屏 s 号或后台屏 b 号）"),
