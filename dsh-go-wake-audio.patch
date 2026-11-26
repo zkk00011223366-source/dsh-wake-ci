@@ -1,10 +1,10 @@
 From: dsh <dsh@local>
-Date: Thu, 26 Nov 2026 22:08:57 +0800
-Subject: [PATCH] 全量终版：技能管理+停等文案全链
+Date: Fri, 27 Nov 2026 00:27:24 +0800
+Subject: [PATCH] 读屏3秒超时冲刺+反思询问
 
  dsh-go-wake.patch                                  | 2065 +++++++++++++
  tooling/build-wake-apk.sh                          |   68 +
- 245 files changed, 19221 insertions(+), 1012 deletions(-)
+ 245 files changed, 19270 insertions(+), 1015 deletions(-)
 
 diff --git a/.gitattributes b/.gitattributes
 index 52e3e08a..3e877c7e 100644
@@ -1294,10 +1294,19 @@ index 00000000..175e47b7
 +    }
 +}
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneContracts.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneContracts.kt
-index 612f94d1..acb2322e 100644
+index 612f94d1..14755dc3 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneContracts.kt
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneContracts.kt
-@@ -102,7 +102,9 @@ sealed interface PhoneAction {
+@@ -45,6 +45,8 @@ data class ScreenSnapshot(
+     /** Optional numbered screenshot (same element ids drawn on it), PNG or JPEG bytes. */
+     val image: ByteArray? = null,
+     val imageMime: String? = null,
++    /** 【4oz-read-timeout】读屏等待 core 回包超时（3 秒）：挂起层直接返回，不再无限等。 */
++    val readTimedOut: Boolean = false,
+     /** Known root packages contributing to this local observation; not pixel/UID attestation. */
+     internal val readPackages: Set<String> = emptySet(),
+     /** Internal candidate for an INPUT retained in text; whole-screen refusals clear it. */
+@@ -102,7 +104,9 @@ sealed interface PhoneAction {
  
      enum class Direction { UP, DOWN, LEFT, RIGHT }
  
@@ -1308,7 +1317,7 @@ index 612f94d1..acb2322e 100644
  }
  
  data class ActionResult(
-@@ -220,6 +222,13 @@ interface PhoneDriver {
+@@ -220,6 +224,13 @@ interface PhoneDriver {
  
      /** Package of the app in front on this screen, if known (for per-app approval and deny lists). */
      fun foregroundPackage(): String?
@@ -1322,7 +1331,7 @@ index 612f94d1..acb2322e 100644
  }
  
  data class ConfirmRequest(
-@@ -346,13 +355,286 @@ interface ControlListener {
+@@ -346,13 +357,288 @@ interface ControlListener {
      fun onAccessibilityChanged(connected: Boolean) {}
  }
  
@@ -1519,6 +1528,8 @@ index 612f94d1..acb2322e 100644
 +    @Volatile var vscreenLastFrameAt: Long = 0L
 +    /** 【4ou-2】最近一次自愈全量重置的时刻：60 秒冷却，防 AI 重试与自愈互锯。 */
 +    @Volatile var vscreenSelfHealAt: Long = 0L
++    /** 【4oz-read-retry】本任务读屏失败次数（成功清零）：失败回包带此数，模型据此决定询问轮数与终极兜底。 */
++    @Volatile var vscreenReadFails: Int = 0
 +    /** 【4b】开屏成功即起帧通道的钩子（VirtualScreenOverlay.ensureAppReader）。 */
 +    @Volatile var vscreenEnsureReader: (() -> Unit)? = null
 +    /**
@@ -1848,7 +1859,7 @@ index 2fc7cd59..1931b87c 100644
  
      override fun notifyFix(kind: String) = notifyFixFor(tasks, kind)
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneCore.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneCore.kt
-index 6c701851..28ce380e 100644
+index 6c701851..04571a32 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneCore.kt
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneCore.kt
 @@ -1,9 +1,12 @@
@@ -2632,7 +2643,7 @@ index 6c701851..28ce380e 100644
      }
  
      private fun locked(summary: String) =
-@@ -871,21 +1404,29 @@ class PhoneCore(
+@@ -871,21 +1404,56 @@ class PhoneCore(
  
      private fun screen(a: Args, owner: PhoneTasks.Owner): Out {
          if (!current(owner)) return stoppedOut("screen")
@@ -2653,8 +2664,37 @@ index 6c701851..28ce380e 100644
 -        say(owner, if (which == PhoneScreen.BACKGROUND) ui.get("phone_reading_background", "DSH 正在看后台屏") else ui.get("phone_reading_screen", "DSH 正在看屏幕")) // l10n:keep test default
 +        say(owner, if (which == PhoneScreen.BACKGROUND) ui.get("phone_reading_background", "DSH 正在看虚拟屏") else ui.get("phone_reading_screen", "DSH 正在看屏幕")) // l10n:keep test default
          if (!current(owner)) return stoppedOut(summary)
-         val snap = driver.observe(detail = a.bool("detail") == true, image = a.strictBool("image") == true,
-             automaticImage = !a.provided("image"))
+-        val snap = driver.observe(detail = a.bool("detail") == true, image = a.strictBool("image") == true,
+-            automaticImage = !a.provided("image"))
++        // 【4oz-read-retry】读屏冲刺：最多 3 次。前两次读目标屏；第三次用主屏视角看（拿线索供分析），
++        // 操作仍落目标屏。全超时 → 带现场材料+反思引导回包，触发模型"反思-猜测-询问"，绝不无限等。
++        val detail = a.bool("detail") == true
++        val image = a.strictBool("image") == true
++        val autoImage = !a.provided("image")
++        var snap = driver.observe(detail = detail, image = image, automaticImage = autoImage)
++        var attempts = 1
++        if (snap.readTimedOut && which == PhoneScreen.BACKGROUND) {
++            snap = driver.observe(detail = detail, image = image, automaticImage = autoImage)
++            attempts = 2
++        }
++        if (snap.readTimedOut && which == PhoneScreen.BACKGROUND) {
++            val mainDriver = driverFor(PhoneScreen.MAIN, owner)
++            if (mainDriver is Either.Right) {
++                // 第三次：主屏视角只读一眼，拿线索；这次快照返回给模型做分析，操作仍回目标屏。
++                snap = mainDriver.value.observe(detail = detail, image = image, automaticImage = autoImage)
++                attempts = 3
++            }
++        }
++        if (snap.readTimedOut) {
++            val fails = io.github.ccch1mneyyy.dsh_app.phone.PhoneRegistry.vscreenReadFails + 1
++            io.github.ccch1mneyyy.dsh_app.phone.PhoneRegistry.vscreenReadFails = fails
++            return Out(
++                "读屏 $attempts 次尝试都超时（虚拟屏读不到画面）。这是本任务第 $fails 次读屏失败。" +
++                    "请反思可能的原因，形成 2-3 个猜测，用是/否问题向用户确认（例如：虚拟屏还开着吗？里面有画面吗？你手动点它能操作吗？）。" +
++                    "按用户答案定位后行动；若确认后仍无法解决，明确告诉用户无法完成这次任务并请手动接管（给两个选项：结束任务 / 手动接管）。",
++                error = true, summary = summary, decision = "read-timeout")
++        }
++        io.github.ccch1mneyyy.dsh_app.phone.PhoneRegistry.vscreenReadFails = 0
          if (!current(owner) || !tasks.setAppIfCurrent(owner, snap.appLabel)) return stoppedOut(summary)
 +        // 3：窗口在、但应用已经不在虚拟屏（腾讯视频这类会自己迁回主屏）——认"应用被系统迁走"：
 +        // 收窗、恢复条，并明确告诉模型别再读屏重试。判据：vscreen: app left display=<id> pkg=…
@@ -2668,7 +2708,7 @@ index 6c701851..28ce380e 100644
          return Out(
              // l10n:keep agent tool result
              if (refused) "没有读取这个屏幕的内容。" else "",
-@@ -897,6 +1438,40 @@ class PhoneCore(
+@@ -897,6 +1465,40 @@ class PhoneCore(
          )
      }
  
@@ -2709,7 +2749,7 @@ index 6c701851..28ce380e 100644
      private fun collect(a: Args, owner: PhoneTasks.Owner): Out {
          if (!current(owner)) return stoppedOut("collect")
          val sid = a.str("screen")
-@@ -1270,8 +1845,12 @@ class PhoneCore(
+@@ -1270,8 +1872,12 @@ class PhoneCore(
              "home" -> PhoneAction.GlobalKey.HOME
              "recents" -> PhoneAction.GlobalKey.RECENTS
              "notifications" -> PhoneAction.GlobalKey.NOTIFICATIONS
@@ -2723,7 +2763,7 @@ index 6c701851..28ce380e 100644
          }
          val sid = a.str("screen")
          val which = if (sid == null) {
-@@ -1288,12 +1867,21 @@ class PhoneCore(
+@@ -1288,12 +1894,21 @@ class PhoneCore(
              is Either.Right -> d.value
          }
          if (env.isLocked()) return locked(summary)
@@ -2745,7 +2785,7 @@ index 6c701851..28ce380e 100644
          }))
          if (!current(owner)) return stoppedOut(summary)
          val action = PhoneAction.Key(sid ?: "${which.prefix}0", key)
-@@ -1314,6 +1902,22 @@ class PhoneCore(
+@@ -1314,6 +1929,22 @@ class PhoneCore(
          } catch (e: Throwable) { skillTrace.fail(ticket); throw e }
      }
  
@@ -2768,7 +2808,7 @@ index 6c701851..28ce380e 100644
      private fun handoff(a: Args, scope: SerialWorker.Scope, owner: PhoneTasks.Owner): Out {
          if (!current(owner)) return stoppedOut("handoff")
          // l10n:keep agent tool result
-@@ -1362,6 +1966,7 @@ class PhoneCore(
+@@ -1362,6 +1993,7 @@ class PhoneCore(
          summary = summary, decision = "stopped")
  
      companion object {
@@ -2776,7 +2816,7 @@ index 6c701851..28ce380e 100644
          internal const val REPLAY = "replay"
          internal const val FOCUS_TEXT = "focus_text"
  
-@@ -1370,6 +1975,9 @@ class PhoneCore(
+@@ -1370,6 +2002,9 @@ class PhoneCore(
          const val PAUSE_WAIT_MS = 600_000L
          const val HANDOFF_MS = 600_000L
  
@@ -4622,7 +4662,7 @@ index f6b83a0a..2eb59f32 100644
          val result = receipt.takeIf { accepted && screen == screenId }
          clear()
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/BackgroundDisplay.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/BackgroundDisplay.kt
-index bc1810a3..f012d912 100644
+index bc1810a3..2901baef 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/BackgroundDisplay.kt
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/BackgroundDisplay.kt
 @@ -3,6 +3,7 @@ package io.github.ccch1mneyyy.dsh_app.phone.background
@@ -4929,9 +4969,31 @@ index bc1810a3..f012d912 100644
              result.copy(backgroundOpenConfirmed = result.ok && TargetIdentity.backgroundOpenConfirmed(target,
                  response.get(Proto.OK), response.get(Proto.BACKGROUND_OPEN_EVIDENCE), response.get(Proto.DISPLAY_ID),
                  response.get(Proto.TARGET_IDENTITY_VERSION), response.get(Proto.PKG), response.get(Proto.TARGET_UID)))
-@@ -165,6 +388,29 @@ class BackgroundDisplay internal constructor(
+@@ -159,12 +382,50 @@ class BackgroundDisplay internal constructor(
+             putBoolean(Proto.LOCAL_VISUAL, true)
+         }
+         val response = try {
+-            resourceIo.call { OwnerScopeProtocol.execute(channel(), ownerToken, request) }
++            // 【4oz-read-timeout】读屏 3 秒超时：core 不回包（空屏/死屏挂起）就不再无限等，
++            // 返回超时快照交给上层冲刺重试——挂 5 分钟的根在这一点上掐断。
++            var out: Bundle? = null
++            val worker = Thread { out = runCatching {
++                resourceIo.call { OwnerScopeProtocol.execute(channel(), ownerToken, request) }
++            }.getOrNull() }
++            worker.isDaemon = true
++            worker.start()
++            worker.join(3_000L)
++            out
+         } catch (e: Exception) {
+             clearSnapshot()
              throw e
          }
++        if (response == null) {
++            clearSnapshot()
++            val id = "b${++counter}"
++            lastScreenId = id
++            return ScreenSnapshot(id, "屏幕 $id · 虚拟屏 · 读屏超时（3 秒无回包）", null, null, readTimedOut = true)
++        }
          requireObservation(response.getBoolean(Proto.OK), response.getString(Proto.ERROR), response.getString(Proto.ERROR_DETAIL))
 +        // 3：这次读屏时该包实际在哪块屏（core 的任务表查询）；App 侧据此认"应用被系统迁走"。
 +        lastObservedPkgDisplay = (response.get("pkgDisplay") as? Int) ?: 0
@@ -4959,7 +5021,7 @@ index bc1810a3..f012d912 100644
          val shown = shownApp(response) ?: return emptySnapshot(response)
          // Local OCR follows the app actually read, under that app's own permission.
          val local = if (requestLocalText) readLocalText(response, shown, ocrEpoch, started) else null
-@@ -345,7 +591,7 @@ class BackgroundDisplay internal constructor(
+@@ -345,7 +606,7 @@ class BackgroundDisplay internal constructor(
          val peer = resourceIo.peer()
          if (step.relation != relation || target == null || peer == null || !navigationSupported ||
              target.packageName != step.app.packageName || target.uid != step.app.uid || !existingReplayTarget(target))
@@ -4968,7 +5030,7 @@ index bc1810a3..f012d912 100644
          val request = navigationRequest(step, null)
          val parsed = checkNotNull(BackgroundNavigationProtocol.request(request.keySet(), request::get))
          val response = dispatch({ navigationCurrent(target, peer) }) {
-@@ -449,10 +695,15 @@ class BackgroundDisplay internal constructor(
+@@ -449,10 +710,15 @@ class BackgroundDisplay internal constructor(
          val started = if (afterVisualSupported) SystemClock.uptimeMillis() else 0L
          val epoch = localOcr?.enabledEpoch()
          // l10n:keep agent screen protocol
@@ -4987,7 +5049,7 @@ index bc1810a3..f012d912 100644
          }
          // Explicit element ids are checked by PhoneCore before perform; collect owns its internal scrolls.
          if (action is PhoneAction.Scroll && action.elementId == null && action.screenId != lastScreenId) {
-@@ -493,7 +744,8 @@ class BackgroundDisplay internal constructor(
+@@ -493,7 +759,8 @@ class BackgroundDisplay internal constructor(
              }
              is PhoneAction.Key -> {
                  request.putString(Proto.OP, Proto.OP_KEY)
@@ -4997,7 +5059,7 @@ index bc1810a3..f012d912 100644
              }
              is PhoneAction.TapXY -> return performCoordinates(action, target, allowed, after)
          }
-@@ -502,7 +754,150 @@ class BackgroundDisplay internal constructor(
+@@ -502,7 +769,150 @@ class BackgroundDisplay internal constructor(
              dispatch(allowed) { OwnerScopeProtocol.execute(channel(), ownerToken, request, it) }
          } catch (error: Exception) { clearSnapshot(); throw error }
              ?: return ActionResult(false, PhoneTasks.STOPPED_MESSAGE)
@@ -5149,7 +5211,7 @@ index bc1810a3..f012d912 100644
      }
  
      /**
-@@ -521,6 +916,46 @@ class BackgroundDisplay internal constructor(
+@@ -521,6 +931,46 @@ class BackgroundDisplay internal constructor(
  
      private class NotAdmitted : RuntimeException()
  
@@ -5196,7 +5258,7 @@ index bc1810a3..f012d912 100644
      private fun performCoordinates(action: PhoneAction.TapXY, target: PhoneAppIdentity, allowed: () -> Boolean, after: AfterRead): ActionResult {
          // l10n:keep agent coordinate protocol
          if (!coordinateSupported) return ActionResult(false, "当前后台通道不支持截图坐标，请更新并重新连接；未执行，也不会转到主屏。")
-@@ -528,7 +963,7 @@ class BackgroundDisplay internal constructor(
+@@ -528,7 +978,7 @@ class BackgroundDisplay internal constructor(
          if (!coordinateEpochCurrent()) return ActionResult(false, Reasons.of("staleSnapshot"), staleSnapshot = true)
          val image = coordinateImage.take(action.screenId)
              // l10n:keep agent coordinate protocol
@@ -5205,7 +5267,7 @@ index bc1810a3..f012d912 100644
          val gesture = action.gesture.name.lowercase()
          val points = BackgroundCoordinateRequest(image.nonce, gesture, action.x, action.y, action.x2, action.y2, action.durationMs.toInt())
          // l10n:keep agent coordinate protocol
-@@ -573,8 +1008,44 @@ class BackgroundDisplay internal constructor(
+@@ -573,8 +1023,44 @@ class BackgroundDisplay internal constructor(
  
      override fun foregroundPackage(): String? = currentTarget?.packageName
  
@@ -5250,7 +5312,7 @@ index bc1810a3..f012d912 100644
          val acknowledged = try {
              resourceIo.release { pinned -> OwnerScopeProtocol.release(pinned, ownerToken) }
          } catch (_: Exception) { false }
-@@ -659,7 +1130,7 @@ class BackgroundDisplay internal constructor(
+@@ -659,7 +1145,7 @@ class BackgroundDisplay internal constructor(
              clearSnapshot()
              val now = response.getString(Proto.FG_PKG)
              // l10n:keep agent target identity
@@ -5259,7 +5321,7 @@ index bc1810a3..f012d912 100644
              return ActionResult(false, Reasons.withDetail(message, detail), staleSnapshot = true)
          }
          if (!ok) clearSnapshot()
-@@ -693,13 +1164,13 @@ class BackgroundDisplay internal constructor(
+@@ -693,13 +1179,13 @@ class BackgroundDisplay internal constructor(
          if (response.getBoolean(Proto.SECURE)) {
              lastScreenId = id; lastElements = emptyList(); previousLabels = emptySet()
              // l10n:keep agent screen protocol
@@ -5275,7 +5337,7 @@ index bc1810a3..f012d912 100644
              return@commitObservation ScreenSnapshot(id, text, appLabel, pkg, secure = false, poorTree = true, readPackages = setOf(pkg))
          }
          val elements = buildElements(response, markNew)
-@@ -732,7 +1203,7 @@ class BackgroundDisplay internal constructor(
+@@ -732,7 +1218,7 @@ class BackgroundDisplay internal constructor(
              text += "\n截图坐标范围：${coordinate.width}×${coordinate.height}像素；30秒内可单次使用；只有明确普通目标可使用独立的本任务视觉许可，未知目标及长按/滑动仍逐次确认。未证明画布没有敏感内容或目标像素未变。"
          } else if (image != null && coordinateSupported) {
              // l10n:keep agent coordinate protocol
@@ -5284,7 +5346,7 @@ index bc1810a3..f012d912 100644
          }
          if (localText != null) text += "\n" + localText.text
          val shownImage = image.takeIf { publishImage }
-@@ -789,14 +1260,14 @@ class BackgroundDisplay internal constructor(
+@@ -789,14 +1275,14 @@ class BackgroundDisplay internal constructor(
          if (opened.packageName == shown.packageName) return ""
          val name = appLabel?.let { "「$it」（${shown.packageName}）" } ?: shown.packageName
          // l10n:keep agent target identity
@@ -5301,7 +5363,7 @@ index bc1810a3..f012d912 100644
          // l10n:keep agent target identity
          "closed" -> "；${openedTarget?.packageName} 已经退出，需要时重新打开"
          else -> ""
-@@ -810,7 +1281,7 @@ class BackgroundDisplay internal constructor(
+@@ -810,7 +1296,7 @@ class BackgroundDisplay internal constructor(
          val id = "b${++counter}"
          lastScreenId = id; lastElements = emptyList(); previousLabels = emptySet()
          // l10n:keep agent target identity
@@ -5310,7 +5372,7 @@ index bc1810a3..f012d912 100644
              // l10n:keep agent target identity
              "。可以用 open 重新打开应用。", null, null)
      }
-@@ -821,7 +1292,7 @@ class BackgroundDisplay internal constructor(
+@@ -821,7 +1307,7 @@ class BackgroundDisplay internal constructor(
          val id = "b${++counter}"
          lastScreenId = id; lastElements = emptyList()
          // l10n:keep agent screen protocol
