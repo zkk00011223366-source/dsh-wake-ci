@@ -1,6 +1,6 @@
 From: dsh <dsh@local>
-Date: Thu, 26 Nov 2026 15:58:42 +0800
-Subject: [PATCH] 4ox..key-desc 全量
+Date: Thu, 26 Nov 2026 16:41:09 +0800
+Subject: [PATCH] 4ox..4oz-selectall 全量
 
  .gitattributes                                     |    3 +
  .github/workflows/wake-apk.yml                     |  192 ++
@@ -14,9 +14,9 @@ Subject: [PATCH] 4ox..key-desc 全量
  .../ccch1mneyyy/dsh_app/phone/NotificationGate.kt  |   41 +
  .../ccch1mneyyy/dsh_app/phone/PhoneAndroidShell.kt |   18 +-
  .../ccch1mneyyy/dsh_app/phone/PhoneBackGuard.kt    |  146 +
- .../ccch1mneyyy/dsh_app/phone/PhoneContracts.kt    |  283 +-
+ .../ccch1mneyyy/dsh_app/phone/PhoneContracts.kt    |  284 +-
  .../ccch1mneyyy/dsh_app/phone/PhoneControl.kt      |  153 +-
- .../github/ccch1mneyyy/dsh_app/phone/PhoneCore.kt  |  664 ++++-
+ .../github/ccch1mneyyy/dsh_app/phone/PhoneCore.kt  |  667 ++++-
  .../ccch1mneyyy/dsh_app/phone/PhonePlugin.kt       |  554 ++++
  .../ccch1mneyyy/dsh_app/phone/PhoneTaskSessions.kt |   49 +-
  .../github/ccch1mneyyy/dsh_app/phone/PhoneTasks.kt |   97 +-
@@ -29,9 +29,9 @@ Subject: [PATCH] 4ox..key-desc 全量
  .../dsh_app/phone/a11y/MainScreenDriver.kt         |    2 +
  .../dsh_app/phone/a11y/PhoneA11yService.kt         |   20 +
  .../dsh_app/phone/background/AdbFramedSession.kt   |    5 +
- .../dsh_app/phone/background/BackgroundControl.kt  |  349 ++-
+ .../dsh_app/phone/background/BackgroundControl.kt  |  363 ++-
  .../phone/background/BackgroundCoordinates.kt      |    2 +
- .../dsh_app/phone/background/BackgroundDisplay.kt  |  516 +++-
+ .../dsh_app/phone/background/BackgroundDisplay.kt  |  517 +++-
  .../phone/background/BackgroundDisplayIo.kt        |   10 +-
  .../dsh_app/phone/background/BackgroundPolicy.kt   |    8 +-
  .../dsh_app/phone/background/BackgroundPreview.kt  |   10 +-
@@ -48,7 +48,7 @@ Subject: [PATCH] 4ox..key-desc 全量
  .../dsh_app/phone/background/KeptTasks.kt          |   39 +
  .../dsh_app/phone/background/OwnerScopes.kt        |   30 +-
  .../dsh_app/phone/background/PrivilegedChannel.kt  |    6 +
- .../phone/background/PrivilegedDisplayCore.kt      | 1506 +++++++++-
+ .../phone/background/PrivilegedDisplayCore.kt      | 1546 +++++++++-
  .../phone/background/PrivilegedDisplayEntry.kt     |   19 +-
  .../phone/background/PrivilegedDisplayHost.kt      |   39 +-
  .../dsh_app/phone/background/PrivilegedProtocol.kt |  120 +-
@@ -61,7 +61,7 @@ Subject: [PATCH] 4ox..key-desc 全量
  .../dsh_app/phone/vscreen/FrontExitPrompt.kt       |  270 ++
  .../dsh_app/phone/vscreen/PresentationHost.kt      |   69 +
  .../ccch1mneyyy/dsh_app/phone/vscreen/TaskMover.kt |  152 +
- .../dsh_app/phone/vscreen/VirtualScreenOverlay.kt  | 3051 ++++++++++++++++++++
+ .../dsh_app/phone/vscreen/VirtualScreenOverlay.kt  | 3059 ++++++++++++++++++++
  .../dsh_app/phone/vscreen/VirtualScreenPlugin.kt   |  251 ++
  .../ccch1mneyyy/dsh_app/phone/vscreen/VscreenUi.kt |  133 +
  .../ccch1mneyyy/dsh_app/runtime/GuestSetup.kt      |   47 +-
@@ -242,7 +242,7 @@ Subject: [PATCH] 4ox..key-desc 全量
  docs/wake-word.md                                  |  107 +
  dsh-go-wake.patch                                  | 2065 +++++++++++++
  tooling/build-wake-apk.sh                          |   68 +
- 240 files changed, 18811 insertions(+), 1007 deletions(-)
+ 240 files changed, 18877 insertions(+), 1008 deletions(-)
 
 diff --git a/.gitattributes b/.gitattributes
 index 52e3e08a..3e877c7e 100644
@@ -1532,20 +1532,21 @@ index 00000000..175e47b7
 +    }
 +}
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneContracts.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneContracts.kt
-index 612f94d1..38871a93 100644
+index 612f94d1..acb2322e 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneContracts.kt
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneContracts.kt
-@@ -102,7 +102,8 @@ sealed interface PhoneAction {
+@@ -102,7 +102,9 @@ sealed interface PhoneAction {
  
      enum class Direction { UP, DOWN, LEFT, RIGHT }
  
 -    enum class GlobalKey { BACK, HOME, RECENTS, NOTIFICATIONS }
-+    // 【4oz-paste】PASTE/ENTER 只在虚拟屏生效：剪贴板+点框+paste=粘贴，enter=发送（微信免菜单打法）。
-+    enum class GlobalKey { BACK, HOME, RECENTS, NOTIFICATIONS, PASTE, ENTER }
++    // 【4oz-paste】PASTE/ENTER/SELECT_ALL 只在虚拟屏生效：剪贴板+点框+paste=粘贴，enter=回车，
++    // selectAll=Ctrl+A 全选（配合 delete 清空微信输入框已有文字，照 Mika 的组合键）。
++    enum class GlobalKey { BACK, HOME, RECENTS, NOTIFICATIONS, PASTE, ENTER, SELECT_ALL }
  }
  
  data class ActionResult(
-@@ -220,6 +221,13 @@ interface PhoneDriver {
+@@ -220,6 +222,13 @@ interface PhoneDriver {
  
      /** Package of the app in front on this screen, if known (for per-app approval and deny lists). */
      fun foregroundPackage(): String?
@@ -1559,7 +1560,7 @@ index 612f94d1..38871a93 100644
  }
  
  data class ConfirmRequest(
-@@ -346,13 +354,286 @@ interface ControlListener {
+@@ -346,13 +355,286 @@ interface ControlListener {
      fun onAccessibilityChanged(connected: Boolean) {}
  }
  
@@ -2085,7 +2086,7 @@ index 2fc7cd59..1931b87c 100644
  
      override fun notifyFix(kind: String) = notifyFixFor(tasks, kind)
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneCore.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneCore.kt
-index 6c701851..7cc21ed4 100644
+index 6c701851..a6e93689 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneCore.kt
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneCore.kt
 @@ -1,9 +1,12 @@
@@ -2939,26 +2940,28 @@ index 6c701851..7cc21ed4 100644
      private fun collect(a: Args, owner: PhoneTasks.Owner): Out {
          if (!current(owner)) return stoppedOut("collect")
          val sid = a.str("screen")
-@@ -1270,8 +1838,11 @@ class PhoneCore(
+@@ -1270,8 +1838,12 @@ class PhoneCore(
              "home" -> PhoneAction.GlobalKey.HOME
              "recents" -> PhoneAction.GlobalKey.RECENTS
              "notifications" -> PhoneAction.GlobalKey.NOTIFICATIONS
-+            // 【4oz-paste】漏补：解析白名单加 paste/enter（微信免菜单直粘的两键）。
++            // 【4oz-paste】漏补：解析白名单加 paste/enter/selectAll（微信免菜单直粘+清空）。
 +            "paste" -> PhoneAction.GlobalKey.PASTE
 +            "enter" -> PhoneAction.GlobalKey.ENTER
++            "selectall" -> PhoneAction.GlobalKey.SELECT_ALL
              // l10n:keep agent tool result
 -            else -> return Out("key 只能是 back / home / recents / notifications。", error = true)
-+            else -> return Out("key 只能是 back / home / recents / notifications / paste / enter。", error = true)
++            else -> return Out("key 只能是 back / home / recents / notifications / paste / enter / selectAll。", error = true)
          }
          val sid = a.str("screen")
          val which = if (sid == null) {
-@@ -1288,12 +1859,19 @@ class PhoneCore(
+@@ -1288,12 +1860,21 @@ class PhoneCore(
              is Either.Right -> d.value
          }
          if (env.isLocked()) return locked(summary)
-+        // 【4oz-paste】粘贴/回车只在虚拟屏通道有效，主屏明确拒绝，不给模型含糊的回包。
-+        if (which != PhoneScreen.BACKGROUND && (key == PhoneAction.GlobalKey.PASTE || key == PhoneAction.GlobalKey.ENTER)) {
-+            return Out(ui.get("phone_key_vscreen_only", "粘贴和回车键只在虚拟屏可用（screen 用 b 开头）。"),
++        // 【4oz-paste】粘贴/回车/全选只在虚拟屏通道有效，主屏明确拒绝，不给模型含糊的回包。
++        if (which != PhoneScreen.BACKGROUND && (key == PhoneAction.GlobalKey.PASTE || key == PhoneAction.GlobalKey.ENTER ||
++                key == PhoneAction.GlobalKey.SELECT_ALL)) {
++            return Out(ui.get("phone_key_vscreen_only", "粘贴、回车和全选键只在虚拟屏可用（screen 用 b 开头）。"),
 +                error = true, summary = summary, decision = "refused:screen") // l10n:keep test default
 +        }
          lastScreen = which
@@ -2969,10 +2972,11 @@ index 6c701851..7cc21ed4 100644
              PhoneAction.GlobalKey.NOTIFICATIONS -> ui.get("phone_key_notifications", "通知栏") // l10n:keep test default
 +            PhoneAction.GlobalKey.PASTE -> "粘贴" // l10n:keep test default
 +            PhoneAction.GlobalKey.ENTER -> "回车" // l10n:keep test default
++            PhoneAction.GlobalKey.SELECT_ALL -> "全选" // l10n:keep test default
          }))
          if (!current(owner)) return stoppedOut(summary)
          val action = PhoneAction.Key(sid ?: "${which.prefix}0", key)
-@@ -1314,6 +1892,22 @@ class PhoneCore(
+@@ -1314,6 +1895,22 @@ class PhoneCore(
          } catch (e: Throwable) { skillTrace.fail(ticket); throw e }
      }
  
@@ -2995,7 +2999,7 @@ index 6c701851..7cc21ed4 100644
      private fun handoff(a: Args, scope: SerialWorker.Scope, owner: PhoneTasks.Owner): Out {
          if (!current(owner)) return stoppedOut("handoff")
          // l10n:keep agent tool result
-@@ -1362,6 +1956,7 @@ class PhoneCore(
+@@ -1362,6 +1959,7 @@ class PhoneCore(
          summary = summary, decision = "stopped")
  
      companion object {
@@ -3003,7 +3007,7 @@ index 6c701851..7cc21ed4 100644
          internal const val REPLAY = "replay"
          internal const val FOCUS_TEXT = "focus_text"
  
-@@ -1370,6 +1965,9 @@ class PhoneCore(
+@@ -1370,6 +1968,9 @@ class PhoneCore(
          const val PAUSE_WAIT_MS = 600_000L
          const val HANDOFF_MS = 600_000L
  
@@ -3916,7 +3920,7 @@ index a09015e7..b9c4bf15 100644
          /** No confirmation surface is reachable, so this one action did not run. */
          // l10n:keep agent no-gate protocol
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneToolCatalog.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneToolCatalog.kt
-index cbfb0de3..add3d7d0 100644
+index cbfb0de3..1c55cd93 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneToolCatalog.kt
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneToolCatalog.kt
 @@ -22,8 +22,10 @@ object PhoneToolCatalog {
@@ -3935,7 +3939,7 @@ index cbfb0de3..add3d7d0 100644
          "location", "date", "language", "storage", "nfc", "app_notifications",
      )
 -    val KEYS = listOf("back", "home", "recents", "notifications")
-+    val KEYS = listOf("back", "home", "recents", "notifications", "paste", "enter")
++    val KEYS = listOf("back", "home", "recents", "notifications", "paste", "enter", "selectAll")
      val DIRECTIONS = listOf("up", "down", "left", "right")
      val NAV_MODES = listOf("drive", "transit", "walk", "ride")
  
@@ -4017,7 +4021,7 @@ index cbfb0de3..add3d7d0 100644
              KEY,
              // l10n:keep agent tool catalog
 -            "按系统键（back / home / recents / notifications），返回新屏幕。",
-+            "按系统键（back / home / recents / notifications），返回新屏幕。虚拟屏（screen 用 b）额外支持 paste（粘贴剪贴板到焦点输入框，微信等不认注入的自定义输入框用它替代长按菜单）和 enter（回车；注意微信输入框里 enter 是换行，发送要点发送按钮）。",
++            "按系统键（back / home / recents / notifications），返回新屏幕。虚拟屏（screen 用 b）额外支持 paste（粘贴剪贴板到焦点输入框）、enter（回车；微信输入框里 enter 是换行，发送点发送按钮）、selectAll（全选焦点框文字，配 delete 键清空已有内容，如微信草稿）。",
              // l10n:keep agent tool catalog
              linkedMapOf("key" to enum(KEYS, "按键"), "screen" to str("屏幕号；省略时作用于主屏")),
              listOf("key"),
@@ -4221,7 +4225,7 @@ index d98fd4d3..c1183b42 100644
                  flags = 0, allowChoice = false)
          }
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/a11y/Actuator.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/a11y/Actuator.kt
-index 444140b5..1fab0878 100644
+index 444140b5..f9a0825b 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/a11y/Actuator.kt
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/a11y/Actuator.kt
 @@ -200,6 +200,8 @@ internal class Actuator(private val service: AccessibilityService, private val o
@@ -4229,7 +4233,7 @@ index 444140b5..1fab0878 100644
              PhoneAction.GlobalKey.RECENTS -> AccessibilityService.GLOBAL_ACTION_RECENTS
              PhoneAction.GlobalKey.NOTIFICATIONS -> AccessibilityService.GLOBAL_ACTION_NOTIFICATIONS
 +            // 【4oz-paste】虚拟屏专用键不进主屏 a11y 通道。
-+            PhoneAction.GlobalKey.PASTE, PhoneAction.GlobalKey.ENTER -> return false
++            PhoneAction.GlobalKey.PASTE, PhoneAction.GlobalKey.ENTER, PhoneAction.GlobalKey.SELECT_ALL -> return false
          },
      )
  }
@@ -4256,7 +4260,7 @@ index 5c017e4e..b9ce9e15 100644
      }
  
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/a11y/MainScreenDriver.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/a11y/MainScreenDriver.kt
-index 0d55002e..8e5187a9 100644
+index 0d55002e..8dabdf7a 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/a11y/MainScreenDriver.kt
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/a11y/MainScreenDriver.kt
 @@ -1105,6 +1105,8 @@ internal class MainScreenDriver(private val service: PhoneA11yService, private v
@@ -4264,7 +4268,7 @@ index 0d55002e..8e5187a9 100644
              // l10n:keep agent screen result
              PhoneAction.GlobalKey.NOTIFICATIONS -> "已提交打开通知栏的按键操作。"
 +            // 【4oz-paste】虚拟屏专用键不进主屏（global 已拒）。
-+            PhoneAction.GlobalKey.PASTE, PhoneAction.GlobalKey.ENTER -> "主屏不支持该按键。"
++            PhoneAction.GlobalKey.PASTE, PhoneAction.GlobalKey.ENTER, PhoneAction.GlobalKey.SELECT_ALL -> "主屏不支持该按键。"
          }
          return after(before, latest, gen, what)
      }
@@ -4325,7 +4329,7 @@ index bebe269d..181201c9 100644
  
      fun exchange(request: ByteArray): ByteArray? = synchronized(lock) {
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/BackgroundControl.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/BackgroundControl.kt
-index 79cae468..5097d0f9 100644
+index 79cae468..21a783af 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/BackgroundControl.kt
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/BackgroundControl.kt
 @@ -13,6 +13,8 @@ import android.net.Network
@@ -4718,7 +4722,7 @@ index 79cae468..5097d0f9 100644
                  changed = withdrawPreviewTarget(record.driver) || changed
              }
          }
-@@ -812,6 +1106,22 @@ class BackgroundControl private constructor(context: Context) {
+@@ -812,6 +1106,36 @@ class BackgroundControl private constructor(context: Context) {
          }
      }
  
@@ -4734,14 +4738,28 @@ index 79cae468..5097d0f9 100644
 +    fun injectManual(gesture: String, x: Int, y: Int, x2: Int?, y2: Int?, durationMs: Int, long: Boolean): Boolean =
 +        boundDriver()?.injectManual(gesture, x, y, x2, y2, durationMs, long) ?: false
 +
-+    /** 【4oz-backkey】返回键直连（侧边栏返回键）。 */
-+    fun injectManualKey(code: Int): Boolean =
-+        boundDriver()?.injectManualKey(code) ?: false
++    /** 【4oz-backkey】返回键直连（侧边栏返回键）。
++     *  照 Mika 思路：不依赖绑定记录（任务结束后记录会被 seal → 通道拿不到 → 返回键失效）。
++     *  先试活动记录驱动；拿不到就用 activeChannel 现建通道、以当前会话身份直发。 */
++    fun injectManualKey(code: Int): Boolean {
++        boundDriver()?.let { if (it.injectManualKey(code)) return true }
++        val owner = io.github.ccch1mneyyy.dsh_app.phone.background.VscreenSession.owner()
++        val peer = activeChannel() ?: return false
++        return runCatching {
++            val reply = OwnerScopeProtocol.execute(peer, owner, Bundle().apply {
++                putString(Proto.OP, Proto.OP_INJECT)
++                putString(Proto.OWNER, owner)
++                putString(Proto.GESTURE, "key")
++                putInt(Proto.X, code)
++            })
++            reply.getBoolean(Proto.OK)
++        }.getOrDefault(false)
++    }
 +
      // ---- channel plumbing --------------------------------------------------
  
      private fun activeChannel(mayStart: () -> Boolean = { true }, explicit: Boolean = false,
-@@ -942,6 +1252,31 @@ class BackgroundControl private constructor(context: Context) {
+@@ -942,6 +1266,31 @@ class BackgroundControl private constructor(context: Context) {
      } catch (_: InterruptedException) { Thread.currentThread().interrupt(); false }
      catch (_: Exception) { false }
  
@@ -4787,7 +4805,7 @@ index f6b83a0a..2eb59f32 100644
          val result = receipt.takeIf { accepted && screen == screenId }
          clear()
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/BackgroundDisplay.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/BackgroundDisplay.kt
-index bc1810a3..64aade37 100644
+index bc1810a3..963bc9c7 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/BackgroundDisplay.kt
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/BackgroundDisplay.kt
 @@ -3,6 +3,7 @@ package io.github.ccch1mneyyy.dsh_app.phone.background
@@ -5133,7 +5151,7 @@ index bc1810a3..64aade37 100644
          val request = navigationRequest(step, null)
          val parsed = checkNotNull(BackgroundNavigationProtocol.request(request.keySet(), request::get))
          val response = dispatch({ navigationCurrent(target, peer) }) {
-@@ -449,10 +695,14 @@ class BackgroundDisplay internal constructor(
+@@ -449,10 +695,15 @@ class BackgroundDisplay internal constructor(
          val started = if (afterVisualSupported) SystemClock.uptimeMillis() else 0L
          val epoch = localOcr?.enabledEpoch()
          // l10n:keep agent screen protocol
@@ -5143,7 +5161,8 @@ index bc1810a3..64aade37 100644
 +        if (action is PhoneAction.Key &&
 +            action.key != PhoneAction.GlobalKey.BACK &&
 +            action.key != PhoneAction.GlobalKey.PASTE &&
-+            action.key != PhoneAction.GlobalKey.ENTER
++            action.key != PhoneAction.GlobalKey.ENTER &&
++            action.key != PhoneAction.GlobalKey.SELECT_ALL
 +        ) {
              // l10n:keep agent screen protocol
 -            return ActionResult(false, "后台屏不支持该系统键，未执行；请用返回或打开指定应用")
@@ -5151,7 +5170,7 @@ index bc1810a3..64aade37 100644
          }
          // Explicit element ids are checked by PhoneCore before perform; collect owns its internal scrolls.
          if (action is PhoneAction.Scroll && action.elementId == null && action.screenId != lastScreenId) {
-@@ -493,7 +743,8 @@ class BackgroundDisplay internal constructor(
+@@ -493,7 +744,8 @@ class BackgroundDisplay internal constructor(
              }
              is PhoneAction.Key -> {
                  request.putString(Proto.OP, Proto.OP_KEY)
@@ -5161,7 +5180,7 @@ index bc1810a3..64aade37 100644
              }
              is PhoneAction.TapXY -> return performCoordinates(action, target, allowed, after)
          }
-@@ -502,7 +753,150 @@ class BackgroundDisplay internal constructor(
+@@ -502,7 +754,150 @@ class BackgroundDisplay internal constructor(
              dispatch(allowed) { OwnerScopeProtocol.execute(channel(), ownerToken, request, it) }
          } catch (error: Exception) { clearSnapshot(); throw error }
              ?: return ActionResult(false, PhoneTasks.STOPPED_MESSAGE)
@@ -5313,7 +5332,7 @@ index bc1810a3..64aade37 100644
      }
  
      /**
-@@ -521,6 +915,46 @@ class BackgroundDisplay internal constructor(
+@@ -521,6 +916,46 @@ class BackgroundDisplay internal constructor(
  
      private class NotAdmitted : RuntimeException()
  
@@ -5360,7 +5379,7 @@ index bc1810a3..64aade37 100644
      private fun performCoordinates(action: PhoneAction.TapXY, target: PhoneAppIdentity, allowed: () -> Boolean, after: AfterRead): ActionResult {
          // l10n:keep agent coordinate protocol
          if (!coordinateSupported) return ActionResult(false, "当前后台通道不支持截图坐标，请更新并重新连接；未执行，也不会转到主屏。")
-@@ -528,7 +962,7 @@ class BackgroundDisplay internal constructor(
+@@ -528,7 +963,7 @@ class BackgroundDisplay internal constructor(
          if (!coordinateEpochCurrent()) return ActionResult(false, Reasons.of("staleSnapshot"), staleSnapshot = true)
          val image = coordinateImage.take(action.screenId)
              // l10n:keep agent coordinate protocol
@@ -5369,7 +5388,7 @@ index bc1810a3..64aade37 100644
          val gesture = action.gesture.name.lowercase()
          val points = BackgroundCoordinateRequest(image.nonce, gesture, action.x, action.y, action.x2, action.y2, action.durationMs.toInt())
          // l10n:keep agent coordinate protocol
-@@ -573,8 +1007,44 @@ class BackgroundDisplay internal constructor(
+@@ -573,8 +1008,44 @@ class BackgroundDisplay internal constructor(
  
      override fun foregroundPackage(): String? = currentTarget?.packageName
  
@@ -5414,7 +5433,7 @@ index bc1810a3..64aade37 100644
          val acknowledged = try {
              resourceIo.release { pinned -> OwnerScopeProtocol.release(pinned, ownerToken) }
          } catch (_: Exception) { false }
-@@ -659,7 +1129,7 @@ class BackgroundDisplay internal constructor(
+@@ -659,7 +1130,7 @@ class BackgroundDisplay internal constructor(
              clearSnapshot()
              val now = response.getString(Proto.FG_PKG)
              // l10n:keep agent target identity
@@ -5423,7 +5442,7 @@ index bc1810a3..64aade37 100644
              return ActionResult(false, Reasons.withDetail(message, detail), staleSnapshot = true)
          }
          if (!ok) clearSnapshot()
-@@ -693,13 +1163,13 @@ class BackgroundDisplay internal constructor(
+@@ -693,13 +1164,13 @@ class BackgroundDisplay internal constructor(
          if (response.getBoolean(Proto.SECURE)) {
              lastScreenId = id; lastElements = emptyList(); previousLabels = emptySet()
              // l10n:keep agent screen protocol
@@ -5439,7 +5458,7 @@ index bc1810a3..64aade37 100644
              return@commitObservation ScreenSnapshot(id, text, appLabel, pkg, secure = false, poorTree = true, readPackages = setOf(pkg))
          }
          val elements = buildElements(response, markNew)
-@@ -732,7 +1202,7 @@ class BackgroundDisplay internal constructor(
+@@ -732,7 +1203,7 @@ class BackgroundDisplay internal constructor(
              text += "\n截图坐标范围：${coordinate.width}×${coordinate.height}像素；30秒内可单次使用；只有明确普通目标可使用独立的本任务视觉许可，未知目标及长按/滑动仍逐次确认。未证明画布没有敏感内容或目标像素未变。"
          } else if (image != null && coordinateSupported) {
              // l10n:keep agent coordinate protocol
@@ -5448,7 +5467,7 @@ index bc1810a3..64aade37 100644
          }
          if (localText != null) text += "\n" + localText.text
          val shownImage = image.takeIf { publishImage }
-@@ -789,14 +1259,14 @@ class BackgroundDisplay internal constructor(
+@@ -789,14 +1260,14 @@ class BackgroundDisplay internal constructor(
          if (opened.packageName == shown.packageName) return ""
          val name = appLabel?.let { "「$it」（${shown.packageName}）" } ?: shown.packageName
          // l10n:keep agent target identity
@@ -5465,7 +5484,7 @@ index bc1810a3..64aade37 100644
          // l10n:keep agent target identity
          "closed" -> "；${openedTarget?.packageName} 已经退出，需要时重新打开"
          else -> ""
-@@ -810,7 +1280,7 @@ class BackgroundDisplay internal constructor(
+@@ -810,7 +1281,7 @@ class BackgroundDisplay internal constructor(
          val id = "b${++counter}"
          lastScreenId = id; lastElements = emptyList(); previousLabels = emptySet()
          // l10n:keep agent target identity
@@ -5474,7 +5493,7 @@ index bc1810a3..64aade37 100644
              // l10n:keep agent target identity
              "。可以用 open 重新打开应用。", null, null)
      }
-@@ -821,7 +1291,7 @@ class BackgroundDisplay internal constructor(
+@@ -821,7 +1292,7 @@ class BackgroundDisplay internal constructor(
          val id = "b${++counter}"
          lastScreenId = id; lastElements = emptyList()
          // l10n:keep agent screen protocol
@@ -6335,7 +6354,7 @@ index c1c2ed09..b0b1dfe3 100644
          close()
          Bundle().apply { putBoolean(Proto.OK, false); putString(Proto.ERROR, "deviceUnavailable") }
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/PrivilegedDisplayCore.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/PrivilegedDisplayCore.kt
-index c7ed0f7a..1261e412 100644
+index c7ed0f7a..1ccfac67 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/PrivilegedDisplayCore.kt
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/PrivilegedDisplayCore.kt
 @@ -11,6 +11,7 @@ package io.github.ccch1mneyyy.dsh_app.phone.background
@@ -7919,7 +7938,7 @@ index c7ed0f7a..1261e412 100644
                  displayApiReleased = true
 +                io.github.ccch1mneyyy.dsh_app.wake.WakeTrace.log(
 +                    "vscreen: release surface cleared=$cleared displayId=$displayId")
-             }
++            }
 +            DisplayHandles.forget(displayId)
 +            // 3w 第 8 条：释放自证。executor 报"屏释放后仍有空壳 display，会随次数累积"，
 +            // 这里把"系统还剩几块屏 / 我们表里还按着几块"一起打出来，下次就能判是不是真泄漏。
@@ -7927,7 +7946,7 @@ index c7ed0f7a..1261e412 100644
 +                io.github.ccch1mneyyy.dsh_app.wake.WakeTrace.log(
 +                    "vscreen: release verified displays=${displays.displays.size} " +
 +                        "tracked=${DisplayHandles.snapshot().size}")
-+            }
+             }
 +            // 已经没有屏了就把方向监听关掉，别让它在后台扫任务。
 +            DisplayOrientationKeeper.release()
              closeReaders()
@@ -8016,7 +8035,61 @@ index c7ed0f7a..1261e412 100644
          } catch (_: Exception) {
              preview.unavailable(ticket, "captureFailed")
          } finally {
-@@ -2025,14 +3412,45 @@ class PrivilegedDisplayCore internal constructor(
+@@ -1910,6 +3297,16 @@ class PrivilegedDisplayCore internal constructor(
+     }
+ 
+     private fun globalKey(key: String?) {
++        // 【4oz-selectall】Ctrl+A 全选（照 Mika 的组合键）：清空微信输入框已有文字的配套键。
++        if (key == "select_all") {
++            val now = SystemClock.uptimeMillis()
++            injectKey(KeyEvent(now, now, KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_A,
++                KeyEvent.META_CTRL_ON or KeyEvent.META_CTRL_LEFT_ON))
++            sleepChecked(4)
++            injectKey(KeyEvent(now, SystemClock.uptimeMillis(), KeyEvent.ACTION_UP, KeyEvent.KEYCODE_A,
++                KeyEvent.META_CTRL_ON or KeyEvent.META_CTRL_LEFT_ON))
++            return
++        }
+         val code = KEYS[key] ?: throw Fault("invalidArguments")
+         val now = SystemClock.uptimeMillis()
+         injectKey(KeyEvent(now, now, KeyEvent.ACTION_DOWN, code, 0))
+@@ -1999,7 +3396,35 @@ class PrivilegedDisplayCore internal constructor(
+     private fun injectKey(src: KeyEvent) {
+         val event = KeyEvent(src.downTime, src.eventTime, src.action, src.keyCode, 0, src.metaState,
+             KeyCharacterMap.VIRTUAL_KEYBOARD, src.scanCode, src.flags, InputDevice.SOURCE_KEYBOARD)
+-        inject(event)
++        // 【4oz-backkey】照 Mika：按键由系统按输入焦点路由，event 上的 displayId 不保证生效
++        // （不定向会投到主屏焦点）。先解析本屏顶部任务 uid 定向投给它；失败退 displayId 非定向；
++        // 再退 shell keyevent。逐级通道记进日志。
++        val uid = runCatching {
++            val pkg = topTask(displayId())?.second
++            if (pkg != null) privileged.packageManager.getApplicationInfo(pkg, 0).uid else -1
++        }.getOrDefault(-1)
++        var channel = if (uid > 0) "targeted" else "nontargeted"
++        var ok = if (uid > 0) {
++            runCatching {
++                InputManager::class.java.getMethod(
++                    "injectInputEvent", InputEvent::class.java, Int::class.javaPrimitiveType, Int::class.javaPrimitiveType)
++                    .invoke(privileged.getSystemService(InputManager::class.java), event, 2, uid) == true
++            }.getOrDefault(false)
++        } else false
++        if (!ok) {
++            channel = "nontargeted"
++            ok = runCatching { inject(event); true }.getOrDefault(false)
++        }
++        if (!ok) {
++            channel = "shell"
++            ok = runCatching {
++                ProcessBuilder("input", "-d", displayId().toString(), "keyevent", event.keyCode.toString())
++                    .redirectErrorStream(true).start().waitFor() == 0
++            }.getOrDefault(false)
++        }
++        io.github.ccch1mneyyy.dsh_app.wake.WakeTrace.log(
++            "vscreen: injectKey code=${event.keyCode} uid=$uid channel=$channel ok=$ok")
++        if (!ok) throw Fault("inputRejected")
+     }
+ 
+     // Runs in the shell-uid privileged process (Shizuku UserService or app_process),
+@@ -2025,14 +3450,45 @@ class PrivilegedDisplayCore internal constructor(
          if (waitForFinish && !accepted) throw Fault("inputRejected")
      }
  
@@ -8064,7 +8137,7 @@ index c7ed0f7a..1261e412 100644
      }
  
      /**
-@@ -2079,13 +3497,21 @@ class PrivilegedDisplayCore internal constructor(
+@@ -2079,13 +3535,21 @@ class PrivilegedDisplayCore internal constructor(
  
      companion object {
          private val PACKAGE = Regex("[a-zA-Z][a-zA-Z0-9_]*(\\.[a-zA-Z0-9_]+)+")
@@ -8465,7 +8538,7 @@ index 2857ceef..41380764 100644
                  append(instruction(step, n)).append("。\n")
                  append("   核对 {{check_").append(n).append("}}，不能只凭工具返回正常判断业务完成。历史记录仅表明请求已交给驱动/系统并返回接受；")
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/skills/PhoneTaskTrace.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/skills/PhoneTaskTrace.kt
-index 6be40b5d..b59e9bf8 100644
+index 6be40b5d..c1950def 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/skills/PhoneTaskTrace.kt
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/skills/PhoneTaskTrace.kt
 @@ -73,6 +73,8 @@ class PhoneTaskTrace {
@@ -8473,7 +8546,7 @@ index 6be40b5d..b59e9bf8 100644
                  PhoneAction.GlobalKey.RECENTS -> Action.KEY_RECENTS
                  PhoneAction.GlobalKey.NOTIFICATIONS -> Action.KEY_NOTIFICATIONS
 +                // 【4oz-paste】虚拟屏专用键：记通用按键类，不细分。
-+                PhoneAction.GlobalKey.PASTE, PhoneAction.GlobalKey.ENTER -> Action.KEY_BACK
++                PhoneAction.GlobalKey.PASTE, PhoneAction.GlobalKey.ENTER, PhoneAction.GlobalKey.SELECT_ALL -> Action.KEY_BACK
              }
              is PhoneAction.TapXY -> { markIncomplete(owner, Gap.UNSUPPORTED_EFFECT); return null }
          }
@@ -9166,10 +9239,10 @@ index 00000000..19aecfea
 +}
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenOverlay.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenOverlay.kt
 new file mode 100644
-index 00000000..1cc849fc
+index 00000000..cd9ba674
 --- /dev/null
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenOverlay.kt
-@@ -0,0 +1,3051 @@
+@@ -0,0 +1,3059 @@
 +package io.github.ccch1mneyyy.dsh_app.phone.vscreen
 +
 +import io.github.ccch1mneyyy.dsh_app.phone.PhoneRegistry
@@ -10791,8 +10864,10 @@ index 00000000..1cc849fc
 +        // 非 SLIVER 时 box 完全透明（画面自己带圆角），窗口边缘就是画面边缘。
 +        // 球只在"窗口不可见"时出现（文档 §五 显示条件）：细条也算收起 → 立刻出球；
 +        // 【4op】条=窗口自己的形态：切 SLIVER 就是出条、切别的就是收条，不再联动独立条对象。
-+        // 【4oz-glow】窗形态加氛围灯边框（与贴边条/拖动条同红），条形态仍是实心红条。
-+        view.background = if (next == Shape.SLIVER) sliverBackground(px) else ambientFrame(px)
++        view.background = if (next == Shape.SLIVER) sliverBackground(px) else null
++        // 【4oz-glow】氛围灯只贴画面：画在画面容器的 foreground（上层），只圈画面、
++        // 与侧边栏无关；background 会被画面盖住，所以必须用 foreground。
++        content?.foreground = if (next == Shape.SLIVER) null else ambientFrame(px)
 +        // INVISIBLE, not GONE: a GONE SurfaceView destroys its surface, and the display would
 +        // have to be re-attached every time the window parks.
 +        content?.visibility = if (next == Shape.SLIVER) View.INVISIBLE else View.VISIBLE
@@ -11466,10 +11541,10 @@ index 00000000..1cc849fc
 +            gravity = Gravity.CENTER
 +            setPadding(0, (14 * px).roundToInt(), 0, (14 * px).roundToInt())
 +        }
++        // 【4oz-rail】8 键等份分布：weight=1 让键在轨内均匀排开（多余空间平均成间距），
++        // 不再固定 16dp 边距累加——键多了会参差不齐/溢出。
 +        for (key in listOf(close, back, eye, volume, zoomIn, zoomOut, zoomReset, transfer)) {
-+            rail.addView(key, LinearLayout.LayoutParams(touch, touch).apply {
-+                topMargin = (16 * px).roundToInt()
-+            })
++            rail.addView(key, LinearLayout.LayoutParams(touch, touch, 1f))
 +        }
 +        rail.setOnTouchListener { _, _ -> true }
 +        val railParams = FrameLayout.LayoutParams(
@@ -12046,6 +12121,9 @@ index 00000000..1cc849fc
 +                        // v3.4（用户 04:4x）：点击只做"放大"。展开态点画面**不再收回**——
 +                        // 否则与"展开态点画面 = 操作应用"直接打架。回初始态只走【↺】。
 +                        if (shape == Shape.SMALL) {
++                            // 【4oz-intent】点小窗放大=明确要窗：写入判定意图，否则下一拍判定
++                            // 按"要条"把窗收回，得展开两次才稳（真机 16:38）。
++                            io.github.ccch1mneyyy.dsh_app.phone.PhoneRegistry.vscreenUserSilent = false
 +                            applyShape(Shape.EXPAND, manager, lp, box, area, px)
 +                        } else {
 +                            WakeTrace.log("window: tap ignored in EXPAND (collapse only via ↺)")
@@ -12165,6 +12243,9 @@ index 00000000..1cc849fc
 +                        // v3.4（用户 04:4x）：点击只做"放大"。展开态点画面**不再收回**——
 +                        // 否则与"展开态点画面 = 操作应用"直接打架。回初始态只走【↺】。
 +                        if (shape == Shape.SMALL) {
++                            // 【4oz-intent】点小窗放大=明确要窗：写入判定意图，否则下一拍判定
++                            // 按"要条"把窗收回，得展开两次才稳（真机 16:38）。
++                            io.github.ccch1mneyyy.dsh_app.phone.PhoneRegistry.vscreenUserSilent = false
 +                            applyShape(Shape.EXPAND, manager, lp, box, area, px)
 +                        } else {
 +                            WakeTrace.log("window: tap ignored in EXPAND (collapse only via ↺)")
