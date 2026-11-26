@@ -1,248 +1,12 @@
 From: dsh <dsh@local>
-Date: Thu, 26 Nov 2026 16:49:37 +0800
-Subject: [PATCH] 4ox..key-desc2 全量
+Date: Thu, 26 Nov 2026 17:54:54 +0800
+Subject: [PATCH] 4oz-inject-gate + 4oz-grip-center + 4oz-glow-ring
 
- .gitattributes                                     |    3 +
- .github/workflows/wake-apk.yml                     |  192 ++
- app/android/app/build.gradle.kts                   |   11 +-
- app/android/app/src/main/AndroidManifest.xml       |   43 +-
- .../io/github/ccch1mneyyy/dsh_app/MainActivity.kt  |   92 +-
- .../dsh_app/call/CallForegroundService.kt          |   94 +
- .../github/ccch1mneyyy/dsh_app/call/CallOverlay.kt |  369 +++
- .../ccch1mneyyy/dsh_app/call/CallOverlayPlugin.kt  |   70 +
- .../ccch1mneyyy/dsh_app/notify/NotifyPlugin.kt     |    5 +-
- .../ccch1mneyyy/dsh_app/phone/NotificationGate.kt  |   41 +
- .../ccch1mneyyy/dsh_app/phone/PhoneAndroidShell.kt |   18 +-
- .../ccch1mneyyy/dsh_app/phone/PhoneBackGuard.kt    |  146 +
- .../ccch1mneyyy/dsh_app/phone/PhoneContracts.kt    |  284 +-
- .../ccch1mneyyy/dsh_app/phone/PhoneControl.kt      |  153 +-
- .../github/ccch1mneyyy/dsh_app/phone/PhoneCore.kt  |  667 ++++-
- .../ccch1mneyyy/dsh_app/phone/PhonePlugin.kt       |  554 ++++
- .../ccch1mneyyy/dsh_app/phone/PhoneTaskSessions.kt |   49 +-
- .../github/ccch1mneyyy/dsh_app/phone/PhoneTasks.kt |   97 +-
- .../ccch1mneyyy/dsh_app/phone/PhoneToolCatalog.kt  |   57 +-
- .../github/ccch1mneyyy/dsh_app/phone/SafetyGate.kt |   39 +-
- .../dsh_app/phone/SingleInstanceApps.kt            |   27 +
- .../ccch1mneyyy/dsh_app/phone/SystemActions.kt     |    7 +-
- .../ccch1mneyyy/dsh_app/phone/a11y/Actuator.kt     |    2 +
- .../dsh_app/phone/a11y/ControlOverlay.kt           |   11 +-
- .../dsh_app/phone/a11y/MainScreenDriver.kt         |    2 +
- .../dsh_app/phone/a11y/PhoneA11yService.kt         |   20 +
- .../dsh_app/phone/background/AdbFramedSession.kt   |    5 +
- .../dsh_app/phone/background/BackgroundControl.kt  |  363 ++-
- .../phone/background/BackgroundCoordinates.kt      |    2 +
- .../dsh_app/phone/background/BackgroundDisplay.kt  |  517 +++-
- .../phone/background/BackgroundDisplayIo.kt        |   10 +-
- .../dsh_app/phone/background/BackgroundPolicy.kt   |    8 +-
- .../dsh_app/phone/background/BackgroundPreview.kt  |   10 +-
- .../phone/background/BackgroundProbeActivity.kt    |    4 +-
- .../dsh_app/phone/background/BackgroundTaskSlot.kt |    7 +
- .../dsh_app/phone/background/BackgroundTree.kt     |   13 +-
- .../dsh_app/phone/background/CoalescedScan.kt      |   31 +
- .../dsh_app/phone/background/DisplayAwake.kt       |  154 +
- .../dsh_app/phone/background/DisplayHandles.kt     |   31 +
- .../dsh_app/phone/background/DisplayOrientation.kt |   37 +
- .../phone/background/DisplayOrientationKeeper.kt   |  125 +
- .../phone/background/DisplayOrientationWatch.kt    |  100 +
- .../dsh_app/phone/background/FramedMuxSession.kt   |   25 +-
- .../dsh_app/phone/background/KeptTasks.kt          |   39 +
- .../dsh_app/phone/background/OwnerScopes.kt        |   30 +-
- .../dsh_app/phone/background/PrivilegedChannel.kt  |    6 +
- .../phone/background/PrivilegedDisplayCore.kt      | 1546 +++++++++-
- .../phone/background/PrivilegedDisplayEntry.kt     |   19 +-
- .../phone/background/PrivilegedDisplayHost.kt      |   39 +-
- .../dsh_app/phone/background/PrivilegedProtocol.kt |  120 +-
- .../dsh_app/phone/background/VscreenSession.kt     |   39 +
- .../dsh_app/phone/skills/PhoneSkillDraft.kt        |    2 +-
- .../dsh_app/phone/skills/PhoneTaskTrace.kt         |    2 +
- .../dsh_app/phone/vscreen/CloseActionReceiver.kt   |   79 +
- .../dsh_app/phone/vscreen/DisplayFrameGeometry.kt  |   21 +
- .../ccch1mneyyy/dsh_app/phone/vscreen/FrameMath.kt |   60 +
- .../dsh_app/phone/vscreen/FrontExitPrompt.kt       |  270 ++
- .../dsh_app/phone/vscreen/PresentationHost.kt      |   69 +
- .../ccch1mneyyy/dsh_app/phone/vscreen/TaskMover.kt |  152 +
- .../dsh_app/phone/vscreen/VirtualScreenOverlay.kt  | 3059 ++++++++++++++++++++
- .../dsh_app/phone/vscreen/VirtualScreenPlugin.kt   |  251 ++
- .../ccch1mneyyy/dsh_app/phone/vscreen/VscreenUi.kt |  133 +
- .../ccch1mneyyy/dsh_app/runtime/GuestSetup.kt      |   47 +-
- .../ccch1mneyyy/dsh_app/shortcuts/EntryActivity.kt |    3 +
- .../dsh_app/shortcuts/ShortcutsPlugin.kt           |   13 +-
- .../ccch1mneyyy/dsh_app/speech/CallCapture.kt      |    6 +-
- .../ccch1mneyyy/dsh_app/wake/WakeBootReceiver.kt   |   29 +
- .../github/ccch1mneyyy/dsh_app/wake/WakeCapture.kt |  172 ++
- .../github/ccch1mneyyy/dsh_app/wake/WakeTrace.kt   |   99 +
- .../ccch1mneyyy/dsh_app/wake/WakeWordPlugin.kt     |  131 +
- .../ccch1mneyyy/dsh_app/wake/WakeWordService.kt    |  216 ++
- .../main/res/drawable/ic_launcher_background.xml   |   18 +-
- .../src/main/res/mipmap-anydpi-v26/ic_launcher.xml |    1 -
- .../res/mipmap-anydpi-v26/ic_launcher_frost.xml    |    1 -
- .../mipmap-anydpi-v26/ic_launcher_frost_round.xml  |    1 -
- .../main/res/mipmap-anydpi-v26/ic_launcher_ink.xml |    1 -
- .../mipmap-anydpi-v26/ic_launcher_ink_round.xml    |    1 -
- .../res/mipmap-anydpi-v26/ic_launcher_night.xml    |    1 -
- .../mipmap-anydpi-v26/ic_launcher_night_round.xml  |    1 -
- .../res/mipmap-anydpi-v26/ic_launcher_round.xml    |    1 -
- .../app/src/main/res/mipmap-hdpi/ic_launcher.png   |  Bin 5394 -> 1105 bytes
- .../res/mipmap-hdpi/ic_launcher_foreground.png     |  Bin 7486 -> 711 bytes
- .../src/main/res/mipmap-hdpi/ic_launcher_frost.png |  Bin 4862 -> 1105 bytes
- .../mipmap-hdpi/ic_launcher_frost_foreground.png   |  Bin 4925 -> 711 bytes
- .../res/mipmap-hdpi/ic_launcher_frost_round.png    |  Bin 5991 -> 1105 bytes
- .../src/main/res/mipmap-hdpi/ic_launcher_ink.png   |  Bin 4647 -> 1105 bytes
- .../res/mipmap-hdpi/ic_launcher_ink_foreground.png |  Bin 945 -> 711 bytes
- .../main/res/mipmap-hdpi/ic_launcher_ink_round.png |  Bin 5712 -> 1105 bytes
- .../src/main/res/mipmap-hdpi/ic_launcher_night.png |  Bin 5591 -> 1105 bytes
- .../mipmap-hdpi/ic_launcher_night_foreground.png   |  Bin 4716 -> 711 bytes
- .../res/mipmap-hdpi/ic_launcher_night_round.png    |  Bin 6877 -> 1105 bytes
- .../src/main/res/mipmap-hdpi/ic_launcher_round.png |  Bin 6820 -> 1105 bytes
- .../app/src/main/res/mipmap-mdpi/ic_launcher.png   |  Bin 3036 -> 755 bytes
- .../res/mipmap-mdpi/ic_launcher_foreground.png     |  Bin 4099 -> 538 bytes
- .../src/main/res/mipmap-mdpi/ic_launcher_frost.png |  Bin 2888 -> 755 bytes
- .../mipmap-mdpi/ic_launcher_frost_foreground.png   |  Bin 3091 -> 538 bytes
- .../res/mipmap-mdpi/ic_launcher_frost_round.png    |  Bin 3631 -> 755 bytes
- .../src/main/res/mipmap-mdpi/ic_launcher_ink.png   |  Bin 2996 -> 755 bytes
- .../res/mipmap-mdpi/ic_launcher_ink_foreground.png |  Bin 684 -> 538 bytes
- .../main/res/mipmap-mdpi/ic_launcher_ink_round.png |  Bin 3713 -> 755 bytes
- .../src/main/res/mipmap-mdpi/ic_launcher_night.png |  Bin 3329 -> 755 bytes
- .../mipmap-mdpi/ic_launcher_night_foreground.png   |  Bin 3012 -> 538 bytes
- .../res/mipmap-mdpi/ic_launcher_night_round.png    |  Bin 4148 -> 755 bytes
- .../src/main/res/mipmap-mdpi/ic_launcher_round.png |  Bin 3961 -> 755 bytes
- .../app/src/main/res/mipmap-xhdpi/ic_launcher.png  |  Bin 8076 -> 1306 bytes
- .../res/mipmap-xhdpi/ic_launcher_foreground.png    |  Bin 11762 -> 859 bytes
- .../main/res/mipmap-xhdpi/ic_launcher_frost.png    |  Bin 6910 -> 1306 bytes
- .../mipmap-xhdpi/ic_launcher_frost_foreground.png  |  Bin 6958 -> 859 bytes
- .../res/mipmap-xhdpi/ic_launcher_frost_round.png   |  Bin 8443 -> 1306 bytes
- .../src/main/res/mipmap-xhdpi/ic_launcher_ink.png  |  Bin 6231 -> 1306 bytes
- .../mipmap-xhdpi/ic_launcher_ink_foreground.png    |  Bin 1206 -> 859 bytes
- .../res/mipmap-xhdpi/ic_launcher_ink_round.png     |  Bin 7872 -> 1306 bytes
- .../main/res/mipmap-xhdpi/ic_launcher_night.png    |  Bin 7867 -> 1306 bytes
- .../mipmap-xhdpi/ic_launcher_night_foreground.png  |  Bin 6663 -> 859 bytes
- .../res/mipmap-xhdpi/ic_launcher_night_round.png   |  Bin 9750 -> 1306 bytes
- .../main/res/mipmap-xhdpi/ic_launcher_round.png    |  Bin 10189 -> 1306 bytes
- .../app/src/main/res/mipmap-xxhdpi/ic_launcher.png |  Bin 14448 -> 1851 bytes
- .../res/mipmap-xxhdpi/ic_launcher_foreground.png   |  Bin 22309 -> 1179 bytes
- .../main/res/mipmap-xxhdpi/ic_launcher_frost.png   |  Bin 11375 -> 1851 bytes
- .../mipmap-xxhdpi/ic_launcher_frost_foreground.png |  Bin 11609 -> 1179 bytes
- .../res/mipmap-xxhdpi/ic_launcher_frost_round.png  |  Bin 13642 -> 1851 bytes
- .../src/main/res/mipmap-xxhdpi/ic_launcher_ink.png |  Bin 9671 -> 1851 bytes
- .../mipmap-xxhdpi/ic_launcher_ink_foreground.png   |  Bin 1756 -> 1179 bytes
- .../res/mipmap-xxhdpi/ic_launcher_ink_round.png    |  Bin 11965 -> 1851 bytes
- .../main/res/mipmap-xxhdpi/ic_launcher_night.png   |  Bin 12752 -> 1851 bytes
- .../mipmap-xxhdpi/ic_launcher_night_foreground.png |  Bin 10636 -> 1179 bytes
- .../res/mipmap-xxhdpi/ic_launcher_night_round.png  |  Bin 15467 -> 1851 bytes
- .../main/res/mipmap-xxhdpi/ic_launcher_round.png   |  Bin 17509 -> 1851 bytes
- .../src/main/res/mipmap-xxxhdpi/ic_launcher.png    |  Bin 21668 -> 2410 bytes
- .../res/mipmap-xxxhdpi/ic_launcher_foreground.png  |  Bin 34306 -> 1483 bytes
- .../main/res/mipmap-xxxhdpi/ic_launcher_frost.png  |  Bin 15624 -> 2410 bytes
- .../ic_launcher_frost_foreground.png               |  Bin 16528 -> 1483 bytes
- .../res/mipmap-xxxhdpi/ic_launcher_frost_round.png |  Bin 18797 -> 2410 bytes
- .../main/res/mipmap-xxxhdpi/ic_launcher_ink.png    |  Bin 12819 -> 2410 bytes
- .../mipmap-xxxhdpi/ic_launcher_ink_foreground.png  |  Bin 2335 -> 1483 bytes
- .../res/mipmap-xxxhdpi/ic_launcher_ink_round.png   |  Bin 15924 -> 2410 bytes
- .../main/res/mipmap-xxxhdpi/ic_launcher_night.png  |  Bin 17518 -> 2410 bytes
- .../ic_launcher_night_foreground.png               |  Bin 15240 -> 1483 bytes
- .../res/mipmap-xxxhdpi/ic_launcher_night_round.png |  Bin 21069 -> 2410 bytes
- .../main/res/mipmap-xxxhdpi/ic_launcher_round.png  |  Bin 25963 -> 2410 bytes
- .../app/src/main/res/values-zh/i18n_strings.xml    |   20 +-
- .../src/main/res/values-zh/phone_a11y_strings.xml  |    6 +-
- .../values-zh/phone_background_setup_strings.xml   |    2 +-
- .../main/res/values-zh/phone_prompt_strings.xml    |   13 +-
- .../src/main/res/values-zh/phone_task_strings.xml  |    2 +-
- .../app/src/main/res/values/i18n_strings.xml       |   10 +
- .../src/main/res/values/phone_prompt_strings.xml   |   13 +-
- .../main/res/xml/phone_accessibility_service.xml   |    3 +-
- app/android/app/src/main/res/xml/shortcuts.xml     |   18 +-
- .../dsh_app/phone/background/DisplayAwakeTest.kt   |  105 +
- .../phone/background/DisplayOrientationTest.kt     |   48 +
- .../phone/vscreen/DisplayFrameGeometryTest.kt      |   39 +
- .../dsh_app/phone/vscreen/FrameMathTest.kt         |   45 +
- app/assets/kws/LICENSE.txt                         |   20 +
- app/assets/kws/NOTICE.txt                          |    4 +
- app/assets/kws/decoder.int8.onnx                   |  Bin 0 -> 181069 bytes
- app/assets/kws/encoder.int8.onnx                   |  Bin 0 -> 4777666 bytes
- app/assets/kws/joiner.int8.onnx                    |  Bin 0 -> 65242 bytes
- app/assets/kws/tokens.txt                          |  227 ++
- app/lib/app.dart                                   |    6 +
- app/lib/app_navigator.dart                         |    4 +
- app/lib/l10n/app_en.arb                            |   27 +
- app/lib/l10n/app_zh.arb                            |  221 +-
- app/lib/l10n/gen/app_localizations.dart            |  356 ++-
- app/lib/l10n/gen/app_localizations_en.dart         |   84 +
- app/lib/l10n/gen/app_localizations_zh.dart         |  279 +-
- app/lib/l10n/parts/a11y_restore_zh.arb             |    4 +-
- app/lib/l10n/parts/access_zh.arb                   |    4 +-
- app/lib/l10n/parts/android_shell_en.arb            |    3 +-
- app/lib/l10n/parts/android_shell_zh.arb            |    3 +-
- app/lib/l10n/parts/bots_zh.arb                     |    2 +-
- app/lib/l10n/parts/engine_zh.arb                   |    2 +-
- app/lib/l10n/parts/harmony_zh.arb                  |    4 +-
- app/lib/l10n/parts/hub_zh.arb                      |    6 +-
- app/lib/l10n/parts/ios_zh.arb                      |    4 +-
- app/lib/l10n/parts/launch_zh.arb                   |    4 +-
- app/lib/l10n/parts/live_zh.arb                     |    2 +-
- app/lib/l10n/parts/market_zh.arb                   |   12 +-
- app/lib/l10n/parts/phone_background_zh.arb         |   12 +-
- app/lib/l10n/parts/phone_en.arb                    |    9 +-
- app/lib/l10n/parts/phone_keep_zh.arb               |    6 +-
- app/lib/l10n/parts/phone_zh.arb                    |   55 +-
- app/lib/l10n/parts/phoneauto_zh.arb                |   16 +-
- app/lib/l10n/parts/plugins_zh.arb                  |    6 +-
- app/lib/l10n/parts/plugslots_zh.arb                |    2 +-
- app/lib/l10n/parts/remote_pairing_zh.arb           |    6 +-
- app/lib/l10n/parts/remote_zh.arb                   |    2 +-
- app/lib/l10n/parts/risk_zh.arb                     |   10 +-
- app/lib/l10n/parts/shell_zh.arb                    |    2 +-
- app/lib/l10n/parts/speech_en.arb                   |   21 +-
- app/lib/l10n/parts/speech_zh.arb                   |   21 +-
- app/lib/l10n/parts/star_zh.arb                     |    4 +-
- app/lib/l10n/parts/state_zh.arb                    |    2 +-
- app/lib/l10n/parts/system_actions_zh.arb           |   12 +-
- app/lib/l10n/parts/tavern_zh.arb                   |    2 +-
- app/lib/l10n/parts/update_zh.arb                   |    8 +-
- app/lib/l10n/parts/usage_zh.arb                    |    4 +-
- app/lib/l10n/parts/view_zh.arb                     |    8 +-
- app/lib/l10n/parts/workshop_zh.arb                 |    2 +-
- app/lib/links/launcher_entries.dart                |    7 +-
- app/lib/phone/phone_channel.dart                   |  141 +-
- app/lib/phone/phone_skill.dart                     |   14 +
- app/lib/phone/virtual_screen_window.dart           |  144 +
- app/lib/speech/call/active_call.dart               |  110 +
- app/lib/speech/call/chat_call.dart                 |    3 +
- app/lib/speech/call/thinking_cue.dart              |    3 +-
- app/lib/speech/call/voice_call.dart                |   57 +-
- app/lib/speech/wake_reply.dart                     |  175 ++
- app/lib/state/app_info.dart                        |    5 +
- app/lib/state/phone_state.dart                     |   17 +
- app/lib/state/update_state.dart                    |   19 +-
- app/lib/state/virtual_screen_state.dart            |  462 +++
- app/lib/ui/chat/chat_rows.dart                     |    2 +
- app/lib/ui/chat/chat_screen.dart                   |  108 +-
- app/lib/ui/chat/media/media_format.dart            |   16 +-
- app/lib/ui/phone/android_shell_page.dart           |   33 +
- app/lib/ui/phone/background_preview.dart           |  264 +-
- app/lib/ui/phone/dnd_mode_page.dart                |  214 +-
- app/lib/ui/phone/phone_control_screen.dart         |    1 +
- app/lib/ui/phone/phone_skill_section.dart          |   13 +-
- app/lib/ui/phone/phone_task_card.dart              |  430 +++
- app/lib/ui/phone/virtual_screen_host.dart          |  378 +++
- app/lib/ui/phone/virtual_screen_page.dart          |  114 +
- app/lib/ui/phone/virtual_screen_surface.dart       |  286 ++
- app/lib/ui/settings/settings_screen.dart           |   22 +-
- app/lib/ui/settings/voice_settings_page.dart       |  151 +
- app/lib/ui/shell/call_overlay_host.dart            |   55 +
- app/lib/ui/shell/home_shell.dart                   |    7 +
- app/lib/ui/shell/system_entry_host.dart            |   44 +
- app/lib/ui/speech/voice_call_page.dart             |  307 +-
- app/lib/ui/theme/app_icons.dart                    |    4 +
- app/lib/ui/update/update_tiles.dart                |    5 +-
- app/lib/voice/wake_keywords.dart                   |   50 +
- app/lib/voice/wake_settings.dart                   |  131 +
- app/lib/voice/wake_word.dart                       |  856 ++++++
- app/pubspec.lock                                   |    8 +
  app/pubspec.yaml                                   |    4 +
  docs/wake-word.md                                  |  107 +
  dsh-go-wake.patch                                  | 2065 +++++++++++++
  tooling/build-wake-apk.sh                          |   68 +
- 240 files changed, 18877 insertions(+), 1008 deletions(-)
+ 240 files changed, 18888 insertions(+), 1009 deletions(-)
 
 diff --git a/.gitattributes b/.gitattributes
 index 52e3e08a..3e877c7e 100644
@@ -6354,7 +6118,7 @@ index c1c2ed09..b0b1dfe3 100644
          close()
          Bundle().apply { putBoolean(Proto.OK, false); putString(Proto.ERROR, "deviceUnavailable") }
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/PrivilegedDisplayCore.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/PrivilegedDisplayCore.kt
-index c7ed0f7a..1ccfac67 100644
+index c7ed0f7a..088cbafc 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/PrivilegedDisplayCore.kt
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/PrivilegedDisplayCore.kt
 @@ -11,6 +11,7 @@ package io.github.ccch1mneyyy.dsh_app.phone.background
@@ -6504,7 +6268,7 @@ index c7ed0f7a..1ccfac67 100644
              if (request.get(Proto.RELEASE_RECEIPT) !is Int || request.getInt(Proto.RELEASE_RECEIPT) != 1) throw Fault("invalidArguments")
              if (lastReleasedOwner == ownerId) throw Fault("identityChanged")
              if (owner == null) {
-@@ -315,6 +396,31 @@ class PrivilegedDisplayCore internal constructor(
+@@ -315,8 +396,36 @@ class PrivilegedDisplayCore internal constructor(
          if (strictOwner && displayApiReleased) throw Fault("releasePending")
          if (strictOwner && (readerAllocationUncertain || display == null && (displayCreationAttempted || reader != null || pendingReader != null))) throw Fault("releaseUnconfirmed")
          if (keyguard?.isKeyguardLocked == true) throw Fault("locked")
@@ -6534,9 +6298,15 @@ index c7ed0f7a..1ccfac67 100644
 +            return
 +        }
          val pkg = request.getString(Proto.PKG).orEmpty()
-         if (!PACKAGE.matches(pkg)) throw Fault("invalidArguments")
+-        if (!PACKAGE.matches(pkg)) throw Fault("invalidArguments")
++        // 【4oz-inject-gate】注入豁免包名闸：手动触控/侧边栏返回键的 OP_INJECT 请求不带 PKG
++        // （手指=用户本人同意，key 分支自己解析屏顶任务 uid 定向，tap 按显示坐标注入，都不靠包名），
++        // 却一直被这道全请求闸 Fault("invalidArguments") 静默拒 → 返回键恒失效、手动点击靠 shell 兜底。
++        if (op != Proto.OP_INJECT && !PACKAGE.matches(pkg)) throw Fault("invalidArguments")
          val opening = op == Proto.OP_CREATE || op == Proto.OP_LAUNCH
-@@ -340,12 +446,96 @@ class PrivilegedDisplayCore internal constructor(
+         if (!opening) requireDisplay() else owner = ownerId
+         // The app the App addressed: what it opened, or what its last read showed on top.
+@@ -340,12 +449,96 @@ class PrivilegedDisplayCore internal constructor(
                  // A task keeps the screen it opened first; its driver always asks for the same viewport.
                  if (display == null) createDisplay(request)
                  response.putInt(Proto.DISPLAY_ID, displayId())
@@ -6635,7 +6405,7 @@ index c7ed0f7a..1ccfac67 100644
              Proto.OP_COORDINATE -> coordinate(pkg, expected?.uid, request, response)
              Proto.OP_TAP -> {
                  requireShown(pkg, expected?.uid)
-@@ -355,6 +545,38 @@ class PrivilegedDisplayCore internal constructor(
+@@ -355,6 +548,38 @@ class PrivilegedDisplayCore internal constructor(
                  if (localVisual) response.putString(Proto.VISUAL_CHANGE,
                      visualObservation?.changeFrom(previousVisual, SystemClock.uptimeMillis()) ?: "unavailable")
              }
@@ -6674,7 +6444,7 @@ index c7ed0f7a..1ccfac67 100644
              Proto.OP_SCROLL -> {
                  requireShown(pkg, expected?.uid)
                  scroll(pkg, request)
-@@ -379,6 +601,8 @@ class PrivilegedDisplayCore internal constructor(
+@@ -379,6 +604,8 @@ class PrivilegedDisplayCore internal constructor(
          }
          // Every reply names the app now on top (none when the screen is empty). A read already did.
          if (!response.containsKey(Proto.TARGET_IDENTITY_VERSION)) putShown(response, openedPackage(request, pkg), shownApp())
@@ -6683,7 +6453,7 @@ index c7ed0f7a..1ccfac67 100644
          if (op == Proto.OP_LAUNCH && expected != null) {
              val shown = TargetIdentity.shown(response.get(Proto.PKG), response.get(Proto.TARGET_UID))
              val actualDisplay = display?.display
-@@ -729,57 +953,817 @@ class PrivilegedDisplayCore internal constructor(
+@@ -729,57 +956,817 @@ class PrivilegedDisplayCore internal constructor(
      private fun displayId(): Int = display?.display?.displayId ?: throw Fault("displayMissing")
      private fun requireDisplay() { if (display == null) throw Fault("displayMissing") }
  
@@ -7523,7 +7293,7 @@ index c7ed0f7a..1ccfac67 100644
      private fun resolveLaunch(pkg: String, expected: PhoneAppIdentity?): Intent {
          val pm = privileged.packageManager
          val intent = runCatching { pm.getLaunchIntentForPackage(pkg) }.getOrNull() ?: throw Fault("notLaunchable")
-@@ -821,6 +1805,44 @@ class PrivilegedDisplayCore internal constructor(
+@@ -821,6 +1808,44 @@ class PrivilegedDisplayCore internal constructor(
      }
  
      /** (displayId, packages of that task) rows of one running-task read. */
@@ -7568,7 +7338,7 @@ index c7ed0f7a..1ccfac67 100644
      private fun taskRows(): List<Pair<Int, Set<String>>>? {
          val field = taskDisplayIdField ?: return null
          @Suppress("DEPRECATION")
-@@ -862,8 +1884,29 @@ class PrivilegedDisplayCore internal constructor(
+@@ -862,8 +1887,29 @@ class PrivilegedDisplayCore internal constructor(
  
      private fun launchPackage(pkg: String, intent: Intent) {
          val display = this.display ?: throw Fault("displayMissing")
@@ -7599,7 +7369,7 @@ index c7ed0f7a..1ccfac67 100644
          // A shell/UserService is not an ActivityManager-attached app process: a PendingIntent
          // avoids Context.startActivity's caller check (Phase, after Aether).
          var pending: PendingIntent? = null
-@@ -873,23 +1916,161 @@ class PrivilegedDisplayCore internal constructor(
+@@ -873,23 +1919,161 @@ class PrivilegedDisplayCore internal constructor(
                  PendingIntent.FLAG_ONE_SHOT or PendingIntent.FLAG_IMMUTABLE,
              )
              pending.send(privileged, 0, null, null, null, null, options.toBundle())
@@ -7767,7 +7537,7 @@ index c7ed0f7a..1ccfac67 100644
      /** Legacy success shape stays unchanged; failed physical cleanup retains its original handles. */
      private fun releaseAll() = lock.withLock {
          if (strictOwner) throw Fault("releaseReceiptRequired")
-@@ -906,8 +2087,140 @@ class PrivilegedDisplayCore internal constructor(
+@@ -906,8 +2090,140 @@ class PrivilegedDisplayCore internal constructor(
          if (readerAllocationUncertain) throw Fault("releaseUnconfirmed")
      }
  
@@ -7908,7 +7678,7 @@ index c7ed0f7a..1ccfac67 100644
          closeTreeConnection()
          visualObservation = null
          stopPreview()
-@@ -925,11 +2238,42 @@ class PrivilegedDisplayCore internal constructor(
+@@ -925,11 +2241,42 @@ class PrivilegedDisplayCore internal constructor(
              closeReaders()
          } else {
              val displayId = releasingDisplayId ?: throw Fault("releaseUnconfirmed")
@@ -7952,7 +7722,7 @@ index c7ed0f7a..1ccfac67 100644
              closeReaders()
              val deadline = SystemClock.uptimeMillis() + 1_000
              // The display itself is already released. A ROM whose task query is unreadable cannot
-@@ -944,6 +2288,7 @@ class PrivilegedDisplayCore internal constructor(
+@@ -944,6 +2291,7 @@ class PrivilegedDisplayCore internal constructor(
      }
  
      private fun clearResourceState() {
@@ -7960,7 +7730,7 @@ index c7ed0f7a..1ccfac67 100644
          display = null; owner = null; strictOwner = false; selfCheckOwner = false
          targetSequence = null; targetSnapshot = null; targetMain = null
          releasingDisplayId = null; displayCreationAttempted = false; displayApiReleased = false; probeDisplay = false
-@@ -1166,7 +2511,15 @@ class PrivilegedDisplayCore internal constructor(
+@@ -1166,7 +2514,15 @@ class PrivilegedDisplayCore internal constructor(
      private class CaptureResult(val jpeg: ByteArray, val raw: BackgroundPreviewState.RawFrame?, val local: ImageObservation?, val targetMatched: Boolean? = null)
  
      /** Null means only absent/black frames; other capture failures remain distinguishable. */
@@ -7977,7 +7747,7 @@ index c7ed0f7a..1ccfac67 100644
          val ir = lock.withLock {
              if (pendingReader != null || readerAllocationUncertain) throw Fault("releasePending")
              val vd = display ?: throw Fault("displayMissing")
-@@ -1332,6 +2685,13 @@ class PrivilegedDisplayCore internal constructor(
+@@ -1332,6 +2688,13 @@ class PrivilegedDisplayCore internal constructor(
  
      internal fun previewDrained(): Boolean = lock.withLock { previewWorker.drained() }
  
@@ -7991,7 +7761,7 @@ index c7ed0f7a..1ccfac67 100644
      private fun renderPreview(ticket: BackgroundPreviewState.Ticket) {
          var bitmap: Bitmap? = null
          var thumbnail: Bitmap? = null
-@@ -1359,8 +2719,23 @@ class PrivilegedDisplayCore internal constructor(
+@@ -1359,8 +2722,23 @@ class PrivilegedDisplayCore internal constructor(
                  } finally { image.close() }
                  // All Image/buffer access ends before releaseAll can close its ImageReader.
              } finally { lock.unlock() }
@@ -8016,7 +7786,7 @@ index c7ed0f7a..1ccfac67 100644
                  bitmap = Bitmap.createBitmap(raw.width, raw.height, Bitmap.Config.ARGB_8888)
                  bitmap!!.copyPixelsFromBuffer(ByteBuffer.wrap(raw.pixels))
              }
-@@ -1382,6 +2757,18 @@ class PrivilegedDisplayCore internal constructor(
+@@ -1382,6 +2760,18 @@ class PrivilegedDisplayCore internal constructor(
                  preview.unavailable(ticket, "frameTooLarge"); return
              }
              preview.publish(ticket, BackgroundPreviewState.Frame(w, h, pixels, bytes), SystemClock.uptimeMillis())
@@ -8035,7 +7805,7 @@ index c7ed0f7a..1ccfac67 100644
          } catch (_: Exception) {
              preview.unavailable(ticket, "captureFailed")
          } finally {
-@@ -1910,6 +3297,16 @@ class PrivilegedDisplayCore internal constructor(
+@@ -1910,6 +3300,16 @@ class PrivilegedDisplayCore internal constructor(
      }
  
      private fun globalKey(key: String?) {
@@ -8052,7 +7822,7 @@ index c7ed0f7a..1ccfac67 100644
          val code = KEYS[key] ?: throw Fault("invalidArguments")
          val now = SystemClock.uptimeMillis()
          injectKey(KeyEvent(now, now, KeyEvent.ACTION_DOWN, code, 0))
-@@ -1999,7 +3396,35 @@ class PrivilegedDisplayCore internal constructor(
+@@ -1999,7 +3399,35 @@ class PrivilegedDisplayCore internal constructor(
      private fun injectKey(src: KeyEvent) {
          val event = KeyEvent(src.downTime, src.eventTime, src.action, src.keyCode, 0, src.metaState,
              KeyCharacterMap.VIRTUAL_KEYBOARD, src.scanCode, src.flags, InputDevice.SOURCE_KEYBOARD)
@@ -8089,7 +7859,7 @@ index c7ed0f7a..1ccfac67 100644
      }
  
      // Runs in the shell-uid privileged process (Shizuku UserService or app_process),
-@@ -2025,14 +3450,45 @@ class PrivilegedDisplayCore internal constructor(
+@@ -2025,14 +3453,45 @@ class PrivilegedDisplayCore internal constructor(
          if (waitForFinish && !accepted) throw Fault("inputRejected")
      }
  
@@ -8137,7 +7907,7 @@ index c7ed0f7a..1ccfac67 100644
      }
  
      /**
-@@ -2079,13 +3535,21 @@ class PrivilegedDisplayCore internal constructor(
+@@ -2079,13 +3538,21 @@ class PrivilegedDisplayCore internal constructor(
  
      companion object {
          private val PACKAGE = Regex("[a-zA-Z][a-zA-Z0-9_]*(\\.[a-zA-Z0-9_]+)+")
@@ -9239,10 +9009,10 @@ index 00000000..19aecfea
 +}
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenOverlay.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenOverlay.kt
 new file mode 100644
-index 00000000..cd9ba674
+index 00000000..154f1da5
 --- /dev/null
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenOverlay.kt
-@@ -0,0 +1,3059 @@
+@@ -0,0 +1,3066 @@
 +package io.github.ccch1mneyyy.dsh_app.phone.vscreen
 +
 +import io.github.ccch1mneyyy.dsh_app.phone.PhoneRegistry
@@ -10860,7 +10630,7 @@ index 00000000..cd9ba674
 +            }
 +        }
 +        // 位置定了再摆把手：它与主窗底边对齐，全屏态不显示（用户 19:20）。
-+        syncGripWindow(view.context, manager, lp.x, lp.y, w, h, next == Shape.EXPAND && !fullscreen)
++        syncGripWindow(view.context, manager, lp.x, lp.y, w, h, next == Shape.EXPAND && !fullscreen, centerOnContent = true)
 +        // 非 SLIVER 时 box 完全透明（画面自己带圆角），窗口边缘就是画面边缘。
 +        // 球只在"窗口不可见"时出现（文档 §五 显示条件）：细条也算收起 → 立刻出球；
 +        // 【4op】条=窗口自己的形态：切 SLIVER 就是出条、切别的就是收条，不再联动独立条对象。
@@ -10918,7 +10688,7 @@ index 00000000..cd9ba674
 +            WakeTrace.log("window: zoom apply failed ${e.javaClass.simpleName}: ${e.message}")
 +        }
 +        WakeTrace.log("window: zoom=${zoom} size=${w}x$h at=${lp.x},${lp.y}")
-+        syncGripWindow(view.context, manager, lp.x, lp.y, w, h, shape == Shape.EXPAND && !fullscreen)
++        syncGripWindow(view.context, manager, lp.x, lp.y, w, h, shape == Shape.EXPAND && !fullscreen, centerOnContent = true)
 +        applyValidity()
 +        applyLive()
 +    }
@@ -10942,7 +10712,7 @@ index 00000000..cd9ba674
 +     */
 +    private fun syncGripWindow(
 +        app: Context, manager: WindowManager,
-+        x: Int, y: Int, w: Int, h: Int, show: Boolean,
++        x: Int, y: Int, w: Int, h: Int, show: Boolean, centerOnContent: Boolean = false,
 +    ) {
 +        val px = app.resources.displayMetrics.density
 +        val gw = (56 * px).roundToInt()
@@ -11005,7 +10775,18 @@ index 00000000..cd9ba674
 +                WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
 +            PixelFormat.TRANSLUCENT,
 +        ).apply { gravity = Gravity.TOP or Gravity.START }
-+        lp.x = x + (w - gw) / 2
++        // 【4oz-grip-center】拖动条居中对齐"画面区"而不是整窗：展开态整窗=画面+侧栏(46dp)，
++        // 按整窗居中条会偏半个栏宽（真机 17:4x）。与 fraction() 用同一套画面区算法。
++        // 拖动回写（centerOnContent=false）时 x/w 是把手自己的坐标，恒等不居中。
++        if (centerOnContent) {
++            val railW = if (shape == Shape.EXPAND) (RAIL_W_DP * px).roundToInt() else 0
++            val picLeft = if (railW > 0 && railSide == "start") railW else 0
++            val picRight = if (railW > 0 && railSide == "end") w - railW else w
++            val picW = (picRight - picLeft).coerceAtLeast(gw)
++            lp.x = x + picLeft + (picW - gw) / 2
++        } else {
++            lp.x = x + (w - gw) / 2
++        }
 +        lp.y = y + h + gap
 +        lp.width = gw
 +        lp.height = gh
@@ -12279,15 +12060,11 @@ index 00000000..cd9ba674
 +
 +    /** 【4oz-glow】氛围灯边框：外圈半透明红晕 + 内圈实心红，颜色与贴边条/拖动条一致。 */
 +    private fun ambientFrame(px: Float): android.graphics.drawable.Drawable {
-+        val halo = GradientDrawable().apply {
-+            cornerRadius = 16f * px
-+            setStroke((6f * px).toInt(), 0x66EF5350.toInt())
-+        }
-+        val ring = GradientDrawable().apply {
++        // 【4oz-glow-ring】用户定稿（17:4x）：不要光晕，只要一圈红线（同贴边条红 0xCCEF5350）。
++        return GradientDrawable().apply {
 +            cornerRadius = 16f * px
 +            setStroke((2f * px).toInt(), 0xCCEF5350.toInt())
 +        }
-+        return android.graphics.drawable.LayerDrawable(arrayOf(halo, ring))
 +    }
 +
 +    /** The picture itself: the app's own page for this screen, not a dialog. */
