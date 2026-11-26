@@ -1,6 +1,6 @@
 From: dsh <dsh@local>
-Date: Thu, 26 Nov 2026 11:37:34 +0800
-Subject: [PATCH] 4ox..4oz-ratio 全量
+Date: Thu, 26 Nov 2026 12:08:25 +0800
+Subject: [PATCH] 4ox..4oz-ratio2 全量
 
  .gitattributes                                     |    3 +
  .github/workflows/wake-apk.yml                     |  192 ++
@@ -48,7 +48,7 @@ Subject: [PATCH] 4ox..4oz-ratio 全量
  .../dsh_app/phone/background/KeptTasks.kt          |   39 +
  .../dsh_app/phone/background/OwnerScopes.kt        |   30 +-
  .../dsh_app/phone/background/PrivilegedChannel.kt  |    6 +
- .../phone/background/PrivilegedDisplayCore.kt      | 1466 +++++++++-
+ .../phone/background/PrivilegedDisplayCore.kt      | 1470 +++++++++-
  .../phone/background/PrivilegedDisplayEntry.kt     |   19 +-
  .../phone/background/PrivilegedDisplayHost.kt      |   39 +-
  .../dsh_app/phone/background/PrivilegedProtocol.kt |  115 +-
@@ -242,7 +242,7 @@ Subject: [PATCH] 4ox..4oz-ratio 全量
  docs/wake-word.md                                  |  107 +
  dsh-go-wake.patch                                  | 2065 ++++++++++++++
  tooling/build-wake-apk.sh                          |   68 +
- 240 files changed, 18659 insertions(+), 1005 deletions(-)
+ 240 files changed, 18663 insertions(+), 1005 deletions(-)
 
 diff --git a/.gitattributes b/.gitattributes
 index 52e3e08a..3e877c7e 100644
@@ -6258,7 +6258,7 @@ index c1c2ed09..b0b1dfe3 100644
          close()
          Bundle().apply { putBoolean(Proto.OK, false); putString(Proto.ERROR, "deviceUnavailable") }
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/PrivilegedDisplayCore.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/PrivilegedDisplayCore.kt
-index c7ed0f7a..f6fded00 100644
+index c7ed0f7a..e3f5a004 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/PrivilegedDisplayCore.kt
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/PrivilegedDisplayCore.kt
 @@ -11,6 +11,7 @@ package io.github.ccch1mneyyy.dsh_app.phone.background
@@ -6548,7 +6548,7 @@ index c7ed0f7a..f6fded00 100644
          if (op == Proto.OP_LAUNCH && expected != null) {
              val shown = TargetIdentity.shown(response.get(Proto.PKG), response.get(Proto.TARGET_UID))
              val actualDisplay = display?.display
-@@ -729,57 +921,809 @@ class PrivilegedDisplayCore internal constructor(
+@@ -729,57 +921,813 @@ class PrivilegedDisplayCore internal constructor(
      private fun displayId(): Int = display?.display?.displayId ?: throw Fault("displayMissing")
      private fun requireDisplay() { if (display == null) throw Fault("displayMissing") }
  
@@ -7151,7 +7151,11 @@ index c7ed0f7a..f6fded00 100644
          val preset = BackgroundPolicy.Viewport.parse(request.get(Proto.VIEWPORT_PRESET)) ?: throw Fault("invalidArguments")
 -        if (request.containsKey(Proto.ASPECT_W) || request.containsKey(Proto.ASPECT_H) ||
 -            request.containsKey(Proto.SHORT_SIDE) && request.get(Proto.SHORT_SIDE) != 720) throw Fault("invalidArguments")
-+        if (request.containsKey(Proto.ASPECT_W) || request.containsKey(Proto.ASPECT_H)) throw Fault("invalidArguments")
++        // 【4oz-ratio】保险保留、只给 follow 开窄门：固定档（竖屏/横屏）不许混带宽高比
++        // （尺寸信号只能有一个，混传报参数无效）；follow 需要携带手机真实宽高比，放行。
++        if (preset != BackgroundPolicy.Viewport.FOLLOW &&
++            (request.containsKey(Proto.ASPECT_W) || request.containsKey(Proto.ASPECT_H)))
++            throw Fault("invalidArguments")
          return preset
      }
  
@@ -7380,7 +7384,7 @@ index c7ed0f7a..f6fded00 100644
      private fun resolveLaunch(pkg: String, expected: PhoneAppIdentity?): Intent {
          val pm = privileged.packageManager
          val intent = runCatching { pm.getLaunchIntentForPackage(pkg) }.getOrNull() ?: throw Fault("notLaunchable")
-@@ -821,6 +1765,44 @@ class PrivilegedDisplayCore internal constructor(
+@@ -821,6 +1769,44 @@ class PrivilegedDisplayCore internal constructor(
      }
  
      /** (displayId, packages of that task) rows of one running-task read. */
@@ -7425,7 +7429,7 @@ index c7ed0f7a..f6fded00 100644
      private fun taskRows(): List<Pair<Int, Set<String>>>? {
          val field = taskDisplayIdField ?: return null
          @Suppress("DEPRECATION")
-@@ -862,8 +1844,29 @@ class PrivilegedDisplayCore internal constructor(
+@@ -862,8 +1848,29 @@ class PrivilegedDisplayCore internal constructor(
  
      private fun launchPackage(pkg: String, intent: Intent) {
          val display = this.display ?: throw Fault("displayMissing")
@@ -7456,7 +7460,7 @@ index c7ed0f7a..f6fded00 100644
          // A shell/UserService is not an ActivityManager-attached app process: a PendingIntent
          // avoids Context.startActivity's caller check (Phase, after Aether).
          var pending: PendingIntent? = null
-@@ -873,23 +1876,161 @@ class PrivilegedDisplayCore internal constructor(
+@@ -873,23 +1880,161 @@ class PrivilegedDisplayCore internal constructor(
                  PendingIntent.FLAG_ONE_SHOT or PendingIntent.FLAG_IMMUTABLE,
              )
              pending.send(privileged, 0, null, null, null, null, options.toBundle())
@@ -7624,7 +7628,7 @@ index c7ed0f7a..f6fded00 100644
      /** Legacy success shape stays unchanged; failed physical cleanup retains its original handles. */
      private fun releaseAll() = lock.withLock {
          if (strictOwner) throw Fault("releaseReceiptRequired")
-@@ -906,8 +2047,140 @@ class PrivilegedDisplayCore internal constructor(
+@@ -906,8 +2051,140 @@ class PrivilegedDisplayCore internal constructor(
          if (readerAllocationUncertain) throw Fault("releaseUnconfirmed")
      }
  
@@ -7765,7 +7769,7 @@ index c7ed0f7a..f6fded00 100644
          closeTreeConnection()
          visualObservation = null
          stopPreview()
-@@ -925,11 +2198,42 @@ class PrivilegedDisplayCore internal constructor(
+@@ -925,11 +2202,42 @@ class PrivilegedDisplayCore internal constructor(
              closeReaders()
          } else {
              val displayId = releasingDisplayId ?: throw Fault("releaseUnconfirmed")
@@ -7809,7 +7813,7 @@ index c7ed0f7a..f6fded00 100644
              closeReaders()
              val deadline = SystemClock.uptimeMillis() + 1_000
              // The display itself is already released. A ROM whose task query is unreadable cannot
-@@ -944,6 +2248,7 @@ class PrivilegedDisplayCore internal constructor(
+@@ -944,6 +2252,7 @@ class PrivilegedDisplayCore internal constructor(
      }
  
      private fun clearResourceState() {
@@ -7817,7 +7821,7 @@ index c7ed0f7a..f6fded00 100644
          display = null; owner = null; strictOwner = false; selfCheckOwner = false
          targetSequence = null; targetSnapshot = null; targetMain = null
          releasingDisplayId = null; displayCreationAttempted = false; displayApiReleased = false; probeDisplay = false
-@@ -1166,7 +2471,15 @@ class PrivilegedDisplayCore internal constructor(
+@@ -1166,7 +2475,15 @@ class PrivilegedDisplayCore internal constructor(
      private class CaptureResult(val jpeg: ByteArray, val raw: BackgroundPreviewState.RawFrame?, val local: ImageObservation?, val targetMatched: Boolean? = null)
  
      /** Null means only absent/black frames; other capture failures remain distinguishable. */
@@ -7834,7 +7838,7 @@ index c7ed0f7a..f6fded00 100644
          val ir = lock.withLock {
              if (pendingReader != null || readerAllocationUncertain) throw Fault("releasePending")
              val vd = display ?: throw Fault("displayMissing")
-@@ -1332,6 +2645,13 @@ class PrivilegedDisplayCore internal constructor(
+@@ -1332,6 +2649,13 @@ class PrivilegedDisplayCore internal constructor(
  
      internal fun previewDrained(): Boolean = lock.withLock { previewWorker.drained() }
  
@@ -7848,7 +7852,7 @@ index c7ed0f7a..f6fded00 100644
      private fun renderPreview(ticket: BackgroundPreviewState.Ticket) {
          var bitmap: Bitmap? = null
          var thumbnail: Bitmap? = null
-@@ -1359,8 +2679,23 @@ class PrivilegedDisplayCore internal constructor(
+@@ -1359,8 +2683,23 @@ class PrivilegedDisplayCore internal constructor(
                  } finally { image.close() }
                  // All Image/buffer access ends before releaseAll can close its ImageReader.
              } finally { lock.unlock() }
@@ -7873,7 +7877,7 @@ index c7ed0f7a..f6fded00 100644
                  bitmap = Bitmap.createBitmap(raw.width, raw.height, Bitmap.Config.ARGB_8888)
                  bitmap!!.copyPixelsFromBuffer(ByteBuffer.wrap(raw.pixels))
              }
-@@ -1382,6 +2717,18 @@ class PrivilegedDisplayCore internal constructor(
+@@ -1382,6 +2721,18 @@ class PrivilegedDisplayCore internal constructor(
                  preview.unavailable(ticket, "frameTooLarge"); return
              }
              preview.publish(ticket, BackgroundPreviewState.Frame(w, h, pixels, bytes), SystemClock.uptimeMillis())
@@ -7892,7 +7896,7 @@ index c7ed0f7a..f6fded00 100644
          } catch (_: Exception) {
              preview.unavailable(ticket, "captureFailed")
          } finally {
-@@ -2025,14 +3372,45 @@ class PrivilegedDisplayCore internal constructor(
+@@ -2025,14 +3376,45 @@ class PrivilegedDisplayCore internal constructor(
          if (waitForFinish && !accepted) throw Fault("inputRejected")
      }
  
@@ -7940,7 +7944,7 @@ index c7ed0f7a..f6fded00 100644
      }
  
      /**
-@@ -2079,13 +3457,21 @@ class PrivilegedDisplayCore internal constructor(
+@@ -2079,13 +3461,21 @@ class PrivilegedDisplayCore internal constructor(
  
      companion object {
          private val PACKAGE = Regex("[a-zA-Z][a-zA-Z0-9_]*(\\.[a-zA-Z0-9_]+)+")
