@@ -1,6 +1,6 @@
 From: dsh <dsh@local>
-Date: Thu, 26 Nov 2026 16:41:09 +0800
-Subject: [PATCH] 4ox..4oz-selectall 全量
+Date: Thu, 26 Nov 2026 16:49:37 +0800
+Subject: [PATCH] 4ox..key-desc2 全量
 
  .gitattributes                                     |    3 +
  .github/workflows/wake-apk.yml                     |  192 ++
@@ -3920,7 +3920,7 @@ index a09015e7..b9c4bf15 100644
          /** No confirmation surface is reachable, so this one action did not run. */
          // l10n:keep agent no-gate protocol
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneToolCatalog.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneToolCatalog.kt
-index cbfb0de3..1c55cd93 100644
+index cbfb0de3..033d7c4b 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneToolCatalog.kt
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneToolCatalog.kt
 @@ -22,8 +22,10 @@ object PhoneToolCatalog {
@@ -4021,7 +4021,7 @@ index cbfb0de3..1c55cd93 100644
              KEY,
              // l10n:keep agent tool catalog
 -            "按系统键（back / home / recents / notifications），返回新屏幕。",
-+            "按系统键（back / home / recents / notifications），返回新屏幕。虚拟屏（screen 用 b）额外支持 paste（粘贴剪贴板到焦点输入框）、enter（回车；微信输入框里 enter 是换行，发送点发送按钮）、selectAll（全选焦点框文字，配 delete 键清空已有内容，如微信草稿）。",
++            "按系统键（back / home / recents / notifications），返回新屏幕。虚拟屏（screen 用 b）额外支持 paste（粘贴剪贴板到焦点输入框）、enter（回车；微信输入框里 enter 是换行，发送点发送按钮）、selectAll（全选焦点框文字）。微信输入框已有旧文字需要换内容时，固定连招：selectAll → delete → paste → 截图核对 → 点发送按钮，别用其他方法乱试。",
              // l10n:keep agent tool catalog
              linkedMapOf("key" to enum(KEYS, "按键"), "screen" to str("屏幕号；省略时作用于主屏")),
              listOf("key"),
