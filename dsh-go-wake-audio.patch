@@ -1,12 +1,12 @@
 From: dsh <dsh@local>
-Date: Thu, 26 Nov 2026 17:54:54 +0800
-Subject: [PATCH] 4oz-inject-gate + 4oz-grip-center + 4oz-glow-ring
+Date: Thu, 26 Nov 2026 18:41:48 +0800
+Subject: [PATCH] 4oz-backkey-lit + 4oz-hide-window
 
  app/pubspec.yaml                                   |    4 +
  docs/wake-word.md                                  |  107 +
  dsh-go-wake.patch                                  | 2065 +++++++++++++
  tooling/build-wake-apk.sh                          |   68 +
- 240 files changed, 18888 insertions(+), 1009 deletions(-)
+ 240 files changed, 18899 insertions(+), 1009 deletions(-)
 
 diff --git a/.gitattributes b/.gitattributes
 index 52e3e08a..3e877c7e 100644
@@ -9009,10 +9009,10 @@ index 00000000..19aecfea
 +}
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenOverlay.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenOverlay.kt
 new file mode 100644
-index 00000000..154f1da5
+index 00000000..78be8c5e
 --- /dev/null
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenOverlay.kt
-@@ -0,0 +1,3066 @@
+@@ -0,0 +1,3068 @@
 +package io.github.ccch1mneyyy.dsh_app.phone.vscreen
 +
 +import io.github.ccch1mneyyy.dsh_app.phone.PhoneRegistry
@@ -10831,7 +10831,9 @@ index 00000000..154f1da5
 +
 +    /** 到位置灰（第十二节 2）：没有前台应用时「返」「转」不可用，与缩放键到边界时同一套表现。 */
 +    private fun applyValidity() {
-+        backKey?.alpha = if (hasApp) KEY_ALPHA else KEY_ALPHA_DIM
++        // 【4oz-backkey-lit】用户定稿（18:3x）：返回键与其他键一样恒亮，不因 hasApp 变暗
++        // （hasApp 任务一结束就空，返回键却仍然有效——按键可用性与它无关）。
++        backKey?.alpha = KEY_ALPHA
 +        transferKey?.let { key ->
 +            // 只在展开态显示；没有应用时置灰而不是消失（用户 15:15：按钮有时有有时没有）。
 +            key.visibility = if (shape == Shape.EXPAND) View.VISIBLE else View.GONE
@@ -12081,10 +12083,10 @@ index 00000000..154f1da5
 +}
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenPlugin.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenPlugin.kt
 new file mode 100644
-index 00000000..d54d04c1
+index 00000000..ef507e95
 --- /dev/null
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenPlugin.kt
-@@ -0,0 +1,251 @@
+@@ -0,0 +1,260 @@
 +package io.github.ccch1mneyyy.dsh_app.phone.vscreen
 +
 +import android.content.Context
@@ -12262,10 +12264,19 @@ index 00000000..d54d04c1
 +                val rule = runCatching {
 +                    VscreenUi.decide(VirtualScreenOverlay.shown, why = "dart-hide", applyUi = false)
 +                }.getOrDefault(VscreenUi.NONE)
-+                if (rule == VscreenUi.BALL2 || rule == VscreenUi.BALL1) {
-+                    VirtualScreenOverlay.hideWindowOnly(announce = false)
-+                } else {
-+                    VirtualScreenOverlay.hide()
++                when (rule) {
++                    VscreenUi.BALL2, VscreenUi.BALL1 -> {
++                        VirtualScreenOverlay.hideWindowOnly(announce = false)
++                    }
++                    // 【4oz-hide-window】判定现算"要窗"时，引擎这条 hide 是慢一拍的旧状态
++                    // （引擎还停在"条"）——作废不执行。否则窗刚被用户展开就被拆回 SMALL
++                    // （真机 18:35"展开后收回去一次"）。执行前现算、不执行排队旧结论。
++                    VscreenUi.WINDOW -> {
++                        // 保持现状，不碰窗口。
++                    }
++                    else -> {
++                        VirtualScreenOverlay.hide()
++                    }
 +                }
 +                // 【4w】收窗 ≠ 把应用搬回主屏。
 +                // 需求：👁 = 先不看了，应用继续在虚拟屏里跑，边上留黄条；只有【✕】才
