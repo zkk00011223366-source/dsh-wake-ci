@@ -1,10 +1,10 @@
 From: dsh <dsh@local>
-Date: Fri, 27 Nov 2026 16:51:12 +0800
-Subject: [PATCH] 全场景四刀: 4qr树扫全扣图死锁解除 4qs手滑直连 4qt scroll选点+回执 4qu元素过期重定位
+Date: Fri, 27 Nov 2026 22:30:06 +0800
+Subject: [PATCH] 4qv/4qw/4qx 工具说明设置页可编辑+技能手动新建编辑(自动frontmatter)+open说明重开授权
 
  dsh-go-wake.patch                                  | 2065 +++++++++++++
  tooling/build-wake-apk.sh                          |   68 +
- 246 files changed, 19466 insertions(+), 1055 deletions(-)
+ 251 files changed, 20162 insertions(+), 1066 deletions(-)
 
 diff --git a/.gitattributes b/.gitattributes
 index 52e3e08a..3e877c7e 100644
@@ -1046,6 +1046,28 @@ index 12b600d4..63d16e02 100644
      }
  
      override fun onDetachedFromActivityForConfigChanges() = onDetachedFromActivity()
+diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/McpServer.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/McpServer.kt
+index dd57c71b..9cbafcee 100644
+--- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/McpServer.kt
++++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/McpServer.kt
+@@ -41,7 +41,7 @@ data class PhoneCaller(val sessionId: String, val runId: String, val callId: Str
+  * the connection keeps reading (and answering pings) while a call waits for the person.
+  */
+ class McpServer(
+-    private val tools: List<Map<String, Any?>>,
++    private val tools: () -> List<Map<String, Any?>>,
+     private val call: (name: String, args: Map<String, Any?>, caller: PhoneCaller?) -> ToolOutput,
+     private val serverVersion: String = "1",
+     private val diagnostics: ((Map<String, Any?>, PhoneCaller?) -> ToolOutput)? = null,
+@@ -98,7 +98,7 @@ class McpServer(
+         return when (method) {
+             "initialize" -> Dispatch.Reply(result(id, initializeResult(params["protocolVersion"] as? String)))
+             "ping" -> Dispatch.Reply(result(id, emptyMap<String, Any?>()))
+-            "tools/list" -> Dispatch.Reply(result(id, mapOf("tools" to tools)))
++            "tools/list" -> Dispatch.Reply(result(id, mapOf("tools" to tools())))
+             "dsh-go/phone-run-end" -> {
+                 val session = PhoneCaller.identifier(params["sessionId"])
+                 val run = PhoneCaller.identifier(params["runId"])
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/NotificationGate.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/NotificationGate.kt
 index 9856b79f..2bcb366d 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/NotificationGate.kt
@@ -1638,7 +1660,7 @@ index 612f94d1..f11875ff 100644
      @Volatile var overlayGate: UserGate? = null
      @Volatile var notificationGate: UserGate? = null
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneControl.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneControl.kt
-index 2fc7cd59..1931b87c 100644
+index 2fc7cd59..8e700baa 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneControl.kt
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneControl.kt
 @@ -193,7 +193,15 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
@@ -1658,15 +1680,17 @@ index 2fc7cd59..1931b87c 100644
          cancelScope = { record, state ->
              // Registry admission stays sealed until these lock-free side effects finish.
              background.sealTask(state.id)
-@@ -201,6 +209,8 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
+@@ -201,7 +209,9 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
              if (state.stopped) record.activeWorker?.interruptCurrent(record.tasks)
              prompts.stopTask(record.tasks)
          })
+-    private val server = McpServer(PhoneToolCatalog.listJson(), { name, args, _ -> sessions.run(sessions.admit(null), name, args) }, SERVER_VERSION,
 +    init { installDisplayInputHook() }
 +
-     private val server = McpServer(PhoneToolCatalog.listJson(), { name, args, _ -> sessions.run(sessions.admit(null), name, args) }, SERVER_VERSION,
++    private val server = McpServer({ PhoneToolCatalog.listJson(app) }, { name, args, _ -> sessions.run(sessions.admit(null), name, args) }, SERVER_VERSION,
          diagnostics = { args, caller -> RuntimeController.get(app).diagnosticsTool.call(args, caller) })
      private val bridge = PhoneBridge(server, { line -> logger(line) }, { call ->
+         if (call.name == DiagnosticsTool.NAME) PhoneCallWork({ call.run() })
 @@ -297,7 +307,7 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
              override fun beforeHandoff(screen: PhoneScreen, owner: PhoneTasks.Owner): String? {
                  if (screen != PhoneScreen.BACKGROUND) return null
@@ -2852,7 +2876,7 @@ index 6c701851..2d47f9db 100644
          private val WRITES = setOf(FOCUS_TEXT, PhoneToolCatalog.TAP, PhoneToolCatalog.TYPE, PhoneToolCatalog.TAP_XY, PhoneToolCatalog.OPEN)
          /** An uncertain effect call tightens draft eligibility; it does not prove input was dispatched. */
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhonePlugin.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhonePlugin.kt
-index 4a76535f..4c9f46cf 100644
+index 4a76535f..528e6524 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhonePlugin.kt
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhonePlugin.kt
 @@ -2,7 +2,13 @@ package io.github.ccch1mneyyy.dsh_app.phone
@@ -2869,7 +2893,15 @@ index 4a76535f..4c9f46cf 100644
  import android.app.Activity
  import android.app.Application
  import android.content.Context
-@@ -37,6 +43,8 @@ class PhonePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
+@@ -17,6 +23,7 @@ import io.github.ccch1mneyyy.dsh_app.phone.skills.PhoneSkillReplaySelections
+ import io.github.ccch1mneyyy.dsh_app.phone.skills.PhoneSkillReplayApps
+ import io.github.ccch1mneyyy.dsh_app.runtime.RuntimeController
+ import io.github.ccch1mneyyy.dsh_app.runtime.PhoneSkillBundleReader
++import io.github.ccch1mneyyy.dsh_app.runtime.PhoneSkillManualSave
+ import io.github.ccch1mneyyy.dsh_app.phone.a11y.OverlayPrefs
+ import io.github.ccch1mneyyy.dsh_app.phone.background.PrivilegedActionGate
+ import io.flutter.embedding.engine.plugins.FlutterPlugin
+@@ -37,6 +44,8 @@ class PhonePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
      private lateinit var events: EventChannel
      private lateinit var previewEvents: EventChannel
      private val previewOwner = Any()
@@ -2878,7 +2910,7 @@ index 4a76535f..4c9f46cf 100644
      private var previewTaskId: Long? = null
      private var previewSink: EventChannel.EventSink? = null
      private val previewLifecycle = object : Application.ActivityLifecycleCallbacks {
-@@ -53,6 +61,11 @@ class PhonePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
+@@ -53,6 +62,11 @@ class PhonePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
          override fun onActivityDestroyed(host: Activity) {}
      }
      private lateinit var appContext: Context
@@ -2890,7 +2922,7 @@ index 4a76535f..4c9f46cf 100644
      private lateinit var control: PhoneControl
      private var activity: ActivityPluginBinding? = null
      private var sink: ((Map<String, Any?>) -> Unit)? = null
-@@ -67,6 +80,9 @@ class PhonePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
+@@ -67,6 +81,9 @@ class PhonePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
          val choices: List<PhoneSkillReplayApps.Choice>)
      private var skillInspection: SkillInspection? = null
      private var skillSelectionRequest = Any()
@@ -2900,7 +2932,7 @@ index 4a76535f..4c9f46cf 100644
      private val privilegedActions = PrivilegedActionGate()
  
      override fun onAttachedToEngine(binding: FlutterPlugin.FlutterPluginBinding) {
-@@ -77,6 +93,361 @@ class PhonePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
+@@ -77,6 +94,361 @@ class PhonePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
          promptOwner = Any()
          attached = true
          control.background.restoreKeptChannel()
@@ -3262,7 +3294,7 @@ index 4a76535f..4c9f46cf 100644
          methods = MethodChannel(binding.binaryMessenger, "dsh/phone").also { it.setMethodCallHandler(this) }
          events = EventChannel(binding.binaryMessenger, "dsh/phone/events").also { it.setStreamHandler(this) }
          previewEvents = EventChannel(binding.binaryMessenger, "dsh/phone/preview").also { channel ->
-@@ -103,9 +474,99 @@ class PhonePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
+@@ -103,9 +475,99 @@ class PhonePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
          }
      }
  
@@ -3362,16 +3394,19 @@ index 4a76535f..4c9f46cf 100644
          skillSelectionRequest = Any()
          skillInspection = null
          skillClient?.let { control.skillReplaySelections.retireClient(it); control.skillDrafts.retireClient(it) }
-@@ -240,6 +701,8 @@ class PhonePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
+@@ -240,6 +702,11 @@ class PhonePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
              "skillDraft", "saveSkillDraft", "discardSkillDraft" -> skillCall(call, result)
              "inspectSkillReplay" -> inspectSkillReplay(call, result)
              "prepareSkillReplay" -> prepareSkillReplay(call, result)
 +            "listPhoneSkills" -> listPhoneSkills(call, result)
 +            "removePhoneSkill" -> removePhoneSkill(call, result)
++            "listToolCatalog" -> listToolCatalog(call, result)
++            "savePhoneSkillManual" -> savePhoneSkillManual(call, result)
++            "getPhoneSkillContent" -> getPhoneSkillContent(call, result)
              "discardSkillReplay" -> {
                  val args = call.arguments as? Map<*, *>
                  val id = args?.get("invocation") as? String
-@@ -249,6 +712,103 @@ class PhonePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
+@@ -249,6 +716,103 @@ class PhonePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
                  result.success(if (removed) mapOf("kind" to "discarded") else replayRejected("stale"))
              }
              "setBackgroundPreview" -> result.success(control.preview.setEnabled(call.argument<Boolean>("enabled") == true))
@@ -3475,7 +3510,7 @@ index 4a76535f..4c9f46cf 100644
              "setBackgroundKeep" -> {
                  val selected = call.argument<String>("mode").orEmpty()
                  val enabled = call.argument<Boolean>("enabled") == true
-@@ -388,6 +948,32 @@ class PhonePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
+@@ -388,6 +952,77 @@ class PhonePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
          control.skillDrafts.clientCurrent(value.client) && control.skillDrafts.currentEpoch() == value.epoch &&
          value.origin.runtime.phoneSkillOriginCurrent(value.origin)
  
@@ -3503,6 +3538,51 @@ index 4a76535f..4c9f46cf 100644
 +        val origin = runtime.capturePhoneSkillOrigin()
 +        if (origin == null) { result.success(mapOf("ok" to false)); return }
 +        runtime.removePhoneSkill(origin, name) { removed -> result.success(mapOf("ok" to removed)) }
++    }
++
++    /** 【4qv】设置页：工具说明目录（名字+默认说明），覆盖值由 Dart 直接读写偏好。 */
++    private fun listToolCatalog(call: MethodCall, result: MethodChannel.Result) {
++        val catalog = PhoneToolCatalog.listCatalog()
++        result.success(mapOf("ok" to true, "tools" to catalog.map {
++            mapOf("name" to it.first, "description" to it.second) }))
++    }
++
++    /** 【4qw】设置页：手动新建/编辑技能（用户自己写的 SKILL.md）。 */
++    private fun savePhoneSkillManual(call: MethodCall, result: MethodChannel.Result) {
++        val args = call.arguments as? Map<*, *>
++        val name = args?.get("skillId") as? String
++        val markdown = args?.get("markdown") as? String
++        if (args?.keys != setOf("skillId", "markdown") || name == null || markdown == null ||
++            !Regex("phone-task-[a-f0-9]{32}").matches(name)) {
++            result.success(mapOf("ok" to false)); return
++        }
++        if (!attached) { result.success(mapOf("ok" to false)); return }
++        val runtime = RuntimeController.get(appContext)
++        val origin = runtime.capturePhoneSkillOrigin()
++        if (origin == null) { result.success(mapOf("ok" to false)); return }
++        runtime.savePhoneSkillManual(origin, name, markdown) { outcome ->
++            val ok = outcome is PhoneSkillManualSave.Saved
++            result.success(mapOf("ok" to ok))
++        }
++    }
++
++    /** 【4qw】设置页：读回技能 SKILL.md 全文（编辑页用）。 */
++    private fun getPhoneSkillContent(call: MethodCall, result: MethodChannel.Result) {
++        val args = call.arguments as? Map<*, *>
++        val name = args?.get("skillId") as? String
++        if (args?.keys != setOf("skillId") || name == null ||
++            !Regex("phone-task-[a-f0-9]{32}").matches(name)) {
++            result.success(mapOf("ok" to false)); return
++        }
++        if (!attached) { result.success(mapOf("ok" to false)); return }
++        val runtime = RuntimeController.get(appContext)
++        val origin = runtime.capturePhoneSkillOrigin()
++        if (origin == null) { result.success(mapOf("ok" to false)); return }
++        runtime.getPhoneSkillContent(origin, name) { outcome ->
++            if (outcome is PhoneSkillManualSave.Content) {
++                result.success(mapOf("ok" to true, "markdown" to outcome.markdown))
++            } else result.success(mapOf("ok" to false))
++        }
 +    }
 +
      private fun inspectSkillReplay(call: MethodCall, result: MethodChannel.Result) {
@@ -3800,7 +3880,7 @@ index a09015e7..b9c4bf15 100644
          /** No confirmation surface is reachable, so this one action did not run. */
          // l10n:keep agent no-gate protocol
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneToolCatalog.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneToolCatalog.kt
-index cbfb0de3..82e48339 100644
+index cbfb0de3..582ea03f 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneToolCatalog.kt
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneToolCatalog.kt
 @@ -22,8 +22,10 @@ object PhoneToolCatalog {
@@ -3823,12 +3903,30 @@ index cbfb0de3..82e48339 100644
      val DIRECTIONS = listOf("up", "down", "left", "right")
      val NAV_MODES = listOf("drive", "transit", "walk", "ride")
  
-@@ -53,13 +55,13 @@ object PhoneToolCatalog {
+@@ -53,13 +55,31 @@ object PhoneToolCatalog {
          linkedMapOf<String, Any?>("type" to "string", "enum" to values, "description" to description)
  
      // l10n:keep agent tool catalog
 -    private val SCREEN_ID = str("屏幕号，如 s7（主屏）或 b3（后台屏），取自最近一次返回的屏幕")
 +    private val SCREEN_ID = str("屏幕号，如 s7（主屏）或 b3（虚拟屏），取自最近一次返回的屏幕")
++
++    /**
++     * 【4qv】工具说明用户覆盖层：设置页可编辑每条工具的说明，存
++     * FlutterSharedPreferences 的 flutter.ai_tool_desc_<name>。改完下一次
++     * tools/list（新对话/引擎重连）即生效，不用出包、不用重启 App。
++     */
++    fun listJson(app: android.content.Context): List<Map<String, Any?>> = tools.map { t ->
++        val over = override(app, t.name)
++        if (over == null) t.toJson() else Tool(t.name, over, t.properties, t.required).toJson()
++    }
++
++    private fun override(app: android.content.Context, name: String): String? = runCatching {
++        app.getSharedPreferences("FlutterSharedPreferences", android.content.Context.MODE_PRIVATE)
++            .getString("flutter.ai_tool_desc_$name", null)
++    }.getOrNull()?.takeIf { it.isNotBlank() }
++
++    /** （名字, 默认说明）对，给设置页展示；覆盖值由设置页直接读写偏好。 */
++    fun listCatalog(): List<Pair<String, String>> = tools.map { it.name to it.description }
  
      val tools: List<Tool> = listOf(
          Tool(
@@ -3839,12 +3937,12 @@ index cbfb0de3..82e48339 100644
              linkedMapOf(
                  // l10n:keep agent tool catalog
                  "command" to str("完整 Android sh 命令，UTF-8 最多 2048 字节；不带 adb shell 前缀，不继承 Ubuntu 路径、环境或工作目录"),
-@@ -79,14 +81,22 @@ object PhoneToolCatalog {
+@@ -79,14 +99,22 @@ object PhoneToolCatalog {
          Tool(
              OPEN,
              // l10n:keep agent tool catalog
 -            "尝试打开应用或链接（app 或 url 二选一）。background:true 仅用于在后台屏打开应用（需用户开通不打扰模式）；可读取时返回新屏幕。启动回话不表示目标业务已经完成。",
-+            "尝试打开应用或链接（app 或 url 二选一）。打开的目标通道由系统按设置决定，**你不需要也不许自己决定**；链接只能打开在你的屏幕上。可读取时返回新屏幕。启动回话不表示目标业务已经完成。**应用已经在虚拟屏里时，open 只是把它置前，不会重启、页面停在原地——这算成功，别当成“没打开”去换屏折腾。**",
++            "尝试打开应用或链接（app 或 url 二选一）。打开的目标通道由系统按设置决定，**你不需要也不许自己决定**；链接只能打开在你的屏幕上。可读取时返回新屏幕。启动回话不表示目标业务已经完成。**应用已经在虚拟屏里时，open 只是把它置前，不会重启、页面停在原地——这算成功，别当成“没打开”去换屏折腾。** **首次打开失败可关屏重开一次（用户预设授权）**：open 之后确认应用没有进虚拟屏（读屏看不到该应用、或回包提示通道/打开问题）时，允许关闭虚拟屏再重新打开一次，然后重新 open 同一应用并读屏确认它已进虚拟屏；只许重开一次，重开后仍失败就把现场照实报给用户，不要反复关屏、不要自己猜原因。",
              linkedMapOf(
                  // l10n:keep agent tool catalog
                  "app" to str("包名或应用名"),
@@ -3864,7 +3962,7 @@ index cbfb0de3..82e48339 100644
              ),
              emptyList(),
          ),
-@@ -167,14 +177,17 @@ object PhoneToolCatalog {
+@@ -167,14 +195,17 @@ object PhoneToolCatalog {
          Tool(
              SCREEN,
              // l10n:keep agent tool catalog
@@ -3884,7 +3982,7 @@ index cbfb0de3..82e48339 100644
              ),
              emptyList(),
          ),
-@@ -204,7 +217,10 @@ object PhoneToolCatalog {
+@@ -204,7 +235,10 @@ object PhoneToolCatalog {
          Tool(
              TYPE,
              // l10n:keep agent tool catalog
@@ -3896,7 +3994,7 @@ index cbfb0de3..82e48339 100644
              linkedMapOf(
                  "screen" to SCREEN_ID,
                  // l10n:keep agent tool catalog
-@@ -232,7 +248,7 @@ object PhoneToolCatalog {
+@@ -232,7 +266,7 @@ object PhoneToolCatalog {
          Tool(
              KEY,
              // l10n:keep agent tool catalog
@@ -3905,7 +4003,7 @@ index cbfb0de3..82e48339 100644
              // l10n:keep agent tool catalog
              linkedMapOf("key" to enum(KEYS, "按键"), "screen" to str("屏幕号；省略时作用于主屏")),
              listOf("key"),
-@@ -240,10 +256,10 @@ object PhoneToolCatalog {
+@@ -240,10 +274,10 @@ object PhoneToolCatalog {
          Tool(
              TAP_XY,
              // l10n:keep agent tool catalog
@@ -3918,7 +4016,7 @@ index cbfb0de3..82e48339 100644
                  // l10n:keep agent tool catalog
                  "x" to int("横坐标（像素，从 0 开始）"),
                  // l10n:keep agent tool catalog
-@@ -262,11 +278,30 @@ object PhoneToolCatalog {
+@@ -262,11 +296,30 @@ object PhoneToolCatalog {
          Tool(
              HANDOFF,
              // l10n:keep agent tool catalog
@@ -3950,6 +4048,15 @@ index cbfb0de3..82e48339 100644
          Tool(
              DIAGNOSTICS,
              // l10n:keep agent tool catalog
+@@ -283,7 +336,7 @@ object PhoneToolCatalog {
+ 
+     val names: List<String> = tools.map { it.name }
+ 
+-    fun listJson(): List<Map<String, Any?>> = tools.map { it.toJson() }
++    fun listJson(): List<Map<String, Any?>> = tools.map { it.toJson() } // 旧签名已废弃，见 listJson(app)
+ 
+     /** Tools that act on a screen through a [PhoneDriver] (need accessibility or the background display). */
+     val SCREEN_TOOLS = setOf(SCREEN, COLLECT, TAP, TYPE, SCROLL, KEY, TAP_XY, HANDOFF)
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/SafetyGate.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/SafetyGate.kt
 index e50373c8..f10e837b 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/SafetyGate.kt
@@ -13135,10 +13242,33 @@ index 3e902fed..b0e3eb66 100644
          }
      }
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/runtime/PhoneSkillBundleReader.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/runtime/PhoneSkillBundleReader.kt
-index 98fceb58..f9a228b0 100644
+index 98fceb58..eea1266d 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/runtime/PhoneSkillBundleReader.kt
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/runtime/PhoneSkillBundleReader.kt
-@@ -62,6 +62,48 @@ internal object PhoneSkillBundleReader {
+@@ -13,9 +13,22 @@ import java.nio.charset.CodingErrorAction
+ import java.nio.file.Files
+ import java.nio.file.LinkOption.NOFOLLOW_LINKS
+ import java.nio.file.Path
++import java.nio.file.StandardCopyOption
+ import java.nio.file.StandardOpenOption.READ
+ import java.security.MessageDigest
+ 
++/** 【4qw】手动技能保存/读取结果（设置页技能编辑器用）。 */
++sealed interface PhoneSkillManualSave {
++    data class Saved(val name: String) : PhoneSkillManualSave
++    data class Content(val name: String, val markdown: String) : PhoneSkillManualSave
++    data object MISSING : PhoneSkillManualSave
++    data object INVALID : PhoneSkillManualSave
++    data object NO_HOME : PhoneSkillManualSave
++    data object TOO_LARGE : PhoneSkillManualSave
++    data object IO : PhoneSkillManualSave
++    data object STALE : PhoneSkillManualSave
++}
++
+ /** Fixed local bundle reader for the existing rootfs worker, not an execution grant.
+  * Root generation/worker admission belongs to RuntimeController. Path checks share the installer's
+  * boundary: they are not a sandbox against a hostile same-UID process replacing parent paths.
+@@ -62,6 +75,119 @@ internal object PhoneSkillBundleReader {
          catch (_: SecurityException) { Read.Rejected(Reason.IO) }
      }
  
@@ -13158,8 +13288,16 @@ index 98fceb58..f9a228b0 100644
 +                .filter { it.isDirectory && NAME.matches(it.name) && it.resolve("SKILL.md").isFile }
 +                .map { child ->
 +                    val summary = runCatching {
-+                        utf8(readRegular(child.toPath().resolve("SKILL.md"), PhoneTaskTrace.MAX_BYTES))
-+                            .lineSequence().firstOrNull { it.isNotBlank() }?.take(80)
++                        val text = utf8(readRegular(child.toPath().resolve("SKILL.md"), PhoneTaskTrace.MAX_BYTES))
++                        // 优先 frontmatter 的 description（任务技能和手动技能都写它），
++                        // 没有 frontmatter 才退正文第一行；再退目录名。
++                        val desc = if (text.startsWith("---\n")) {
++                            val end = text.indexOf("\n---\n", 4)
++                            val head = if (end >= 0) text.substring(4, end) else text.substring(4)
++                            head.lineSequence().firstOrNull { it.startsWith("description:") }
++                                ?.removePrefix("description:")?.trim()?.takeIf { it.isNotBlank() }
++                        } else null
++                        desc ?: text.lineSequence().firstOrNull { it.isNotBlank() }?.removePrefix("---")?.trim()?.takeIf { it.isNotBlank() }?.take(80)
 +                    }.getOrNull()?.takeIf { it.isNotBlank() } ?: child.name
 +                    Entry(child.name, summary)
 +                }
@@ -13184,14 +13322,77 @@ index 98fceb58..f9a228b0 100644
 +        catch (_: SecurityException) { false }
 +    }
 +
++    /** 【4qw】手动技能内容上限：用户在设置页手写的内容，限 64KB，防误粘贴大文件。 */
++    const val MANUAL_MAX_BYTES = 64 * 1024
++
++    /** 【4qw】手动新建/编辑技能：写/覆盖 skills/<name>/SKILL.md。名字合法、UTF-8 解码、
++     * 大小受限；目录不存在则创建。这是用户对本人技能的自主编辑。
++     * 引擎认技能靠 YAML 头（name/description/user-invocable），这里自动包好：
++     * name=目录名、description=正文第一行，模型可调用；用户永远不用手写 frontmatter。 */
++    fun writeManual(root: File, name: String, markdown: String): PhoneSkillManualSave {
++        if (!NAME.matches(name)) return PhoneSkillManualSave.INVALID
++        val body = markdown.trimEnd('\n')
++        val firstLine = body.lineSequence().firstOrNull { it.isNotBlank() }?.trim()?.take(80) ?: "手动技能"
++        val document = "---\nname: $name\ndescription: $firstLine\nuser-invocable: true\n---\n\n$body\n"
++        val bytes = document.toByteArray(Charsets.UTF_8)
++        if (bytes.size > MANUAL_MAX_BYTES) return PhoneSkillManualSave.TOO_LARGE
++        return try {
++            val rootPath = root.canonicalFile.toPath()
++            val rawHome = rootPath.resolve("root/.dsh")
++            val home = rawHome.toFile().canonicalFile.toPath()
++            if (!home.startsWith(rootPath) || !Files.isDirectory(rawHome, NOFOLLOW_LINKS)) return PhoneSkillManualSave.NO_HOME
++            val skills = home.resolve("skills")
++            try { Files.createDirectory(skills) } catch (_: FileAlreadyExistsException) {
++                if (!Files.isDirectory(skills, NOFOLLOW_LINKS)) return PhoneSkillManualSave.NO_HOME
++            }
++            val directory = skills.resolve(name)
++            try { Files.createDirectory(directory) } catch (_: FileAlreadyExistsException) {
++                if (!Files.isDirectory(directory, NOFOLLOW_LINKS)) return PhoneSkillManualSave.IO
++            }
++            val target = directory.resolve("SKILL.md")
++            val stage = directory.resolve(".SKILL.tmp")
++            Files.write(stage, bytes)
++            try { Files.move(stage, target, StandardCopyOption.REPLACE_EXISTING) }
++            finally { runCatching { Files.deleteIfExists(stage) } }
++            // 编辑 = 移除此数据路线（与任务技能 SKILL.md 的既有语义一致）：
++            // 删掉重放配套，技能降级为纯 SKILL.md 技能，replay 入口自然失效，不留下对不上号的旧校验。
++            runCatching { Files.deleteIfExists(directory.resolve("route.json")) }
++            runCatching { Files.deleteIfExists(directory.resolve("revision.json")) }
++            PhoneSkillManualSave.Saved(name)
++        } catch (_: IOException) { PhoneSkillManualSave.IO }
++        catch (_: SecurityException) { PhoneSkillManualSave.IO }
++    }
++
++    /** 【4qw】读回一个技能正文：剥掉 App 生成的 YAML 头，只给编辑器看用户写的内容。 */
++    fun readManual(root: File, name: String): PhoneSkillManualSave {
++        if (!NAME.matches(name)) return PhoneSkillManualSave.INVALID
++        return try {
++            val rootPath = root.canonicalFile.toPath()
++            val rawHome = rootPath.resolve("root/.dsh")
++            val home = rawHome.toFile().canonicalFile.toPath()
++            if (!home.startsWith(rootPath) || !Files.isDirectory(rawHome, NOFOLLOW_LINKS)) return PhoneSkillManualSave.NO_HOME
++            val target = home.resolve("skills").resolve(name).resolve("SKILL.md")
++            if (!Files.isRegularFile(target, NOFOLLOW_LINKS)) return PhoneSkillManualSave.MISSING
++            val bytes = Files.readAllBytes(target)
++            if (bytes.size > MANUAL_MAX_BYTES) return PhoneSkillManualSave.TOO_LARGE
++            val text = String(bytes, Charsets.UTF_8)
++            val body = if (text.startsWith("---\n")) {
++                val end = text.indexOf("\n---\n", 4)
++                if (end >= 0) text.substring(end + 5).trimStart('\n') else text
++            } else text
++            PhoneSkillManualSave.Content(name, body)
++        } catch (_: IOException) { PhoneSkillManualSave.IO }
++        catch (_: SecurityException) { PhoneSkillManualSave.IO }
++    }
++
      /** Shared with staging: the caller owns these bytes without concurrent mutation for this call.
       * This checks content, not publication. Only read() also checks the final on-disk files.
       */
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/runtime/RuntimeController.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/runtime/RuntimeController.kt
-index 57e1916e..911149dc 100644
+index 57e1916e..cf749ad4 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/runtime/RuntimeController.kt
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/runtime/RuntimeController.kt
-@@ -387,6 +387,24 @@ class RuntimeController private constructor(private val app: Context) : DshProce
+@@ -387,6 +387,46 @@ class RuntimeController private constructor(private val app: Context) : DshProce
          }
      }
  
@@ -13210,6 +13411,28 @@ index 57e1916e..911149dc 100644
 +            val result = if (!phoneSkillOriginCurrent(origin)) false
 +            else PhoneSkillBundleReader.remove(origin.root, name)
 +            main.post { onDone(if (phoneSkillOriginCurrent(origin)) result else false) }
++        }
++    }
++
++    /** 【4qw】技能管理页手动新建/编辑：用户自己在设置页写的 SKILL.md，直接落技能目录。
++     * 这是用户对本人设备上本人 AI 的自主编辑（等同用户手写文件），不是模型或第三方注入；
++     * 名字必须合法（phone-task-<32hex>），内容限长并校验 UTF-8，其余交给引擎监听热载。 */
++    internal fun savePhoneSkillManual(origin: PhoneSkillOrigin, name: String, markdown: String,
++                                      onDone: (PhoneSkillManualSave) -> Unit) {
++        worker.execute {
++            val result = if (!phoneSkillOriginCurrent(origin)) PhoneSkillManualSave.STALE
++            else PhoneSkillBundleReader.writeManual(origin.root, name, markdown)
++            main.post { onDone(if (phoneSkillOriginCurrent(origin)) result else PhoneSkillManualSave.STALE) }
++        }
++    }
++
++    /** 【4qw】技能管理页：读回一个技能的 SKILL.md 全文（编辑页用）。 */
++    internal fun getPhoneSkillContent(origin: PhoneSkillOrigin, name: String,
++                                      onDone: (PhoneSkillManualSave) -> Unit) {
++        worker.execute {
++            val result = if (!phoneSkillOriginCurrent(origin)) PhoneSkillManualSave.STALE
++            else PhoneSkillBundleReader.readManual(origin.root, name)
++            main.post { onDone(if (phoneSkillOriginCurrent(origin)) result else PhoneSkillManualSave.STALE) }
 +        }
 +    }
 +
@@ -26952,6 +27175,77 @@ index 3540cb26..8a4282ec 100644
 +            android:targetPackage="io.github.ccch1mneyyy.dsh_app.private" />
      </shortcut>
  </shortcuts>
+diff --git a/app/android/app/src/test/kotlin/io/github/ccch1mneyyy/dsh_app/phone/DiagnosticsToolTest.kt b/app/android/app/src/test/kotlin/io/github/ccch1mneyyy/dsh_app/phone/DiagnosticsToolTest.kt
+index 7a9b11c1..c177050c 100644
+--- a/app/android/app/src/test/kotlin/io/github/ccch1mneyyy/dsh_app/phone/DiagnosticsToolTest.kt
++++ b/app/android/app/src/test/kotlin/io/github/ccch1mneyyy/dsh_app/phone/DiagnosticsToolTest.kt
+@@ -133,7 +133,7 @@ class DiagnosticsToolTest {
+     @Test fun mcpRoutingKeepsDiagnosticsOutsideControlHandlerAndRetainsLegacyTools() {
+         val tool = DiagnosticsTool { error("cached call must not collect") }
+         tool.published(at, mapOf("summary" to "local"))
+-        val server = McpServer(PhoneToolCatalog.listJson(), { _, _, _ -> ToolOutput("legacy") }, diagnostics = tool::call)
++        val server = McpServer({ PhoneToolCatalog.listJson() }, { _, _, _ -> ToolOutput("legacy") }, diagnostics = tool::call)
+         val meta = mapOf(PhoneCaller.META_KEY to mapOf("v" to 1, "sessionId" to caller.sessionId,
+             "runId" to caller.runId, "callId" to caller.callId, "runLifecycle" to 1))
+         fun request(name: String, args: Any?, metadata: Any? = meta) = Json.write(mapOf(
+diff --git a/app/android/app/src/test/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneCallerTest.kt b/app/android/app/src/test/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneCallerTest.kt
+index dccbeaeb..a6e2e7c4 100644
+--- a/app/android/app/src/test/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneCallerTest.kt
++++ b/app/android/app/src/test/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneCallerTest.kt
+@@ -16,7 +16,7 @@ class PhoneCallerTest {
+ 
+     @Test fun dispatchKeepsEachCallerEvenWhenAnotherCallRunsFirst() {
+         val seen = mutableListOf<PhoneCaller?>()
+-        val server = McpServer(emptyList(), { _, _, owner -> seen += owner; ToolOutput("ok") })
++        val server = McpServer({ emptyList() }, { _, _, owner -> seen += owner; ToolOutput("ok") })
+         val a = server.dispatch(request(1, caller("A"))) as McpServer.Dispatch.Call
+         val b = server.dispatch(request(2, caller("B"))) as McpServer.Dispatch.Call
+         b.run()
+@@ -28,7 +28,7 @@ class PhoneCallerTest {
+ 
+     @Test fun legacyDoesNotBorrowIdentityFromArgumentsOrPreviousCall() {
+         val seen = mutableListOf<PhoneCaller?>()
+-        val server = McpServer(emptyList(), { _, _, owner -> seen += owner; ToolOutput("ok") })
++        val server = McpServer({ emptyList() }, { _, _, owner -> seen += owner; ToolOutput("ok") })
+         server.handle(request(1, caller("A")))
+         server.handle(request(2, null, includeCaller = false, args = mapOf(
+             "sessionId" to "A", "_meta" to mapOf(PhoneCaller.META_KEY to caller("A")),
+@@ -39,7 +39,7 @@ class PhoneCallerTest {
+ 
+     @Test fun malformedOrUnsupportedCallerNeverExecutesAndNeverBecomesLegacy() {
+         var calls = 0
+-        val server = McpServer(emptyList(), { _, _, _ -> calls++; ToolOutput("ok") })
++        val server = McpServer({ emptyList() }, { _, _, _ -> calls++; ToolOutput("ok") })
+         val invalid = listOf(null, "A", caller("A") + ("v" to 2), caller(""),
+             caller("A") + ("runId" to "x".repeat(257)), caller("A") + ("callId" to "x\ny"))
+         for ((i, value) in invalid.withIndex()) {
+@@ -51,7 +51,7 @@ class PhoneCallerTest {
+ 
+     @Test fun capabilityReportsEnabledIsolationAndCatalogIsUnchanged() {
+         val tools = listOf(mapOf("name" to "screen", "description" to "same catalog"))
+-        val server = McpServer(tools, { _, _, _ -> ToolOutput("ok") })
++        val server = McpServer({ tools }, { _, _, _ -> ToolOutput("ok") })
+         fun result(method: String): Map<*, *> {
+             val reply = server.handle(Json.write(mapOf("jsonrpc" to "2.0", "id" to 1, "method" to method)))!!
+             return (Json.parse(reply) as Map<*, *>)["result"] as Map<*, *>
+@@ -68,7 +68,7 @@ class PhoneCallerTest {
+     }
+     @Test fun runEndIsAPrivateAckRequestAndMalformedIdentityIsNotLegacy() {
+         var calls = 0
+-        val server = McpServer(emptyList(), { _, _, _ -> calls++; ToolOutput("unexpected") })
++        val server = McpServer({ emptyList() }, { _, _, _ -> calls++; ToolOutput("unexpected") })
+         val params = mapOf("v" to 1, "sessionId" to "A", "runId" to "epoch:1")
+         fun wire(value: Any?, id: Boolean = true) = Json.write(buildMap<String, Any?> {
+             put("jsonrpc", "2.0"); if (id) put("id", 5); put("method", "dsh-go/phone-run-end"); put("params", value)
+@@ -86,7 +86,7 @@ class PhoneCallerTest {
+     }
+ 
+     @Test fun onlyExactLifecycleIntegerEnablesModernAttribution() {
+-        val server = McpServer(emptyList(), { _, _, _ -> ToolOutput("ok") })
++        val server = McpServer({ emptyList() }, { _, _, _ -> ToolOutput("ok") })
+         val absent = server.dispatch(request(1, caller("A"))) as McpServer.Dispatch.Call
+         assertEquals(0, absent.caller!!.runLifecycle)
+         for (version in listOf(0, 1)) {
 diff --git a/app/android/app/src/test/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/DisplayAwakeTest.kt b/app/android/app/src/test/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/DisplayAwakeTest.kt
 new file mode 100644
 index 00000000..b76b8abe
@@ -100074,7 +100368,7 @@ index 00000000..8e1a253a
 +/// 全局导航键：通话悬浮球等"不挂在某个页面下"的入口用它在任何界面 push/pop。
 +final GlobalKey<NavigatorState> appNavigatorKey = GlobalKey<NavigatorState>();
 diff --git a/app/lib/l10n/app_en.arb b/app/lib/l10n/app_en.arb
-index e1de7125..89bbc82b 100644
+index e1de7125..b2d95ed1 100644
 --- a/app/lib/l10n/app_en.arb
 +++ b/app/lib/l10n/app_en.arb
 @@ -563,6 +563,7 @@
@@ -100106,7 +100400,7 @@ index e1de7125..89bbc82b 100644
    "phoneTaskResultReady": "Task complete · View result",
    "phoneTaskEndedResult": "Task ended · View result",
    "phoneBackgroundGuideTitle": "Confirmations and return",
-@@ -4019,6 +4027,11 @@
+@@ -4019,6 +4027,21 @@
    "phoneSkillInvalid": "The edit or step order exceeds the limits. Shorten the text and keep at least one step.",
    "phoneSkillWriteFailed": "The file could not be written. Check the local runtime and storage; edit and update the preview before confirming another save.",
    "phoneSkillUnavailable": "Skill drafts are unavailable. Check the local engine state and try again.",
@@ -100115,10 +100409,20 @@ index e1de7125..89bbc82b 100644
 +  "phoneSkillDeleteConfirm": "Delete this skill? This takes effect immediately.",
 +  "phoneSkillDeleted": "Deleted.",
 +  "phoneSkillDeleteFailed": "Delete failed. Try again.",
++  "phoneToolDescTitle": "AI tool descriptions",
++  "phoneToolDescSubtitle": "Takes effect in the next conversation, no restart needed",
++  "phoneToolDescReset": "Restore default",
++  "phoneToolDescCustom": "Custom",
++  "phoneSkillNew": "New skill",
++  "phoneSkillEditTitle": "Edit skill",
++  "phoneSkillNameHint": "First line is the skill name (shown in the list); do not write the --- header",
++  "phoneSkillSaveHint": "Content is saved as SKILL.md and loaded by the engine; delete from the list page",
++  "phoneSkillSaved": "Saved",
++  "phoneSkillSaveFailed": "Save failed. Try again.",
    "phoneModeTitle": "How DSH confirms",
    "phoneModeMessage": "You can change this in Settings anytime",
    "phoneModeAsk": "Ask me at key steps",
-@@ -5735,6 +5748,7 @@
+@@ -5735,6 +5758,7 @@
    "speechCallEarpiece": "Earpiece",
    "speechBackdropTitle": "Call background",
    "speechCallSettings": "Call settings",
@@ -100126,7 +100430,7 @@ index e1de7125..89bbc82b 100644
    "speechCallPause": "Pause before she answers",
    "speechCallPauseQuick": "Short",
    "speechCallPauseNormal": "Medium",
-@@ -5756,7 +5770,25 @@
+@@ -5756,7 +5780,25 @@
    "speechCallVisualRing": "Ring",
    "speechCallVisualMono": "Line",
    "speechCallVisualGlass": "Orb",
@@ -100153,7 +100457,7 @@ index e1de7125..89bbc82b 100644
    "starPromptBody": "DSH Go is free and open source. If it’s made your phone a little nicer to use, please give it a Star — it means so much to this little whale!",
    "starPromptPlea": "Pretty please~ It really matters!!",
 diff --git a/app/lib/l10n/app_zh.arb b/app/lib/l10n/app_zh.arb
-index ec1a316d..64be4191 100644
+index ec1a316d..16719c4c 100644
 --- a/app/lib/l10n/app_zh.arb
 +++ b/app/lib/l10n/app_zh.arb
 @@ -3,8 +3,8 @@
@@ -100523,7 +100827,7 @@ index ec1a316d..64be4191 100644
    "phoneKeepRestoring": "正在重新连接",
    "phoneKeepWaiting": "等通道可用后再连",
    "phoneKeepWaitingService": "等所选服务运行后再连",
-@@ -7519,6 +7527,11 @@
+@@ -7519,6 +7527,21 @@
    "phoneSkillInvalid": "编辑内容或步骤顺序不符合限制。请减少文字，至少保留一个步骤。",
    "phoneSkillWriteFailed": "未能写入。请核对本机运行环境和存储；修改并更新预览后才能再次确认保存。",
    "phoneSkillUnavailable": "当前无法处理技能草稿。请检查本机引擎状态后重试。",
@@ -100532,10 +100836,20 @@ index ec1a316d..64be4191 100644
 +  "phoneSkillDeleteConfirm": "删除这个技能？删除立即生效。",
 +  "phoneSkillDeleted": "已删除。",
 +  "phoneSkillDeleteFailed": "删除失败，请重试。",
++  "phoneToolDescTitle": "AI 工具说明",
++  "phoneToolDescSubtitle": "改完下一次对话生效，不用重启",
++  "phoneToolDescReset": "恢复默认",
++  "phoneToolDescCustom": "自定义",
++  "phoneSkillNew": "新建技能",
++  "phoneSkillEditTitle": "编辑技能",
++  "phoneSkillNameHint": "第一行写技能名称（列表里显示的名字）；不用写开头的 ---",
++  "phoneSkillSaveHint": "内容保存为 SKILL.md，引擎自动加载；删除在列表页操作",
++  "phoneSkillSaved": "已保存",
++  "phoneSkillSaveFailed": "保存失败，请重试",
    "phoneModeTitle": "选择确认方式",
    "phoneModeMessage": "随时可在设置里更改",
    "phoneModeAsk": "关键步骤先问我",
-@@ -7526,13 +7539,13 @@
+@@ -7526,13 +7549,13 @@
    "phoneModeAuto": "全程自动",
    "phoneModeAutoHint": "不再询问，全程免打扰",
    "phoneModeAutoNoteTitle": "这些仍由你来操作",
@@ -100551,7 +100865,7 @@ index ec1a316d..64be4191 100644
    "phoneYoursDenyList": "应用名单里「不碰」的 App，默认含银行、支付类",
    "phoneUnlockTitle": "解除限制",
    "phoneUnlockSubtitle": "让 AI 去做默认由你来做的事",
-@@ -7540,8 +7553,8 @@
+@@ -7540,8 +7563,8 @@
    "phoneUnlockSystemHint": "含权限页、安装器、安全中心、通知栏",
    "phoneUnlockSecrets": "密码和验证码",
    "phoneUnlockSecretsHint": "填写密码、验证码和支付密码",
@@ -100562,7 +100876,7 @@ index ec1a316d..64be4191 100644
    "phoneUnlockBusy": "任务进行中，结束后才能开启",
    "phoneUnlockFootnote": "开启后的后果由你承担。建议只在需要时开启，用完关闭。",
    "phoneUnlockBanks": "银行、支付类 App",
-@@ -7558,7 +7571,7 @@
+@@ -7558,7 +7581,7 @@
    "phoneUnlockedBadge": "已解除限制",
    "phoneUnlockConfirmSystemTitle": "允许 AI 操作系统设置？",
    "phoneUnlockConfirmSecretsTitle": "允许 AI 填写密码和验证码？",
@@ -100571,7 +100885,7 @@ index ec1a316d..64be4191 100644
    "phoneUnlockCanTitle": "开启后，AI 可以",
    "phoneUnlockRiskTitle": "可能出什么事",
    "phoneUnlockDisclaimerTitle": "免责声明",
-@@ -7572,13 +7585,13 @@
+@@ -7572,13 +7595,13 @@
    "phoneUnlockSecretsCan3": "操作记录里只显示 ••••，不记下填写的内容",
    "phoneUnlockSecretsRisk1": "恶意指令可能诱导 AI 把验证码填到别处，让他人登录你的账号",
    "phoneUnlockSecretsRisk2": "可能完成你并不想要的付款或转账",
@@ -100588,7 +100902,7 @@ index ec1a316d..64be4191 100644
    "phoneUnlockDisclaimer4": "建议只在需要时临时开启，用完关闭。",
    "phoneUnlockDisclaimer5": "不建议在存有支付或银行信息的设备上开启。",
    "phoneUnlockHold": "我了解风险，开启",
-@@ -7848,7 +7861,7 @@
+@@ -7848,7 +7871,7 @@
    "pluginsWriteFailed": "没能写入",
    "pluginsHostUnreachable": "没能连上主机",
    "pluginsFileWriteFailed": "没能写入文件",
@@ -100597,7 +100911,7 @@ index ec1a316d..64be4191 100644
    "pluginsGistTokenInvalid": "GitHub 令牌无效或没有 Gist 权限",
    "pluginsGistCreateHttpFailed": "没能创建 Gist（HTTP {status}）",
    "@pluginsGistCreateHttpFailed": {
-@@ -8286,7 +8299,7 @@
+@@ -8286,7 +8309,7 @@
    "pluginsNotificationsBlocked": "系统已关闭",
    "pluginsTurnedOn": "已开启",
    "pluginsNotifications": "通知",
@@ -100606,7 +100920,7 @@ index ec1a316d..64be4191 100644
    "pluginsSystemNotificationsOff": "系统通知已关闭",
    "pluginsBackgroundNoAlerts": "App 在后台时收不到任何提醒",
    "pluginsApprovalNotificationsOff": "「等你确认」通知已关闭",
-@@ -8434,7 +8447,7 @@
+@@ -8434,7 +8457,7 @@
    "pluginsShareDamaged": "这个分享码不完整或已损坏",
    "pluginsShareFileReadFailed": "没能读取这个文件",
    "pluginsShareOpenFailed": "没能打开这个分享码",
@@ -100615,7 +100929,7 @@ index ec1a316d..64be4191 100644
    "pluginsShareSheetOpenFailed": "没能打开分享",
    "pluginsSavePermissionDenied": "没有存储权限，没能保存",
    "pluginsQrCode": "二维码",
-@@ -8690,7 +8703,7 @@
+@@ -8690,7 +8713,7 @@
        }
      }
    },
@@ -100624,7 +100938,7 @@ index ec1a316d..64be4191 100644
    "@plugslotsIssueNeedsApp": {
      "placeholders": {
        "version": {
-@@ -9053,7 +9066,7 @@
+@@ -9053,7 +9076,7 @@
    "remoteErrConnectionReplaced": "远程连接已被替换",
    "remoteErrHostRejected": "主机拒绝了连接",
    "remoteErrHostNotOwned": "主机不在你的 DSH Remote 账号下",
@@ -100633,7 +100947,7 @@ index ec1a316d..64be4191 100644
    "remoteErrVersionIncompatible": "主机上的 DSH 或远程插件需要更新",
    "remoteErrSignInTimeout": "登录超时",
    "remoteSignInCancelled": "已取消登录",
-@@ -10076,7 +10089,7 @@
+@@ -10076,7 +10099,7 @@
    "remotePairTitle": "扫码配对电脑",
    "remotePairSubtitle": "不用注册 Remote 账号，也不会传 DeepSeek 密码或登录凭据",
    "remotePairNeedsDeepSeek": "先登录 DeepSeek 账号",
@@ -100642,7 +100956,7 @@ index ec1a316d..64be4191 100644
    "remotePairScanHint": "对准电脑上 Remote 插件显示的配对二维码",
    "remotePairPasteLink": "粘贴配对链接",
    "remotePairPasteEmpty": "剪贴板里没有配对链接",
-@@ -10126,7 +10139,7 @@
+@@ -10126,7 +10149,7 @@
      }
    },
    "remotePairFailedTitle": "没能配对",
@@ -100651,7 +100965,7 @@ index ec1a316d..64be4191 100644
    "@remotePairOtherServerBody": {
      "placeholders": {
        "server": {
-@@ -10136,7 +10149,7 @@
+@@ -10136,7 +10159,7 @@
    },
    "remotePairSwitchServer": "切换服务器并继续",
    "remotePairScanAgain": "重新扫码",
@@ -100660,7 +100974,7 @@ index ec1a316d..64be4191 100644
    "remotePairErrOtherServer": "这个二维码来自另一个 Remote 服务器",
    "remotePairErrUnsupported": "这个 Remote 服务器还不支持扫码配对",
    "remotePairErrExpired": "二维码已过期或已经用过了。请在电脑上重新生成二维码",
-@@ -10174,12 +10187,12 @@
+@@ -10174,12 +10197,12 @@
    "riskAllowForChatBody": "这个对话之后的命令和改动都直接放行，可在输入框上方随时关闭。",
    "riskAllowForChatAction": "全部允许",
    "riskPetOverlayTitle": "显示在其他应用上层？",
@@ -100675,7 +100989,7 @@ index ec1a316d..64be4191 100644
    "@askAiAboutApp": {
      "placeholders": {
        "question": {
-@@ -10187,7 +10200,7 @@
+@@ -10187,7 +10210,7 @@
        }
      }
    },
@@ -100684,7 +100998,7 @@ index ec1a316d..64be4191 100644
    "@askAiWithGuide": {
      "placeholders": {
        "question": {
-@@ -10195,8 +10208,8 @@
+@@ -10195,8 +10218,8 @@
        }
      }
    },
@@ -100695,7 +101009,7 @@ index ec1a316d..64be4191 100644
    "askAiQuestionPhoneControl": "手机操控是怎么工作的？有什么风险？",
    "askAiQuestionPhoneAlways": "手机操控选「始终免确认」会怎样？和「每次都询问」比风险在哪？",
    "askAiQuestionAppRules": "手机操控的应用名单有什么用？放开银行、支付类 App 有什么风险？",
-@@ -10980,7 +10993,7 @@
+@@ -10980,7 +11003,7 @@
    "shellJsonStringNewline": "字符串里不能直接换行",
    "shellJsonControlCharacter": "字符串里有控制字符",
    "shellJsonBadNumber": "数字格式不对",
@@ -100704,7 +101018,7 @@ index ec1a316d..64be4191 100644
    "@shellSkillInstallPrompt": {
      "placeholders": {
        "skill": {
-@@ -11200,6 +11213,7 @@
+@@ -11200,6 +11223,7 @@
    "speechCallEarpiece": "听筒",
    "speechBackdropTitle": "通话背景",
    "speechCallSettings": "通话设置",
@@ -100712,7 +101026,7 @@ index ec1a316d..64be4191 100644
    "speechCallPause": "停顿多久算说完",
    "speechCallPauseQuick": "快",
    "speechCallPauseNormal": "适中",
-@@ -11221,8 +11235,26 @@
+@@ -11221,8 +11245,26 @@
    "speechCallVisualRing": "光环",
    "speechCallVisualMono": "细线",
    "speechCallVisualGlass": "光球",
@@ -100740,7 +101054,7 @@ index ec1a316d..64be4191 100644
    "@starPromptTitle": {
      "description": "The star prompt's first line. hours is the whole hours of use so far, rounded down; 0 is half an hour (the first ask comes after 30 minutes). The word joiner keeps the ~ on the line of the word before it.",
      "placeholders": {
-@@ -11236,7 +11268,7 @@
+@@ -11236,7 +11278,7 @@
    "starPromptStar": "去 GitHub 点 Star",
    "starPromptDone": "已经点过啦",
    "starPromptLater": "下次再说",
@@ -100749,7 +101063,7 @@ index ec1a316d..64be4191 100644
    "hubStartPage": "起始页",
    "hubChatSuggestions": "聊天建议",
    "hubChatSuggestionsHint": "显示起始页的聊天建议",
-@@ -11252,7 +11284,7 @@
+@@ -11252,7 +11294,7 @@
    },
    "phoneStartupTokenTimeout": "启动等待已超时（180 秒内未收到启动标记），请查看日志",
    "phoneStartupPortNotReady": "已收到启动标记，但本机服务端口尚未就绪，请查看日志",
@@ -100758,7 +101072,7 @@ index ec1a316d..64be4191 100644
    "stateStoragePermission": "没有存储权限，存不进「下载」",
    "stateDiagnosticsStorageFull": "存储空间不足，没能生成诊断包",
    "stateDiagnosticsExportFailed": "没能导出诊断包",
-@@ -12047,15 +12079,15 @@
+@@ -12047,15 +12089,15 @@
    "systemActionsSubtitle": "让 AI 帮你打开应用和系统页面，随时可以关",
    "systemActionsReady": "已开启",
    "systemActionsWaitingEngine": "已开启，等本机引擎启动",
@@ -100777,7 +101091,7 @@ index ec1a316d..64be4191 100644
    "systemActionsCanTitle": "能做的",
    "systemActionsCanOpen": "打开应用或链接",
    "systemActionsCanOpenHint": "应用要写包名，不能按名字找",
-@@ -12089,7 +12121,7 @@
+@@ -12089,7 +12131,7 @@
    "systemActionsDisclosureWhatTitle": "能做什么",
    "systemActionsDisclosureWhatBody": "打开应用或链接，打开日历、拨号、分享、导航界面，发通知，写剪贴板，把步骤交还给你。这个版本开通了系统提醒时，还能设闹钟和计时器。",
    "systemActionsDisclosureWhenTitle": "什么时候做",
@@ -100786,7 +101100,7 @@ index ec1a316d..64be4191 100644
    "systemActionsDisclosureWhoTitle": "发给谁",
    "systemActionsDisclosureWhoBody": "动作的结果会回到对话，发给你选的模型。",
    "systemActionsDisclosureNeverTitle": "不会做什么",
-@@ -12097,7 +12129,7 @@
+@@ -12097,7 +12139,7 @@
    "systemActionsDisclosureStopTitle": "怎么停",
    "systemActionsDisclosureStopBody": "随时在这里关掉。交还提示可以点停止。",
    "systemActionsHandoffTitle": "轮到你来操作",
@@ -100795,7 +101109,7 @@ index ec1a316d..64be4191 100644
    "systemActionsHandoffFailed": "这次没算上，提示如果还在可以再点一次",
    "systemActionsResultOpened": "已打开界面，还没确认里面的事办完。",
    "systemActionsResultContinued": "你点了继续。这只说明你确认了，不代表其他应用里的操作完成了。",
-@@ -12106,7 +12138,7 @@
+@@ -12106,7 +12148,7 @@
    "systemActionsResultClipboard": "文字已写入剪贴板。",
    "systemActionsResultUnknownDetail": "系统调用可能已经发出，结果未知。不会自动重试，请自己看一下实际状态。",
    "systemActionsResultUnsupported": "鸿蒙版不支持这个动作，没有执行。",
@@ -100804,7 +101118,7 @@ index ec1a316d..64be4191 100644
    "systemActionsResultUnavailable": "系统操作没开或暂时连不上，没有执行。到「设置 → 系统操作」看看。",
    "systemActionsResultStopped": "已停止。",
    "systemActionsResultTimeout": "等待超时，没有结果。",
-@@ -12789,7 +12821,7 @@
+@@ -12789,7 +12831,7 @@
        }
      }
    },
@@ -100813,7 +101127,7 @@ index ec1a316d..64be4191 100644
    "tavernStorybookContents": "目录",
    "tavernStorybookChapter": "第 {n} 章",
    "@tavernStorybookChapter": {
-@@ -14579,13 +14611,13 @@
+@@ -14579,13 +14621,13 @@
      }
    },
    "updateSettingsOpenFailed": "没能打开系统设置",
@@ -100829,7 +101143,7 @@ index ec1a316d..64be4191 100644
    "updateWrongPackage": "不是 DSH 的安装包",
    "updateWrongPackageMessage": "下载到的文件不对，已删除，请稍后重试。",
    "updateDowngradeBlocked": "不能降级安装",
-@@ -14628,7 +14660,7 @@
+@@ -14628,7 +14670,7 @@
    "updateNewVersionFound": "发现新版本",
    "updateReleaseNotes": "更新内容",
    "updateNoReleaseNotes": "这个版本没有写更新说明。",
@@ -100838,7 +101152,7 @@ index ec1a316d..64be4191 100644
    "updateNoCompatiblePackage": "没有适合本机的安装包",
    "updateDownloading": "正在下载",
    "updateDownloadSource": "经由 {source}",
-@@ -14646,7 +14678,7 @@
+@@ -14646,7 +14688,7 @@
    "updateConfirmInstallNote": "在系统弹窗里确认安装",
    "updatePackageDownloaded": "安装包已下载",
    "updateReadyToInstall": "校验通过，可以安装了。",
@@ -100847,7 +101161,7 @@ index ec1a316d..64be4191 100644
    "updateAllowInstallMessage": "在系统设置里打开「安装未知应用」，回来后自动继续。",
    "updateOpenReleasePage": "打开发布页",
    "updateUpdateNow": "立即更新",
-@@ -14689,10 +14721,10 @@
+@@ -14689,10 +14731,10 @@
      }
    },
    "usageStatsTitle": "发送匿名使用统计",
@@ -100860,7 +101174,7 @@ index ec1a316d..64be4191 100644
    "usageUpgradeLearn": "了解",
    "usageUpgradeOff": "关闭",
    "viewArtifactSaved": "已存到 {value}",
-@@ -15401,7 +15433,7 @@
+@@ -15401,7 +15443,7 @@
    "viewTipImageZoom": "看图时双击放大、双指缩放，长按可以保存",
    "viewTipQueuedRecall": "排队中的消息可以撤回到输入框再改",
    "viewTipKeyboard": "接了键盘：Ctrl+Enter 发送，连按两次 Esc 停止",
@@ -100869,7 +101183,7 @@ index ec1a316d..64be4191 100644
    "viewTipShareSelect": "分享对话时长按再滑动，可以一次选中多条消息",
    "viewTipChartDrag": "回复里的图表可以左右拖动，看每个点的数值",
    "viewTipCopyPath": "改动卡里长按某个文件，可以复制它的路径",
-@@ -15571,7 +15603,7 @@
+@@ -15571,7 +15613,7 @@
        }
      }
    },
@@ -100878,7 +101192,7 @@ index ec1a316d..64be4191 100644
    "@viewContinueHeader": {
      "placeholders": {
        "value": {
-@@ -15608,7 +15640,7 @@
+@@ -15608,7 +15650,7 @@
    "viewShareNoPermission": "没有存储权限，没能保存",
    "viewShareOpenFailed": "没能打开分享",
    "viewShareLinkFailed": "没能生成链接，稍后再试",
@@ -100887,7 +101201,7 @@ index ec1a316d..64be4191 100644
    "@viewShareLinkText": {
      "placeholders": {
        "first": {
-@@ -15636,7 +15668,7 @@
+@@ -15636,7 +15678,7 @@
        }
      }
    },
@@ -100896,7 +101210,7 @@ index ec1a316d..64be4191 100644
    "viewShareWebHint": "任何浏览器都能打开，不用联网",
    "viewShareMarkdownHint": "纯文本，随处可读",
    "viewShareLinkHint": "端到端加密，服务器看不到内容",
-@@ -16364,7 +16396,7 @@
+@@ -16364,7 +16406,7 @@
    "workshopAbout": "简介",
    "workshopNoDescription": "作者没有写简介。",
    "workshopSource": "来源",
@@ -100906,7 +101220,7 @@ index ec1a316d..64be4191 100644
      "placeholders": {
        "version": {
 diff --git a/app/lib/l10n/gen/app_localizations.dart b/app/lib/l10n/gen/app_localizations.dart
-index 05ad2de7..1055758e 100644
+index 05ad2de7..8713d3b3 100644
 --- a/app/lib/l10n/gen/app_localizations.dart
 +++ b/app/lib/l10n/gen/app_localizations.dart
 @@ -113,13 +113,13 @@ abstract class L10n {
@@ -101434,7 +101748,7 @@ index 05ad2de7..1055758e 100644
    String get phoneKeepAdbDescription;
  
    /// No description provided for @phoneKeepRestoring.
-@@ -24206,6 +24254,36 @@ abstract class L10n {
+@@ -24206,6 +24254,96 @@ abstract class L10n {
    /// **'当前无法处理技能草稿。请检查本机引擎状态后重试。'**
    String get phoneSkillUnavailable;
  
@@ -101453,7 +101767,7 @@ index 05ad2de7..1055758e 100644
 +  /// No description provided for @phoneSkillDeleteConfirm.
 +  ///
 +  /// In zh, this message translates to:
-+  /// **'删除技能 {name}？删除立即生效。'**
++  /// **'删除这个技能？删除立即生效。'**
 +  String get phoneSkillDeleteConfirm;
 +
 +  /// No description provided for @phoneSkillDeleted.
@@ -101468,10 +101782,70 @@ index 05ad2de7..1055758e 100644
 +  /// **'删除失败，请重试。'**
 +  String get phoneSkillDeleteFailed;
 +
++  /// No description provided for @phoneToolDescTitle.
++  ///
++  /// In zh, this message translates to:
++  /// **'AI 工具说明'**
++  String get phoneToolDescTitle;
++
++  /// No description provided for @phoneToolDescSubtitle.
++  ///
++  /// In zh, this message translates to:
++  /// **'改完下一次对话生效，不用重启'**
++  String get phoneToolDescSubtitle;
++
++  /// No description provided for @phoneToolDescReset.
++  ///
++  /// In zh, this message translates to:
++  /// **'恢复默认'**
++  String get phoneToolDescReset;
++
++  /// No description provided for @phoneToolDescCustom.
++  ///
++  /// In zh, this message translates to:
++  /// **'自定义'**
++  String get phoneToolDescCustom;
++
++  /// No description provided for @phoneSkillNew.
++  ///
++  /// In zh, this message translates to:
++  /// **'新建技能'**
++  String get phoneSkillNew;
++
++  /// No description provided for @phoneSkillEditTitle.
++  ///
++  /// In zh, this message translates to:
++  /// **'编辑技能'**
++  String get phoneSkillEditTitle;
++
++  /// No description provided for @phoneSkillNameHint.
++  ///
++  /// In zh, this message translates to:
++  /// **'第一行写技能名称（列表里显示的名字）；不用写开头的 ---'**
++  String get phoneSkillNameHint;
++
++  /// No description provided for @phoneSkillSaveHint.
++  ///
++  /// In zh, this message translates to:
++  /// **'内容保存为 SKILL.md，引擎自动加载；删除在列表页操作'**
++  String get phoneSkillSaveHint;
++
++  /// No description provided for @phoneSkillSaved.
++  ///
++  /// In zh, this message translates to:
++  /// **'已保存'**
++  String get phoneSkillSaved;
++
++  /// No description provided for @phoneSkillSaveFailed.
++  ///
++  /// In zh, this message translates to:
++  /// **'保存失败，请重试'**
++  String get phoneSkillSaveFailed;
++
    /// No description provided for @phoneModeTitle.
    ///
    /// In zh, this message translates to:
-@@ -24251,7 +24329,7 @@ abstract class L10n {
+@@ -24251,7 +24389,7 @@ abstract class L10n {
    /// No description provided for @phoneModeAutoNote.
    ///
    /// In zh, this message translates to:
@@ -101480,7 +101854,7 @@ index 05ad2de7..1055758e 100644
    String get phoneModeAutoNote;
  
    /// No description provided for @phoneModeAutoUnlockNote.
-@@ -24287,7 +24365,7 @@ abstract class L10n {
+@@ -24287,7 +24425,7 @@ abstract class L10n {
    /// No description provided for @phoneYoursOwnApp.
    ///
    /// In zh, this message translates to:
@@ -101489,7 +101863,7 @@ index 05ad2de7..1055758e 100644
    String get phoneYoursOwnApp;
  
    /// No description provided for @phoneYoursDenyList.
-@@ -24335,13 +24413,13 @@ abstract class L10n {
+@@ -24335,13 +24473,13 @@ abstract class L10n {
    /// No description provided for @phoneUnlockOwnApp.
    ///
    /// In zh, this message translates to:
@@ -101505,7 +101879,7 @@ index 05ad2de7..1055758e 100644
    String get phoneUnlockOwnAppHint;
  
    /// No description provided for @phoneUnlockBusy.
-@@ -24401,7 +24479,7 @@ abstract class L10n {
+@@ -24401,7 +24539,7 @@ abstract class L10n {
    /// No description provided for @phoneUnlockConfirmOwnAppTitle.
    ///
    /// In zh, this message translates to:
@@ -101514,7 +101888,7 @@ index 05ad2de7..1055758e 100644
    String get phoneUnlockConfirmOwnAppTitle;
  
    /// No description provided for @phoneUnlockCanTitle.
-@@ -24485,13 +24563,13 @@ abstract class L10n {
+@@ -24485,13 +24623,13 @@ abstract class L10n {
    /// No description provided for @phoneUnlockOwnAppCan1.
    ///
    /// In zh, this message translates to:
@@ -101530,7 +101904,7 @@ index 05ad2de7..1055758e 100644
    String get phoneUnlockOwnAppCan2;
  
    /// No description provided for @phoneUnlockOwnAppRisk1.
-@@ -24521,7 +24599,7 @@ abstract class L10n {
+@@ -24521,7 +24659,7 @@ abstract class L10n {
    /// No description provided for @phoneUnlockDisclaimer3.
    ///
    /// In zh, this message translates to:
@@ -101539,7 +101913,7 @@ index 05ad2de7..1055758e 100644
    String get phoneUnlockDisclaimer3;
  
    /// No description provided for @phoneUnlockDisclaimer4.
-@@ -25463,7 +25541,7 @@ abstract class L10n {
+@@ -25463,7 +25601,7 @@ abstract class L10n {
    /// No description provided for @pluginsProfileTitle.
    ///
    /// In zh, this message translates to:
@@ -101548,7 +101922,7 @@ index 05ad2de7..1055758e 100644
    String get pluginsProfileTitle;
  
    /// No description provided for @pluginsGistTokenInvalid.
-@@ -26483,7 +26561,7 @@ abstract class L10n {
+@@ -26483,7 +26621,7 @@ abstract class L10n {
    /// No description provided for @pluginsNotificationSettingsFailed.
    ///
    /// In zh, this message translates to:
@@ -101557,7 +101931,7 @@ index 05ad2de7..1055758e 100644
    String get pluginsNotificationSettingsFailed;
  
    /// No description provided for @pluginsSystemNotificationsOff.
-@@ -26951,7 +27029,7 @@ abstract class L10n {
+@@ -26951,7 +27089,7 @@ abstract class L10n {
    /// No description provided for @pluginsPluginShareTitle.
    ///
    /// In zh, this message translates to:
@@ -101566,7 +101940,7 @@ index 05ad2de7..1055758e 100644
    String get pluginsPluginShareTitle;
  
    /// No description provided for @pluginsShareSheetOpenFailed.
-@@ -27371,7 +27449,7 @@ abstract class L10n {
+@@ -27371,7 +27509,7 @@ abstract class L10n {
    /// No description provided for @plugslotsIssueNeedsApp.
    ///
    /// In zh, this message translates to:
@@ -101575,7 +101949,7 @@ index 05ad2de7..1055758e 100644
    String plugslotsIssueNeedsApp(String version);
  
    /// No description provided for @plugslotsIssueNewerProtocol.
-@@ -28217,7 +28295,7 @@ abstract class L10n {
+@@ -28217,7 +28355,7 @@ abstract class L10n {
    /// No description provided for @remoteErrUpdateNeeded.
    ///
    /// In zh, this message translates to:
@@ -101584,7 +101958,7 @@ index 05ad2de7..1055758e 100644
    String get remoteErrUpdateNeeded;
  
    /// No description provided for @remoteErrVersionIncompatible.
-@@ -30773,7 +30851,7 @@ abstract class L10n {
+@@ -30773,7 +30911,7 @@ abstract class L10n {
    /// No description provided for @remotePairNeedsDeepSeekBody.
    ///
    /// In zh, this message translates to:
@@ -101593,7 +101967,7 @@ index 05ad2de7..1055758e 100644
    String get remotePairNeedsDeepSeekBody;
  
    /// No description provided for @remotePairScanHint.
-@@ -30947,7 +31025,7 @@ abstract class L10n {
+@@ -30947,7 +31085,7 @@ abstract class L10n {
    /// No description provided for @remotePairOtherServerBody.
    ///
    /// In zh, this message translates to:
@@ -101602,7 +101976,7 @@ index 05ad2de7..1055758e 100644
    String remotePairOtherServerBody(String server);
  
    /// No description provided for @remotePairSwitchServer.
-@@ -30965,7 +31043,7 @@ abstract class L10n {
+@@ -30965,7 +31103,7 @@ abstract class L10n {
    /// No description provided for @remotePairErrInvalidCode.
    ///
    /// In zh, this message translates to:
@@ -101611,7 +101985,7 @@ index 05ad2de7..1055758e 100644
    String get remotePairErrInvalidCode;
  
    /// No description provided for @remotePairErrOtherServer.
-@@ -31151,7 +31229,7 @@ abstract class L10n {
+@@ -31151,7 +31289,7 @@ abstract class L10n {
    /// No description provided for @riskPetOverlayBody.
    ///
    /// In zh, this message translates to:
@@ -101620,7 +101994,7 @@ index 05ad2de7..1055758e 100644
    String get riskPetOverlayBody;
  
    /// No description provided for @riskPetOverlayAction.
-@@ -31181,25 +31259,25 @@ abstract class L10n {
+@@ -31181,25 +31319,25 @@ abstract class L10n {
    /// No description provided for @askAiAboutApp.
    ///
    /// In zh, this message translates to:
@@ -101650,7 +102024,7 @@ index 05ad2de7..1055758e 100644
    String get askAiQuestionOverview;
  
    /// No description provided for @askAiQuestionPhoneControl.
-@@ -33785,7 +33863,7 @@ abstract class L10n {
+@@ -33785,7 +33923,7 @@ abstract class L10n {
    /// No description provided for @shellSkillInstallPrompt.
    ///
    /// In zh, this message translates to:
@@ -101659,7 +102033,7 @@ index 05ad2de7..1055758e 100644
    String shellSkillInstallPrompt(String skill);
  
    /// No description provided for @shellSkillInstallDirectory.
-@@ -34502,6 +34580,12 @@ abstract class L10n {
+@@ -34502,6 +34640,12 @@ abstract class L10n {
    /// **'通话设置'**
    String get speechCallSettings;
  
@@ -101672,7 +102046,7 @@ index 05ad2de7..1055758e 100644
    /// No description provided for @speechCallPause.
    ///
    /// In zh, this message translates to:
-@@ -34628,16 +34712,124 @@ abstract class L10n {
+@@ -34628,16 +34772,124 @@ abstract class L10n {
    /// **'光球'**
    String get speechCallVisualGlass;
  
@@ -101798,7 +102172,7 @@ index 05ad2de7..1055758e 100644
    String starPromptTitle(int hours);
  
    /// No description provided for @starPromptBody.
-@@ -34673,7 +34865,7 @@ abstract class L10n {
+@@ -34673,7 +34925,7 @@ abstract class L10n {
    /// No description provided for @starSettingsTitle.
    ///
    /// In zh, this message translates to:
@@ -101807,7 +102181,7 @@ index 05ad2de7..1055758e 100644
    String get starSettingsTitle;
  
    /// No description provided for @hubStartPage.
-@@ -34727,7 +34919,7 @@ abstract class L10n {
+@@ -34727,7 +34979,7 @@ abstract class L10n {
    /// No description provided for @stateDiagnosticsSubject.
    ///
    /// In zh, this message translates to:
@@ -101816,7 +102190,7 @@ index 05ad2de7..1055758e 100644
    String get stateDiagnosticsSubject;
  
    /// No description provided for @stateStoragePermission.
-@@ -37037,7 +37229,7 @@ abstract class L10n {
+@@ -37037,7 +37289,7 @@ abstract class L10n {
    /// No description provided for @systemActionsOffScreen.
    ///
    /// In zh, this message translates to:
@@ -101825,7 +102199,7 @@ index 05ad2de7..1055758e 100644
    String get systemActionsOffScreen;
  
    /// No description provided for @systemActionsConnecting.
-@@ -37079,13 +37271,13 @@ abstract class L10n {
+@@ -37079,13 +37331,13 @@ abstract class L10n {
    /// No description provided for @systemActionsOnScreenTitle.
    ///
    /// In zh, this message translates to:
@@ -101841,7 +102215,7 @@ index 05ad2de7..1055758e 100644
    String get systemActionsOnScreenBody;
  
    /// No description provided for @systemActionsCanTitle.
-@@ -37289,7 +37481,7 @@ abstract class L10n {
+@@ -37289,7 +37541,7 @@ abstract class L10n {
    /// No description provided for @systemActionsDisclosureWhenBody.
    ///
    /// In zh, this message translates to:
@@ -101850,7 +102224,7 @@ index 05ad2de7..1055758e 100644
    String get systemActionsDisclosureWhenBody;
  
    /// No description provided for @systemActionsDisclosureWhoTitle.
-@@ -37337,7 +37529,7 @@ abstract class L10n {
+@@ -37337,7 +37589,7 @@ abstract class L10n {
    /// No description provided for @systemActionsHandoffNote.
    ///
    /// In zh, this message translates to:
@@ -101859,7 +102233,7 @@ index 05ad2de7..1055758e 100644
    String get systemActionsHandoffNote;
  
    /// No description provided for @systemActionsHandoffFailed.
-@@ -37391,7 +37583,7 @@ abstract class L10n {
+@@ -37391,7 +37643,7 @@ abstract class L10n {
    /// No description provided for @systemActionsResultOffScreen.
    ///
    /// In zh, this message translates to:
@@ -101868,7 +102242,7 @@ index 05ad2de7..1055758e 100644
    String get systemActionsResultOffScreen;
  
    /// No description provided for @systemActionsResultUnavailable.
-@@ -39413,7 +39605,7 @@ abstract class L10n {
+@@ -39413,7 +39665,7 @@ abstract class L10n {
    /// No description provided for @tavernStorybookMadeWith.
    ///
    /// In zh, this message translates to:
@@ -101877,7 +102251,7 @@ index 05ad2de7..1055758e 100644
    String get tavernStorybookMadeWith;
  
    /// No description provided for @tavernStorybookContents.
-@@ -44387,7 +44579,7 @@ abstract class L10n {
+@@ -44387,7 +44639,7 @@ abstract class L10n {
    /// No description provided for @updateSettingsOpenFailedMessage.
    ///
    /// In zh, this message translates to:
@@ -101886,7 +102260,7 @@ index 05ad2de7..1055758e 100644
    String get updateSettingsOpenFailedMessage;
  
    /// No description provided for @updateInstallCancelled.
-@@ -44423,7 +44615,7 @@ abstract class L10n {
+@@ -44423,7 +44675,7 @@ abstract class L10n {
    /// No description provided for @updateSignatureMismatchMessage.
    ///
    /// In zh, this message translates to:
@@ -101895,7 +102269,7 @@ index 05ad2de7..1055758e 100644
    String get updateSignatureMismatchMessage;
  
    /// No description provided for @updateWrongPackage.
-@@ -44537,7 +44729,7 @@ abstract class L10n {
+@@ -44537,7 +44789,7 @@ abstract class L10n {
    /// No description provided for @updateInstallKeepsData.
    ///
    /// In zh, this message translates to:
@@ -101904,7 +102278,7 @@ index 05ad2de7..1055758e 100644
    String get updateInstallKeepsData;
  
    /// No description provided for @updateNoCompatiblePackage.
-@@ -44603,7 +44795,7 @@ abstract class L10n {
+@@ -44603,7 +44855,7 @@ abstract class L10n {
    /// No description provided for @updateAllowInstall.
    ///
    /// In zh, this message translates to:
@@ -101913,7 +102287,7 @@ index 05ad2de7..1055758e 100644
    String get updateAllowInstall;
  
    /// No description provided for @updateAllowInstallMessage.
-@@ -44735,7 +44927,7 @@ abstract class L10n {
+@@ -44735,7 +44987,7 @@ abstract class L10n {
    /// No description provided for @usageStatsSection.
    ///
    /// In zh, this message translates to:
@@ -101922,7 +102296,7 @@ index 05ad2de7..1055758e 100644
    String get usageStatsSection;
  
    /// No description provided for @usageStatsFooter.
-@@ -44753,7 +44945,7 @@ abstract class L10n {
+@@ -44753,7 +45005,7 @@ abstract class L10n {
    /// No description provided for @usageUpgradeNotice.
    ///
    /// In zh, this message translates to:
@@ -101931,7 +102305,7 @@ index 05ad2de7..1055758e 100644
    String get usageUpgradeNotice;
  
    /// No description provided for @usageUpgradeLearn.
-@@ -45845,7 +46037,7 @@ abstract class L10n {
+@@ -45845,7 +46097,7 @@ abstract class L10n {
    /// No description provided for @viewTipShareIn.
    ///
    /// In zh, this message translates to:
@@ -101940,7 +102314,7 @@ index 05ad2de7..1055758e 100644
    String get viewTipShareIn;
  
    /// No description provided for @viewTipShareSelect.
-@@ -46265,7 +46457,7 @@ abstract class L10n {
+@@ -46265,7 +46517,7 @@ abstract class L10n {
    /// No description provided for @viewContinueHeader.
    ///
    /// In zh, this message translates to:
@@ -101949,7 +102323,7 @@ index 05ad2de7..1055758e 100644
    String viewContinueHeader(String value);
  
    /// No description provided for @viewContinueUser.
-@@ -46361,7 +46553,7 @@ abstract class L10n {
+@@ -46361,7 +46613,7 @@ abstract class L10n {
    /// No description provided for @viewShareLinkText.
    ///
    /// In zh, this message translates to:
@@ -101958,7 +102332,7 @@ index 05ad2de7..1055758e 100644
    String viewShareLinkText(String first, String second);
  
    /// No description provided for @viewShareEmpty.
-@@ -46385,7 +46577,7 @@ abstract class L10n {
+@@ -46385,7 +46637,7 @@ abstract class L10n {
    /// No description provided for @viewShareFileHint.
    ///
    /// In zh, this message translates to:
@@ -101967,7 +102341,7 @@ index 05ad2de7..1055758e 100644
    String get viewShareFileHint;
  
    /// No description provided for @viewShareWebHint.
-@@ -48203,7 +48395,7 @@ abstract class L10n {
+@@ -48203,7 +48455,7 @@ abstract class L10n {
    /// No description provided for @workshopMinApp.
    ///
    /// In zh, this message translates to:
@@ -101977,7 +102351,7 @@ index 05ad2de7..1055758e 100644
  
    /// No description provided for @workshopInstalledVersion.
 diff --git a/app/lib/l10n/gen/app_localizations_en.dart b/app/lib/l10n/gen/app_localizations_en.dart
-index 546fef86..9fbd4e04 100644
+index 546fef86..0c43ffea 100644
 --- a/app/lib/l10n/gen/app_localizations_en.dart
 +++ b/app/lib/l10n/gen/app_localizations_en.dart
 @@ -1925,6 +1925,9 @@ class L10nEn extends L10n {
@@ -102026,7 +102400,7 @@ index 546fef86..9fbd4e04 100644
    @override
    String get phoneTaskResultReady => 'Task complete · View result';
  
-@@ -13800,6 +13825,22 @@ class L10nEn extends L10n {
+@@ -13800,6 +13825,52 @@ class L10nEn extends L10n {
    @override
    String get phoneSkillUnavailable => 'Skill drafts are unavailable. Check the local engine state and try again.';
  
@@ -102038,7 +102412,7 @@ index 546fef86..9fbd4e04 100644
 +      'No saved skills yet. After a task succeeds, you can save one phone operation as a skill when asked.';
 +
 +  @override
-+  String get phoneSkillDeleteConfirm => 'Delete skill {name}? This takes effect immediately.';
++  String get phoneSkillDeleteConfirm => 'Delete this skill? This takes effect immediately.';
 +
 +  @override
 +  String get phoneSkillDeleted => 'Deleted.';
@@ -102046,10 +102420,40 @@ index 546fef86..9fbd4e04 100644
 +  @override
 +  String get phoneSkillDeleteFailed => 'Delete failed. Try again.';
 +
++  @override
++  String get phoneToolDescTitle => 'AI tool descriptions';
++
++  @override
++  String get phoneToolDescSubtitle => 'Takes effect in the next conversation, no restart needed';
++
++  @override
++  String get phoneToolDescReset => 'Restore default';
++
++  @override
++  String get phoneToolDescCustom => 'Custom';
++
++  @override
++  String get phoneSkillNew => 'New skill';
++
++  @override
++  String get phoneSkillEditTitle => 'Edit skill';
++
++  @override
++  String get phoneSkillNameHint => 'First line is the skill name (shown in the list); do not write the --- header';
++
++  @override
++  String get phoneSkillSaveHint => 'Content is saved as SKILL.md and loaded by the engine; delete from the list page';
++
++  @override
++  String get phoneSkillSaved => 'Saved';
++
++  @override
++  String get phoneSkillSaveFailed => 'Save failed. Try again.';
++
    @override
    String get phoneModeTitle => 'How DSH confirms';
  
-@@ -19818,6 +19859,9 @@ class L10nEn extends L10n {
+@@ -19818,6 +19889,9 @@ class L10nEn extends L10n {
    @override
    String get speechCallSettings => 'Call settings';
  
@@ -102059,7 +102463,7 @@ index 546fef86..9fbd4e04 100644
    @override
    String get speechCallPause => 'Pause before she answers';
  
-@@ -19883,9 +19927,65 @@ class L10nEn extends L10n {
+@@ -19883,9 +19957,65 @@ class L10nEn extends L10n {
    @override
    String get speechCallVisualGlass => 'Orb';
  
@@ -102126,7 +102530,7 @@ index 546fef86..9fbd4e04 100644
    String starPromptTitle(int hours) {
      String _temp0 = intl.Intl.pluralLogic(
 diff --git a/app/lib/l10n/gen/app_localizations_zh.dart b/app/lib/l10n/gen/app_localizations_zh.dart
-index c66b20de..0dd6ff61 100644
+index c66b20de..889c3d8c 100644
 --- a/app/lib/l10n/gen/app_localizations_zh.dart
 +++ b/app/lib/l10n/gen/app_localizations_zh.dart
 @@ -19,10 +19,10 @@ class L10nZh extends L10n {
@@ -102583,7 +102987,7 @@ index c66b20de..0dd6ff61 100644
  
    @override
    String get phoneKeepRestoring => '正在重新连接';
-@@ -13098,6 +13122,21 @@ class L10nZh extends L10n {
+@@ -13098,6 +13122,51 @@ class L10nZh extends L10n {
    @override
    String get phoneSkillUnavailable => '当前无法处理技能草稿。请检查本机引擎状态后重试。';
  
@@ -102594,7 +102998,7 @@ index c66b20de..0dd6ff61 100644
 +  String get phoneSkillManageEmpty => '还没有保存的技能。任务成功后询问存技能时，可把一次手机操作过程存成技能。';
 +
 +  @override
-+  String get phoneSkillDeleteConfirm => '删除技能 {name}？删除立即生效。';
++  String get phoneSkillDeleteConfirm => '删除这个技能？删除立即生效。';
 +
 +  @override
 +  String get phoneSkillDeleted => '已删除。';
@@ -102602,10 +103006,40 @@ index c66b20de..0dd6ff61 100644
 +  @override
 +  String get phoneSkillDeleteFailed => '删除失败，请重试。';
 +
++  @override
++  String get phoneToolDescTitle => 'AI 工具说明';
++
++  @override
++  String get phoneToolDescSubtitle => '改完下一次对话生效，不用重启';
++
++  @override
++  String get phoneToolDescReset => '恢复默认';
++
++  @override
++  String get phoneToolDescCustom => '自定义';
++
++  @override
++  String get phoneSkillNew => '新建技能';
++
++  @override
++  String get phoneSkillEditTitle => '编辑技能';
++
++  @override
++  String get phoneSkillNameHint => '第一行写技能名称（列表里显示的名字）；不用写开头的 ---';
++
++  @override
++  String get phoneSkillSaveHint => '内容保存为 SKILL.md，引擎自动加载；删除在列表页操作';
++
++  @override
++  String get phoneSkillSaved => '已保存';
++
++  @override
++  String get phoneSkillSaveFailed => '保存失败，请重试';
++
    @override
    String get phoneModeTitle => '选择确认方式';
  
-@@ -13120,7 +13159,7 @@ class L10nZh extends L10n {
+@@ -13120,7 +13189,7 @@ class L10nZh extends L10n {
    String get phoneModeAutoNoteTitle => '这些仍由你来操作';
  
    @override
@@ -102614,7 +103048,7 @@ index c66b20de..0dd6ff61 100644
  
    @override
    String get phoneModeAutoUnlockNote => '如需让 AI 操作系统设置、密码等，可在 设置 › 手机操控 › 解除限制 中开启。';
-@@ -13138,7 +13177,7 @@ class L10nZh extends L10n {
+@@ -13138,7 +13207,7 @@ class L10nZh extends L10n {
    String get phoneYoursSecrets => '密码和验证码';
  
    @override
@@ -102623,7 +103057,7 @@ index c66b20de..0dd6ff61 100644
  
    @override
    String get phoneYoursDenyList => '应用名单里「不碰」的 App，默认含银行、支付类';
-@@ -13162,10 +13201,10 @@ class L10nZh extends L10n {
+@@ -13162,10 +13231,10 @@ class L10nZh extends L10n {
    String get phoneUnlockSecretsHint => '填写密码、验证码和支付密码';
  
    @override
@@ -102636,7 +103070,7 @@ index c66b20de..0dd6ff61 100644
  
    @override
    String get phoneUnlockBusy => '任务进行中，结束后才能开启';
-@@ -13198,7 +13237,7 @@ class L10nZh extends L10n {
+@@ -13198,7 +13267,7 @@ class L10nZh extends L10n {
    String get phoneUnlockConfirmSecretsTitle => '允许 AI 填写密码和验证码？';
  
    @override
@@ -102645,7 +103079,7 @@ index c66b20de..0dd6ff61 100644
  
    @override
    String get phoneUnlockCanTitle => '开启后，AI 可以';
-@@ -13240,10 +13279,10 @@ class L10nZh extends L10n {
+@@ -13240,10 +13309,10 @@ class L10nZh extends L10n {
    String get phoneUnlockSecretsRisk2 => '可能完成你并不想要的付款或转账';
  
    @override
@@ -102658,7 +103092,7 @@ index c66b20de..0dd6ff61 100644
  
    @override
    String get phoneUnlockOwnAppRisk1 => '恶意指令可能诱导 AI 批准它自己发起的操作，或关掉确认';
-@@ -13258,7 +13297,7 @@ class L10nZh extends L10n {
+@@ -13258,7 +13327,7 @@ class L10nZh extends L10n {
    String get phoneUnlockDisclaimer2 => 'AI 可能被网页、消息或文件中的内容误导。';
  
    @override
@@ -102667,7 +103101,7 @@ index c66b20de..0dd6ff61 100644
  
    @override
    String get phoneUnlockDisclaimer4 => '建议只在需要时临时开启，用完关闭。';
-@@ -13757,7 +13796,7 @@ class L10nZh extends L10n {
+@@ -13757,7 +13826,7 @@ class L10nZh extends L10n {
    String get pluginsFileWriteFailed => '没能写入文件';
  
    @override
@@ -102676,7 +103110,7 @@ index c66b20de..0dd6ff61 100644
  
    @override
    String get pluginsGistTokenInvalid => 'GitHub 令牌无效或没有 Gist 权限';
-@@ -14341,7 +14380,7 @@ class L10nZh extends L10n {
+@@ -14341,7 +14410,7 @@ class L10nZh extends L10n {
    String get pluginsNotifications => '通知';
  
    @override
@@ -102685,7 +103119,7 @@ index c66b20de..0dd6ff61 100644
  
    @override
    String get pluginsSystemNotificationsOff => '系统通知已关闭';
-@@ -14595,7 +14634,7 @@ class L10nZh extends L10n {
+@@ -14595,7 +14664,7 @@ class L10nZh extends L10n {
    String get pluginsShareOpenFailed => '没能打开这个分享码';
  
    @override
@@ -102694,7 +103128,7 @@ index c66b20de..0dd6ff61 100644
  
    @override
    String get pluginsShareSheetOpenFailed => '没能打开分享';
-@@ -14855,7 +14894,7 @@ class L10nZh extends L10n {
+@@ -14855,7 +14924,7 @@ class L10nZh extends L10n {
  
    @override
    String plugslotsIssueNeedsApp(String version) {
@@ -102703,7 +103137,7 @@ index c66b20de..0dd6ff61 100644
    }
  
    @override
-@@ -15338,7 +15377,7 @@ class L10nZh extends L10n {
+@@ -15338,7 +15407,7 @@ class L10nZh extends L10n {
    String get remoteErrHostNotOwned => '主机不在你的 DSH Remote 账号下';
  
    @override
@@ -102712,7 +103146,7 @@ index c66b20de..0dd6ff61 100644
  
    @override
    String get remoteErrVersionIncompatible => '主机上的 DSH 或远程插件需要更新';
-@@ -16772,7 +16811,7 @@ class L10nZh extends L10n {
+@@ -16772,7 +16841,7 @@ class L10nZh extends L10n {
    String get remotePairNeedsDeepSeek => '先登录 DeepSeek 账号';
  
    @override
@@ -102721,7 +103155,7 @@ index c66b20de..0dd6ff61 100644
  
    @override
    String get remotePairScanHint => '对准电脑上 Remote 插件显示的配对二维码';
-@@ -16866,7 +16905,7 @@ class L10nZh extends L10n {
+@@ -16866,7 +16935,7 @@ class L10nZh extends L10n {
  
    @override
    String remotePairOtherServerBody(String server) {
@@ -102730,7 +103164,7 @@ index c66b20de..0dd6ff61 100644
    }
  
    @override
-@@ -16876,7 +16915,7 @@ class L10nZh extends L10n {
+@@ -16876,7 +16945,7 @@ class L10nZh extends L10n {
    String get remotePairScanAgain => '重新扫码';
  
    @override
@@ -102739,7 +103173,7 @@ index c66b20de..0dd6ff61 100644
  
    @override
    String get remotePairErrOtherServer => '这个二维码来自另一个 Remote 服务器';
-@@ -16971,7 +17010,7 @@ class L10nZh extends L10n {
+@@ -16971,7 +17040,7 @@ class L10nZh extends L10n {
    String get riskPetOverlayTitle => '显示在其他应用上层？';
  
    @override
@@ -102748,7 +103182,7 @@ index c66b20de..0dd6ff61 100644
  
    @override
    String get riskPetOverlayAction => '去设置';
-@@ -16987,19 +17026,19 @@ class L10nZh extends L10n {
+@@ -16987,19 +17056,19 @@ class L10nZh extends L10n {
  
    @override
    String askAiAboutApp(String question) {
@@ -102772,7 +103206,7 @@ index c66b20de..0dd6ff61 100644
  
    @override
    String get askAiQuestionPhoneControl => '手机操控是怎么工作的？有什么风险？';
-@@ -18389,7 +18428,7 @@ class L10nZh extends L10n {
+@@ -18389,7 +18458,7 @@ class L10nZh extends L10n {
  
    @override
    String shellSkillInstallPrompt(String skill) {
@@ -102781,7 +103215,7 @@ index c66b20de..0dd6ff61 100644
    }
  
    @override
-@@ -18775,6 +18814,9 @@ class L10nZh extends L10n {
+@@ -18775,6 +18844,9 @@ class L10nZh extends L10n {
    @override
    String get speechCallSettings => '通话设置';
  
@@ -102791,7 +103225,7 @@ index c66b20de..0dd6ff61 100644
    @override
    String get speechCallPause => '停顿多久算说完';
  
-@@ -18838,17 +18880,71 @@ class L10nZh extends L10n {
+@@ -18838,17 +18910,71 @@ class L10nZh extends L10n {
    @override
    String get speechCallVisualGlass => '光球';
  
@@ -102866,7 +103300,7 @@ index c66b20de..0dd6ff61 100644
      );
      return '$_temp0';
    }
-@@ -18869,7 +18965,7 @@ class L10nZh extends L10n {
+@@ -18869,7 +18995,7 @@ class L10nZh extends L10n {
    String get starPromptLater => '下次再说';
  
    @override
@@ -102875,7 +103309,7 @@ index c66b20de..0dd6ff61 100644
  
    @override
    String get hubStartPage => '起始页';
-@@ -18898,7 +18994,7 @@ class L10nZh extends L10n {
+@@ -18898,7 +19024,7 @@ class L10nZh extends L10n {
    String get phoneStartupPortNotReady => '已收到启动标记，但本机服务端口尚未就绪，请查看日志';
  
    @override
@@ -102884,7 +103318,7 @@ index c66b20de..0dd6ff61 100644
  
    @override
    String get stateStoragePermission => '没有存储权限，存不进「下载」';
-@@ -20159,7 +20255,7 @@ class L10nZh extends L10n {
+@@ -20159,7 +20285,7 @@ class L10nZh extends L10n {
    String get systemActionsWaitingEngine => '已开启，等本机引擎启动';
  
    @override
@@ -102893,7 +103327,7 @@ index c66b20de..0dd6ff61 100644
  
    @override
    String get systemActionsConnecting => '正在连接';
-@@ -20180,10 +20276,10 @@ class L10nZh extends L10n {
+@@ -20180,10 +20306,10 @@ class L10nZh extends L10n {
    String get systemActionsRemoteHint => '系统操作只在本机引擎的对话里有效';
  
    @override
@@ -102906,7 +103340,7 @@ index c66b20de..0dd6ff61 100644
  
    @override
    String get systemActionsCanTitle => '能做的';
-@@ -20285,7 +20381,7 @@ class L10nZh extends L10n {
+@@ -20285,7 +20411,7 @@ class L10nZh extends L10n {
    String get systemActionsDisclosureWhenTitle => '什么时候做';
  
    @override
@@ -102915,7 +103349,7 @@ index c66b20de..0dd6ff61 100644
  
    @override
    String get systemActionsDisclosureWhoTitle => '发给谁';
-@@ -20309,7 +20405,7 @@ class L10nZh extends L10n {
+@@ -20309,7 +20435,7 @@ class L10nZh extends L10n {
    String get systemActionsHandoffTitle => '轮到你来操作';
  
    @override
@@ -102924,7 +103358,7 @@ index c66b20de..0dd6ff61 100644
  
    @override
    String get systemActionsHandoffFailed => '这次没算上，提示如果还在可以再点一次';
-@@ -20336,7 +20432,7 @@ class L10nZh extends L10n {
+@@ -20336,7 +20462,7 @@ class L10nZh extends L10n {
    String get systemActionsResultUnsupported => '鸿蒙版不支持这个动作，没有执行。';
  
    @override
@@ -102933,7 +103367,7 @@ index c66b20de..0dd6ff61 100644
  
    @override
    String get systemActionsResultUnavailable => '系统操作没开或暂时连不上，没有执行。到「设置 → 系统操作」看看。';
-@@ -21440,7 +21536,7 @@ class L10nZh extends L10n {
+@@ -21440,7 +21566,7 @@ class L10nZh extends L10n {
    }
  
    @override
@@ -102942,7 +103376,7 @@ index c66b20de..0dd6ff61 100644
  
    @override
    String get tavernStorybookContents => '目录';
-@@ -24200,7 +24296,7 @@ class L10nZh extends L10n {
+@@ -24200,7 +24326,7 @@ class L10nZh extends L10n {
    String get updateSettingsOpenFailed => '没能打开系统设置';
  
    @override
@@ -102951,7 +103385,7 @@ index c66b20de..0dd6ff61 100644
  
    @override
    String get updateInstallCancelled => '已取消安装';
-@@ -24218,7 +24314,7 @@ class L10nZh extends L10n {
+@@ -24218,7 +24344,7 @@ class L10nZh extends L10n {
    String get updateSignatureMismatch => '签名不一致，不能直接覆盖';
  
    @override
@@ -102960,7 +103394,7 @@ index c66b20de..0dd6ff61 100644
  
    @override
    String get updateWrongPackage => '不是 DSH 的安装包';
-@@ -24281,7 +24377,7 @@ class L10nZh extends L10n {
+@@ -24281,7 +24407,7 @@ class L10nZh extends L10n {
    String get updateNoReleaseNotes => '这个版本没有写更新说明。';
  
    @override
@@ -102969,7 +103403,7 @@ index c66b20de..0dd6ff61 100644
  
    @override
    String get updateNoCompatiblePackage => '没有适合本机的安装包';
-@@ -24316,7 +24412,7 @@ class L10nZh extends L10n {
+@@ -24316,7 +24442,7 @@ class L10nZh extends L10n {
    String get updateReadyToInstall => '校验通过，可以安装了。';
  
    @override
@@ -102978,7 +103412,7 @@ index c66b20de..0dd6ff61 100644
  
    @override
    String get updateAllowInstallMessage => '在系统设置里打开「安装未知应用」，回来后自动继续。';
-@@ -24389,7 +24485,7 @@ class L10nZh extends L10n {
+@@ -24389,7 +24515,7 @@ class L10nZh extends L10n {
    String get usageStatsTitle => '发送匿名使用统计';
  
    @override
@@ -102987,7 +103421,7 @@ index c66b20de..0dd6ff61 100644
  
    @override
    String get usageStatsFooter =>
-@@ -24399,7 +24495,7 @@ class L10nZh extends L10n {
+@@ -24399,7 +24525,7 @@ class L10nZh extends L10n {
    String get usageNoticeBody => '不含对话和个人信息，可随时关闭';
  
    @override
@@ -102996,7 +103430,7 @@ index c66b20de..0dd6ff61 100644
  
    @override
    String get usageUpgradeLearn => '了解';
-@@ -25081,7 +25177,7 @@ class L10nZh extends L10n {
+@@ -25081,7 +25207,7 @@ class L10nZh extends L10n {
    String get viewTipKeyboard => '接了键盘：Ctrl+Enter 发送，连按两次 Esc 停止';
  
    @override
@@ -103005,7 +103439,7 @@ index c66b20de..0dd6ff61 100644
  
    @override
    String get viewTipShareSelect => '分享对话时长按再滑动，可以一次选中多条消息';
-@@ -25318,7 +25414,7 @@ class L10nZh extends L10n {
+@@ -25318,7 +25444,7 @@ class L10nZh extends L10n {
  
    @override
    String viewContinueHeader(String value) {
@@ -103014,7 +103448,7 @@ index c66b20de..0dd6ff61 100644
    }
  
    @override
-@@ -25372,7 +25468,7 @@ class L10nZh extends L10n {
+@@ -25372,7 +25498,7 @@ class L10nZh extends L10n {
  
    @override
    String viewShareLinkText(String first, String second) {
@@ -103023,7 +103457,7 @@ index c66b20de..0dd6ff61 100644
    }
  
    @override
-@@ -25389,7 +25485,7 @@ class L10nZh extends L10n {
+@@ -25389,7 +25515,7 @@ class L10nZh extends L10n {
    }
  
    @override
@@ -103032,7 +103466,7 @@ index c66b20de..0dd6ff61 100644
  
    @override
    String get viewShareWebHint => '任何浏览器都能打开，不用联网';
-@@ -26414,7 +26510,7 @@ class L10nZh extends L10n {
+@@ -26414,7 +26540,7 @@ class L10nZh extends L10n {
  
    @override
    String workshopMinApp(String version) {
@@ -103334,10 +103768,10 @@ index 0f54347f..a3a3b188 100644
    "phoneKeepWaiting": "等通道可用后再连",
    "phoneKeepWaitingService": "等所选服务运行后再连",
 diff --git a/app/lib/l10n/parts/phone_skill_en.arb b/app/lib/l10n/parts/phone_skill_en.arb
-index f446e849..0d7297c9 100644
+index f446e849..32df706f 100644
 --- a/app/lib/l10n/parts/phone_skill_en.arb
 +++ b/app/lib/l10n/parts/phone_skill_en.arb
-@@ -46,5 +46,10 @@
+@@ -46,5 +46,20 @@
    "phoneSkillSensitive": "The edit contains sensitive content. Remove it before updating the preview.",
    "phoneSkillInvalid": "The edit or step order exceeds the limits. Shorten the text and keep at least one step.",
    "phoneSkillWriteFailed": "The file could not be written. Check the local runtime and storage; edit and update the preview before confirming another save.",
@@ -103347,13 +103781,23 @@ index f446e849..0d7297c9 100644
 +  "phoneSkillManageEmpty": "No saved skills yet. After a task succeeds, you can save one phone operation as a skill when asked.",
 +  "phoneSkillDeleteConfirm": "Delete this skill? This takes effect immediately.",
 +    "phoneSkillDeleted": "Deleted.",
-+  "phoneSkillDeleteFailed": "Delete failed. Try again."
++  "phoneSkillDeleteFailed": "Delete failed. Try again.",
++  "phoneToolDescTitle": "AI tool descriptions",
++  "phoneToolDescSubtitle": "Takes effect in the next conversation, no restart needed",
++  "phoneToolDescReset": "Restore default",
++  "phoneToolDescCustom": "Custom",
++  "phoneSkillNew": "New skill",
++  "phoneSkillEditTitle": "Edit skill",
++  "phoneSkillNameHint": "First line is the skill name (shown in the list); do not write the --- header",
++  "phoneSkillSaveHint": "Content is saved as SKILL.md and loaded by the engine; delete from the list page",
++  "phoneSkillSaved": "Saved",
++  "phoneSkillSaveFailed": "Save failed. Try again."
  }
 diff --git a/app/lib/l10n/parts/phone_skill_zh.arb b/app/lib/l10n/parts/phone_skill_zh.arb
-index 40aa7258..15f40ddd 100644
+index 40aa7258..9d400d53 100644
 --- a/app/lib/l10n/parts/phone_skill_zh.arb
 +++ b/app/lib/l10n/parts/phone_skill_zh.arb
-@@ -46,5 +46,10 @@
+@@ -46,5 +46,20 @@
    "phoneSkillSensitive": "编辑中包含敏感内容，请移除后再更新预览。",
    "phoneSkillInvalid": "编辑内容或步骤顺序不符合限制。请减少文字，至少保留一个步骤。",
    "phoneSkillWriteFailed": "未能写入。请核对本机运行环境和存储；修改并更新预览后才能再次确认保存。",
@@ -103363,7 +103807,17 @@ index 40aa7258..15f40ddd 100644
 +  "phoneSkillManageEmpty": "还没有保存的技能。任务成功后询问存技能时，可把一次手机操作过程存成技能。",
 +  "phoneSkillDeleteConfirm": "删除这个技能？删除立即生效。",
 +    "phoneSkillDeleted": "已删除。",
-+  "phoneSkillDeleteFailed": "删除失败，请重试。"
++  "phoneSkillDeleteFailed": "删除失败，请重试。",
++  "phoneToolDescTitle": "AI 工具说明",
++  "phoneToolDescSubtitle": "改完下一次对话生效，不用重启",
++  "phoneToolDescReset": "恢复默认",
++  "phoneToolDescCustom": "自定义",
++  "phoneSkillNew": "新建技能",
++  "phoneSkillEditTitle": "编辑技能",
++  "phoneSkillNameHint": "第一行写技能名称（列表里显示的名字）；不用写开头的 ---",
++  "phoneSkillSaveHint": "内容保存为 SKILL.md，引擎自动加载；删除在列表页操作",
++  "phoneSkillSaved": "已保存",
++  "phoneSkillSaveFailed": "保存失败，请重试"
  }
 diff --git a/app/lib/l10n/parts/phone_zh.arb b/app/lib/l10n/parts/phone_zh.arb
 index 4d61a2d3..cb88afb7 100644
@@ -104025,7 +104479,7 @@ index d0e32a53..73484ed0 100644
    final String text;
  
 diff --git a/app/lib/phone/phone_channel.dart b/app/lib/phone/phone_channel.dart
-index 61789e5d..4436698f 100644
+index 61789e5d..6ea5e544 100644
 --- a/app/lib/phone/phone_channel.dart
 +++ b/app/lib/phone/phone_channel.dart
 @@ -226,7 +226,10 @@ class AdbStatus {
@@ -104257,7 +104711,7 @@ index 61789e5d..4436698f 100644
    Future<bool> setSkillSavePrompt(bool enabled) => _bool('setSkillSavePrompt', {'enabled': enabled});
  
    Future<PhoneSkillReply> openSkillDraft(PhoneSkillCandidate candidate, {required bool confirmed}) =>
-@@ -1391,6 +1528,36 @@ class PhoneChannel {
+@@ -1391,6 +1528,83 @@ class PhoneChannel {
      }
    }
  
@@ -104291,14 +104745,61 @@ index 61789e5d..4436698f 100644
 +    }
 +  }
 +
++  /// 【4qv】设置页：工具说明目录（名字+默认说明）。
++  Future<List<PhoneToolDescEntry>> listToolCatalog() async {
++    try {
++      final raw = await _methods.invokeMapMethod<Object?, Object?>('listToolCatalog', const {});
++      if (raw == null || raw['ok'] != true) return const [];
++      final tools = raw['tools'];
++      if (tools is! List) return const [];
++      return List.unmodifiable([
++        for (final value in tools)
++          if (value is Map && value['name'] is String && value['description'] is String)
++            PhoneToolDescEntry(name: value['name'] as String, description: value['description'] as String),
++      ]);
++    } on MissingPluginException {
++      return const [];
++    } on PlatformException {
++      return const [];
++    }
++  }
++
++  /// 【4qw】设置页：手动新建/编辑技能（用户自己写的 SKILL.md）。
++  Future<bool> savePhoneSkillManual(String skillId, String markdown) async {
++    try {
++      return await _methods.invokeMethod<bool>('savePhoneSkillManual', {
++        'skillId': skillId, 'markdown': markdown,
++      }) ?? false;
++    } on MissingPluginException {
++      return false;
++    } on PlatformException {
++      return false;
++    }
++  }
++
++  /// 【4qw】设置页：读回技能 SKILL.md 全文。
++  Future<String?> getPhoneSkillContent(String skillId) async {
++    try {
++      final raw = await _methods.invokeMapMethod<Object?, Object?>('getPhoneSkillContent', {
++        'skillId': skillId,
++      });
++      if (raw == null || raw['ok'] != true) return null;
++      return raw['markdown'] as String?;
++    } on MissingPluginException {
++      return null;
++    } on PlatformException {
++      return null;
++    }
++  }
++
    Future<PhoneSkillReplayReady?> prepareSkillReplay({required String skillId, required String revision,
      required String sessionId, required PhoneSkillReplayApp app}) async {
      try {
 diff --git a/app/lib/phone/phone_skill.dart b/app/lib/phone/phone_skill.dart
-index f7b0da28..e13e059c 100644
+index f7b0da28..2f24ba85 100644
 --- a/app/lib/phone/phone_skill.dart
 +++ b/app/lib/phone/phone_skill.dart
-@@ -3,6 +3,27 @@ import 'dart:convert';
+@@ -3,6 +3,34 @@ import 'dart:convert';
  final _draftId = RegExp(r'^[a-f0-9]{32}$');
  final _skillName = RegExp(r'^phone-task-[a-f0-9]{32}$');
  
@@ -104307,6 +104808,13 @@ index f7b0da28..e13e059c 100644
 +  const PhoneSkillListEntry({required this.name, required this.summary});
 +  final String name;
 +  final String summary;
++}
++
++/// 【4qv】工具说明目录的一项：工具名 + 默认说明（设置页展示，覆盖值走偏好）。
++class PhoneToolDescEntry {
++  const PhoneToolDescEntry({required this.name, required this.description});
++  final String name;
++  final String description;
 +}
 +
 +/// One-shot event from the native 「存为技能」 notification action.
@@ -106360,7 +106868,7 @@ index 3a23e526..abee1c96 100644
                margin: _groupMargin,
                title: l10n.phoneDndRequirements,
 diff --git a/app/lib/ui/phone/phone_control_screen.dart b/app/lib/ui/phone/phone_control_screen.dart
-index fc641e25..cfaa3c14 100644
+index fc641e25..2bba33c9 100644
 --- a/app/lib/ui/phone/phone_control_screen.dart
 +++ b/app/lib/ui/phone/phone_control_screen.dart
 @@ -16,6 +16,7 @@ import '../../state/phone_overlay_prefs.dart';
@@ -106371,15 +106879,16 @@ index fc641e25..cfaa3c14 100644
  import '../common/app_dialog.dart';
  import '../common/ask_ai.dart';
  import '../common/brief_notice.dart';
-@@ -42,6 +43,7 @@ import 'phone_disclosure_sheet.dart';
+@@ -42,6 +43,8 @@ import 'phone_disclosure_sheet.dart';
  import 'phone_background_guide.dart';
  import 'phone_unlock_page.dart';
  import 'phone_skill_section.dart';
 +import 'phone_skill_manage.dart';
++import 'phone_tool_desc_page.dart';
  import 'phone_self_check_panel.dart';
  import 'phone_widgets.dart';
  import 'restricted_settings_guide.dart';
-@@ -568,6 +570,17 @@ class _PhoneControlScreenState extends ConsumerState<PhoneControlScreen> {
+@@ -568,6 +571,23 @@ class _PhoneControlScreenState extends ConsumerState<PhoneControlScreen> {
                  _localOcr(state),
                  if (status.skills.available) ...[gap, PhoneSkillSection(status: status.skills)],
                  gap,
@@ -106391,24 +106900,130 @@ index fc641e25..cfaa3c14 100644
 +                      title: l10n.phoneSkillManageTitle,
 +                      onTap: () => _push(const PhoneSkillManagePage()),
 +                    ),
++                    ListPageRow(
++                      key: const ValueKey('phone-tool-desc-entry'),
++                      icon: AppIcons.phoneControl,
++                      title: l10n.phoneToolDescTitle,
++                      onTap: () => _push(const PhoneToolDescPage()),
++                    ),
 +                  ],
 +                ),
 +                gap,
                  ListPageCard(
                    children: [
                      ListPageRow(
+diff --git a/app/lib/ui/phone/phone_skill_editor.dart b/app/lib/ui/phone/phone_skill_editor.dart
+new file mode 100644
+index 00000000..47b45aa4
+--- /dev/null
++++ b/app/lib/ui/phone/phone_skill_editor.dart
+@@ -0,0 +1,93 @@
++import 'dart:math';
++
++import 'package:flutter/material.dart';
++import 'package:flutter_riverpod/flutter_riverpod.dart';
++
++import '../../l10n/l10n.dart';
++import '../../state/phone_state.dart';
++
++/// 【4qw】技能新建/编辑页：内容就是 SKILL.md，第一行是列表里显示的名字。
++/// 新建时自动生成合法目录名 phone-task-<32hex>；编辑时原目录覆盖保存。
++class PhoneSkillEditorPage extends ConsumerStatefulWidget {
++  const PhoneSkillEditorPage({super.key, this.skillId, this.summary});
++
++  /// null = 新建；否则编辑该技能。
++  final String? skillId;
++  final String? summary;
++
++  @override
++  ConsumerState<PhoneSkillEditorPage> createState() => _PhoneSkillEditorPageState();
++}
++
++class _PhoneSkillEditorPageState extends ConsumerState<PhoneSkillEditorPage> {
++  final TextEditingController _controller = TextEditingController();
++  bool _loading = false;
++
++  @override
++  void initState() {
++    super.initState();
++    final id = widget.skillId;
++    if (id != null) {
++      _loading = true;
++      ref.read(phoneChannelProvider).getPhoneSkillContent(id).then((markdown) {
++        if (!mounted) return;
++        setState(() {
++          _loading = false;
++          if (markdown != null) _controller.text = markdown;
++        });
++      });
++    }
++  }
++
++  @override
++  void dispose() {
++    _controller.dispose();
++    super.dispose();
++  }
++
++  String _newSkillId() {
++    final rand = Random.secure();
++    final hex = List.generate(32, (_) => rand.nextInt(16).toRadixString(16)).join();
++    return 'phone-task-$hex';
++  }
++
++  Future<void> _save() async {
++    final l10n = context.l10n;
++    final markdown = _controller.text;
++    if (markdown.trim().isEmpty) return;
++    final id = widget.skillId ?? _newSkillId();
++    final ok = await ref.read(phoneChannelProvider).savePhoneSkillManual(id, markdown);
++    if (!mounted) return;
++    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
++      content: Text(ok ? l10n.phoneSkillSaved : l10n.phoneSkillSaveFailed),
++    ));
++    if (ok) Navigator.of(context).pop(true);
++  }
++
++  @override
++  Widget build(BuildContext context) {
++    final l10n = context.l10n;
++    return Scaffold(
++      appBar: AppBar(
++        title: Text(widget.skillId == null ? l10n.phoneSkillNew : l10n.phoneSkillEditTitle),
++        actions: [TextButton(onPressed: _save, child: Text(l10n.commonSave))],
++      ),
++      body: _loading
++          ? const Center(child: CircularProgressIndicator())
++          : ListView(
++              padding: const EdgeInsets.all(16),
++              children: [
++                Text(l10n.phoneSkillNameHint, style: Theme.of(context).textTheme.bodySmall),
++                const SizedBox(height: 8),
++                TextField(
++                  controller: _controller,
++                  maxLines: 16,
++                  decoration: const InputDecoration(border: OutlineInputBorder()),
++                ),
++                const SizedBox(height: 12),
++                Text(l10n.phoneSkillSaveHint, style: Theme.of(context).textTheme.bodySmall),
++              ],
++            ),
++    );
++  }
++}
 diff --git a/app/lib/ui/phone/phone_skill_manage.dart b/app/lib/ui/phone/phone_skill_manage.dart
 new file mode 100644
-index 00000000..596a78a3
+index 00000000..fdb4e163
 --- /dev/null
 +++ b/app/lib/ui/phone/phone_skill_manage.dart
-@@ -0,0 +1,94 @@
+@@ -0,0 +1,117 @@
 +import 'package:flutter/material.dart';
 +import 'package:flutter_riverpod/flutter_riverpod.dart';
 +
 +import '../../l10n/l10n.dart';
 +import '../../state/phone_state.dart';
 +import '../theme/app_icons.dart';
++import 'phone_skill_editor.dart';
 +
 +/// 技能管理页：列出已保存技能，可删除（引擎监听目录变化，删除立即生效）。
 +class PhoneSkillManagePage extends ConsumerStatefulWidget {
@@ -106469,7 +107084,20 @@ index 00000000..596a78a3
 +    final l10n = context.l10n;
 +    final entries = _entries;
 +    return Scaffold(
-+      appBar: AppBar(title: Text(l10n.phoneSkillManageTitle)),
++      appBar: AppBar(
++        title: Text(l10n.phoneSkillManageTitle),
++        actions: [
++          TextButton(
++            onPressed: () async {
++              final changed = await Navigator.of(context).push<bool>(MaterialPageRoute(
++                builder: (context) => const PhoneSkillEditorPage(),
++              ));
++              if (changed == true) await _refresh();
++            },
++            child: Text(l10n.phoneSkillNew),
++          ),
++        ],
++      ),
 +      body: entries == null
 +          ? Center(child: _error != null ? Text(l10n.phoneSkillUnavailable) : const CircularProgressIndicator())
 +          : entries.isEmpty
@@ -106485,6 +107113,15 @@ index 00000000..596a78a3
 +                        leading: const Icon(AppIcons.skill),
 +                        title: Text(entry.name),
 +                        subtitle: Text(entry.summary, maxLines: 2, overflow: TextOverflow.ellipsis),
++                        onTap: () async {
++                          final changed = await Navigator.of(context).push<bool>(MaterialPageRoute(
++                            builder: (context) => PhoneSkillEditorPage(
++                              skillId: entry.name,
++                              summary: entry.summary,
++                            ),
++                          ));
++                          if (changed == true) await _refresh();
++                        },
 +                        trailing: IconButton(
 +                          tooltip: l10n.commonDelete,
 +                          icon: const Icon(AppIcons.delete),
@@ -106980,6 +107617,187 @@ index 00000000..26e07421
 +}
 +
 +final phoneTaskClockProvider = NotifierProvider<PhoneTaskClock, DateTime>(PhoneTaskClock.new);
+diff --git a/app/lib/ui/phone/phone_tool_desc_page.dart b/app/lib/ui/phone/phone_tool_desc_page.dart
+new file mode 100644
+index 00000000..d492a5bd
+--- /dev/null
++++ b/app/lib/ui/phone/phone_tool_desc_page.dart
+@@ -0,0 +1,175 @@
++import 'package:flutter/material.dart';
++import 'package:flutter_riverpod/flutter_riverpod.dart';
++import 'package:shared_preferences/shared_preferences.dart';
++
++import '../../l10n/l10n.dart';
++import '../../state/phone_state.dart';
++
++/// 【4qv】AI 工具说明：列出每个手机工具的名字与当前生效说明，点进去可覆盖/恢复默认。
++/// 覆盖值存偏好 ai_tool_desc_名称（原生读 flutter.ai_tool_desc_名称），改完下次对话生效。
++class PhoneToolDescPage extends ConsumerStatefulWidget {
++  const PhoneToolDescPage({super.key});
++
++  @override
++  ConsumerState<PhoneToolDescPage> createState() => _PhoneToolDescPageState();
++}
++
++class _PhoneToolDescPageState extends ConsumerState<PhoneToolDescPage> {
++  static const _prefix = 'ai_tool_desc_';
++
++  List<PhoneToolDescEntry>? _entries;
++  Map<String, String> _overrides = const {};
++
++  @override
++  void initState() {
++    super.initState();
++    _refresh();
++  }
++
++  Future<void> _refresh() async {
++    setState(() => _entries = null);
++    final prefs = await SharedPreferences.getInstance();
++    final overrides = <String, String>{};
++    for (final key in prefs.getKeys()) {
++      if (key.startsWith(_prefix)) {
++        final value = prefs.getString(key);
++        if (value != null && value.isNotEmpty) overrides[key.substring(_prefix.length)] = value;
++      }
++    }
++    final entries = await ref.read(phoneChannelProvider).listToolCatalog();
++    if (!mounted) return;
++    setState(() {
++      _entries = entries;
++      _overrides = overrides;
++    });
++  }
++
++  @override
++  Widget build(BuildContext context) {
++    final l10n = context.l10n;
++    final entries = _entries;
++    return Scaffold(
++      appBar: AppBar(title: Text(l10n.phoneToolDescTitle)),
++      body: entries == null
++          ? const Center(child: CircularProgressIndicator())
++          : ListView.separated(
++              itemCount: entries.length + 1,
++              separatorBuilder: (context, index) => const Divider(height: 1),
++              itemBuilder: (context, index) {
++                if (index == 0) {
++                  return Padding(
++                    padding: const EdgeInsets.all(16),
++                    child: Text(l10n.phoneToolDescSubtitle, style: Theme.of(context).textTheme.bodySmall),
++                  );
++                }
++                final entry = entries[index - 1];
++                final custom = _overrides[entry.name];
++                return ListTile(
++                  title: Text('mcp__phone__${entry.name}'),
++                  subtitle: Text(custom ?? entry.description, maxLines: 2, overflow: TextOverflow.ellipsis),
++                  trailing: custom != null
++                      ? Text(l10n.phoneToolDescCustom, style: TextStyle(color: Theme.of(context).colorScheme.primary))
++                      : null,
++                  onTap: () async {
++                    await Navigator.of(context).push(MaterialPageRoute<void>(
++                      builder: (context) => PhoneToolDescEditPage(
++                        entry: entry,
++                        current: custom,
++                        onChanged: _refresh,
++                      ),
++                    ));
++                  },
++                );
++              },
++            ),
++    );
++  }
++}
++
++/// 单条工具说明编辑页：默认说明只读参考，覆盖框留空=用默认。
++class PhoneToolDescEditPage extends StatefulWidget {
++  const PhoneToolDescEditPage({super.key, required this.entry, required this.current, this.onChanged});
++
++  final PhoneToolDescEntry entry;
++  final String? current;
++  final VoidCallback? onChanged;
++
++  @override
++  State<PhoneToolDescEditPage> createState() => _PhoneToolDescEditPageState();
++}
++
++class _PhoneToolDescEditPageState extends State<PhoneToolDescEditPage> {
++  late final TextEditingController _controller;
++
++  @override
++  void initState() {
++    super.initState();
++    _controller = TextEditingController(text: widget.current ?? '');
++  }
++
++  @override
++  void dispose() {
++    _controller.dispose();
++    super.dispose();
++  }
++
++  Future<void> _save() async {
++    final prefs = await SharedPreferences.getInstance();
++    final key = 'ai_tool_desc_${widget.entry.name}';
++    final text = _controller.text.trim();
++    if (text.isEmpty) {
++      await prefs.remove(key);
++    } else {
++      await prefs.setString(key, text);
++    }
++    if (!mounted) return;
++    widget.onChanged?.call();
++    Navigator.of(context).pop();
++  }
++
++  Future<void> _reset() async {
++    final prefs = await SharedPreferences.getInstance();
++    await prefs.remove('ai_tool_desc_${widget.entry.name}');
++    if (!mounted) return;
++    widget.onChanged?.call();
++    Navigator.of(context).pop();
++  }
++
++  @override
++  Widget build(BuildContext context) {
++    final l10n = context.l10n;
++    return Scaffold(
++      appBar: AppBar(
++        title: Text('mcp__phone__${widget.entry.name}'),
++        actions: [
++          TextButton(onPressed: _save, child: Text(l10n.commonSave)),
++        ],
++      ),
++      body: ListView(
++        padding: const EdgeInsets.all(16),
++        children: [
++          Text('默认说明（只读参考）', style: Theme.of(context).textTheme.labelMedium),
++          const SizedBox(height: 8),
++          Container(
++            padding: const EdgeInsets.all(12),
++            decoration: BoxDecoration(
++              color: Theme.of(context).colorScheme.surfaceContainerHighest,
++              borderRadius: BorderRadius.circular(8),
++            ),
++            child: Text(widget.entry.description),
++          ),
++          const SizedBox(height: 20),
++          Text('我的说明（留空 = 用默认）', style: Theme.of(context).textTheme.labelMedium),
++          const SizedBox(height: 8),
++          TextField(
++            controller: _controller,
++            maxLines: 10,
++            decoration: const InputDecoration(border: OutlineInputBorder()),
++          ),
++          const SizedBox(height: 16),
++          OutlinedButton(onPressed: _reset, child: Text(l10n.phoneToolDescReset)),
++        ],
++      ),
++    );
++  }
++}
 diff --git a/app/lib/ui/phone/virtual_screen_host.dart b/app/lib/ui/phone/virtual_screen_host.dart
 new file mode 100644
 index 00000000..249ae6df
