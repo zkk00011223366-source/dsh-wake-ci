@@ -1,7 +1,7 @@
 == resources ==
-/dev/mapper/cow-root  145G   45G  100G  31% /
+/dev/mapper/cow-root  145G   44G  101G  31% /
                total        used        free      shared  buff/cache   available
-Mem:           15700        1685         800          49       13599       14014
+Mem:           15700        1235         326          48       14523       14465
 == tail ==
 
 ==> 依赖: flutter pub get
@@ -75,10 +75,10 @@ To use the command line arguments, delete the l10n.yaml file in the Flutter proj
 ==> 运行时: 已存在 runtime/out/arm64-v8a
 
 ==> 打包: tooling/build-apk.sh -f arm64 --keep-daemon
-dsh-go 1.1.0 (11270043, 2026-11-27 00:43 UTC+8) · release · arm64
+dsh-go 1.1.0 (11270854, 2026-11-27 08:54 UTC+8) · release · arm64
 runtime verified: arm64 (arm64-v8a), schema 1, 5 files
 tawcroot: /home/runner/work/dsh-wake-ci/dsh-wake-ci/runtime/out-tawcroot
-→ flutter build apk --release --flavor arm64 --target-platform android-arm64 --build-name 1.1.0 --build-number 11270043 --dart-define=DSH_APP_VERSION=1.1.0+11270043
+→ flutter build apk --release --flavor arm64 --target-platform android-arm64 --build-name 1.1.0 --build-number 11270854 --dart-define=DSH_APP_VERSION=1.1.0+11270854
 Flutter assets will be downloaded from https://storage.googleapis.com. Make sure you trust this source!
 Resolving dependencies...
 Downloading packages...
@@ -137,62 +137,3 @@ Got dependencies!
 51 packages have newer versions incompatible with dependency constraints.
 Try `flutter pub outdated` for more information.
 Running Gradle task 'assembleArm64Release'...                   
-
-FAILURE: Build failed with an exception.
-
-* Where:
-Settings file '/home/runner/work/dsh-wake-ci/dsh-wake-ci/app/android/settings.gradle.kts' line: 26
-
-* What went wrong:
-Error resolving plugin [id: 'dev.flutter.flutter-plugin-loader', version: '1.0.0']
-> A problem occurred configuring project ':gradle'.
-   > Could not resolve all artifacts for configuration 'classpath'.
-      > Could not resolve org.jetbrains.kotlin:kotlin-stdlib:2.2.21.
-        Required by:
-            buildscript of project ':gradle'
-         > Repository Gradle Central Plugin Repository is disabled due to earlier error below:
-            > Could not resolve org.jetbrains.kotlin:kotlin-gradle-plugins-bom:2.2.20.
-               > Could not get resource 'https://plugins.gradle.org/m2/org/jetbrains/kotlin/kotlin-gradle-plugins-bom/2.2.20/kotlin-gradle-plugins-bom-2.2.20.pom'.
-                  > Could not GET 'https://repo.maven.apache.org/maven2/org/jetbrains/kotlin/kotlin-gradle-plugins-bom/2.2.20/kotlin-gradle-plugins-bom-2.2.20.pom'. Received status code 429 from server: Too Many Requests
-> There are 6 more failures with identical causes.
-
-* Try:
-> Run with --stacktrace option to get the stack trace.
-> Run with --info or --debug option to get more log output.
-> Run with --scan to get full insights from a Build Scan (powered by Develocity).
-> Get more help at https://help.gradle.org.
-
-BUILD FAILED in 34s
-Running Gradle task 'assembleArm64Release'...                      34.9s
-[!] Gradle threw an error while downloading artifacts from the network.
-Retrying Gradle Build: #1, wait time: 100ms
-Running Gradle task 'assembleArm64Release'...                   
-
-FAILURE: Build failed with an exception.
-
-* Where:
-Settings file '/home/runner/work/dsh-wake-ci/dsh-wake-ci/app/android/settings.gradle.kts' line: 26
-
-* What went wrong:
-Error resolving plugin [id: 'dev.flutter.flutter-plugin-loader', version: '1.0.0']
-> A problem occurred configuring project ':gradle'.
-   > Could not resolve all artifacts for configuration 'classpath'.
-      > Could not resolve org.jetbrains.kotlin:kotlin-stdlib:2.2.21.
-        Required by:
-            buildscript of project ':gradle'
-         > Repository Gradle Central Plugin Repository is disabled due to earlier error below:
-            > Could not resolve org.jetbrains.kotlin:kotlin-gradle-plugins-bom:2.2.20.
-               > Could not get resource 'https://plugins.gradle.org/m2/org/jetbrains/kotlin/kotlin-gradle-plugins-bom/2.2.20/kotlin-gradle-plugins-bom-2.2.20.pom'.
-                  > Could not GET 'https://repo.maven.apache.org/maven2/org/jetbrains/kotlin/kotlin-gradle-plugins-bom/2.2.20/kotlin-gradle-plugins-bom-2.2.20.pom'. Received status code 429 from server: Too Many Requests
-> There are 6 more failures with identical causes.
-
-* Try:
-> Run with --stacktrace option to get the stack trace.
-> Run with --info or --debug option to get more log output.
-> Run with --scan to get full insights from a Build Scan (powered by Develocity).
-> Get more help at https://help.gradle.org.
-
-BUILD FAILED in 6s
-Running Gradle task 'assembleArm64Release'...                       6.8s
-[!] Gradle threw an error while downloading artifacts from the network.
-Gradle task assembleArm64Release failed with exit code 1
