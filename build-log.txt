@@ -1,7 +1,7 @@
 == resources ==
 /dev/mapper/cow-root  145G   48G   97G  33% /
                total        used        free      shared  buff/cache   available
-Mem:           15700        4340         215          49       11530       11360
+Mem:           15700        6517         260          49        9308        9183
 == tail ==
 
 ==> 依赖: flutter pub get
@@ -160,3 +160,4 @@ Preparing "Install Android SDK Platform 34 (revision 3)".
 Installing Android SDK Platform 34 in /home/runner/dev/android-sdk/platforms/android-34
 "Install Android SDK Platform 34 (revision 3)" complete.
 "Install Android SDK Platform 34 (revision 3)" finished.
+Flutter assets will be downloaded from https://storage.googleapis.com. Make sure you trust this source!
