@@ -1,10 +1,10 @@
 From: dsh <dsh@local>
-Date: Fri, 27 Nov 2026 15:39:15 +0800
-Subject: [PATCH] 4qp: 坐标手势全放行(tap/long/swipe凭据过期按最近几何+提示)
+Date: Fri, 27 Nov 2026 16:51:12 +0800
+Subject: [PATCH] 全场景四刀: 4qr树扫全扣图死锁解除 4qs手滑直连 4qt scroll选点+回执 4qu元素过期重定位
 
  dsh-go-wake.patch                                  | 2065 +++++++++++++
  tooling/build-wake-apk.sh                          |   68 +
- 246 files changed, 19388 insertions(+), 1036 deletions(-)
+ 246 files changed, 19466 insertions(+), 1055 deletions(-)
 
 diff --git a/.gitattributes b/.gitattributes
 index 52e3e08a..3e877c7e 100644
@@ -6386,7 +6386,7 @@ index c1c2ed09..b0b1dfe3 100644
          close()
          Bundle().apply { putBoolean(Proto.OK, false); putString(Proto.ERROR, "deviceUnavailable") }
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/PrivilegedDisplayCore.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/PrivilegedDisplayCore.kt
-index c7ed0f7a..46e2ded3 100644
+index c7ed0f7a..8f13c886 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/PrivilegedDisplayCore.kt
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/PrivilegedDisplayCore.kt
 @@ -11,6 +11,7 @@ package io.github.ccch1mneyyy.dsh_app.phone.background
@@ -6682,7 +6682,7 @@ index c7ed0f7a..46e2ded3 100644
              Proto.OP_COORDINATE -> coordinate(pkg, expected?.uid, request, response)
              Proto.OP_TAP -> {
                  requireShown(pkg, expected?.uid)
-@@ -355,6 +550,38 @@ class PrivilegedDisplayCore internal constructor(
+@@ -355,13 +550,50 @@ class PrivilegedDisplayCore internal constructor(
                  if (localVisual) response.putString(Proto.VISUAL_CHANGE,
                      visualObservation?.changeFrom(previousVisual, SystemClock.uptimeMillis()) ?: "unavailable")
              }
@@ -6720,8 +6720,23 @@ index c7ed0f7a..46e2ded3 100644
 +            }
              Proto.OP_SCROLL -> {
                  requireShown(pkg, expected?.uid)
-                 scroll(pkg, request)
-@@ -379,6 +606,8 @@ class PrivilegedDisplayCore internal constructor(
+-                scroll(pkg, request)
++                scroll(pkg, request, response)
+                 sleepChecked(250)
+                 observeAfterAction(pkg, request, response, localVisual = localVisual)
+-                if (localVisual) response.putString(Proto.VISUAL_CHANGE,
+-                    visualObservation?.changeFrom(previousVisual, SystemClock.uptimeMillis()) ?: "unavailable")
++                // 【4qt】scroll 自己已按树指纹写过 VISUAL_CHANGE（changed/unchanged）；视觉观察
++                // 不可用时保留它，别覆盖成 unavailable。
++                if (localVisual) {
++                    val change = visualObservation?.changeFrom(previousVisual, SystemClock.uptimeMillis())
++                    if (change != null) response.putString(Proto.VISUAL_CHANGE, change)
++                    else if (!response.containsKey(Proto.VISUAL_CHANGE)) response.putString(Proto.VISUAL_CHANGE, "unavailable")
++                }
+             }
+             Proto.OP_KEY -> {
+                 requireShown(pkg, expected?.uid)
+@@ -379,6 +611,8 @@ class PrivilegedDisplayCore internal constructor(
          }
          // Every reply names the app now on top (none when the screen is empty). A read already did.
          if (!response.containsKey(Proto.TARGET_IDENTITY_VERSION)) putShown(response, openedPackage(request, pkg), shownApp())
@@ -6730,7 +6745,7 @@ index c7ed0f7a..46e2ded3 100644
          if (op == Proto.OP_LAUNCH && expected != null) {
              val shown = TargetIdentity.shown(response.get(Proto.PKG), response.get(Proto.TARGET_UID))
              val actualDisplay = display?.display
-@@ -729,57 +958,817 @@ class PrivilegedDisplayCore internal constructor(
+@@ -729,57 +963,817 @@ class PrivilegedDisplayCore internal constructor(
      private fun displayId(): Int = display?.display?.displayId ?: throw Fault("displayMissing")
      private fun requireDisplay() { if (display == null) throw Fault("displayMissing") }
  
@@ -7570,7 +7585,7 @@ index c7ed0f7a..46e2ded3 100644
      private fun resolveLaunch(pkg: String, expected: PhoneAppIdentity?): Intent {
          val pm = privileged.packageManager
          val intent = runCatching { pm.getLaunchIntentForPackage(pkg) }.getOrNull() ?: throw Fault("notLaunchable")
-@@ -821,6 +1810,44 @@ class PrivilegedDisplayCore internal constructor(
+@@ -821,6 +1815,44 @@ class PrivilegedDisplayCore internal constructor(
      }
  
      /** (displayId, packages of that task) rows of one running-task read. */
@@ -7615,7 +7630,7 @@ index c7ed0f7a..46e2ded3 100644
      private fun taskRows(): List<Pair<Int, Set<String>>>? {
          val field = taskDisplayIdField ?: return null
          @Suppress("DEPRECATION")
-@@ -862,8 +1889,29 @@ class PrivilegedDisplayCore internal constructor(
+@@ -862,8 +1894,29 @@ class PrivilegedDisplayCore internal constructor(
  
      private fun launchPackage(pkg: String, intent: Intent) {
          val display = this.display ?: throw Fault("displayMissing")
@@ -7646,7 +7661,7 @@ index c7ed0f7a..46e2ded3 100644
          // A shell/UserService is not an ActivityManager-attached app process: a PendingIntent
          // avoids Context.startActivity's caller check (Phase, after Aether).
          var pending: PendingIntent? = null
-@@ -873,23 +1921,161 @@ class PrivilegedDisplayCore internal constructor(
+@@ -873,23 +1926,161 @@ class PrivilegedDisplayCore internal constructor(
                  PendingIntent.FLAG_ONE_SHOT or PendingIntent.FLAG_IMMUTABLE,
              )
              pending.send(privileged, 0, null, null, null, null, options.toBundle())
@@ -7814,7 +7829,7 @@ index c7ed0f7a..46e2ded3 100644
      /** Legacy success shape stays unchanged; failed physical cleanup retains its original handles. */
      private fun releaseAll() = lock.withLock {
          if (strictOwner) throw Fault("releaseReceiptRequired")
-@@ -906,8 +2092,140 @@ class PrivilegedDisplayCore internal constructor(
+@@ -906,8 +2097,140 @@ class PrivilegedDisplayCore internal constructor(
          if (readerAllocationUncertain) throw Fault("releaseUnconfirmed")
      }
  
@@ -7955,7 +7970,7 @@ index c7ed0f7a..46e2ded3 100644
          closeTreeConnection()
          visualObservation = null
          stopPreview()
-@@ -925,11 +2243,42 @@ class PrivilegedDisplayCore internal constructor(
+@@ -925,11 +2248,42 @@ class PrivilegedDisplayCore internal constructor(
              closeReaders()
          } else {
              val displayId = releasingDisplayId ?: throw Fault("releaseUnconfirmed")
@@ -7999,7 +8014,7 @@ index c7ed0f7a..46e2ded3 100644
              closeReaders()
              val deadline = SystemClock.uptimeMillis() + 1_000
              // The display itself is already released. A ROM whose task query is unreadable cannot
-@@ -944,6 +2293,7 @@ class PrivilegedDisplayCore internal constructor(
+@@ -944,6 +2298,7 @@ class PrivilegedDisplayCore internal constructor(
      }
  
      private fun clearResourceState() {
@@ -8007,7 +8022,7 @@ index c7ed0f7a..46e2ded3 100644
          display = null; owner = null; strictOwner = false; selfCheckOwner = false
          targetSequence = null; targetSnapshot = null; targetMain = null
          releasingDisplayId = null; displayCreationAttempted = false; displayApiReleased = false; probeDisplay = false
-@@ -1044,6 +2394,17 @@ class PrivilegedDisplayCore internal constructor(
+@@ -1044,6 +2399,17 @@ class PrivilegedDisplayCore internal constructor(
          // must not turn that write into a failed action that a caller might replay.
          val tree = if (requireTree) treeResult.getOrThrow() else treeResult.getOrNull()
          if (captureResult.isSuccess && shot == null) {
@@ -8025,7 +8040,7 @@ index c7ed0f7a..46e2ded3 100644
              if (requireTree) throw Fault("frameNotReady")
              // The action already happened. Never make the caller replay it for an absent frame.
              response.putBoolean(Proto.FRAME_NOT_READY, true)
-@@ -1054,6 +2415,7 @@ class PrivilegedDisplayCore internal constructor(
+@@ -1054,6 +2420,7 @@ class PrivilegedDisplayCore internal constructor(
          // The screenshot contains the whole viewport, including nodes beyond the emitted
          // text prefix. Never attach it when secrets were found or the scan was incomplete.
          // The typing unlock changes permission to write, never permission to reveal a secret.
@@ -8033,7 +8048,7 @@ index c7ed0f7a..46e2ded3 100644
          if (wantImage && shot != null) {
              if (tree != null && tree.complete && !tree.hasSecrets) {
                  response.putByteArray("imageBytes", shot.jpeg)
-@@ -1166,7 +2528,15 @@ class PrivilegedDisplayCore internal constructor(
+@@ -1166,7 +2533,15 @@ class PrivilegedDisplayCore internal constructor(
      private class CaptureResult(val jpeg: ByteArray, val raw: BackgroundPreviewState.RawFrame?, val local: ImageObservation?, val targetMatched: Boolean? = null)
  
      /** Null means only absent/black frames; other capture failures remain distinguishable. */
@@ -8050,7 +8065,7 @@ index c7ed0f7a..46e2ded3 100644
          val ir = lock.withLock {
              if (pendingReader != null || readerAllocationUncertain) throw Fault("releasePending")
              val vd = display ?: throw Fault("displayMissing")
-@@ -1332,6 +2702,13 @@ class PrivilegedDisplayCore internal constructor(
+@@ -1332,6 +2707,13 @@ class PrivilegedDisplayCore internal constructor(
  
      internal fun previewDrained(): Boolean = lock.withLock { previewWorker.drained() }
  
@@ -8064,7 +8079,7 @@ index c7ed0f7a..46e2ded3 100644
      private fun renderPreview(ticket: BackgroundPreviewState.Ticket) {
          var bitmap: Bitmap? = null
          var thumbnail: Bitmap? = null
-@@ -1359,8 +2736,23 @@ class PrivilegedDisplayCore internal constructor(
+@@ -1359,8 +2741,23 @@ class PrivilegedDisplayCore internal constructor(
                  } finally { image.close() }
                  // All Image/buffer access ends before releaseAll can close its ImageReader.
              } finally { lock.unlock() }
@@ -8089,7 +8104,7 @@ index c7ed0f7a..46e2ded3 100644
                  bitmap = Bitmap.createBitmap(raw.width, raw.height, Bitmap.Config.ARGB_8888)
                  bitmap!!.copyPixelsFromBuffer(ByteBuffer.wrap(raw.pixels))
              }
-@@ -1382,6 +2774,18 @@ class PrivilegedDisplayCore internal constructor(
+@@ -1382,6 +2779,18 @@ class PrivilegedDisplayCore internal constructor(
                  preview.unavailable(ticket, "frameTooLarge"); return
              }
              preview.publish(ticket, BackgroundPreviewState.Frame(w, h, pixels, bytes), SystemClock.uptimeMillis())
@@ -8108,7 +8123,141 @@ index c7ed0f7a..46e2ded3 100644
          } catch (_: Exception) {
              preview.unavailable(ticket, "captureFailed")
          } finally {
-@@ -1724,17 +3128,37 @@ class PrivilegedDisplayCore internal constructor(
+@@ -1394,7 +2803,8 @@ class PrivilegedDisplayCore internal constructor(
+     // ---- UiAutomation control-tree read ------------------------------------
+ 
+     private class TreeRead(val targetId: Int = 0, val inspectVisual: Boolean = false,
+-                           val targetEvidence: SelfCheckTargetEvidence? = null, coordinates: Boolean = false) {
++                           val targetEvidence: SelfCheckTargetEvidence? = null, coordinates: Boolean = false,
++                           val screenWidth: Int = 0, val screenHeight: Int = 0) {
+         val coordinateDigest: MessageDigest? = if (coordinates) MessageDigest.getInstance("SHA-256") else null
+         val coordinateNodes: ArrayList<VisualNode>? = if (coordinates) ArrayList() else null
+         val coordinateElementIds = HashMap<Int, Int>()
+@@ -1414,6 +2824,17 @@ class PrivilegedDisplayCore internal constructor(
+         var hasSecrets = false
+         var targetWindowId: Int? = null
+         var target: AccessibilityNodeInfo? = null
++        /** 【4qt】轻量树指纹：元素数+隐私旗标+每元素角色/文字/边界。滚动前后比对判 changed。 */
++        fun fingerprint(): String {
++            val sb = StringBuilder(elements.size * 28 + 16)
++            sb.append(elements.size).append('|').append(if (hasSecrets) '1' else '0').append('|')
++            for (e in elements) {
++                sb.append(e.role.hashCode()).append(',').append(e.label.hashCode()).append(',')
++                    .append(e.bounds.left).append(',').append(e.bounds.top).append(',')
++                    .append(e.bounds.right).append(',').append(e.bounds.bottom).append(';')
++            }
++            return sb.toString()
++        }
+     }
+ 
+     private fun requireTreeReady() {
+@@ -1475,7 +2896,7 @@ class PrivilegedDisplayCore internal constructor(
+             for (window in windows) roots.add(window.root)
+             val selected = BackgroundTree.selectApplicationWindow(roots.map { it?.packageName?.toString() }, pkg)
+                 ?: throw Fault(if (roots.firstOrNull() != null) "displayTargetChanged" else "treeUnavailable")
+-            val tree = TreeRead(targetId, inspectVisual, targetEvidence, coordinates)
++            val tree = TreeRead(targetId, inspectVisual, targetEvidence, coordinates, width, height)
+             if (targetEvidence != null) tree.targetWindowId = windows[selected.index].id
+             if (displayWindows.size == 1 && windows.size == 1) {
+                 val window = windows[selected.index]
+@@ -1486,13 +2907,13 @@ class PrivilegedDisplayCore internal constructor(
+             }
+             if (!scanOtherWindows && roots.size > 1) tree.complete = false
+             try {
+-                walk(roots[selected.index]!!, tree, 0, 600, navigation = navigation)
++                walk(roots[selected.index]!!, tree, 0, 1500, navigation = navigation)
+                 assignRegions(tree.elements)
+                 if (scanOtherWindows) for (index in selected.scanOrder.drop(1)) {
+                     try {
+                         // Same privacy walk and total budget, but never expose secondary
+                         // elements or let them take ownership of a main-window target id.
+-                        walk(roots[index], tree, 0, 600, emitElements = false)
++                        walk(roots[index], tree, 0, 1500, emitElements = false)
+                     } catch (e: Exception) {
+                         if (e is InterruptedException || e is java.util.concurrent.CancellationException || e is Fault) throw e
+                         // A secondary read failure prevents an image, not the already
+@@ -1514,10 +2935,19 @@ class PrivilegedDisplayCore internal constructor(
+     }
+ 
+     private fun walk(node: AccessibilityNodeInfo?, tree: TreeRead, indent: Int, budget: Int, emitElements: Boolean = true, parentIndex: Int = -1,
+-                     navigation: NavigationRead? = null, navigationParent: Int = -1) {
++                     navigation: NavigationRead? = null, navigationParent: Int = -1, emitAllowed: Boolean = true) {
+         if (node == null) { tree.complete = false; return }
+-        if (tree.visited >= budget) { tree.complete = false; return }
++        // 【4qr】病态树硬上限：超过就按未扫完处理，不无限遍历。
++        if (tree.visited >= 20000) { tree.complete = false; return }
++        // 【4qr】屏外子树整棵剪掉：屏外节点的隐私与元素都无意义，剪掉既安全又保住读屏速度。
++        if (tree.screenWidth > 0 && tree.screenHeight > 0) {
++            val r = Rect().also { node.getBoundsInScreen(it) }
++            if (r.bottom <= 0 || r.top >= tree.screenHeight || r.right <= 0 || r.left >= tree.screenWidth) return
++        }
+         tree.visited++
++        // 【4qr】元素预算只截「产出」：超预算后进入 privacy-only，继续走完屏内树做隐私判定，
++        // 不再把 complete 置 false——「树没扫完就扣图」的死锁（抖音 feed 页）由此解开。
++        val emitNow = emitAllowed && tree.visited <= budget
+         if (navigation != null) {
+             if (Thread.currentThread().isInterrupted) throw InterruptedException()
+             val refreshed = node.refresh()
+@@ -1543,7 +2973,7 @@ class PrivilegedDisplayCore internal constructor(
+             }
+         }
+         if (node.isVisibleToUser && isSecret(node)) tree.hasSecrets = true
+-        val text = if (emitElements || tree.inspectVisual) bestText(node) else ""
++        val text = if (emitNow || tree.inspectVisual) bestText(node) else ""
+         if (tree.inspectVisual && node.isVisibleToUser && !tree.hasSensitive) {
+             tree.hasSensitive = try {
+                 // Check raw text too: bestText may drop an oversized blank value.
+@@ -1572,7 +3002,7 @@ class PrivilegedDisplayCore internal constructor(
+             digest.update(ByteBuffer.allocate(metadata.size * 4).apply { metadata.forEach { putInt(it) } }.array())
+         }
+         var childIndent = indent
+-        if (emitElements) {
++        if (emitNow) {
+             val actionable = node.isClickable || node.isLongClickable || node.isEditable || node.isCheckable || node.isScrollable
+             val emit = actionable || (text.isNotEmpty() && node.isVisibleToUser)
+             if (emit && node.isVisibleToUser) {
+@@ -1585,9 +3015,8 @@ class PrivilegedDisplayCore internal constructor(
+             }
+         }
+         for (i in 0 until node.childCount) {
+-            if (tree.visited >= budget) { tree.complete = false; break }
+             val child = node.getChild(i)
+-            try { walk(child, tree, childIndent, budget, emitElements, coordinateIndex, navigation, navigationIndex) } finally { child?.recycle() }
++            try { walk(child, tree, childIndent, budget, emitElements, coordinateIndex, navigation, navigationIndex, emitNow) } finally { child?.recycle() }
+         }
+     }
+ 
+@@ -1687,8 +3116,9 @@ class PrivilegedDisplayCore internal constructor(
+     private fun resolveElement(pkg: String, request: Bundle, target: TargetSnapshot? = null): BgNode {
+         val index = request.getInt(Proto.ELEMENT, -1)
+         if (index < 1) throw Fault("invalidArguments")
++        val elements = if (target == null) readTree(displayId(), pkg).elements else null
+         val e = if (target == null) {
+-            readTree(displayId(), pkg).elements.getOrNull(index - 1) ?: throw Fault("elementMissing")
++            elements!!.getOrNull(index - 1) ?: throw Fault("elementMissing")
+         } else {
+             val fresh = readTargetSnapshot(target.run, 0)
+             if (fresh.windowId != target.windowId || fresh.index != index || fresh.element.bounds != target.element.bounds)
+@@ -1702,7 +3132,17 @@ class PrivilegedDisplayCore internal constructor(
+         // target, so "Invoice 12 view" turning into "Invoice 12 delete" must not pass.
+         if (expectRole != null && expectRole != e.role ||
+             expectLabel != null && expectLabel != e.label ||
+-            expectViewId != null && expectViewId != e.viewId) throw Fault(if (target == null) "staleSnapshot" else "targetChanged")
++            expectViewId != null && expectViewId != e.viewId) {
++            if (target != null) throw Fault("targetChanged")
++            // 【4qu 刀F】元素过期自动重定位一次：在新树里按「label+role 全等」（viewId 相同优先）
++            // 找同一目标；命中且非敏感/密码元素才用，找不到才按过期报。界面闪变不再白点（AI 14:5x）。
++            val relocated = elements!!.firstOrNull { c ->
++                c !== e && (c.flags and (Proto.FLAG_SENSITIVE or Proto.FLAG_PASSWORD or Proto.FLAG_SECRET)) == 0 &&
++                    ((expectViewId != null && c.viewId == expectViewId && (expectRole == null || c.role == expectRole)) ||
++                        (expectLabel != null && c.label == expectLabel && (expectRole == null || c.role == expectRole)))
++            }
++            return relocated ?: throw Fault("staleSnapshot")
++        }
+         return e
+     }
+ 
+@@ -1724,17 +3164,37 @@ class PrivilegedDisplayCore internal constructor(
  
      private fun coordinate(pkg: String, uid: Int?, request: Bundle, response: Bundle) {
          val action = BackgroundCoordinateRequest.parse(request.keySet()) { request.get(it) } ?: throw Fault("invalidArguments")
@@ -8150,7 +8299,58 @@ index c7ed0f7a..46e2ded3 100644
          if (!tree.complete || tree.hasSecrets || tree.hasSensitive ||
              !observed.matches(scope, tree.visualWindow, tree.coordinateContext(), geometry, SystemClock.uptimeMillis()))
              throw Fault("targetChanged")
-@@ -1910,6 +3334,22 @@ class PrivilegedDisplayCore internal constructor(
+@@ -1872,7 +3332,7 @@ class PrivilegedDisplayCore internal constructor(
+         injectTap(cx, cy, long)
+     }
+ 
+-    private fun scroll(pkg: String, request: Bundle) {
++    private fun scroll(pkg: String, request: Bundle, response: Bundle) {
+         val dir = request.getString(Proto.DIR) ?: "down"
+         val bounds = if (request.containsKey(Proto.ELEMENT)) {
+             val target = resolveElement(pkg, request)
+@@ -1881,8 +3341,20 @@ class PrivilegedDisplayCore internal constructor(
+                 if (!it.intersect(0, 0, width, height)) throw Fault("inputRejected")
+             }
+         } else null
+-        val cx = bounds?.centerX() ?: (width / 2)
+-        val cy = bounds?.centerY() ?: (height / 2)
++        var cx = bounds?.centerX() ?: (width / 2)
++        var cy = bounds?.centerY() ?: (height / 2)
++        // 【4qt 刀D】无点名：读树选「覆盖屏中心的最内层可滚动节点」做起滑点——起滑点落进真容器，
++        // 不再从屏正中被视频等内层控件截胡（AI 14:5x 连续三次 scroll 白烧）；同时取滚动前树指纹。
++        var before: String? = null
++        if (bounds == null) {
++            runCatching { readTree(displayId(), pkg) }.getOrNull()?.let { tree ->
++                before = tree.fingerprint()
++                tree.elements
++                    .filter { it.flags and Proto.FLAG_SCROLLABLE != 0 && it.bounds.contains(width / 2, height / 2) }
++                    .minByOrNull { it.bounds.width() * it.bounds.height() }
++                    ?.let { pick -> cx = pick.bounds.centerX(); cy = pick.bounds.centerY() }
++            }
++        }
+         val span = if (bounds == null) (if (dir == "left" || dir == "right") width else height) / 3 else
+             (if (dir == "left" || dir == "right") bounds.width() else bounds.height()) / 3
+         if (bounds != null && span < 1) throw Fault("inputRejected")
+@@ -1893,7 +3365,8 @@ class PrivilegedDisplayCore internal constructor(
+             "right" -> intArrayOf(cx + span, cy, cx - span, cy)
+             else -> throw Fault("invalidArguments")
+         }
+-        val duration = 400
++        // 【4qt】无点名=信息流 fling（220ms 快滑），点名元素滚动保持 400ms 慢滑。
++        val duration = if (bounds == null) 220 else 400
+         if (bounds != null) {
+             val vd = display ?: throw Fault("displayMissing")
+             val displayContext = context.createDisplayContext(vd.display)
+@@ -1907,9 +3380,31 @@ class PrivilegedDisplayCore internal constructor(
+         }
+         requireShown(pkg, null)
+         injectSwipe(p[0], p[1], p[2], p[3], duration)
++        // 【4qt】滚动后重读树指纹，明确回执 changed/unchanged，模型不再猜「成没成」。
++        if (before != null) {
++            sleepChecked(250)
++            val after = runCatching { readTree(displayId(), pkg).fingerprint() }.getOrNull()
++            response.putString(Proto.VISUAL_CHANGE, if (after != null && after != before) "changed" else "unchanged")
++        }
      }
  
      private fun globalKey(key: String?) {
@@ -8173,7 +8373,7 @@ index c7ed0f7a..46e2ded3 100644
          val code = KEYS[key] ?: throw Fault("invalidArguments")
          val now = SystemClock.uptimeMillis()
          injectKey(KeyEvent(now, now, KeyEvent.ACTION_DOWN, code, 0))
-@@ -1999,7 +3439,35 @@ class PrivilegedDisplayCore internal constructor(
+@@ -1999,7 +3494,35 @@ class PrivilegedDisplayCore internal constructor(
      private fun injectKey(src: KeyEvent) {
          val event = KeyEvent(src.downTime, src.eventTime, src.action, src.keyCode, 0, src.metaState,
              KeyCharacterMap.VIRTUAL_KEYBOARD, src.scanCode, src.flags, InputDevice.SOURCE_KEYBOARD)
@@ -8210,7 +8410,7 @@ index c7ed0f7a..46e2ded3 100644
      }
  
      // Runs in the shell-uid privileged process (Shizuku UserService or app_process),
-@@ -2025,14 +3493,45 @@ class PrivilegedDisplayCore internal constructor(
+@@ -2025,14 +3548,45 @@ class PrivilegedDisplayCore internal constructor(
          if (waitForFinish && !accepted) throw Fault("inputRejected")
      }
  
@@ -8258,7 +8458,7 @@ index c7ed0f7a..46e2ded3 100644
      }
  
      /**
-@@ -2079,13 +3578,22 @@ class PrivilegedDisplayCore internal constructor(
+@@ -2079,13 +3633,22 @@ class PrivilegedDisplayCore internal constructor(
  
      companion object {
          private val PACKAGE = Regex("[a-zA-Z][a-zA-Z0-9_]*(\\.[a-zA-Z0-9_]+)+")
@@ -9361,10 +9561,10 @@ index 00000000..19aecfea
 +}
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenOverlay.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenOverlay.kt
 new file mode 100644
-index 00000000..a42f2f34
+index 00000000..68c30186
 --- /dev/null
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenOverlay.kt
-@@ -0,0 +1,3080 @@
+@@ -0,0 +1,3084 @@
 +package io.github.ccch1mneyyy.dsh_app.phone.vscreen
 +
 +import io.github.ccch1mneyyy.dsh_app.phone.PhoneRegistry
@@ -12058,28 +12258,34 @@ index 00000000..a42f2f34
 +                    WakeTrace.log("window: inject displayId resolved=$real")
 +                }
 +            }
-+            // 【4oz-direct】优先直连注入（core sendMotion，精确坐标、无 shell 偏移、无 spawn），
-+            // 失败退回 shell，再退回无障碍手势。
-+            if (displayId > 0 && displayW > 0 && displayH > 0) {
-+                val x1 = (fx * displayW).toInt().coerceIn(0, displayW - 1)
-+                val y1 = (fy * displayH).toInt().coerceIn(0, displayH - 1)
-+                val swipeTo = kind != "tap" && kind != "long"
-+                val (g2, x2, y2) = if (swipeTo) {
-+                    val (tx, ty) = fraction(to?.x ?: at.x, to?.y ?: at.y)
-+                    Triple("swipe", (tx * displayW).toInt().coerceIn(0, displayW - 1),
-+                        (ty * displayH).toInt().coerceIn(0, displayH - 1))
-+                } else Triple("tap", null, null)
-+                val long = kind == "long"
-+                val app = root?.context?.applicationContext
-+                worker.execute {
-+                    val direct = if (app != null) runCatching {
-+                        io.github.ccch1mneyyy.dsh_app.phone.background.BackgroundControl.get(app)
-+                            ?.injectManual(g2, x1, y1, x2, y2, 220, long)
-+                    }.getOrNull() == true else false
-+                    if (direct) {
-+                        WakeTrace.log("window: direct inject kind=$kind at=$x1,$y1")
-+                        return@execute
-+                    }
++            // 【4oz-direct→4qs】手滑优先直连（OP_INJECT 不依赖屏号，core 按任务解析屏），
++            // 失败退回 shell（需屏号），再退回无障碍兜底。屏号解析失败（保屏态 lastOpenInfo 拿不到）
++            // 不再把手滑推进 receipt 链（真机 14:55 连续"没有可用的后台坐标范围"就是它）。
++            if (displayW <= 0 || displayH <= 0) {
++                WakeTrace.log("window: inject no display size fallback=previewGesture")
++                fallbackGesture(kind, fx, fy, to)
++                return
++            }
++            val x1 = (fx * displayW).toInt().coerceIn(0, displayW - 1)
++            val y1 = (fy * displayH).toInt().coerceIn(0, displayH - 1)
++            val swipeTo = kind != "tap" && kind != "long"
++            val (g2, x2, y2) = if (swipeTo) {
++                val (tx, ty) = fraction(to?.x ?: at.x, to?.y ?: at.y)
++                Triple("swipe", (tx * displayW).toInt().coerceIn(0, displayW - 1),
++                    (ty * displayH).toInt().coerceIn(0, displayH - 1))
++            } else Triple("tap", null, null)
++            val long = kind == "long"
++            val app = root?.context?.applicationContext
++            worker.execute {
++                val direct = if (app != null) runCatching {
++                    io.github.ccch1mneyyy.dsh_app.phone.background.BackgroundControl.get(app)
++                        ?.injectManual(g2, x1, y1, x2, y2, 220, long)
++                }.getOrNull() == true else false
++                if (direct) {
++                    WakeTrace.log("window: direct inject kind=$kind at=$x1,$y1")
++                    return@execute
++                }
++                if (displayId > 0) {
 +                    val cmd = when (kind) {
 +                        "tap" -> "input -d $displayId tap $x1 $y1"
 +                        "long" -> "input -d $displayId swipe $x1 $y1 $x1 $y1 600"
@@ -12090,16 +12296,14 @@ index 00000000..a42f2f34
 +                    }.getOrNull() == true
 +                    if (ok) {
 +                        WakeTrace.log("window: shell inject $cmd")
-+                    } else {
-+                        WakeTrace.log("window: shell inject failed $cmd fallback=previewGesture")
-+                        main.post { fallbackGesture(kind, fx, fy, to) }
++                        return@execute
 +                    }
++                    WakeTrace.log("window: shell inject failed $cmd fallback=previewGesture")
++                } else {
++                    WakeTrace.log("window: direct inject failed, no displayId for shell, fallback=previewGesture")
 +                }
-+                return
++                main.post { fallbackGesture(kind, fx, fy, to) }
 +            }
-+            // 退回无障碍：写清楚原因，避免"看起来改了其实没走新路"（10:0x）。
-+            WakeTrace.log("window: shell inject unavailable (displayId=$displayId ch=${io.github.ccch1mneyyy.dsh_app.phone.PhoneRegistry.injectDisplayInput != null}) fallback=previewGesture")
-+            fallbackGesture(kind, fx, fy, to)
 +        }
 +
 +        fun hit(view: View?, rawX: Float, rawY: Float): Boolean {
