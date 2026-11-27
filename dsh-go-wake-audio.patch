@@ -1,10 +1,10 @@
 From: dsh <dsh@local>
-Date: Fri, 27 Nov 2026 10:58:07 +0800
-Subject: [PATCH] 坐标单击放行+一步一验
+Date: Fri, 27 Nov 2026 12:51:02 +0800
+Subject: [PATCH] 开关接线: 允许手动操作读偏好 + 默认隐藏open即定形(4qh)
 
  dsh-go-wake.patch                                  | 2065 +++++++++++++
  tooling/build-wake-apk.sh                          |   68 +
- 246 files changed, 19357 insertions(+), 1036 deletions(-)
+ 246 files changed, 19362 insertions(+), 1036 deletions(-)
 
 diff --git a/.gitattributes b/.gitattributes
 index 52e3e08a..3e877c7e 100644
@@ -1868,7 +1868,7 @@ index 2fc7cd59..1931b87c 100644
  
      override fun notifyFix(kind: String) = notifyFixFor(tasks, kind)
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneCore.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneCore.kt
-index 6c701851..c8176097 100644
+index 6c701851..b1feaf61 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneCore.kt
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneCore.kt
 @@ -1,9 +1,12 @@
@@ -2100,7 +2100,7 @@ index 6c701851..c8176097 100644
              confirmSystem(plan, scope, owner, summary)?.let { return it }
              val ticket = skillTrace.beginOpen(owner, PhoneScreen.MAIN)
              val result = try {
-@@ -556,50 +631,305 @@ class PhoneCore(
+@@ -556,50 +631,304 @@ class PhoneCore(
                      skillTrace.finish(ticket, it.ok, false, false)
                  }
              } catch (e: Throwable) { skillTrace.fail(ticket); throw e }
@@ -2195,19 +2195,18 @@ index 6c701851..c8176097 100644
 +            "open: main step=launch front=" +
 +                (runCatching { env.driver(PhoneScreen.MAIN, owner)?.foregroundPackage() }.getOrNull() ?: "unknown"))
 +        io.github.ccch1mneyyy.dsh_app.phone.PhoneRegistry.vscreenOpenDone = true
-+        // 【4oq】打开即定形（语义表表一）：只在"窗口没有既有形态"（✕ 后首开）时，
-+        // 按本次"点名/设置"定初始形态——要条 or 要窗。窗口已有形态（同屏复用/任务结束保留）
-+        // 一律保持现状。之后只由用户动作改；AI 后续调用与状态抖动不碰它。
++        // 【4oq→4qh】打开即定形：每次 open 都按「AI 点名 > 设置默认」重定初始形态（要条/要窗），
++        // 不再看窗口视图是否在场。旧的门槛 `!hasView()` 与保屏语义冲突：窗口视图常在（✕ 也不拆），
++        // bar 永远停留在上次残留值，「默认隐藏」开关只在视图恰好不在场时才生效一次（真机 12:37）。
++        // 之后只由用户动作改（点条→要窗、外滑/眼睛→要条）；AI 后续调用与状态抖动不碰它。
 +        runCatching {
-+            if (!io.github.ccch1mneyyy.dsh_app.phone.vscreen.VirtualScreenOverlay.hasView()) {
-+                val wantBar = when (val v = a.str("background")) {
-+                    "silent" -> true
-+                    "virtual" -> false
-+                    else -> io.github.ccch1mneyyy.dsh_app.phone.PhoneRegistry.backgroundSilent
-+                }
-+                io.github.ccch1mneyyy.dsh_app.phone.PhoneRegistry.vscreenUserSilent = wantBar
-+                io.github.ccch1mneyyy.dsh_app.wake.WakeTrace.log("vscreen: open initial bar=$wantBar (4oq)")
++            val wantBar = when (val v = a.str("background")) {
++                "silent" -> true
++                "virtual" -> false
++                else -> io.github.ccch1mneyyy.dsh_app.phone.PhoneRegistry.backgroundSilent
 +            }
++            io.github.ccch1mneyyy.dsh_app.phone.PhoneRegistry.vscreenUserSilent = wantBar
++            io.github.ccch1mneyyy.dsh_app.wake.WakeTrace.log("vscreen: open initial bar=$wantBar (4qh)")
 +        }
 +        // 【状态源单一】账本退役：不再写 registry 屏号；落屏事实由 taskFacts() 统一供判定读。
 +        // 这里只把 core 回包里的落屏留痕，供"到底开在哪块屏"核对。
@@ -2417,7 +2416,7 @@ index 6c701851..c8176097 100644
      }
  
      /** The handler is a dispatch fact. Only the following read describes the actual foreground UI. */
-@@ -816,8 +1146,210 @@ class PhoneCore(
+@@ -816,8 +1145,210 @@ class PhoneCore(
          return Either.Right(d)
      }
  
@@ -2628,7 +2627,7 @@ index 6c701851..c8176097 100644
      /** Admission uses the same argument coercion and routing as the actual tool body. */
      fun requiredScreens(name: String, args: Map<String, Any?>): Either<String, List<PhoneScreen>> {
          return requiredScreens(name, Args(args))
-@@ -825,10 +1357,11 @@ class PhoneCore(
+@@ -825,10 +1356,11 @@ class PhoneCore(
  
      private fun requiredScreens(name: String, a: Args): Either<String, List<PhoneScreen>> {
          return when (name) {
@@ -2643,7 +2642,7 @@ index 6c701851..c8176097 100644
              // Arbitrary system commands take the main/global unknown-app lease, without reading a screen.
              PhoneToolCatalog.INTENT, PhoneToolCatalog.ANDROID_SHELL -> Either.Right(listOf(PhoneScreen.MAIN))
              PhoneToolCatalog.HANDOFF -> Either.Right(if (lastScreen == PhoneScreen.BACKGROUND)
-@@ -852,7 +1385,7 @@ class PhoneCore(
+@@ -852,7 +1384,7 @@ class PhoneCore(
          if (id == null) return Either.Left("缺少 $parameterName（屏幕号，如 s7）。先调用 screen 拿到屏幕号。")
          return PhoneScreen.ofScreenId(id)?.let { Either.Right(it) }
              // l10n:keep agent tool result
@@ -2652,7 +2651,7 @@ index 6c701851..c8176097 100644
      }
  
      private fun locked(summary: String) =
-@@ -871,21 +1404,56 @@ class PhoneCore(
+@@ -871,21 +1403,56 @@ class PhoneCore(
  
      private fun screen(a: Args, owner: PhoneTasks.Owner): Out {
          if (!current(owner)) return stoppedOut("screen")
@@ -2717,7 +2716,7 @@ index 6c701851..c8176097 100644
          return Out(
              // l10n:keep agent tool result
              if (refused) "没有读取这个屏幕的内容。" else "",
-@@ -897,6 +1465,40 @@ class PhoneCore(
+@@ -897,6 +1464,40 @@ class PhoneCore(
          )
      }
  
@@ -2758,7 +2757,7 @@ index 6c701851..c8176097 100644
      private fun collect(a: Args, owner: PhoneTasks.Owner): Out {
          if (!current(owner)) return stoppedOut("collect")
          val sid = a.str("screen")
-@@ -1270,8 +1872,13 @@ class PhoneCore(
+@@ -1270,8 +1871,13 @@ class PhoneCore(
              "home" -> PhoneAction.GlobalKey.HOME
              "recents" -> PhoneAction.GlobalKey.RECENTS
              "notifications" -> PhoneAction.GlobalKey.NOTIFICATIONS
@@ -2773,7 +2772,7 @@ index 6c701851..c8176097 100644
          }
          val sid = a.str("screen")
          val which = if (sid == null) {
-@@ -1288,12 +1895,22 @@ class PhoneCore(
+@@ -1288,12 +1894,22 @@ class PhoneCore(
              is Either.Right -> d.value
          }
          if (env.isLocked()) return locked(summary)
@@ -2796,7 +2795,7 @@ index 6c701851..c8176097 100644
          }))
          if (!current(owner)) return stoppedOut(summary)
          val action = PhoneAction.Key(sid ?: "${which.prefix}0", key)
-@@ -1314,6 +1931,22 @@ class PhoneCore(
+@@ -1314,6 +1930,22 @@ class PhoneCore(
          } catch (e: Throwable) { skillTrace.fail(ticket); throw e }
      }
  
@@ -2819,7 +2818,7 @@ index 6c701851..c8176097 100644
      private fun handoff(a: Args, scope: SerialWorker.Scope, owner: PhoneTasks.Owner): Out {
          if (!current(owner)) return stoppedOut("handoff")
          // l10n:keep agent tool result
-@@ -1362,6 +1995,7 @@ class PhoneCore(
+@@ -1362,6 +1994,7 @@ class PhoneCore(
          summary = summary, decision = "stopped")
  
      companion object {
@@ -2827,7 +2826,7 @@ index 6c701851..c8176097 100644
          internal const val REPLAY = "replay"
          internal const val FOCUS_TEXT = "focus_text"
  
-@@ -1370,6 +2004,9 @@ class PhoneCore(
+@@ -1370,6 +2003,9 @@ class PhoneCore(
          const val PAUSE_WAIT_MS = 600_000L
          const val HANDOFF_MS = 600_000L
  
@@ -9342,10 +9341,10 @@ index 00000000..19aecfea
 +}
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenOverlay.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenOverlay.kt
 new file mode 100644
-index 00000000..78be8c5e
+index 00000000..09ceb643
 --- /dev/null
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/VirtualScreenOverlay.kt
-@@ -0,0 +1,3068 @@
+@@ -0,0 +1,3074 @@
 +package io.github.ccch1mneyyy.dsh_app.phone.vscreen
 +
 +import io.github.ccch1mneyyy.dsh_app.phone.PhoneRegistry
@@ -9492,7 +9491,8 @@ index 00000000..78be8c5e
 +     * 帧由预览通道推来（wantsFrames 已在非 SLIVER、无直连时为 true）。
 +     */
 +    private val forceFrameMode = true
-+    private var manualEnabledLogged = false
++    /** 上次读到的「允许手动操作」开关值：只在变化时打一行日志，别每次触摸都刷屏。 */
++    private var manualPref: Boolean? = null
 +    private var frameModeLogged = false
 +
 +    /** 虚拟屏的 displayId 与真实像素尺寸：shell 注入（input -d）要用。 */
@@ -10093,11 +10093,16 @@ index 00000000..78be8c5e
 +     * 展开态才允许操作由调用点的 `shape == Shape.EXPAND` 保证（初始态仍然只能拖）。
 +     */
 +    private fun manualAllowed(app: Context): Boolean {
-+        if (!manualEnabledLogged) {
-+            manualEnabledLogged = true
-+            WakeTrace.log("window: manual control enabled (expand only, small = drag only)")
++        // 「允许手动操作」开关（设置 → 手机操控）：原生直接读 Dart 落盘的偏好，同进程内
++        // 切换立即生效、不用重启。键 = flutter.virtual_screen_manual（FlutterSharedPreferences）。
++        // 关 = 画面只读（窗口拖动、点小窗放大不受影响）；开 = 展开态点/长按/滑动落到虚拟屏。
++        val on = app.getSharedPreferences("FlutterSharedPreferences", Context.MODE_PRIVATE)
++            .getBoolean("flutter.virtual_screen_manual", false)
++        if (manualPref != on) {
++            manualPref = on
++            WakeTrace.log("window: manual=$on (expand only, small = drag only)")
 +        }
-+        return true
++        return on
 +    }
 +
 +    /**
