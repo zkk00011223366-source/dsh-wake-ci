@@ -1,10 +1,10 @@
 From: dsh <dsh@local>
-Date: Fri, 27 Nov 2026 09:30:45 +0800
-Subject: [PATCH] selectAll+delete+窄门+发送技巧+handoff清零
+Date: Fri, 27 Nov 2026 10:58:07 +0800
+Subject: [PATCH] 坐标单击放行+一步一验
 
  dsh-go-wake.patch                                  | 2065 +++++++++++++
  tooling/build-wake-apk.sh                          |   68 +
- 246 files changed, 19314 insertions(+), 1027 deletions(-)
+ 246 files changed, 19357 insertions(+), 1036 deletions(-)
 
 diff --git a/.gitattributes b/.gitattributes
 index 52e3e08a..3e877c7e 100644
@@ -3782,7 +3782,7 @@ index a09015e7..b9c4bf15 100644
          /** No confirmation surface is reachable, so this one action did not run. */
          // l10n:keep agent no-gate protocol
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneToolCatalog.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneToolCatalog.kt
-index cbfb0de3..91064f06 100644
+index cbfb0de3..82e48339 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneToolCatalog.kt
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneToolCatalog.kt
 @@ -22,8 +22,10 @@ object PhoneToolCatalog {
@@ -3883,7 +3883,7 @@ index cbfb0de3..91064f06 100644
              KEY,
              // l10n:keep agent tool catalog
 -            "按系统键（back / home / recents / notifications），返回新屏幕。",
-+            "按系统键（back / home / recents / notifications），返回新屏幕。虚拟屏（screen 用 b）额外支持 paste（粘贴剪贴板到焦点输入框）、enter（回车）、selectAll（全选焦点框文字）、delete（退格删除一个字符，配合 selectAll 清空焦点框）。【自绘输入窗口：先按现象判断，别背名单】有些应用的输入框是应用自己画的、不交给系统（自绘控件），三个识别现象：①读屏 0 项（读不到文字节点是正常的，别反复读屏）；②把文字直接注入输入框无效；③但它响应键盘按键。满足①②就是自绘窗口——例：微信 com.tencent.mm、QQ com.tencent.mobileqq、TIM com.tencent.tim（清单不全，名单外的应用出现①②现象同样按此处理）。正解是按键注入：剪贴板放好文字 → 点输入框 → selectAll+delete 清旧字 → paste（等于按了 Ctrl+V，应用自己把剪贴板内容贴进去）→ 点发送按钮（这类应用里 enter 是换行不是发送）。名单内应用打开进入会话后直接按此开干，不先截图判断；发送后截一张图确认：输入框回到占位符=成功，直接结束；框里还有字=没发出，重试一次。长任务持续聊天：发完一轮后每隔约 5 秒截一张看对方有没有新消息（新气泡在我上一条之后），有新消息进下一轮，没有继续等，不狂截、不瞎点，直到用户叫停。",
++            "按系统键（back / home / recents / notifications），返回新屏幕。虚拟屏（screen 用 b）额外支持 paste（粘贴剪贴板到焦点输入框）、enter（回车）、selectAll（全选焦点框文字）、delete（退格删除一个字符，配合 selectAll 清空焦点框）。【自绘输入窗口：先按现象判断，别背名单】有些应用的输入框是应用自己画的、不交给系统（自绘控件），三个识别现象：①读屏 0 项（读不到文字节点是正常的，别反复读屏）；②把文字直接注入输入框无效；③但它响应键盘按键。满足①②就是自绘窗口——例：微信 com.tencent.mm、QQ com.tencent.mobileqq、TIM com.tencent.tim（清单不全，名单外的应用出现①②现象同样按此处理）。正解是按键注入，且每一步都用屏幕上看得见的证据确认（一步一验，适用所有界面）：【看→做→看变化】每执行一个动作立刻截一张，确认屏幕发生了预期变化，变了才继续；【只信屏幕不信回执】工具说成功不算，屏幕上看见才算；【两次无变化就换法】同一点法两下无效就换定位/换路径，绝不原地第三下。落到这类应用（以微信为例）：①点输入框后截图确认焦点真拿到（屏内键盘区出现/输入框状态变了），没聚焦就重点，绝不在没焦点的框里发文字；②剪贴板 → selectAll+delete 清旧字 → paste → 截图看到「文字进框 + 发送键出现」才算输入成功（空框没有发送键）；③点发送按钮（enter 是换行不是发送）→ 截图看到「消息上屏（如绿色气泡+新时间）+ 输入框回到占位符」才算真发出，没看见就换法重点一次。长任务持续聊天：发完一轮后每隔约 5 秒截一张看对方有没有新消息（新气泡在我上一条之后），有新消息进下一轮，没有继续等，不狂截、不瞎点，直到用户叫停。",
              // l10n:keep agent tool catalog
              linkedMapOf("key" to enum(KEYS, "按键"), "screen" to str("屏幕号；省略时作用于主屏")),
              listOf("key"),
@@ -3892,7 +3892,7 @@ index cbfb0de3..91064f06 100644
              TAP_XY,
              // l10n:keep agent tool catalog
 -            "按本任务最近一次实际返回截图的像素坐标操作，只在元素里找不到目标时用。action 默认为 tap；long 长按；swipe 从 (x,y) 滑到 (x2,y2)。主屏用 s 号、后台屏用 b 号；截图超过 30 秒或上下文核对失败要重读。每张图只供一次坐标手势；需通过安全检查与所需用户确认，长按和滑动仍逐次确认。结果可报告画面变化，但不表示目标业务成功；结果未知或未变化先读屏，不自动重试。",
-+            "按本任务最近一次实际返回截图的像素坐标操作，只在元素里找不到目标时用。action 默认为 tap；long 长按；swipe 从 (x,y) 滑到 (x2,y2)。主屏用 s 号、虚拟屏用 b 号；截图超过 30 秒或上下文核对失败要重读。每张图只供一次坐标手势；需通过安全检查与所需用户确认，长按和滑动仍逐次确认。结果可报告画面变化，但不表示目标业务成功；结果未知或未变化先读屏，不自动重试。微信等自绘窗口的发送按钮在输入框右下，坐标随输入框高度浮动（多行时上移）：默认单行位置约在屏宽的 0.93、屏高的 0.89 处；点了没反应就截一张图按实际位置点。**发送按钮点不到时的实战技巧**：点一下表情面板图标让输入区上移，发送按钮会升到固定高位（虚拟屏约 y≈1371 处），这时再按当次截图坐标点它，一击即中。",
++            "按本任务最近一次实际返回截图的像素坐标操作，只在元素里找不到目标时用。action 默认为 tap；long 长按；swipe 从 (x,y) 滑到 (x2,y2)。主屏用 s 号、虚拟屏用 b 号；截图超过 30 秒或上下文核对失败要重读。每张图只供一次坐标手势；需通过安全检查与所需用户确认，长按和滑动仍逐次确认。结果可报告画面变化，但不表示目标业务成功；结果未知或未变化先读屏——同一坐标不要原样重点第二次，按新截图重新定位后再点。微信等自绘窗口的发送按钮在输入框右下，坐标随输入框高度浮动（多行时上移）：默认单行位置约在屏宽的 0.93、屏高的 0.89 处；点了没反应就截一张图按实际位置点。**发送按钮点不到时的实战技巧**：点一下表情面板图标让输入区上移，发送按钮会升到固定高位（虚拟屏约 y≈1371 处），这时再按当次截图坐标点它，一击即中。",
              linkedMapOf(
                  // l10n:keep agent tool catalog
 -                "observation" to str("本任务最近一次实际返回截图的屏幕号（主屏 s 号或后台屏 b 号）"),
@@ -4731,7 +4731,7 @@ index f6b83a0a..76f6a06d 100644
          val result = receipt.takeIf { accepted && screen == screenId }
          clear()
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/BackgroundDisplay.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/BackgroundDisplay.kt
-index bc1810a3..9e5e5c37 100644
+index bc1810a3..48b6c28e 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/BackgroundDisplay.kt
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/BackgroundDisplay.kt
 @@ -3,6 +3,7 @@ package io.github.ccch1mneyyy.dsh_app.phone.background
@@ -4797,7 +4797,7 @@ index bc1810a3..9e5e5c37 100644
      internal fun previewAvailable(peer: PrivilegedChannel): Boolean = resourceIo.previewAvailable(peer)
      internal fun previewClosed(): Boolean = resourceIo.previewClosed()
      internal fun tryPreview(request: Bundle): Bundle? = resourceIo.tryPreview { peer ->
-@@ -57,6 +82,28 @@ class BackgroundDisplay internal constructor(
+@@ -57,10 +82,34 @@ class BackgroundDisplay internal constructor(
      @Volatile private var currentTarget: PhoneAppIdentity? = null
      // The app the last open asked for, only to tell the model when the screen shows another one.
      @Volatile private var openedTarget: PhoneAppIdentity? = null
@@ -4826,7 +4826,13 @@ index bc1810a3..9e5e5c37 100644
      private var coordinateSupported = false
      private var afterVisualSupported = false
      private var navigationSupported = false
-@@ -70,14 +117,149 @@ class BackgroundDisplay internal constructor(
+     private val coordinateImage = BackgroundCoordinateImage()
++    /** 【4oz-coord-tap-free】最近一次带图读屏的几何（宽×高）：坐标单击在凭据过期时按它放行执行。 */
++    @Volatile private var lastCoordinateGeometry: Pair<Int, Int>? = null
+     private var coordinateOcrEpoch: Long? = null
+     private var counter = 0
+     private var lastScreenId: String? = null
+@@ -70,14 +119,149 @@ class BackgroundDisplay internal constructor(
      override fun availability(): Availability {
          if (Build.VERSION.SDK_INT < BackgroundPolicy.MIN_SDK)
              // l10n:keep agent screen protocol
@@ -4978,7 +4984,7 @@ index bc1810a3..9e5e5c37 100644
      private fun channel(): PrivilegedChannel =
          // l10n:keep agent screen protocol
          resourceIo.peer() ?: channelProvider() ?: throw IllegalStateException("背景屏通道未就绪")
-@@ -99,8 +281,14 @@ class BackgroundDisplay internal constructor(
+@@ -99,8 +283,14 @@ class BackgroundDisplay internal constructor(
                  putInt(Proto.RELEASE_RECEIPT, 1)
                  putString(Proto.OWNER, ownerToken)
                  putTarget(this, target)
@@ -4994,7 +5000,7 @@ index bc1810a3..9e5e5c37 100644
                  putBoolean(Proto.LOCAL_VISUAL, true)
                  putInt(Proto.WANT_IMAGE, 0)
              }
-@@ -126,7 +314,42 @@ class BackgroundDisplay internal constructor(
+@@ -126,7 +316,42 @@ class BackgroundDisplay internal constructor(
                  }) { Reasons.of("deviceUnavailable") }
              }
              onResourceReady(active)
@@ -5038,7 +5044,7 @@ index bc1810a3..9e5e5c37 100644
              result.copy(backgroundOpenConfirmed = result.ok && TargetIdentity.backgroundOpenConfirmed(target,
                  response.get(Proto.OK), response.get(Proto.BACKGROUND_OPEN_EVIDENCE), response.get(Proto.DISPLAY_ID),
                  response.get(Proto.TARGET_IDENTITY_VERSION), response.get(Proto.PKG), response.get(Proto.TARGET_UID)))
-@@ -159,12 +382,50 @@ class BackgroundDisplay internal constructor(
+@@ -159,12 +384,50 @@ class BackgroundDisplay internal constructor(
              putBoolean(Proto.LOCAL_VISUAL, true)
          }
          val response = try {
@@ -5090,7 +5096,7 @@ index bc1810a3..9e5e5c37 100644
          val shown = shownApp(response) ?: return emptySnapshot(response)
          // Local OCR follows the app actually read, under that app's own permission.
          val local = if (requestLocalText) readLocalText(response, shown, ocrEpoch, started) else null
-@@ -345,7 +606,7 @@ class BackgroundDisplay internal constructor(
+@@ -345,7 +608,7 @@ class BackgroundDisplay internal constructor(
          val peer = resourceIo.peer()
          if (step.relation != relation || target == null || peer == null || !navigationSupported ||
              target.packageName != step.app.packageName || target.uid != step.app.uid || !existingReplayTarget(target))
@@ -5099,7 +5105,7 @@ index bc1810a3..9e5e5c37 100644
          val request = navigationRequest(step, null)
          val parsed = checkNotNull(BackgroundNavigationProtocol.request(request.keySet(), request::get))
          val response = dispatch({ navigationCurrent(target, peer) }) {
-@@ -449,10 +710,16 @@ class BackgroundDisplay internal constructor(
+@@ -449,10 +712,16 @@ class BackgroundDisplay internal constructor(
          val started = if (afterVisualSupported) SystemClock.uptimeMillis() else 0L
          val epoch = localOcr?.enabledEpoch()
          // l10n:keep agent screen protocol
@@ -5119,7 +5125,7 @@ index bc1810a3..9e5e5c37 100644
          }
          // Explicit element ids are checked by PhoneCore before perform; collect owns its internal scrolls.
          if (action is PhoneAction.Scroll && action.elementId == null && action.screenId != lastScreenId) {
-@@ -493,7 +760,8 @@ class BackgroundDisplay internal constructor(
+@@ -493,7 +762,8 @@ class BackgroundDisplay internal constructor(
              }
              is PhoneAction.Key -> {
                  request.putString(Proto.OP, Proto.OP_KEY)
@@ -5129,7 +5135,7 @@ index bc1810a3..9e5e5c37 100644
              }
              is PhoneAction.TapXY -> return performCoordinates(action, target, allowed, after)
          }
-@@ -502,7 +770,150 @@ class BackgroundDisplay internal constructor(
+@@ -502,7 +772,150 @@ class BackgroundDisplay internal constructor(
              dispatch(allowed) { OwnerScopeProtocol.execute(channel(), ownerToken, request, it) }
          } catch (error: Exception) { clearSnapshot(); throw error }
              ?: return ActionResult(false, PhoneTasks.STOPPED_MESSAGE)
@@ -5281,7 +5287,7 @@ index bc1810a3..9e5e5c37 100644
      }
  
      /**
-@@ -521,6 +932,46 @@ class BackgroundDisplay internal constructor(
+@@ -521,25 +934,76 @@ class BackgroundDisplay internal constructor(
  
      private class NotAdmitted : RuntimeException()
  
@@ -5328,16 +5334,58 @@ index bc1810a3..9e5e5c37 100644
      private fun performCoordinates(action: PhoneAction.TapXY, target: PhoneAppIdentity, allowed: () -> Boolean, after: AfterRead): ActionResult {
          // l10n:keep agent coordinate protocol
          if (!coordinateSupported) return ActionResult(false, "当前后台通道不支持截图坐标，请更新并重新连接；未执行，也不会转到主屏。")
-@@ -528,7 +979,7 @@ class BackgroundDisplay internal constructor(
+         if (!allowed()) return ActionResult(false, PhoneTasks.STOPPED_MESSAGE)
          if (!coordinateEpochCurrent()) return ActionResult(false, Reasons.of("staleSnapshot"), staleSnapshot = true)
          val image = coordinateImage.take(action.screenId)
++        val isTap = action.gesture == PhoneAction.CoordinateGesture.TAP
++        // 【4oz-coord-tap-free】坐标单击放行：凭据过期/被新读屏覆盖时，按最近一次带图读屏的几何执行+提示；
++        // 长按/滑动保留硬闸（位移大误伤大，一次手势必须绑一张有效图）。
++        val geometry = image?.let { it.width to it.height } ?: lastCoordinateGeometry
++        if (image == null && !isTap) {
++            // l10n:keep agent coordinate protocol
++            return ActionResult(false, "没有本任务最近一次已返回图片的后台坐标凭据。若刚弹出系统浮动层（粘贴/选择菜单、键盘），先发 key back 收起它，再 screen(image:true, background:true) 取新凭据继续操作；不要 handoff、不要停下来。")
++        }
++        if (geometry == null) {
              // l10n:keep agent coordinate protocol
 -            ?: return ActionResult(false, "没有本任务最近一次已返回图片的后台坐标凭据。请显式 screen(image:true, background:true) 后核对；仍无凭据请用元素操作或交给用户，不要盲点。")
-+            ?: return ActionResult(false, "没有本任务最近一次已返回图片的后台坐标凭据。若刚弹出系统浮动层（粘贴/选择菜单、键盘），先发 key back 收起它，再 screen(image:true, background:true) 取新凭据继续操作；不要 handoff、不要停下来。")
++            return ActionResult(false, "本任务还没有任何带图的读屏记录，坐标手势没有几何依据；先 screen(image:true) 读一次带图的屏。")
++        }
          val gesture = action.gesture.name.lowercase()
-         val points = BackgroundCoordinateRequest(image.nonce, gesture, action.x, action.y, action.x2, action.y2, action.durationMs.toInt())
+-        val points = BackgroundCoordinateRequest(image.nonce, gesture, action.x, action.y, action.x2, action.y2, action.durationMs.toInt())
++        val nonce = image?.nonce ?: ""
++        val points = BackgroundCoordinateRequest(nonce, gesture, action.x, action.y, action.x2, action.y2, action.durationMs.toInt())
          // l10n:keep agent coordinate protocol
-@@ -573,8 +1024,44 @@ class BackgroundDisplay internal constructor(
+-        if (!points.fits(image.width, image.height)) return ActionResult(false, "坐标超出原截图范围；未执行，请重新读屏。")
++        if (!points.fits(geometry.first, geometry.second)) return ActionResult(false, "坐标超出原截图范围；未执行，请重新读屏。")
+         val request = Bundle().apply {
+             if (after.requested) putInt(Proto.AFTER_LOCAL_VISUAL, 1)
+             putString(Proto.OP, Proto.OP_COORDINATE)
+             putString(Proto.OWNER, ownerToken)
+             putTarget(this, target)
+             putInt(Proto.BACKGROUND_COORDINATES, 1)
+-            putString(Proto.COORDINATE_OBSERVATION, image.nonce)
++            putString(Proto.COORDINATE_OBSERVATION, nonce)
+             putString(Proto.GESTURE, gesture)
+             putInt(Proto.X, action.x); putInt(Proto.Y, action.y)
+             if (action.gesture == PhoneAction.CoordinateGesture.SWIPE) {
+@@ -554,7 +1018,8 @@ class BackgroundDisplay internal constructor(
+             // The original lane never replays a request after a missing/throwing reply.
+             return ActionResult(false, COORDINATE_UNKNOWN)
+         } ?: return ActionResult(false, PhoneTasks.STOPPED_MESSAGE)
+-        val result = BackgroundCoordinateImage.Result.parse(image) { response.get(it) }
++        val result = if (image != null) BackgroundCoordinateImage.Result.parse(image) { response.get(it) }
++        else BackgroundCoordinateImage.Result(response.getBoolean(Proto.OK), response.getBoolean(Proto.ACTION_ATTEMPTED), response.getString(Proto.VISUAL_CHANGE) ?: "unavailable")
+         if (result == null) { clearSnapshot(); return ActionResult(false, COORDINATE_UNKNOWN) }
+         if (!result.ok) {
+             clearSnapshot()
+@@ -568,13 +1033,50 @@ class BackgroundDisplay internal constructor(
+         } catch (_: Exception) { clearSnapshot(); null } // The gesture acknowledgement already exists.
+         if (snap == null) coordinateImage.invalidateScope()
+         // l10n:keep agent coordinate protocol
+-        return ActionResult(true, "后台坐标手势已结束（不表示业务成功）" + backgroundVisualNote(result.change), snap)
++        val staleNote = if (image == null) "（坐标凭据已过期，按最近截图执行；是否点中请截图确认）" else ""
++        return ActionResult(true, "后台坐标手势已结束（不表示业务成功）" + staleNote + backgroundVisualNote(result.change), snap)
+     }
  
      override fun foregroundPackage(): String? = currentTarget?.packageName
  
@@ -5382,7 +5430,7 @@ index bc1810a3..9e5e5c37 100644
          val acknowledged = try {
              resourceIo.release { pinned -> OwnerScopeProtocol.release(pinned, ownerToken) }
          } catch (_: Exception) { false }
-@@ -659,7 +1146,7 @@ class BackgroundDisplay internal constructor(
+@@ -659,7 +1161,7 @@ class BackgroundDisplay internal constructor(
              clearSnapshot()
              val now = response.getString(Proto.FG_PKG)
              // l10n:keep agent target identity
@@ -5391,7 +5439,7 @@ index bc1810a3..9e5e5c37 100644
              return ActionResult(false, Reasons.withDetail(message, detail), staleSnapshot = true)
          }
          if (!ok) clearSnapshot()
-@@ -693,13 +1180,13 @@ class BackgroundDisplay internal constructor(
+@@ -693,13 +1195,13 @@ class BackgroundDisplay internal constructor(
          if (response.getBoolean(Proto.SECURE)) {
              lastScreenId = id; lastElements = emptyList(); previousLabels = emptySet()
              // l10n:keep agent screen protocol
@@ -5407,7 +5455,7 @@ index bc1810a3..9e5e5c37 100644
              return@commitObservation ScreenSnapshot(id, text, appLabel, pkg, secure = false, poorTree = true, readPackages = setOf(pkg))
          }
          val elements = buildElements(response, markNew)
-@@ -719,6 +1206,10 @@ class BackgroundDisplay internal constructor(
+@@ -719,6 +1221,10 @@ class BackgroundDisplay internal constructor(
          }
          previousLabels = elements.map { it.label }.filter { it.isNotEmpty() }.toSet()
          val image = if (response.getBoolean(Proto.IMAGE_OMITTED)) null else response.getByteArray("imageBytes")
@@ -5418,7 +5466,14 @@ index bc1810a3..9e5e5c37 100644
          val coordinate = if (coordinatesAllowed && image != null && coordinateSupported) BackgroundCoordinateImage.Receipt.parse(
              response.get(Proto.BACKGROUND_COORDINATES), response.get(Proto.COORDINATE_OBSERVATION),
              response.get(Proto.COORDINATE_WIDTH), response.get(Proto.COORDINATE_HEIGHT)) else null
-@@ -732,7 +1223,7 @@ class BackgroundDisplay internal constructor(
+@@ -726,13 +1232,14 @@ class BackgroundDisplay internal constructor(
+             response.get(Proto.COORDINATE_TARGETS_VERSION), response.get(Proto.COORDINATE_TARGET_INDICES),
+             response.get(Proto.COORDINATE_TARGET_BOUNDS), elements.size, coordinate.width, coordinate.height)
+         coordinateImage.candidate(id, coordinate, eligible)
++        if (coordinate != null) lastCoordinateGeometry = coordinate.width to coordinate.height
+         coordinateOcrEpoch = ocrOnlyEpoch
+         if (coordinate != null) {
+             // l10n:keep agent coordinate protocol
              text += "\n截图坐标范围：${coordinate.width}×${coordinate.height}像素；30秒内可单次使用；只有明确普通目标可使用独立的本任务视觉许可，未知目标及长按/滑动仍逐次确认。未证明画布没有敏感内容或目标像素未变。"
          } else if (image != null && coordinateSupported) {
              // l10n:keep agent coordinate protocol
@@ -5427,7 +5482,7 @@ index bc1810a3..9e5e5c37 100644
          }
          if (localText != null) text += "\n" + localText.text
          val shownImage = image.takeIf { publishImage }
-@@ -789,14 +1280,14 @@ class BackgroundDisplay internal constructor(
+@@ -789,14 +1296,14 @@ class BackgroundDisplay internal constructor(
          if (opened.packageName == shown.packageName) return ""
          val name = appLabel?.let { "「$it」（${shown.packageName}）" } ?: shown.packageName
          // l10n:keep agent target identity
@@ -5444,7 +5499,7 @@ index bc1810a3..9e5e5c37 100644
          // l10n:keep agent target identity
          "closed" -> "；${openedTarget?.packageName} 已经退出，需要时重新打开"
          else -> ""
-@@ -810,7 +1301,7 @@ class BackgroundDisplay internal constructor(
+@@ -810,7 +1317,7 @@ class BackgroundDisplay internal constructor(
          val id = "b${++counter}"
          lastScreenId = id; lastElements = emptyList(); previousLabels = emptySet()
          // l10n:keep agent target identity
@@ -5453,7 +5508,7 @@ index bc1810a3..9e5e5c37 100644
              // l10n:keep agent target identity
              "。可以用 open 重新打开应用。", null, null)
      }
-@@ -821,7 +1312,7 @@ class BackgroundDisplay internal constructor(
+@@ -821,7 +1328,7 @@ class BackgroundDisplay internal constructor(
          val id = "b${++counter}"
          lastScreenId = id; lastElements = emptyList()
          // l10n:keep agent screen protocol
@@ -6314,7 +6369,7 @@ index c1c2ed09..b0b1dfe3 100644
          close()
          Bundle().apply { putBoolean(Proto.OK, false); putString(Proto.ERROR, "deviceUnavailable") }
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/PrivilegedDisplayCore.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/PrivilegedDisplayCore.kt
-index c7ed0f7a..9bd79278 100644
+index c7ed0f7a..5e656fe0 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/PrivilegedDisplayCore.kt
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/PrivilegedDisplayCore.kt
 @@ -11,6 +11,7 @@ package io.github.ccch1mneyyy.dsh_app.phone.background
@@ -8036,7 +8091,47 @@ index c7ed0f7a..9bd79278 100644
          } catch (_: Exception) {
              preview.unavailable(ticket, "captureFailed")
          } finally {
-@@ -1910,6 +3314,22 @@ class PrivilegedDisplayCore internal constructor(
+@@ -1724,17 +3128,35 @@ class PrivilegedDisplayCore internal constructor(
+ 
+     private fun coordinate(pkg: String, uid: Int?, request: Bundle, response: Bundle) {
+         val action = BackgroundCoordinateRequest.parse(request.keySet()) { request.get(it) } ?: throw Fault("invalidArguments")
+-        val observed = coordinateObservation ?: throw Fault("staleSnapshot")
+-        if (action.nonce != observed.nonce) throw Fault("staleSnapshot")
+-        coordinateReceipt(observed, response)
++        val observed = coordinateObservation
++        val isTap = action.gesture == "tap"
++        // 【4oz-coord-tap-free】坐标单击放行：凭据过期/被新读屏覆盖时不再拒，按最近观察几何注入+回包标记；
++        // 长按/滑动保留硬闸（位移大误伤大）。
++        if (observed == null && !isTap) throw Fault("staleSnapshot")
++        if (observed != null && action.nonce != observed.nonce && !isTap) throw Fault("staleSnapshot")
++        val stale = observed == null || action.nonce != observed.nonce
++        val base = observed
++        if (base != null) coordinateReceipt(base, response)
+         response.putBoolean(Proto.ACTION_ATTEMPTED, false)
+         response.putString(Proto.VISUAL_CHANGE, "unavailable")
+         val geometry = ImageGeometry(0, 0, 1f, 1f, width, height)
+-        if (!action.fits(width, height) || !observed.image.isFresh(SystemClock.uptimeMillis())) throw Fault("staleSnapshot")
++        if (!action.fits(width, height) || (base != null && !base.image.isFresh(SystemClock.uptimeMillis()))) throw Fault("staleSnapshot")
+         requireShown(pkg, uid)
+         val tree = readTree(displayId(), pkg, scanOtherWindows = true, inspectVisual = true, coordinates = true)
+         // The scope is the app the observation was taken from; another app on top fails its match below.
+         val scope = coordinateScope(shownApp()?.identity) ?: throw Fault("foregroundChanged", foregroundPackage())
++        if (stale) {
++            // 单击放行：跳过树匹配（界面已变，旧观察对不上是预期的），只拦隐私。
++            if (tree.hasSecrets || tree.hasSensitive) throw Fault("targetChanged")
++            requireShown(pkg, null)
++            if (base != null) coordinateObservation = null
++            response.putBoolean(Proto.ACTION_ATTEMPTED, true)
++            response.putBoolean("coordinateStale", true)
++            injectTap(action.x, action.y, false)
++            sleepChecked(250)
++            observeAfterAction(pkg, request, response, coordinatePost = base)
++            return
++        }
+         if (!tree.complete || tree.hasSecrets || tree.hasSensitive ||
+             !observed.matches(scope, tree.visualWindow, tree.coordinateContext(), geometry, SystemClock.uptimeMillis()))
+             throw Fault("targetChanged")
+@@ -1910,6 +3332,22 @@ class PrivilegedDisplayCore internal constructor(
      }
  
      private fun globalKey(key: String?) {
@@ -8059,7 +8154,7 @@ index c7ed0f7a..9bd79278 100644
          val code = KEYS[key] ?: throw Fault("invalidArguments")
          val now = SystemClock.uptimeMillis()
          injectKey(KeyEvent(now, now, KeyEvent.ACTION_DOWN, code, 0))
-@@ -1999,7 +3419,35 @@ class PrivilegedDisplayCore internal constructor(
+@@ -1999,7 +3437,35 @@ class PrivilegedDisplayCore internal constructor(
      private fun injectKey(src: KeyEvent) {
          val event = KeyEvent(src.downTime, src.eventTime, src.action, src.keyCode, 0, src.metaState,
              KeyCharacterMap.VIRTUAL_KEYBOARD, src.scanCode, src.flags, InputDevice.SOURCE_KEYBOARD)
@@ -8096,7 +8191,7 @@ index c7ed0f7a..9bd79278 100644
      }
  
      // Runs in the shell-uid privileged process (Shizuku UserService or app_process),
-@@ -2025,14 +3473,45 @@ class PrivilegedDisplayCore internal constructor(
+@@ -2025,14 +3491,45 @@ class PrivilegedDisplayCore internal constructor(
          if (waitForFinish && !accepted) throw Fault("inputRejected")
      }
  
@@ -8144,7 +8239,7 @@ index c7ed0f7a..9bd79278 100644
      }
  
      /**
-@@ -2079,13 +3558,22 @@ class PrivilegedDisplayCore internal constructor(
+@@ -2079,13 +3576,22 @@ class PrivilegedDisplayCore internal constructor(
  
      companion object {
          private val PACKAGE = Regex("[a-zA-Z][a-zA-Z0-9_]*(\\.[a-zA-Z0-9_]+)+")
