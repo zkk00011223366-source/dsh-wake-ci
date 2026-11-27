@@ -1,7 +1,7 @@
 == resources ==
-/dev/root       145G   51G   95G  35% /
+/dev/root       145G   51G   94G  36% /
                total        used        free      shared  buff/cache   available
-Mem:           15983        3634         331          50       12412       12348
+Mem:           15983        3821         293          50       12262       12161
 == tail ==
 
 ==> 依赖: flutter pub get
@@ -162,3 +162,11 @@ Running Gradle task 'assembleArm64Release'...                      97.6s
 [!] Gradle threw an error while downloading artifacts from the network.
 Retrying Gradle Build: #1, wait time: 100ms
 Running Gradle task 'assembleArm64Release'...                   
+WARNING: Your app uses the following plugins that apply Kotlin Gradle Plugin (KGP): flutter_webrtc
+Future versions of Flutter will fail to build if your app uses plugins that apply KGP.
+
+Please check the changelogs of these plugins and upgrade to a version that supports Built-in Kotlin.
+If no such version exists, report the issue to the plugin. If necessary, here is a guide on filing
+an issue against a plugin: https://docs.flutter.dev/release/breaking-changes/migrate-to-built-in-kotlin/for-app-developers#report-incompatible-kotlin-gradle-plugin-usage-to-plugin-authors
+
+If you are a plugin author, please migrate your plugin to Built-in Kotlin using this guide: https://docs.flutter.dev/release/breaking-changes/migrate-to-built-in-kotlin/for-plugin-authors
