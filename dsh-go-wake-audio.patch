@@ -1,10 +1,10 @@
 From: dsh <dsh@local>
-Date: Fri, 27 Nov 2026 13:31:53 +0800
-Subject: [PATCH] 4qi: 用户动过形态锁,AI open不重定;仅X/⇄放屏清锁回设置默认
+Date: Fri, 27 Nov 2026 15:39:15 +0800
+Subject: [PATCH] 4qp: 坐标手势全放行(tap/long/swipe凭据过期按最近几何+提示)
 
  dsh-go-wake.patch                                  | 2065 +++++++++++++
  tooling/build-wake-apk.sh                          |   68 +
- 246 files changed, 19387 insertions(+), 1036 deletions(-)
+ 246 files changed, 19388 insertions(+), 1036 deletions(-)
 
 diff --git a/.gitattributes b/.gitattributes
 index 52e3e08a..3e877c7e 100644
@@ -4749,7 +4749,7 @@ index f6b83a0a..76f6a06d 100644
          val result = receipt.takeIf { accepted && screen == screenId }
          clear()
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/BackgroundDisplay.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/BackgroundDisplay.kt
-index bc1810a3..48b6c28e 100644
+index bc1810a3..b380d2e4 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/BackgroundDisplay.kt
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/BackgroundDisplay.kt
 @@ -3,6 +3,7 @@ package io.github.ccch1mneyyy.dsh_app.phone.background
@@ -5305,7 +5305,7 @@ index bc1810a3..48b6c28e 100644
      }
  
      /**
-@@ -521,25 +934,76 @@ class BackgroundDisplay internal constructor(
+@@ -521,25 +934,75 @@ class BackgroundDisplay internal constructor(
  
      private class NotAdmitted : RuntimeException()
  
@@ -5355,11 +5355,10 @@ index bc1810a3..48b6c28e 100644
          if (!allowed()) return ActionResult(false, PhoneTasks.STOPPED_MESSAGE)
          if (!coordinateEpochCurrent()) return ActionResult(false, Reasons.of("staleSnapshot"), staleSnapshot = true)
          val image = coordinateImage.take(action.screenId)
-+        val isTap = action.gesture == PhoneAction.CoordinateGesture.TAP
-+        // 【4oz-coord-tap-free】坐标单击放行：凭据过期/被新读屏覆盖时，按最近一次带图读屏的几何执行+提示；
-+        // 长按/滑动保留硬闸（位移大误伤大，一次手势必须绑一张有效图）。
++        // 【4oz-coord-tap-free→4qp】坐标手势全放行：tap/long/swipe 凭据过期/被新读屏覆盖时，
++        // 一律按最近一次带图读屏的几何执行+提示（用户 15:3x 拍板"像人一样无所不通，快准稳"）。
 +        val geometry = image?.let { it.width to it.height } ?: lastCoordinateGeometry
-+        if (image == null && !isTap) {
++        if (image == null && geometry == null) {
 +            // l10n:keep agent coordinate protocol
 +            return ActionResult(false, "没有本任务最近一次已返回图片的后台坐标凭据。若刚弹出系统浮动层（粘贴/选择菜单、键盘），先发 key back 收起它，再 screen(image:true, background:true) 取新凭据继续操作；不要 handoff、不要停下来。")
 +        }
@@ -5386,7 +5385,7 @@ index bc1810a3..48b6c28e 100644
              putString(Proto.GESTURE, gesture)
              putInt(Proto.X, action.x); putInt(Proto.Y, action.y)
              if (action.gesture == PhoneAction.CoordinateGesture.SWIPE) {
-@@ -554,7 +1018,8 @@ class BackgroundDisplay internal constructor(
+@@ -554,7 +1017,8 @@ class BackgroundDisplay internal constructor(
              // The original lane never replays a request after a missing/throwing reply.
              return ActionResult(false, COORDINATE_UNKNOWN)
          } ?: return ActionResult(false, PhoneTasks.STOPPED_MESSAGE)
@@ -5396,7 +5395,7 @@ index bc1810a3..48b6c28e 100644
          if (result == null) { clearSnapshot(); return ActionResult(false, COORDINATE_UNKNOWN) }
          if (!result.ok) {
              clearSnapshot()
-@@ -568,13 +1033,50 @@ class BackgroundDisplay internal constructor(
+@@ -568,13 +1032,50 @@ class BackgroundDisplay internal constructor(
          } catch (_: Exception) { clearSnapshot(); null } // The gesture acknowledgement already exists.
          if (snap == null) coordinateImage.invalidateScope()
          // l10n:keep agent coordinate protocol
@@ -5448,7 +5447,7 @@ index bc1810a3..48b6c28e 100644
          val acknowledged = try {
              resourceIo.release { pinned -> OwnerScopeProtocol.release(pinned, ownerToken) }
          } catch (_: Exception) { false }
-@@ -659,7 +1161,7 @@ class BackgroundDisplay internal constructor(
+@@ -659,7 +1160,7 @@ class BackgroundDisplay internal constructor(
              clearSnapshot()
              val now = response.getString(Proto.FG_PKG)
              // l10n:keep agent target identity
@@ -5457,7 +5456,7 @@ index bc1810a3..48b6c28e 100644
              return ActionResult(false, Reasons.withDetail(message, detail), staleSnapshot = true)
          }
          if (!ok) clearSnapshot()
-@@ -693,13 +1195,13 @@ class BackgroundDisplay internal constructor(
+@@ -693,13 +1194,13 @@ class BackgroundDisplay internal constructor(
          if (response.getBoolean(Proto.SECURE)) {
              lastScreenId = id; lastElements = emptyList(); previousLabels = emptySet()
              // l10n:keep agent screen protocol
@@ -5473,7 +5472,7 @@ index bc1810a3..48b6c28e 100644
              return@commitObservation ScreenSnapshot(id, text, appLabel, pkg, secure = false, poorTree = true, readPackages = setOf(pkg))
          }
          val elements = buildElements(response, markNew)
-@@ -719,6 +1221,10 @@ class BackgroundDisplay internal constructor(
+@@ -719,6 +1220,10 @@ class BackgroundDisplay internal constructor(
          }
          previousLabels = elements.map { it.label }.filter { it.isNotEmpty() }.toSet()
          val image = if (response.getBoolean(Proto.IMAGE_OMITTED)) null else response.getByteArray("imageBytes")
@@ -5484,7 +5483,7 @@ index bc1810a3..48b6c28e 100644
          val coordinate = if (coordinatesAllowed && image != null && coordinateSupported) BackgroundCoordinateImage.Receipt.parse(
              response.get(Proto.BACKGROUND_COORDINATES), response.get(Proto.COORDINATE_OBSERVATION),
              response.get(Proto.COORDINATE_WIDTH), response.get(Proto.COORDINATE_HEIGHT)) else null
-@@ -726,13 +1232,14 @@ class BackgroundDisplay internal constructor(
+@@ -726,13 +1231,14 @@ class BackgroundDisplay internal constructor(
              response.get(Proto.COORDINATE_TARGETS_VERSION), response.get(Proto.COORDINATE_TARGET_INDICES),
              response.get(Proto.COORDINATE_TARGET_BOUNDS), elements.size, coordinate.width, coordinate.height)
          coordinateImage.candidate(id, coordinate, eligible)
@@ -5500,7 +5499,7 @@ index bc1810a3..48b6c28e 100644
          }
          if (localText != null) text += "\n" + localText.text
          val shownImage = image.takeIf { publishImage }
-@@ -789,14 +1296,14 @@ class BackgroundDisplay internal constructor(
+@@ -789,14 +1295,14 @@ class BackgroundDisplay internal constructor(
          if (opened.packageName == shown.packageName) return ""
          val name = appLabel?.let { "「$it」（${shown.packageName}）" } ?: shown.packageName
          // l10n:keep agent target identity
@@ -5517,7 +5516,7 @@ index bc1810a3..48b6c28e 100644
          // l10n:keep agent target identity
          "closed" -> "；${openedTarget?.packageName} 已经退出，需要时重新打开"
          else -> ""
-@@ -810,7 +1317,7 @@ class BackgroundDisplay internal constructor(
+@@ -810,7 +1316,7 @@ class BackgroundDisplay internal constructor(
          val id = "b${++counter}"
          lastScreenId = id; lastElements = emptyList(); previousLabels = emptySet()
          // l10n:keep agent target identity
@@ -5526,7 +5525,7 @@ index bc1810a3..48b6c28e 100644
              // l10n:keep agent target identity
              "。可以用 open 重新打开应用。", null, null)
      }
-@@ -821,7 +1328,7 @@ class BackgroundDisplay internal constructor(
+@@ -821,7 +1327,7 @@ class BackgroundDisplay internal constructor(
          val id = "b${++counter}"
          lastScreenId = id; lastElements = emptyList()
          // l10n:keep agent screen protocol
@@ -6387,7 +6386,7 @@ index c1c2ed09..b0b1dfe3 100644
          close()
          Bundle().apply { putBoolean(Proto.OK, false); putString(Proto.ERROR, "deviceUnavailable") }
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/PrivilegedDisplayCore.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/PrivilegedDisplayCore.kt
-index c7ed0f7a..5e656fe0 100644
+index c7ed0f7a..46e2ded3 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/PrivilegedDisplayCore.kt
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/PrivilegedDisplayCore.kt
 @@ -11,6 +11,7 @@ package io.github.ccch1mneyyy.dsh_app.phone.background
@@ -7986,7 +7985,7 @@ index c7ed0f7a..5e656fe0 100644
                  displayApiReleased = true
 +                io.github.ccch1mneyyy.dsh_app.wake.WakeTrace.log(
 +                    "vscreen: release surface cleared=$cleared displayId=$displayId")
-+            }
+             }
 +            DisplayHandles.forget(displayId)
 +            // 3w 第 8 条：释放自证。executor 报"屏释放后仍有空壳 display，会随次数累积"，
 +            // 这里把"系统还剩几块屏 / 我们表里还按着几块"一起打出来，下次就能判是不是真泄漏。
@@ -7994,7 +7993,7 @@ index c7ed0f7a..5e656fe0 100644
 +                io.github.ccch1mneyyy.dsh_app.wake.WakeTrace.log(
 +                    "vscreen: release verified displays=${displays.displays.size} " +
 +                        "tracked=${DisplayHandles.snapshot().size}")
-             }
++            }
 +            // 已经没有屏了就把方向监听关掉，别让它在后台扫任务。
 +            DisplayOrientationKeeper.release()
              closeReaders()
@@ -8109,7 +8108,7 @@ index c7ed0f7a..5e656fe0 100644
          } catch (_: Exception) {
              preview.unavailable(ticket, "captureFailed")
          } finally {
-@@ -1724,17 +3128,35 @@ class PrivilegedDisplayCore internal constructor(
+@@ -1724,17 +3128,37 @@ class PrivilegedDisplayCore internal constructor(
  
      private fun coordinate(pkg: String, uid: Int?, request: Bundle, response: Bundle) {
          val action = BackgroundCoordinateRequest.parse(request.keySet()) { request.get(it) } ?: throw Fault("invalidArguments")
@@ -8117,11 +8116,9 @@ index c7ed0f7a..5e656fe0 100644
 -        if (action.nonce != observed.nonce) throw Fault("staleSnapshot")
 -        coordinateReceipt(observed, response)
 +        val observed = coordinateObservation
-+        val isTap = action.gesture == "tap"
-+        // 【4oz-coord-tap-free】坐标单击放行：凭据过期/被新读屏覆盖时不再拒，按最近观察几何注入+回包标记；
-+        // 长按/滑动保留硬闸（位移大误伤大）。
-+        if (observed == null && !isTap) throw Fault("staleSnapshot")
-+        if (observed != null && action.nonce != observed.nonce && !isTap) throw Fault("staleSnapshot")
++        // 【4oz-coord-tap-free→4qp】坐标手势全放行：凭据过期/被新读屏覆盖时，tap/long/swipe 一律不再拒，
++        // 按最近观察几何注入+回包标记（用户 15:3x 拍板"像人一样无所不通，快准稳"；误伤靠提示+一步一验兜底）。
++        // 隐私闸不动：树里有敏感/密码元素照拒。
 +        val stale = observed == null || action.nonce != observed.nonce
 +        val base = observed
 +        if (base != null) coordinateReceipt(base, response)
@@ -8135,13 +8132,17 @@ index c7ed0f7a..5e656fe0 100644
          // The scope is the app the observation was taken from; another app on top fails its match below.
          val scope = coordinateScope(shownApp()?.identity) ?: throw Fault("foregroundChanged", foregroundPackage())
 +        if (stale) {
-+            // 单击放行：跳过树匹配（界面已变，旧观察对不上是预期的），只拦隐私。
++            // 放行：跳过树匹配（界面已变，旧观察对不上是预期的），只拦隐私。
 +            if (tree.hasSecrets || tree.hasSensitive) throw Fault("targetChanged")
 +            requireShown(pkg, null)
 +            if (base != null) coordinateObservation = null
 +            response.putBoolean(Proto.ACTION_ATTEMPTED, true)
 +            response.putBoolean("coordinateStale", true)
-+            injectTap(action.x, action.y, false)
++            when (action.gesture) {
++                "tap" -> injectTap(action.x, action.y, false)
++                "long" -> injectTap(action.x, action.y, true)
++                "swipe" -> injectSwipe(action.x, action.y, checkNotNull(action.x2), checkNotNull(action.y2), action.durationMs)
++            }
 +            sleepChecked(250)
 +            observeAfterAction(pkg, request, response, coordinatePost = base)
 +            return
@@ -8149,7 +8150,7 @@ index c7ed0f7a..5e656fe0 100644
          if (!tree.complete || tree.hasSecrets || tree.hasSensitive ||
              !observed.matches(scope, tree.visualWindow, tree.coordinateContext(), geometry, SystemClock.uptimeMillis()))
              throw Fault("targetChanged")
-@@ -1910,6 +3332,22 @@ class PrivilegedDisplayCore internal constructor(
+@@ -1910,6 +3334,22 @@ class PrivilegedDisplayCore internal constructor(
      }
  
      private fun globalKey(key: String?) {
@@ -8172,7 +8173,7 @@ index c7ed0f7a..5e656fe0 100644
          val code = KEYS[key] ?: throw Fault("invalidArguments")
          val now = SystemClock.uptimeMillis()
          injectKey(KeyEvent(now, now, KeyEvent.ACTION_DOWN, code, 0))
-@@ -1999,7 +3437,35 @@ class PrivilegedDisplayCore internal constructor(
+@@ -1999,7 +3439,35 @@ class PrivilegedDisplayCore internal constructor(
      private fun injectKey(src: KeyEvent) {
          val event = KeyEvent(src.downTime, src.eventTime, src.action, src.keyCode, 0, src.metaState,
              KeyCharacterMap.VIRTUAL_KEYBOARD, src.scanCode, src.flags, InputDevice.SOURCE_KEYBOARD)
@@ -8209,7 +8210,7 @@ index c7ed0f7a..5e656fe0 100644
      }
  
      // Runs in the shell-uid privileged process (Shizuku UserService or app_process),
-@@ -2025,14 +3491,45 @@ class PrivilegedDisplayCore internal constructor(
+@@ -2025,14 +3493,45 @@ class PrivilegedDisplayCore internal constructor(
          if (waitForFinish && !accepted) throw Fault("inputRejected")
      }
  
@@ -8257,7 +8258,7 @@ index c7ed0f7a..5e656fe0 100644
      }
  
      /**
-@@ -2079,13 +3576,22 @@ class PrivilegedDisplayCore internal constructor(
+@@ -2079,13 +3578,22 @@ class PrivilegedDisplayCore internal constructor(
  
      companion object {
          private val PACKAGE = Regex("[a-zA-Z][a-zA-Z0-9_]*(\\.[a-zA-Z0-9_]+)+")
