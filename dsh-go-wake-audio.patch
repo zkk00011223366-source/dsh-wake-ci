@@ -1,10 +1,10 @@
 From: dsh <dsh@local>
-Date: Fri, 27 Nov 2026 00:39:16 +0800
-Subject: [PATCH] 读屏冲刺+缓存帧+停读文案
+Date: Fri, 27 Nov 2026 09:20:49 +0800
+Subject: [PATCH] selectAll分步+漏网handoff文案
 
  dsh-go-wake.patch                                  | 2065 +++++++++++++
  tooling/build-wake-apk.sh                          |   68 +
- 245 files changed, 19288 insertions(+), 1015 deletions(-)
+ 246 files changed, 19301 insertions(+), 1022 deletions(-)
 
 diff --git a/.gitattributes b/.gitattributes
 index 52e3e08a..3e877c7e 100644
@@ -1294,7 +1294,7 @@ index 00000000..175e47b7
 +    }
 +}
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneContracts.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneContracts.kt
-index 612f94d1..14755dc3 100644
+index 612f94d1..9ef4b395 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneContracts.kt
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneContracts.kt
 @@ -45,6 +45,8 @@ data class ScreenSnapshot(
@@ -1317,6 +1317,15 @@ index 612f94d1..14755dc3 100644
  }
  
  data class ActionResult(
+@@ -184,7 +188,7 @@ interface PhoneDriver {
+ 
+     /** Captures only the original committed observation's editor. */
+     fun prepareFocusInput(screenId: String): Either<String, FocusInput> =
+-        Either.Left("当前屏幕不能核实原焦点输入连接；请 handoff，不要改用全文替换或重复输入。") // l10n:keep agent focus result
++        Either.Left("当前屏幕不能核实原焦点输入连接；不要改用全文替换或重复输入，先重新读屏确认焦点，仍不行就截图看画面按坐标操作。") // l10n:keep agent focus result
+     /** Native reviewed-route operation; default drivers cannot execute it. */
+     fun prepareSkillReplayStep(step: SkillReplayStep): Either<String, SkillReplayPlan> =
+         Either.Left("当前屏幕不支持已核手机路线，未执行。") // l10n:keep agent replay result
 @@ -220,6 +224,13 @@ interface PhoneDriver {
  
      /** Package of the app in front on this screen, if known (for per-app approval and deny lists). */
@@ -4116,10 +4125,47 @@ index 5c017e4e..b9ce9e15 100644
          beam.setHidden(captureHidden || passThrough)
      }
  
+diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/a11y/LocalOcrResult.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/a11y/LocalOcrResult.kt
+index 91560593..3f956f3b 100644
+--- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/a11y/LocalOcrResult.kt
++++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/a11y/LocalOcrResult.kt
+@@ -49,18 +49,18 @@ internal object LocalOcrBoundary {
+     /** Only fixed diagnostics leave this process. Even successful empty OCR is not a safe page. */
+     fun message(result: LocalOcrResult): String = when (result) {
+         // l10n:keep agent local OCR status, never interpolate recognized text
+-        is LocalOcrResult.Recognized -> "本机识别结果仅留在本机，未提供视觉元素；不能据此猜坐标，请 handoff。"
++        is LocalOcrResult.Recognized -> "本机识别结果仅留在本机，未提供视觉元素；不能据此猜坐标，改用截图看画面、按截图坐标继续操作。"
+         // l10n:keep agent local OCR status
+-        is LocalOcrResult.Failed -> "本机文字识别失败或结果不完整，未提供视觉元素；请 handoff。"
++        is LocalOcrResult.Failed -> "本机文字识别失败或结果不完整，未提供视觉元素；改用截图看画面、按截图坐标继续操作。"
+         is LocalOcrResult.Unavailable -> when (result.reason) {
+             // l10n:keep agent local OCR status
+             LocalOcrResult.Reason.DISABLED -> "本机文字识别已关闭"
+             // l10n:keep agent local OCR status
+-            LocalOcrResult.Reason.NOT_INSTALLED -> "本机文字识别后端尚未安装，未提供视觉元素；不能据此猜坐标，请 handoff。"
++            LocalOcrResult.Reason.NOT_INSTALLED -> "本机文字识别后端尚未安装，未提供视觉元素；不能据此猜坐标，改用截图看画面、按截图坐标继续操作。"
+             // l10n:keep agent local OCR status
+-            LocalOcrResult.Reason.PRIVACY_UNVERIFIED -> "无法确认本屏的本机识别隐私边界，未识别文字；请 handoff。"
++            LocalOcrResult.Reason.PRIVACY_UNVERIFIED -> "无法确认本屏的本机识别隐私边界，未识别文字；改用截图看画面、按截图坐标继续操作。"
+             // l10n:keep agent local OCR status
+-            else -> "本次本机文字识别不可用，未提供视觉元素；请 handoff。"
++            else -> "本次本机文字识别不可用，未提供视觉元素；改用截图看画面、按截图坐标继续操作。"
+         }
+     }
+ }
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/a11y/MainScreenDriver.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/a11y/MainScreenDriver.kt
-index 0d55002e..8dabdf7a 100644
+index 0d55002e..1c28c881 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/a11y/MainScreenDriver.kt
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/a11y/MainScreenDriver.kt
+@@ -1048,7 +1048,7 @@ internal class MainScreenDriver(private val service: PhoneA11yService, private v
+                 // l10n:keep agent screen result
+                 if (cap.ownAppInFront && !lifted.ownApp) return ActionResult(false, "这是 DSH 自己的界面，不操作。")
+                 // l10n:keep agent screen result
+-                if (unavailable(cap)) return ActionResult(false, "这一屏读不到内容（可能受敏感视图策略限制），不盲滑。请 handoff。", toSnapshot(publish(cap, false)))
++                if (unavailable(cap)) return ActionResult(false, "这一屏读不到内容（可能受敏感视图策略限制），不盲滑。先截图看画面；截图也不可见再 handoff。", toSnapshot(publish(cap, false)))
+                 // l10n:keep agent screen result
+                 val current = observation(cap)
+                 if (!current.reusableCoordinates(snap.observation)) {
 @@ -1105,6 +1105,8 @@ internal class MainScreenDriver(private val service: PhoneA11yService, private v
              PhoneAction.GlobalKey.RECENTS -> "已提交打开最近任务的按键操作。"
              // l10n:keep agent screen result
@@ -6244,7 +6290,7 @@ index c1c2ed09..b0b1dfe3 100644
          close()
          Bundle().apply { putBoolean(Proto.OK, false); putString(Proto.ERROR, "deviceUnavailable") }
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/PrivilegedDisplayCore.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/PrivilegedDisplayCore.kt
-index c7ed0f7a..311306ae 100644
+index c7ed0f7a..a79b7c55 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/PrivilegedDisplayCore.kt
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/PrivilegedDisplayCore.kt
 @@ -11,6 +11,7 @@ package io.github.ccch1mneyyy.dsh_app.phone.background
@@ -7966,24 +8012,30 @@ index c7ed0f7a..311306ae 100644
          } catch (_: Exception) {
              preview.unavailable(ticket, "captureFailed")
          } finally {
-@@ -1910,6 +3314,16 @@ class PrivilegedDisplayCore internal constructor(
+@@ -1910,6 +3314,22 @@ class PrivilegedDisplayCore internal constructor(
      }
  
      private fun globalKey(key: String?) {
-+        // 【4oz-selectall】Ctrl+A 全选（照 Mika 的组合键）：清空微信输入框已有文字的配套键。
++        // 【4oz-selectall-fix】Ctrl+A 全选照 Mika 分步：先物理按下 Ctrl 修饰键，再发 A，最后松开修饰键。
++        // 直接发"带合成 meta 的 A"，微信等自绘编辑器不认合成修饰，当成裸 A 把字符"a"打进输入框
++        // （真机 09:15：输入错→反复 A+paste 循环 5 分钟）。删除慢是它的连带：全选不生效就没法一次删光。
 +        if (key == "select_all") {
 +            val now = SystemClock.uptimeMillis()
-+            injectKey(KeyEvent(now, now, KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_A,
++            injectKey(KeyEvent(now, now, KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_CTRL_LEFT, 0))
++            sleepChecked(4)
++            injectKey(KeyEvent(now, SystemClock.uptimeMillis(), KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_A,
 +                KeyEvent.META_CTRL_ON or KeyEvent.META_CTRL_LEFT_ON))
 +            sleepChecked(4)
 +            injectKey(KeyEvent(now, SystemClock.uptimeMillis(), KeyEvent.ACTION_UP, KeyEvent.KEYCODE_A,
 +                KeyEvent.META_CTRL_ON or KeyEvent.META_CTRL_LEFT_ON))
++            sleepChecked(4)
++            injectKey(KeyEvent(now, SystemClock.uptimeMillis(), KeyEvent.ACTION_UP, KeyEvent.KEYCODE_CTRL_LEFT, 0))
 +            return
 +        }
          val code = KEYS[key] ?: throw Fault("invalidArguments")
          val now = SystemClock.uptimeMillis()
          injectKey(KeyEvent(now, now, KeyEvent.ACTION_DOWN, code, 0))
-@@ -1999,7 +3413,35 @@ class PrivilegedDisplayCore internal constructor(
+@@ -1999,7 +3419,35 @@ class PrivilegedDisplayCore internal constructor(
      private fun injectKey(src: KeyEvent) {
          val event = KeyEvent(src.downTime, src.eventTime, src.action, src.keyCode, 0, src.metaState,
              KeyCharacterMap.VIRTUAL_KEYBOARD, src.scanCode, src.flags, InputDevice.SOURCE_KEYBOARD)
@@ -8020,7 +8072,7 @@ index c7ed0f7a..311306ae 100644
      }
  
      // Runs in the shell-uid privileged process (Shizuku UserService or app_process),
-@@ -2025,14 +3467,45 @@ class PrivilegedDisplayCore internal constructor(
+@@ -2025,14 +3473,45 @@ class PrivilegedDisplayCore internal constructor(
          if (waitForFinish && !accepted) throw Fault("inputRejected")
      }
  
@@ -8068,7 +8120,7 @@ index c7ed0f7a..311306ae 100644
      }
  
      /**
-@@ -2079,13 +3552,21 @@ class PrivilegedDisplayCore internal constructor(
+@@ -2079,13 +3558,21 @@ class PrivilegedDisplayCore internal constructor(
  
      companion object {
          private val PACKAGE = Regex("[a-zA-Z][a-zA-Z0-9_]*(\\.[a-zA-Z0-9_]+)+")
