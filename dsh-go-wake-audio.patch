@@ -1,10 +1,10 @@
 From: dsh <dsh@local>
-Date: Sat, 28 Nov 2026 22:26:32 +0800
-Subject: [PATCH] AI电话+锁屏+教空空闭环
+Date: Sat, 28 Nov 2026 22:37:35 +0800
+Subject: [PATCH] AI电话+锁屏+教空空(悬浮胶囊)
 
  dsh-go-wake.patch                                  | 2065 +++++++++++++
  tooling/build-wake-apk.sh                          |   68 +
- 428 files changed, 26551 insertions(+), 1391 deletions(-)
+ 429 files changed, 26779 insertions(+), 1391 deletions(-)
 
 diff --git a/.gitattributes b/.gitattributes
 index 52e3e08a..3e877c7e 100644
@@ -11452,22 +11452,162 @@ index 00000000..a9912b42
 +    if (simple in GENERIC_CLASS) return null
 +    return simple
 +}
-diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/teach/TeachRuntime.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/teach/TeachRuntime.kt
+diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/teach/TeachChip.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/teach/TeachChip.kt
 new file mode 100644
-index 00000000..e70f0537
+index 00000000..7a3383f5
 --- /dev/null
-+++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/teach/TeachRuntime.kt
-@@ -0,0 +1,248 @@
++++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/teach/TeachChip.kt
+@@ -0,0 +1,140 @@
 +package io.github.ccch1mneyyy.dsh_app.phone.teach
 +
-+import android.app.Notification
-+import android.app.NotificationChannel
-+import android.app.NotificationManager
-+import android.app.PendingIntent
++import android.accessibilityservice.AccessibilityService
++import android.annotation.SuppressLint
++import android.graphics.Color
++import android.graphics.PixelFormat
++import android.os.Handler
++import android.os.Looper
++import android.view.Gravity
++import android.view.View
++import android.view.WindowManager
++import android.widget.Button
++import android.widget.LinearLayout
++import android.widget.TextView
++
++/**
++ * 「教空空」悬浮胶囊（照 Mika 的 TeachChip）：贴在屏幕顶部的一条，
++ * 用无障碍浮层窗口（TYPE_ACCESSIBILITY_OVERLAY），不申请悬浮窗权限。
++ * 录制时显示 [暂停][结束]；暂停后变 [继续][结束]；点结束直接进入整理。
++ */
++internal class TeachChip(
++    private val onPause: () -> Unit,
++    private val onResume: () -> Unit,
++    private val onEnd: () -> Unit,
++) {
++    private val main = Handler(Looper.getMainLooper())
++    private var root: LinearLayout? = null
++    private var title: TextView? = null
++    private var toggle: Button? = null
++    private var wm: WindowManager? = null
++    private var params: WindowManager.LayoutParams? = null
++    @Volatile private var visible = false
++    @Volatile private var recording = true
++
++    val isVisible: Boolean get() = visible
++
++    fun show(recording: Boolean, count: Int, goal: String): Boolean {
++        if (Looper.myLooper() != Looper.getMainLooper()) {
++            main.post { show(recording, count, goal) }
++            return visible
++        }
++        this.recording = recording
++        val service = io.github.ccch1mneyyy.dsh_app.phone.a11y.PhoneA11yService.instance
++        val window = service ?: return false
++        if (root == null) {
++            if (!build(window)) return false
++        }
++        update(count, goal)
++        return true
++    }
++
++    fun update(count: Int, goal: String) {
++        if (Looper.myLooper() != Looper.getMainLooper()) {
++            main.post { update(count, goal) }
++            return
++        }
++        title?.text = "教空空 · $count 步 · $goal"
++    }
++
++    fun setPhase(recording: Boolean, count: Int, goal: String) {
++        if (Looper.myLooper() != Looper.getMainLooper()) {
++            main.post { setPhase(recording, count, goal) }
++            return
++        }
++        this.recording = recording
++        title?.text = "教空空 · $count 步 · $goal"
++        toggle?.text = if (recording) "暂停" else "继续"
++    }
++
++    fun hide() {
++        if (Looper.myLooper() != Looper.getMainLooper()) {
++            main.post { hide() }
++            return
++        }
++        val window = wm ?: return
++        val view = root ?: return
++        runCatching { window.removeView(view) }
++        root = null
++        title = null
++        toggle = null
++        wm = null
++        params = null
++        visible = false
++    }
++
++    @SuppressLint("SetTextI18n")
++    private fun build(service: AccessibilityService): Boolean {
++        val window = service.getSystemService(WindowManager::class.java)
++        val density = service.resources.displayMetrics.density
++        fun dp(v: Int): Int = (v * density).toInt()
++        val bar = LinearLayout(service).apply {
++            orientation = LinearLayout.HORIZONTAL
++            gravity = Gravity.CENTER_VERTICAL
++            setPadding(dp(12), dp(6), dp(12), dp(6))
++            setBackgroundColor(Color.argb(232, 24, 24, 28))
++        }
++        val label = TextView(service).apply {
++            text = "教空空"
++            textSize = 13f
++            setTextColor(Color.WHITE)
++            maxLines = 1
++        }
++        val pause = Button(service).apply {
++            text = "暂停"
++            textSize = 12f
++            isAllCaps = false
++            setOnClickListener { if (recording) onPause() else onResume() }
++        }
++        val end = Button(service).apply {
++            text = "结束"
++            textSize = 12f
++            isAllCaps = false
++            setOnClickListener { onEnd() }
++        }
++        bar.addView(label, LinearLayout.LayoutParams(0, dp(40), 1f))
++        bar.addView(pause, LinearLayout.LayoutParams(dp(76), dp(40)).apply { marginStart = dp(8) })
++        bar.addView(end, LinearLayout.LayoutParams(dp(76), dp(40)).apply { marginStart = dp(8) })
++        val lp = WindowManager.LayoutParams(
++            WindowManager.LayoutParams.MATCH_PARENT,
++            WindowManager.LayoutParams.WRAP_CONTENT,
++            WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
++            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
++            PixelFormat.TRANSLUCENT,
++        ).apply {
++            gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL
++            if (android.os.Build.VERSION.SDK_INT >= 30) setFitInsetsTypes(0)
++        }
++        runCatching { window.addView(bar, lp) }.getOrElse {
++            bar.removeAllViews()
++            return false
++        }
++        root = bar
++        title = label
++        toggle = pause
++        wm = window
++        params = lp
++        visible = true
++        return true
++    }
++}
+diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/teach/TeachRuntime.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/teach/TeachRuntime.kt
+new file mode 100644
+index 00000000..c33ac6e1
+--- /dev/null
++++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/teach/TeachRuntime.kt
+@@ -0,0 +1,228 @@
++package io.github.ccch1mneyyy.dsh_app.phone.teach
++
 +import android.content.Context
-+import android.content.Intent
 +import android.view.accessibility.AccessibilityEvent
-+import io.github.ccch1mneyyy.dsh_app.MainActivity
 +import java.util.UUID
 +import java.util.concurrent.Executors
 +
@@ -11478,6 +11618,11 @@ index 00000000..e70f0537
 + */
 +class TeachRuntime(private val appContext: Context) {
 +    private val prefs = appContext.getSharedPreferences("teach-v1", Context.MODE_PRIVATE)
++    private val chip = TeachChip(
++        onPause = { pause() },
++        onResume = { resume() },
++        onEnd = { end(); },
++    )
 +    private val io = Executors.newSingleThreadExecutor { r -> Thread(r, "kongkong-teach").apply { isDaemon = true } }
 +    @Volatile private var session: TeachSession? = null
 +    private val listeners = java.util.concurrent.CopyOnWriteArrayList<() -> Unit>()
@@ -11507,8 +11652,12 @@ index 00000000..e70f0537
 +        val observation = TeachEvents.capture(event, displayId) ?: return
 +        val next = TeachTrace.reduce(cur, observation, appContext.packageName)
 +        if (next === cur) return
++        val grew = next.steps.size != cur.steps.size || next.phase != cur.phase
 +        session = next
 +        publish()
++        if (grew && (next.phase == TeachPhase.Recording || next.phase == TeachPhase.Paused)) {
++            chip.update(next.steps.size, next.goal)
++        }
 +        save()
 +    }
 +
@@ -11520,7 +11669,7 @@ index 00000000..e70f0537
 +        if (session?.phase?.blocksTasks() == true) return "busy"
 +        session = TeachSession(newId(), clean, TeachPhase.Recording, updatedAt = System.currentTimeMillis())
 +        save()
-+        notifyRecording(clean)
++        chip.show(recording = true, count = 0, goal = clean)
 +        publish()
 +        return null
 +    }
@@ -11530,6 +11679,7 @@ index 00000000..e70f0537
 +        if (cur.phase != TeachPhase.Recording) return
 +        session = cur.copy(phase = TeachPhase.Paused, updatedAt = System.currentTimeMillis())
 +        save()
++        chip.setPhase(recording = false, count = cur.steps.size, goal = cur.goal)
 +        publish()
 +    }
 +
@@ -11538,6 +11688,7 @@ index 00000000..e70f0537
 +        if (cur.phase != TeachPhase.Paused) return null
 +        session = cur.copy(phase = TeachPhase.Recording, updatedAt = System.currentTimeMillis())
 +        save()
++        chip.setPhase(recording = true, count = cur.steps.size, goal = cur.goal)
 +        publish()
 +        return null
 +    }
@@ -11548,6 +11699,7 @@ index 00000000..e70f0537
 +        if (cur.phase != TeachPhase.Recording && cur.phase != TeachPhase.Paused) return null
 +        val next = cur.copy(phase = TeachPhase.Reviewing, updatedAt = System.currentTimeMillis())
 +        session = next
++        chip.hide()
 +        save()
 +        publish()
 +        return next
@@ -11565,7 +11717,7 @@ index 00000000..e70f0537
 +    fun discard() {
 +        session = null
 +        prefs.edit().remove(KEY).apply()
-+        cancelNotify()
++        chip.hide()
 +        publish()
 +    }
 +
@@ -11624,39 +11776,13 @@ index 00000000..e70f0537
 +        null
 +    }
 +
-+    private fun notifyRecording(goal: String) {
-+        runCatching {
-+            val nm = appContext.getSystemService(NotificationManager::class.java)
-+            nm.createNotificationChannel(NotificationChannel(CHANNEL, "教空空", NotificationManager.IMPORTANCE_LOW))
-+            val open = PendingIntent.getActivity(
-+                appContext, 0, Intent(appContext, MainActivity::class.java),
-+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
-+            )
-+            val n = Notification.Builder(appContext, CHANNEL)
-+                .setSmallIcon(android.R.drawable.ic_menu_edit)
-+                .setContentTitle("教空空录制中")
-+                .setContentText("目标：$goal。操作完回空空点「结束示范」")
-+                .setContentIntent(open)
-+                .setOngoing(true)
-+                .build()
-+            nm.notify(NOTIFY_ID, n)
-+        }
-+    }
-+
-+    private fun cancelNotify() {
-+        runCatching {
-+            appContext.getSystemService(NotificationManager::class.java).cancel(NOTIFY_ID)
-+        }
-+    }
-+
 +    private fun newId(): String = UUID.randomUUID().toString().replace("-", "")
 +
 +    private fun String.isSecret(): Boolean = SECRET_HINTS.any { it.containsMatchIn(this) }
 +
-+    private companion object {
++    internal companion object {
 +        const val KEY = "teach.session"
-+        const val CHANNEL = "teach-recording"
-+        const val NOTIFY_ID = 2911
++        fun registerActions(appContext: Context) {}
 +        private val SECRET_HINTS = listOf(
 +            Regex("""验证码|校验码|动态码"""),
 +            Regex("""密码|口令|passcode|password""", RegexOption.IGNORE_CASE),
@@ -104480,7 +104606,7 @@ index 00000000..8e1a253a
 +/// 全局导航键：通话悬浮球等"不挂在某个页面下"的入口用它在任何界面 push/pop。
 +final GlobalKey<NavigatorState> appNavigatorKey = GlobalKey<NavigatorState>();
 diff --git a/app/lib/l10n/app_en.arb b/app/lib/l10n/app_en.arb
-index e1de7125..6535c58e 100644
+index e1de7125..84ac60df 100644
 --- a/app/lib/l10n/app_en.arb
 +++ b/app/lib/l10n/app_en.arb
 @@ -498,6 +498,79 @@
@@ -104581,7 +104707,7 @@ index e1de7125..6535c58e 100644
    "phoneControlRules": "Rules",
    "phoneControlRecentActions": "Recent actions",
    "phoneControlRecentActionsHint": "Every step is logged, without screen contents",
-@@ -3955,6 +4032,41 @@
+@@ -3955,6 +4032,44 @@
    "phoneIosSetupHint": "Keep LocalDevVPN connected. On first use, allow control for 30 minutes.",
    "phoneIosReturnHint": "Return to this conversation when the task finishes, then stop the phone-control service.",
    "phoneIosNeedsSetup": "The runner is not ready. Check the local engine and developer setup.",
@@ -104620,10 +104746,13 @@ index e1de7125..6535c58e 100644
 +  "teachSaveSkill": "Save as skill",
 +  "teachSaved": "Skill saved",
 +  "teachSaveFailed": "Save failed: {reason}",
++  "teachPaused": "Paused",
++  "teachPausedSub": "{count} steps recorded; try it yourself before resuming",
++  "teachResume": "Resume",
    "phoneTaskResultReady": "Task complete · View result",
    "phoneTaskEndedResult": "Task ended · View result",
    "phoneBackgroundGuideTitle": "Confirmations and return",
-@@ -4019,6 +4131,21 @@
+@@ -4019,6 +4134,21 @@
    "phoneSkillInvalid": "The edit or step order exceeds the limits. Shorten the text and keep at least one step.",
    "phoneSkillWriteFailed": "The file could not be written. Check the local runtime and storage; edit and update the preview before confirming another save.",
    "phoneSkillUnavailable": "Skill drafts are unavailable. Check the local engine state and try again.",
@@ -104645,7 +104774,7 @@ index e1de7125..6535c58e 100644
    "phoneModeTitle": "How DSH confirms",
    "phoneModeMessage": "You can change this in Settings anytime",
    "phoneModeAsk": "Ask me at key steps",
-@@ -5735,6 +5862,7 @@
+@@ -5735,6 +5865,7 @@
    "speechCallEarpiece": "Earpiece",
    "speechBackdropTitle": "Call background",
    "speechCallSettings": "Call settings",
@@ -104653,7 +104782,7 @@ index e1de7125..6535c58e 100644
    "speechCallPause": "Pause before she answers",
    "speechCallPauseQuick": "Short",
    "speechCallPauseNormal": "Medium",
-@@ -5756,7 +5884,25 @@
+@@ -5756,7 +5887,25 @@
    "speechCallVisualRing": "Ring",
    "speechCallVisualMono": "Line",
    "speechCallVisualGlass": "Orb",
@@ -104679,7 +104808,7 @@ index e1de7125..6535c58e 100644
    "starPromptTitle": "{hours, plural, =0{I’ve kept you company in DSH Go for half an hour now~} =1{I’ve kept you company in DSH Go for an hour now~} other{I’ve kept you company in DSH Go for {hours} hours now~}}",
    "starPromptBody": "DSH Go is free and open source. If it’s made your phone a little nicer to use, please give it a Star — it means so much to this little whale!",
    "starPromptPlea": "Pretty please~ It really matters!!",
-@@ -7932,6 +8078,7 @@
+@@ -7932,6 +8081,7 @@
    "wallpaperBlur": "Blur",
    "wallpaperLighten": "Lighten",
    "wallpaperDim": "Dim",
@@ -104688,7 +104817,7 @@ index e1de7125..6535c58e 100644
    "wallpaperPreview": "Preview",
    "wallpaperFooter": "Shown on home, in chats and in the drawer. Lighten applies in light mode, Dim in dark mode; text always stays clear. PNG, JPEG or WebP, up to 15 MB.",
 diff --git a/app/lib/l10n/app_zh.arb b/app/lib/l10n/app_zh.arb
-index ec1a316d..d1f4b292 100644
+index ec1a316d..abe76d85 100644
 --- a/app/lib/l10n/app_zh.arb
 +++ b/app/lib/l10n/app_zh.arb
 @@ -3,8 +3,8 @@
@@ -105130,7 +105259,7 @@ index ec1a316d..d1f4b292 100644
    "phoneInterruptionTitle": "上次手机任务未确认结束",
    "phoneInterruptionLoading": "正在读取任务中断记录…",
    "phoneInterruptionStorageError": "无法保存或读取任务结束记录。请重试；这不表示后台资源已清理。",
-@@ -7431,17 +7550,83 @@
+@@ -7431,17 +7550,93 @@
    "phoneIosSetupHint": "保持 LocalDevVPN 已连接，首次使用时允许 30 分钟操控。",
    "phoneIosReturnHint": "任务完成后回到当前对话，并停止手机操控服务。",
    "phoneIosNeedsSetup": "运行器尚未就绪，请确认本机引擎和开发者环境已配置。",
@@ -105200,6 +105329,16 @@ index ec1a316d..d1f4b292 100644
 +      }
 +    }
 +  },
++  "teachPaused": "已暂停",
++  "teachPausedSub": "已记录 {count} 步，继续前可以先自己试一遍",
++  "@teachPausedSub": {
++    "placeholders": {
++      "count": {
++        "type": "int"
++      }
++    }
++  },
++  "teachResume": "继续",
    "phoneTaskResultReady": "任务完成 · 查看结果",
    "phoneTaskEndedResult": "任务已结束 · 查看结果",
    "phoneBackgroundGuideTitle": "后台确认与返回",
@@ -105218,7 +105357,7 @@ index ec1a316d..d1f4b292 100644
    "phonePrivilegedSui": "Sui",
    "phonePrivilegedRoot": "Root",
    "phonePrivilegedSuiDescription": "使用 Sui 模块提供的接口，仅在主动点击时申请授权。",
-@@ -7452,8 +7637,8 @@
+@@ -7452,8 +7647,8 @@
    "phonePrivilegedGrantSui": "通过 Sui 授予",
    "phonePrivilegedGrantSuiPermission": "先授权 Sui，再授予权限",
    "phonePrivilegedSuggested": "建议",
@@ -105229,7 +105368,7 @@ index ec1a316d..d1f4b292 100644
    "phoneKeepTitle": "{mode, select, shizuku{保持 Shizuku 通道} sui{保持 Sui 通道} root{保持 root 通道} adb{保持自连 ADB 通道} other{保持这个通道}}",
    "@phoneKeepTitle": {
      "placeholders": {
-@@ -7462,9 +7647,9 @@
+@@ -7462,9 +7657,9 @@
        }
      }
    },
@@ -105242,7 +105381,7 @@ index ec1a316d..d1f4b292 100644
    "phoneKeepRestoring": "正在重新连接",
    "phoneKeepWaiting": "等通道可用后再连",
    "phoneKeepWaitingService": "等所选服务运行后再连",
-@@ -7519,6 +7704,21 @@
+@@ -7519,6 +7714,21 @@
    "phoneSkillInvalid": "编辑内容或步骤顺序不符合限制。请减少文字，至少保留一个步骤。",
    "phoneSkillWriteFailed": "未能写入。请核对本机运行环境和存储；修改并更新预览后才能再次确认保存。",
    "phoneSkillUnavailable": "当前无法处理技能草稿。请检查本机引擎状态后重试。",
@@ -105264,7 +105403,7 @@ index ec1a316d..d1f4b292 100644
    "phoneModeTitle": "选择确认方式",
    "phoneModeMessage": "随时可在设置里更改",
    "phoneModeAsk": "关键步骤先问我",
-@@ -7526,13 +7726,13 @@
+@@ -7526,13 +7736,13 @@
    "phoneModeAuto": "全程自动",
    "phoneModeAutoHint": "不再询问，全程免打扰",
    "phoneModeAutoNoteTitle": "这些仍由你来操作",
@@ -105280,7 +105419,7 @@ index ec1a316d..d1f4b292 100644
    "phoneYoursDenyList": "应用名单里「不碰」的 App，默认含银行、支付类",
    "phoneUnlockTitle": "解除限制",
    "phoneUnlockSubtitle": "让 AI 去做默认由你来做的事",
-@@ -7540,8 +7740,8 @@
+@@ -7540,8 +7750,8 @@
    "phoneUnlockSystemHint": "含权限页、安装器、安全中心、通知栏",
    "phoneUnlockSecrets": "密码和验证码",
    "phoneUnlockSecretsHint": "填写密码、验证码和支付密码",
@@ -105291,7 +105430,7 @@ index ec1a316d..d1f4b292 100644
    "phoneUnlockBusy": "任务进行中，结束后才能开启",
    "phoneUnlockFootnote": "开启后的后果由你承担。建议只在需要时开启，用完关闭。",
    "phoneUnlockBanks": "银行、支付类 App",
-@@ -7558,7 +7758,7 @@
+@@ -7558,7 +7768,7 @@
    "phoneUnlockedBadge": "已解除限制",
    "phoneUnlockConfirmSystemTitle": "允许 AI 操作系统设置？",
    "phoneUnlockConfirmSecretsTitle": "允许 AI 填写密码和验证码？",
@@ -105300,7 +105439,7 @@ index ec1a316d..d1f4b292 100644
    "phoneUnlockCanTitle": "开启后，AI 可以",
    "phoneUnlockRiskTitle": "可能出什么事",
    "phoneUnlockDisclaimerTitle": "免责声明",
-@@ -7572,13 +7772,13 @@
+@@ -7572,13 +7782,13 @@
    "phoneUnlockSecretsCan3": "操作记录里只显示 ••••，不记下填写的内容",
    "phoneUnlockSecretsRisk1": "恶意指令可能诱导 AI 把验证码填到别处，让他人登录你的账号",
    "phoneUnlockSecretsRisk2": "可能完成你并不想要的付款或转账",
@@ -105317,7 +105456,7 @@ index ec1a316d..d1f4b292 100644
    "phoneUnlockDisclaimer4": "建议只在需要时临时开启，用完关闭。",
    "phoneUnlockDisclaimer5": "不建议在存有支付或银行信息的设备上开启。",
    "phoneUnlockHold": "我了解风险，开启",
-@@ -7848,7 +8048,7 @@
+@@ -7848,7 +8058,7 @@
    "pluginsWriteFailed": "没能写入",
    "pluginsHostUnreachable": "没能连上主机",
    "pluginsFileWriteFailed": "没能写入文件",
@@ -105326,7 +105465,7 @@ index ec1a316d..d1f4b292 100644
    "pluginsGistTokenInvalid": "GitHub 令牌无效或没有 Gist 权限",
    "pluginsGistCreateHttpFailed": "没能创建 Gist（HTTP {status}）",
    "@pluginsGistCreateHttpFailed": {
-@@ -8286,7 +8486,7 @@
+@@ -8286,7 +8496,7 @@
    "pluginsNotificationsBlocked": "系统已关闭",
    "pluginsTurnedOn": "已开启",
    "pluginsNotifications": "通知",
@@ -105335,7 +105474,7 @@ index ec1a316d..d1f4b292 100644
    "pluginsSystemNotificationsOff": "系统通知已关闭",
    "pluginsBackgroundNoAlerts": "App 在后台时收不到任何提醒",
    "pluginsApprovalNotificationsOff": "「等你确认」通知已关闭",
-@@ -8434,7 +8634,7 @@
+@@ -8434,7 +8644,7 @@
    "pluginsShareDamaged": "这个分享码不完整或已损坏",
    "pluginsShareFileReadFailed": "没能读取这个文件",
    "pluginsShareOpenFailed": "没能打开这个分享码",
@@ -105344,7 +105483,7 @@ index ec1a316d..d1f4b292 100644
    "pluginsShareSheetOpenFailed": "没能打开分享",
    "pluginsSavePermissionDenied": "没有存储权限，没能保存",
    "pluginsQrCode": "二维码",
-@@ -8690,7 +8890,7 @@
+@@ -8690,7 +8900,7 @@
        }
      }
    },
@@ -105353,7 +105492,7 @@ index ec1a316d..d1f4b292 100644
    "@plugslotsIssueNeedsApp": {
      "placeholders": {
        "version": {
-@@ -9053,7 +9253,7 @@
+@@ -9053,7 +9263,7 @@
    "remoteErrConnectionReplaced": "远程连接已被替换",
    "remoteErrHostRejected": "主机拒绝了连接",
    "remoteErrHostNotOwned": "主机不在你的 DSH Remote 账号下",
@@ -105362,7 +105501,7 @@ index ec1a316d..d1f4b292 100644
    "remoteErrVersionIncompatible": "主机上的 DSH 或远程插件需要更新",
    "remoteErrSignInTimeout": "登录超时",
    "remoteSignInCancelled": "已取消登录",
-@@ -10076,7 +10276,7 @@
+@@ -10076,7 +10286,7 @@
    "remotePairTitle": "扫码配对电脑",
    "remotePairSubtitle": "不用注册 Remote 账号，也不会传 DeepSeek 密码或登录凭据",
    "remotePairNeedsDeepSeek": "先登录 DeepSeek 账号",
@@ -105371,7 +105510,7 @@ index ec1a316d..d1f4b292 100644
    "remotePairScanHint": "对准电脑上 Remote 插件显示的配对二维码",
    "remotePairPasteLink": "粘贴配对链接",
    "remotePairPasteEmpty": "剪贴板里没有配对链接",
-@@ -10126,7 +10326,7 @@
+@@ -10126,7 +10336,7 @@
      }
    },
    "remotePairFailedTitle": "没能配对",
@@ -105380,7 +105519,7 @@ index ec1a316d..d1f4b292 100644
    "@remotePairOtherServerBody": {
      "placeholders": {
        "server": {
-@@ -10136,7 +10336,7 @@
+@@ -10136,7 +10346,7 @@
    },
    "remotePairSwitchServer": "切换服务器并继续",
    "remotePairScanAgain": "重新扫码",
@@ -105389,7 +105528,7 @@ index ec1a316d..d1f4b292 100644
    "remotePairErrOtherServer": "这个二维码来自另一个 Remote 服务器",
    "remotePairErrUnsupported": "这个 Remote 服务器还不支持扫码配对",
    "remotePairErrExpired": "二维码已过期或已经用过了。请在电脑上重新生成二维码",
-@@ -10174,12 +10374,12 @@
+@@ -10174,12 +10384,12 @@
    "riskAllowForChatBody": "这个对话之后的命令和改动都直接放行，可在输入框上方随时关闭。",
    "riskAllowForChatAction": "全部允许",
    "riskPetOverlayTitle": "显示在其他应用上层？",
@@ -105404,7 +105543,7 @@ index ec1a316d..d1f4b292 100644
    "@askAiAboutApp": {
      "placeholders": {
        "question": {
-@@ -10187,7 +10387,7 @@
+@@ -10187,7 +10397,7 @@
        }
      }
    },
@@ -105413,7 +105552,7 @@ index ec1a316d..d1f4b292 100644
    "@askAiWithGuide": {
      "placeholders": {
        "question": {
-@@ -10195,8 +10395,8 @@
+@@ -10195,8 +10405,8 @@
        }
      }
    },
@@ -105424,7 +105563,7 @@ index ec1a316d..d1f4b292 100644
    "askAiQuestionPhoneControl": "手机操控是怎么工作的？有什么风险？",
    "askAiQuestionPhoneAlways": "手机操控选「始终免确认」会怎样？和「每次都询问」比风险在哪？",
    "askAiQuestionAppRules": "手机操控的应用名单有什么用？放开银行、支付类 App 有什么风险？",
-@@ -10980,7 +11180,7 @@
+@@ -10980,7 +11190,7 @@
    "shellJsonStringNewline": "字符串里不能直接换行",
    "shellJsonControlCharacter": "字符串里有控制字符",
    "shellJsonBadNumber": "数字格式不对",
@@ -105433,7 +105572,7 @@ index ec1a316d..d1f4b292 100644
    "@shellSkillInstallPrompt": {
      "placeholders": {
        "skill": {
-@@ -11200,6 +11400,7 @@
+@@ -11200,6 +11410,7 @@
    "speechCallEarpiece": "听筒",
    "speechBackdropTitle": "通话背景",
    "speechCallSettings": "通话设置",
@@ -105441,7 +105580,7 @@ index ec1a316d..d1f4b292 100644
    "speechCallPause": "停顿多久算说完",
    "speechCallPauseQuick": "快",
    "speechCallPauseNormal": "适中",
-@@ -11221,8 +11422,26 @@
+@@ -11221,8 +11432,26 @@
    "speechCallVisualRing": "光环",
    "speechCallVisualMono": "细线",
    "speechCallVisualGlass": "光球",
@@ -105469,7 +105608,7 @@ index ec1a316d..d1f4b292 100644
    "@starPromptTitle": {
      "description": "The star prompt's first line. hours is the whole hours of use so far, rounded down; 0 is half an hour (the first ask comes after 30 minutes). The word joiner keeps the ~ on the line of the word before it.",
      "placeholders": {
-@@ -11236,7 +11455,7 @@
+@@ -11236,7 +11465,7 @@
    "starPromptStar": "去 GitHub 点 Star",
    "starPromptDone": "已经点过啦",
    "starPromptLater": "下次再说",
@@ -105478,7 +105617,7 @@ index ec1a316d..d1f4b292 100644
    "hubStartPage": "起始页",
    "hubChatSuggestions": "聊天建议",
    "hubChatSuggestionsHint": "显示起始页的聊天建议",
-@@ -11252,7 +11471,7 @@
+@@ -11252,7 +11481,7 @@
    },
    "phoneStartupTokenTimeout": "启动等待已超时（180 秒内未收到启动标记），请查看日志",
    "phoneStartupPortNotReady": "已收到启动标记，但本机服务端口尚未就绪，请查看日志",
@@ -105487,7 +105626,7 @@ index ec1a316d..d1f4b292 100644
    "stateStoragePermission": "没有存储权限，存不进「下载」",
    "stateDiagnosticsStorageFull": "存储空间不足，没能生成诊断包",
    "stateDiagnosticsExportFailed": "没能导出诊断包",
-@@ -12047,15 +12266,15 @@
+@@ -12047,15 +12276,15 @@
    "systemActionsSubtitle": "让 AI 帮你打开应用和系统页面，随时可以关",
    "systemActionsReady": "已开启",
    "systemActionsWaitingEngine": "已开启，等本机引擎启动",
@@ -105506,7 +105645,7 @@ index ec1a316d..d1f4b292 100644
    "systemActionsCanTitle": "能做的",
    "systemActionsCanOpen": "打开应用或链接",
    "systemActionsCanOpenHint": "应用要写包名，不能按名字找",
-@@ -12089,7 +12308,7 @@
+@@ -12089,7 +12318,7 @@
    "systemActionsDisclosureWhatTitle": "能做什么",
    "systemActionsDisclosureWhatBody": "打开应用或链接，打开日历、拨号、分享、导航界面，发通知，写剪贴板，把步骤交还给你。这个版本开通了系统提醒时，还能设闹钟和计时器。",
    "systemActionsDisclosureWhenTitle": "什么时候做",
@@ -105515,7 +105654,7 @@ index ec1a316d..d1f4b292 100644
    "systemActionsDisclosureWhoTitle": "发给谁",
    "systemActionsDisclosureWhoBody": "动作的结果会回到对话，发给你选的模型。",
    "systemActionsDisclosureNeverTitle": "不会做什么",
-@@ -12097,7 +12316,7 @@
+@@ -12097,7 +12326,7 @@
    "systemActionsDisclosureStopTitle": "怎么停",
    "systemActionsDisclosureStopBody": "随时在这里关掉。交还提示可以点停止。",
    "systemActionsHandoffTitle": "轮到你来操作",
@@ -105524,7 +105663,7 @@ index ec1a316d..d1f4b292 100644
    "systemActionsHandoffFailed": "这次没算上，提示如果还在可以再点一次",
    "systemActionsResultOpened": "已打开界面，还没确认里面的事办完。",
    "systemActionsResultContinued": "你点了继续。这只说明你确认了，不代表其他应用里的操作完成了。",
-@@ -12106,7 +12325,7 @@
+@@ -12106,7 +12335,7 @@
    "systemActionsResultClipboard": "文字已写入剪贴板。",
    "systemActionsResultUnknownDetail": "系统调用可能已经发出，结果未知。不会自动重试，请自己看一下实际状态。",
    "systemActionsResultUnsupported": "鸿蒙版不支持这个动作，没有执行。",
@@ -105533,7 +105672,7 @@ index ec1a316d..d1f4b292 100644
    "systemActionsResultUnavailable": "系统操作没开或暂时连不上，没有执行。到「设置 → 系统操作」看看。",
    "systemActionsResultStopped": "已停止。",
    "systemActionsResultTimeout": "等待超时，没有结果。",
-@@ -12789,7 +13008,7 @@
+@@ -12789,7 +13018,7 @@
        }
      }
    },
@@ -105542,7 +105681,7 @@ index ec1a316d..d1f4b292 100644
    "tavernStorybookContents": "目录",
    "tavernStorybookChapter": "第 {n} 章",
    "@tavernStorybookChapter": {
-@@ -14579,13 +14798,13 @@
+@@ -14579,13 +14808,13 @@
      }
    },
    "updateSettingsOpenFailed": "没能打开系统设置",
@@ -105558,7 +105697,7 @@ index ec1a316d..d1f4b292 100644
    "updateWrongPackage": "不是 DSH 的安装包",
    "updateWrongPackageMessage": "下载到的文件不对，已删除，请稍后重试。",
    "updateDowngradeBlocked": "不能降级安装",
-@@ -14628,7 +14847,7 @@
+@@ -14628,7 +14857,7 @@
    "updateNewVersionFound": "发现新版本",
    "updateReleaseNotes": "更新内容",
    "updateNoReleaseNotes": "这个版本没有写更新说明。",
@@ -105567,7 +105706,7 @@ index ec1a316d..d1f4b292 100644
    "updateNoCompatiblePackage": "没有适合本机的安装包",
    "updateDownloading": "正在下载",
    "updateDownloadSource": "经由 {source}",
-@@ -14646,7 +14865,7 @@
+@@ -14646,7 +14875,7 @@
    "updateConfirmInstallNote": "在系统弹窗里确认安装",
    "updatePackageDownloaded": "安装包已下载",
    "updateReadyToInstall": "校验通过，可以安装了。",
@@ -105576,7 +105715,7 @@ index ec1a316d..d1f4b292 100644
    "updateAllowInstallMessage": "在系统设置里打开「安装未知应用」，回来后自动继续。",
    "updateOpenReleasePage": "打开发布页",
    "updateUpdateNow": "立即更新",
-@@ -14689,10 +14908,10 @@
+@@ -14689,10 +14918,10 @@
      }
    },
    "usageStatsTitle": "发送匿名使用统计",
@@ -105589,7 +105728,7 @@ index ec1a316d..d1f4b292 100644
    "usageUpgradeLearn": "了解",
    "usageUpgradeOff": "关闭",
    "viewArtifactSaved": "已存到 {value}",
-@@ -15401,7 +15620,7 @@
+@@ -15401,7 +15630,7 @@
    "viewTipImageZoom": "看图时双击放大、双指缩放，长按可以保存",
    "viewTipQueuedRecall": "排队中的消息可以撤回到输入框再改",
    "viewTipKeyboard": "接了键盘：Ctrl+Enter 发送，连按两次 Esc 停止",
@@ -105598,7 +105737,7 @@ index ec1a316d..d1f4b292 100644
    "viewTipShareSelect": "分享对话时长按再滑动，可以一次选中多条消息",
    "viewTipChartDrag": "回复里的图表可以左右拖动，看每个点的数值",
    "viewTipCopyPath": "改动卡里长按某个文件，可以复制它的路径",
-@@ -15571,7 +15790,7 @@
+@@ -15571,7 +15800,7 @@
        }
      }
    },
@@ -105607,7 +105746,7 @@ index ec1a316d..d1f4b292 100644
    "@viewContinueHeader": {
      "placeholders": {
        "value": {
-@@ -15608,7 +15827,7 @@
+@@ -15608,7 +15837,7 @@
    "viewShareNoPermission": "没有存储权限，没能保存",
    "viewShareOpenFailed": "没能打开分享",
    "viewShareLinkFailed": "没能生成链接，稍后再试",
@@ -105616,7 +105755,7 @@ index ec1a316d..d1f4b292 100644
    "@viewShareLinkText": {
      "placeholders": {
        "first": {
-@@ -15636,7 +15855,7 @@
+@@ -15636,7 +15865,7 @@
        }
      }
    },
@@ -105625,7 +105764,7 @@ index ec1a316d..d1f4b292 100644
    "viewShareWebHint": "任何浏览器都能打开，不用联网",
    "viewShareMarkdownHint": "纯文本，随处可读",
    "viewShareLinkHint": "端到端加密，服务器看不到内容",
-@@ -16257,6 +16476,7 @@
+@@ -16257,6 +16486,7 @@
    "wallpaperBlur": "模糊",
    "wallpaperLighten": "提亮",
    "wallpaperDim": "压暗",
@@ -105633,7 +105772,7 @@ index ec1a316d..d1f4b292 100644
    "wallpaperReplace": "更换图片",
    "wallpaperPreview": "预览",
    "wallpaperFooter": "用于首页、对话和抽屉。提亮在浅色模式、压暗在深色模式下各自生效，文字始终清晰。PNG、JPEG、WebP，15 MB 以内",
-@@ -16364,7 +16584,7 @@
+@@ -16364,7 +16594,7 @@
    "workshopAbout": "简介",
    "workshopNoDescription": "作者没有写简介。",
    "workshopSource": "来源",
@@ -105643,7 +105782,7 @@ index ec1a316d..d1f4b292 100644
      "placeholders": {
        "version": {
 diff --git a/app/lib/l10n/gen/app_localizations.dart b/app/lib/l10n/gen/app_localizations.dart
-index 05ad2de7..fcfea016 100644
+index 05ad2de7..728c2b28 100644
 --- a/app/lib/l10n/gen/app_localizations.dart
 +++ b/app/lib/l10n/gen/app_localizations.dart
 @@ -113,13 +113,13 @@ abstract class L10n {
@@ -106514,7 +106653,7 @@ index 05ad2de7..fcfea016 100644
    String get phoneTaskBackgroundResource;
  
    /// No description provided for @phoneInterruptionTitle.
-@@ -23822,6 +24284,216 @@ abstract class L10n {
+@@ -23822,6 +24284,234 @@ abstract class L10n {
    /// **'运行器尚未就绪，请确认本机引擎和开发者环境已配置。'**
    String get phoneIosNeedsSetup;
  
@@ -106728,10 +106867,28 @@ index 05ad2de7..fcfea016 100644
 +  /// **'保存失败：{reason}'**
 +  String teachSaveFailed(String reason);
 +
++  /// No description provided for @teachPaused.
++  ///
++  /// In zh, this message translates to:
++  /// **'已暂停'**
++  String get teachPaused;
++
++  /// No description provided for @teachPausedSub.
++  ///
++  /// In zh, this message translates to:
++  /// **'已记录 {count} 步，继续前可以先自己试一遍'**
++  String teachPausedSub(int count);
++
++  /// No description provided for @teachResume.
++  ///
++  /// In zh, this message translates to:
++  /// **'继续'**
++  String get teachResume;
++
    /// No description provided for @phoneTaskResultReady.
    ///
    /// In zh, this message translates to:
-@@ -23849,19 +24521,19 @@ abstract class L10n {
+@@ -23849,19 +24539,19 @@ abstract class L10n {
    /// No description provided for @phoneBackgroundGuideBody.
    ///
    /// In zh, this message translates to:
@@ -106754,7 +106911,7 @@ index 05ad2de7..fcfea016 100644
    String get phoneBackgroundReturnHint;
  
    /// No description provided for @phoneBackgroundGotIt.
-@@ -23885,7 +24557,7 @@ abstract class L10n {
+@@ -23885,7 +24575,7 @@ abstract class L10n {
    /// No description provided for @phonePrivilegedUpgrade.
    ///
    /// In zh, this message translates to:
@@ -106763,7 +106920,7 @@ index 05ad2de7..fcfea016 100644
    String get phonePrivilegedUpgrade;
  
    /// No description provided for @phonePrivilegedSui.
-@@ -23951,13 +24623,13 @@ abstract class L10n {
+@@ -23951,13 +24641,13 @@ abstract class L10n {
    /// No description provided for @phonePrivilegedRootRiskTitle.
    ///
    /// In zh, this message translates to:
@@ -106779,7 +106936,7 @@ index 05ad2de7..fcfea016 100644
    String get phonePrivilegedRootRiskBody;
  
    /// No description provided for @phoneKeepTitle.
-@@ -23969,19 +24641,19 @@ abstract class L10n {
+@@ -23969,19 +24659,19 @@ abstract class L10n {
    /// No description provided for @phoneKeepRootDescription.
    ///
    /// In zh, this message translates to:
@@ -106802,7 +106959,7 @@ index 05ad2de7..fcfea016 100644
    String get phoneKeepAdbDescription;
  
    /// No description provided for @phoneKeepRestoring.
-@@ -24206,6 +24878,96 @@ abstract class L10n {
+@@ -24206,6 +24896,96 @@ abstract class L10n {
    /// **'当前无法处理技能草稿。请检查本机引擎状态后重试。'**
    String get phoneSkillUnavailable;
  
@@ -106899,7 +107056,7 @@ index 05ad2de7..fcfea016 100644
    /// No description provided for @phoneModeTitle.
    ///
    /// In zh, this message translates to:
-@@ -24251,7 +25013,7 @@ abstract class L10n {
+@@ -24251,7 +25031,7 @@ abstract class L10n {
    /// No description provided for @phoneModeAutoNote.
    ///
    /// In zh, this message translates to:
@@ -106908,7 +107065,7 @@ index 05ad2de7..fcfea016 100644
    String get phoneModeAutoNote;
  
    /// No description provided for @phoneModeAutoUnlockNote.
-@@ -24287,7 +25049,7 @@ abstract class L10n {
+@@ -24287,7 +25067,7 @@ abstract class L10n {
    /// No description provided for @phoneYoursOwnApp.
    ///
    /// In zh, this message translates to:
@@ -106917,7 +107074,7 @@ index 05ad2de7..fcfea016 100644
    String get phoneYoursOwnApp;
  
    /// No description provided for @phoneYoursDenyList.
-@@ -24335,13 +25097,13 @@ abstract class L10n {
+@@ -24335,13 +25115,13 @@ abstract class L10n {
    /// No description provided for @phoneUnlockOwnApp.
    ///
    /// In zh, this message translates to:
@@ -106933,7 +107090,7 @@ index 05ad2de7..fcfea016 100644
    String get phoneUnlockOwnAppHint;
  
    /// No description provided for @phoneUnlockBusy.
-@@ -24401,7 +25163,7 @@ abstract class L10n {
+@@ -24401,7 +25181,7 @@ abstract class L10n {
    /// No description provided for @phoneUnlockConfirmOwnAppTitle.
    ///
    /// In zh, this message translates to:
@@ -106942,7 +107099,7 @@ index 05ad2de7..fcfea016 100644
    String get phoneUnlockConfirmOwnAppTitle;
  
    /// No description provided for @phoneUnlockCanTitle.
-@@ -24485,13 +25247,13 @@ abstract class L10n {
+@@ -24485,13 +25265,13 @@ abstract class L10n {
    /// No description provided for @phoneUnlockOwnAppCan1.
    ///
    /// In zh, this message translates to:
@@ -106958,7 +107115,7 @@ index 05ad2de7..fcfea016 100644
    String get phoneUnlockOwnAppCan2;
  
    /// No description provided for @phoneUnlockOwnAppRisk1.
-@@ -24521,7 +25283,7 @@ abstract class L10n {
+@@ -24521,7 +25301,7 @@ abstract class L10n {
    /// No description provided for @phoneUnlockDisclaimer3.
    ///
    /// In zh, this message translates to:
@@ -106967,7 +107124,7 @@ index 05ad2de7..fcfea016 100644
    String get phoneUnlockDisclaimer3;
  
    /// No description provided for @phoneUnlockDisclaimer4.
-@@ -25463,7 +26225,7 @@ abstract class L10n {
+@@ -25463,7 +26243,7 @@ abstract class L10n {
    /// No description provided for @pluginsProfileTitle.
    ///
    /// In zh, this message translates to:
@@ -106976,7 +107133,7 @@ index 05ad2de7..fcfea016 100644
    String get pluginsProfileTitle;
  
    /// No description provided for @pluginsGistTokenInvalid.
-@@ -26483,7 +27245,7 @@ abstract class L10n {
+@@ -26483,7 +27263,7 @@ abstract class L10n {
    /// No description provided for @pluginsNotificationSettingsFailed.
    ///
    /// In zh, this message translates to:
@@ -106985,7 +107142,7 @@ index 05ad2de7..fcfea016 100644
    String get pluginsNotificationSettingsFailed;
  
    /// No description provided for @pluginsSystemNotificationsOff.
-@@ -26951,7 +27713,7 @@ abstract class L10n {
+@@ -26951,7 +27731,7 @@ abstract class L10n {
    /// No description provided for @pluginsPluginShareTitle.
    ///
    /// In zh, this message translates to:
@@ -106994,7 +107151,7 @@ index 05ad2de7..fcfea016 100644
    String get pluginsPluginShareTitle;
  
    /// No description provided for @pluginsShareSheetOpenFailed.
-@@ -27371,7 +28133,7 @@ abstract class L10n {
+@@ -27371,7 +28151,7 @@ abstract class L10n {
    /// No description provided for @plugslotsIssueNeedsApp.
    ///
    /// In zh, this message translates to:
@@ -107003,7 +107160,7 @@ index 05ad2de7..fcfea016 100644
    String plugslotsIssueNeedsApp(String version);
  
    /// No description provided for @plugslotsIssueNewerProtocol.
-@@ -28217,7 +28979,7 @@ abstract class L10n {
+@@ -28217,7 +28997,7 @@ abstract class L10n {
    /// No description provided for @remoteErrUpdateNeeded.
    ///
    /// In zh, this message translates to:
@@ -107012,7 +107169,7 @@ index 05ad2de7..fcfea016 100644
    String get remoteErrUpdateNeeded;
  
    /// No description provided for @remoteErrVersionIncompatible.
-@@ -30773,7 +31535,7 @@ abstract class L10n {
+@@ -30773,7 +31553,7 @@ abstract class L10n {
    /// No description provided for @remotePairNeedsDeepSeekBody.
    ///
    /// In zh, this message translates to:
@@ -107021,7 +107178,7 @@ index 05ad2de7..fcfea016 100644
    String get remotePairNeedsDeepSeekBody;
  
    /// No description provided for @remotePairScanHint.
-@@ -30947,7 +31709,7 @@ abstract class L10n {
+@@ -30947,7 +31727,7 @@ abstract class L10n {
    /// No description provided for @remotePairOtherServerBody.
    ///
    /// In zh, this message translates to:
@@ -107030,7 +107187,7 @@ index 05ad2de7..fcfea016 100644
    String remotePairOtherServerBody(String server);
  
    /// No description provided for @remotePairSwitchServer.
-@@ -30965,7 +31727,7 @@ abstract class L10n {
+@@ -30965,7 +31745,7 @@ abstract class L10n {
    /// No description provided for @remotePairErrInvalidCode.
    ///
    /// In zh, this message translates to:
@@ -107039,7 +107196,7 @@ index 05ad2de7..fcfea016 100644
    String get remotePairErrInvalidCode;
  
    /// No description provided for @remotePairErrOtherServer.
-@@ -31151,7 +31913,7 @@ abstract class L10n {
+@@ -31151,7 +31931,7 @@ abstract class L10n {
    /// No description provided for @riskPetOverlayBody.
    ///
    /// In zh, this message translates to:
@@ -107048,7 +107205,7 @@ index 05ad2de7..fcfea016 100644
    String get riskPetOverlayBody;
  
    /// No description provided for @riskPetOverlayAction.
-@@ -31181,25 +31943,25 @@ abstract class L10n {
+@@ -31181,25 +31961,25 @@ abstract class L10n {
    /// No description provided for @askAiAboutApp.
    ///
    /// In zh, this message translates to:
@@ -107078,7 +107235,7 @@ index 05ad2de7..fcfea016 100644
    String get askAiQuestionOverview;
  
    /// No description provided for @askAiQuestionPhoneControl.
-@@ -33785,7 +34547,7 @@ abstract class L10n {
+@@ -33785,7 +34565,7 @@ abstract class L10n {
    /// No description provided for @shellSkillInstallPrompt.
    ///
    /// In zh, this message translates to:
@@ -107087,7 +107244,7 @@ index 05ad2de7..fcfea016 100644
    String shellSkillInstallPrompt(String skill);
  
    /// No description provided for @shellSkillInstallDirectory.
-@@ -34502,6 +35264,12 @@ abstract class L10n {
+@@ -34502,6 +35282,12 @@ abstract class L10n {
    /// **'通话设置'**
    String get speechCallSettings;
  
@@ -107100,7 +107257,7 @@ index 05ad2de7..fcfea016 100644
    /// No description provided for @speechCallPause.
    ///
    /// In zh, this message translates to:
-@@ -34628,16 +35396,124 @@ abstract class L10n {
+@@ -34628,16 +35414,124 @@ abstract class L10n {
    /// **'光球'**
    String get speechCallVisualGlass;
  
@@ -107226,7 +107383,7 @@ index 05ad2de7..fcfea016 100644
    String starPromptTitle(int hours);
  
    /// No description provided for @starPromptBody.
-@@ -34673,7 +35549,7 @@ abstract class L10n {
+@@ -34673,7 +35567,7 @@ abstract class L10n {
    /// No description provided for @starSettingsTitle.
    ///
    /// In zh, this message translates to:
@@ -107235,7 +107392,7 @@ index 05ad2de7..fcfea016 100644
    String get starSettingsTitle;
  
    /// No description provided for @hubStartPage.
-@@ -34727,7 +35603,7 @@ abstract class L10n {
+@@ -34727,7 +35621,7 @@ abstract class L10n {
    /// No description provided for @stateDiagnosticsSubject.
    ///
    /// In zh, this message translates to:
@@ -107244,7 +107401,7 @@ index 05ad2de7..fcfea016 100644
    String get stateDiagnosticsSubject;
  
    /// No description provided for @stateStoragePermission.
-@@ -37037,7 +37913,7 @@ abstract class L10n {
+@@ -37037,7 +37931,7 @@ abstract class L10n {
    /// No description provided for @systemActionsOffScreen.
    ///
    /// In zh, this message translates to:
@@ -107253,7 +107410,7 @@ index 05ad2de7..fcfea016 100644
    String get systemActionsOffScreen;
  
    /// No description provided for @systemActionsConnecting.
-@@ -37079,13 +37955,13 @@ abstract class L10n {
+@@ -37079,13 +37973,13 @@ abstract class L10n {
    /// No description provided for @systemActionsOnScreenTitle.
    ///
    /// In zh, this message translates to:
@@ -107269,7 +107426,7 @@ index 05ad2de7..fcfea016 100644
    String get systemActionsOnScreenBody;
  
    /// No description provided for @systemActionsCanTitle.
-@@ -37289,7 +38165,7 @@ abstract class L10n {
+@@ -37289,7 +38183,7 @@ abstract class L10n {
    /// No description provided for @systemActionsDisclosureWhenBody.
    ///
    /// In zh, this message translates to:
@@ -107278,7 +107435,7 @@ index 05ad2de7..fcfea016 100644
    String get systemActionsDisclosureWhenBody;
  
    /// No description provided for @systemActionsDisclosureWhoTitle.
-@@ -37337,7 +38213,7 @@ abstract class L10n {
+@@ -37337,7 +38231,7 @@ abstract class L10n {
    /// No description provided for @systemActionsHandoffNote.
    ///
    /// In zh, this message translates to:
@@ -107287,7 +107444,7 @@ index 05ad2de7..fcfea016 100644
    String get systemActionsHandoffNote;
  
    /// No description provided for @systemActionsHandoffFailed.
-@@ -37391,7 +38267,7 @@ abstract class L10n {
+@@ -37391,7 +38285,7 @@ abstract class L10n {
    /// No description provided for @systemActionsResultOffScreen.
    ///
    /// In zh, this message translates to:
@@ -107296,7 +107453,7 @@ index 05ad2de7..fcfea016 100644
    String get systemActionsResultOffScreen;
  
    /// No description provided for @systemActionsResultUnavailable.
-@@ -39413,7 +40289,7 @@ abstract class L10n {
+@@ -39413,7 +40307,7 @@ abstract class L10n {
    /// No description provided for @tavernStorybookMadeWith.
    ///
    /// In zh, this message translates to:
@@ -107305,7 +107462,7 @@ index 05ad2de7..fcfea016 100644
    String get tavernStorybookMadeWith;
  
    /// No description provided for @tavernStorybookContents.
-@@ -44387,7 +45263,7 @@ abstract class L10n {
+@@ -44387,7 +45281,7 @@ abstract class L10n {
    /// No description provided for @updateSettingsOpenFailedMessage.
    ///
    /// In zh, this message translates to:
@@ -107314,7 +107471,7 @@ index 05ad2de7..fcfea016 100644
    String get updateSettingsOpenFailedMessage;
  
    /// No description provided for @updateInstallCancelled.
-@@ -44423,7 +45299,7 @@ abstract class L10n {
+@@ -44423,7 +45317,7 @@ abstract class L10n {
    /// No description provided for @updateSignatureMismatchMessage.
    ///
    /// In zh, this message translates to:
@@ -107323,7 +107480,7 @@ index 05ad2de7..fcfea016 100644
    String get updateSignatureMismatchMessage;
  
    /// No description provided for @updateWrongPackage.
-@@ -44537,7 +45413,7 @@ abstract class L10n {
+@@ -44537,7 +45431,7 @@ abstract class L10n {
    /// No description provided for @updateInstallKeepsData.
    ///
    /// In zh, this message translates to:
@@ -107332,7 +107489,7 @@ index 05ad2de7..fcfea016 100644
    String get updateInstallKeepsData;
  
    /// No description provided for @updateNoCompatiblePackage.
-@@ -44603,7 +45479,7 @@ abstract class L10n {
+@@ -44603,7 +45497,7 @@ abstract class L10n {
    /// No description provided for @updateAllowInstall.
    ///
    /// In zh, this message translates to:
@@ -107341,7 +107498,7 @@ index 05ad2de7..fcfea016 100644
    String get updateAllowInstall;
  
    /// No description provided for @updateAllowInstallMessage.
-@@ -44735,7 +45611,7 @@ abstract class L10n {
+@@ -44735,7 +45629,7 @@ abstract class L10n {
    /// No description provided for @usageStatsSection.
    ///
    /// In zh, this message translates to:
@@ -107350,7 +107507,7 @@ index 05ad2de7..fcfea016 100644
    String get usageStatsSection;
  
    /// No description provided for @usageStatsFooter.
-@@ -44753,7 +45629,7 @@ abstract class L10n {
+@@ -44753,7 +45647,7 @@ abstract class L10n {
    /// No description provided for @usageUpgradeNotice.
    ///
    /// In zh, this message translates to:
@@ -107359,7 +107516,7 @@ index 05ad2de7..fcfea016 100644
    String get usageUpgradeNotice;
  
    /// No description provided for @usageUpgradeLearn.
-@@ -45845,7 +46721,7 @@ abstract class L10n {
+@@ -45845,7 +46739,7 @@ abstract class L10n {
    /// No description provided for @viewTipShareIn.
    ///
    /// In zh, this message translates to:
@@ -107368,7 +107525,7 @@ index 05ad2de7..fcfea016 100644
    String get viewTipShareIn;
  
    /// No description provided for @viewTipShareSelect.
-@@ -46265,7 +47141,7 @@ abstract class L10n {
+@@ -46265,7 +47159,7 @@ abstract class L10n {
    /// No description provided for @viewContinueHeader.
    ///
    /// In zh, this message translates to:
@@ -107377,7 +107534,7 @@ index 05ad2de7..fcfea016 100644
    String viewContinueHeader(String value);
  
    /// No description provided for @viewContinueUser.
-@@ -46361,7 +47237,7 @@ abstract class L10n {
+@@ -46361,7 +47255,7 @@ abstract class L10n {
    /// No description provided for @viewShareLinkText.
    ///
    /// In zh, this message translates to:
@@ -107386,7 +107543,7 @@ index 05ad2de7..fcfea016 100644
    String viewShareLinkText(String first, String second);
  
    /// No description provided for @viewShareEmpty.
-@@ -46385,7 +47261,7 @@ abstract class L10n {
+@@ -46385,7 +47279,7 @@ abstract class L10n {
    /// No description provided for @viewShareFileHint.
    ///
    /// In zh, this message translates to:
@@ -107395,7 +107552,7 @@ index 05ad2de7..fcfea016 100644
    String get viewShareFileHint;
  
    /// No description provided for @viewShareWebHint.
-@@ -47684,6 +48560,12 @@ abstract class L10n {
+@@ -47684,6 +48578,12 @@ abstract class L10n {
    /// **'压暗'**
    String get wallpaperDim;
  
@@ -107408,7 +107565,7 @@ index 05ad2de7..fcfea016 100644
    /// No description provided for @wallpaperReplace.
    ///
    /// In zh, this message translates to:
-@@ -48203,7 +49085,7 @@ abstract class L10n {
+@@ -48203,7 +49103,7 @@ abstract class L10n {
    /// No description provided for @workshopMinApp.
    ///
    /// In zh, this message translates to:
@@ -107418,7 +107575,7 @@ index 05ad2de7..fcfea016 100644
  
    /// No description provided for @workshopInstalledVersion.
 diff --git a/app/lib/l10n/gen/app_localizations_en.dart b/app/lib/l10n/gen/app_localizations_en.dart
-index 546fef86..1b2201c4 100644
+index 546fef86..a68c3b8c 100644
 --- a/app/lib/l10n/gen/app_localizations_en.dart
 +++ b/app/lib/l10n/gen/app_localizations_en.dart
 @@ -1707,6 +1707,238 @@ class L10nEn extends L10n {
@@ -107686,7 +107843,7 @@ index 546fef86..1b2201c4 100644
    @override
    String get phoneControlRules => 'Rules';
  
-@@ -13575,6 +13819,123 @@ class L10nEn extends L10n {
+@@ -13575,6 +13819,134 @@ class L10nEn extends L10n {
    @override
    String get phoneIosNeedsSetup => 'The runner is not ready. Check the local engine and developer setup.';
  
@@ -107807,10 +107964,21 @@ index 546fef86..1b2201c4 100644
 +    return 'Save failed: $reason';
 +  }
 +
++  @override
++  String get teachPaused => 'Paused';
++
++  @override
++  String teachPausedSub(int count) {
++    return '$count steps recorded; try it yourself before resuming';
++  }
++
++  @override
++  String get teachResume => 'Resume';
++
    @override
    String get phoneTaskResultReady => 'Task complete · View result';
  
-@@ -13800,6 +14161,52 @@ class L10nEn extends L10n {
+@@ -13800,6 +14172,52 @@ class L10nEn extends L10n {
    @override
    String get phoneSkillUnavailable => 'Skill drafts are unavailable. Check the local engine state and try again.';
  
@@ -107863,7 +108031,7 @@ index 546fef86..1b2201c4 100644
    @override
    String get phoneModeTitle => 'How DSH confirms';
  
-@@ -19818,6 +20225,9 @@ class L10nEn extends L10n {
+@@ -19818,6 +20236,9 @@ class L10nEn extends L10n {
    @override
    String get speechCallSettings => 'Call settings';
  
@@ -107873,7 +108041,7 @@ index 546fef86..1b2201c4 100644
    @override
    String get speechCallPause => 'Pause before she answers';
  
-@@ -19883,9 +20293,65 @@ class L10nEn extends L10n {
+@@ -19883,9 +20304,65 @@ class L10nEn extends L10n {
    @override
    String get speechCallVisualGlass => 'Orb';
  
@@ -107939,7 +108107,7 @@ index 546fef86..1b2201c4 100644
    @override
    String starPromptTitle(int hours) {
      String _temp0 = intl.Intl.pluralLogic(
-@@ -27559,6 +28025,9 @@ class L10nEn extends L10n {
+@@ -27559,6 +28036,9 @@ class L10nEn extends L10n {
    @override
    String get wallpaperDim => 'Dim';
  
@@ -107950,7 +108118,7 @@ index 546fef86..1b2201c4 100644
    String get wallpaperReplace => 'Replace picture';
  
 diff --git a/app/lib/l10n/gen/app_localizations_zh.dart b/app/lib/l10n/gen/app_localizations_zh.dart
-index c66b20de..765ad515 100644
+index c66b20de..2404f253 100644
 --- a/app/lib/l10n/gen/app_localizations_zh.dart
 +++ b/app/lib/l10n/gen/app_localizations_zh.dart
 @@ -19,10 +19,10 @@ class L10nZh extends L10n {
@@ -108569,7 +108737,7 @@ index c66b20de..765ad515 100644
  
    @override
    String get phoneInterruptionTitle => '上次手机任务未确认结束';
-@@ -12892,6 +13135,119 @@ class L10nZh extends L10n {
+@@ -12892,6 +13135,130 @@ class L10nZh extends L10n {
    @override
    String get phoneIosNeedsSetup => '运行器尚未就绪，请确认本机引擎和开发者环境已配置。';
  
@@ -108686,10 +108854,21 @@ index c66b20de..765ad515 100644
 +    return '保存失败：$reason';
 +  }
 +
++  @override
++  String get teachPaused => '已暂停';
++
++  @override
++  String teachPausedSub(int count) {
++    return '已记录 $count 步，继续前可以先自己试一遍';
++  }
++
++  @override
++  String get teachResume => '继续';
++
    @override
    String get phoneTaskResultReady => '任务完成 · 查看结果';
  
-@@ -12905,13 +13261,13 @@ class L10nZh extends L10n {
+@@ -12905,13 +13272,13 @@ class L10nZh extends L10n {
    String get phoneBackgroundGuideSubtitle => '让确认卡和任务结果及时出现';
  
    @override
@@ -108706,7 +108885,7 @@ index c66b20de..765ad515 100644
  
    @override
    String get phoneBackgroundGotIt => '知道了';
-@@ -12923,7 +13279,7 @@ class L10nZh extends L10n {
+@@ -12923,7 +13290,7 @@ class L10nZh extends L10n {
    String get phoneBackgroundNotificationBlocked => '请允许手机操控通知的弹出提醒';
  
    @override
@@ -108715,7 +108894,7 @@ index c66b20de..765ad515 100644
  
    @override
    String get phonePrivilegedSui => 'Sui';
-@@ -12956,11 +13312,11 @@ class L10nZh extends L10n {
+@@ -12956,11 +13323,11 @@ class L10nZh extends L10n {
    String get phonePrivilegedSuggested => '建议';
  
    @override
@@ -108729,7 +108908,7 @@ index c66b20de..765ad515 100644
  
    @override
    String phoneKeepTitle(String mode) {
-@@ -12975,13 +13331,13 @@ class L10nZh extends L10n {
+@@ -12975,13 +13342,13 @@ class L10nZh extends L10n {
    }
  
    @override
@@ -108746,7 +108925,7 @@ index c66b20de..765ad515 100644
  
    @override
    String get phoneKeepRestoring => '正在重新连接';
-@@ -13098,6 +13454,51 @@ class L10nZh extends L10n {
+@@ -13098,6 +13465,51 @@ class L10nZh extends L10n {
    @override
    String get phoneSkillUnavailable => '当前无法处理技能草稿。请检查本机引擎状态后重试。';
  
@@ -108798,7 +108977,7 @@ index c66b20de..765ad515 100644
    @override
    String get phoneModeTitle => '选择确认方式';
  
-@@ -13120,7 +13521,7 @@ class L10nZh extends L10n {
+@@ -13120,7 +13532,7 @@ class L10nZh extends L10n {
    String get phoneModeAutoNoteTitle => '这些仍由你来操作';
  
    @override
@@ -108807,7 +108986,7 @@ index c66b20de..765ad515 100644
  
    @override
    String get phoneModeAutoUnlockNote => '如需让 AI 操作系统设置、密码等，可在 设置 › 手机操控 › 解除限制 中开启。';
-@@ -13138,7 +13539,7 @@ class L10nZh extends L10n {
+@@ -13138,7 +13550,7 @@ class L10nZh extends L10n {
    String get phoneYoursSecrets => '密码和验证码';
  
    @override
@@ -108816,7 +108995,7 @@ index c66b20de..765ad515 100644
  
    @override
    String get phoneYoursDenyList => '应用名单里「不碰」的 App，默认含银行、支付类';
-@@ -13162,10 +13563,10 @@ class L10nZh extends L10n {
+@@ -13162,10 +13574,10 @@ class L10nZh extends L10n {
    String get phoneUnlockSecretsHint => '填写密码、验证码和支付密码';
  
    @override
@@ -108829,7 +109008,7 @@ index c66b20de..765ad515 100644
  
    @override
    String get phoneUnlockBusy => '任务进行中，结束后才能开启';
-@@ -13198,7 +13599,7 @@ class L10nZh extends L10n {
+@@ -13198,7 +13610,7 @@ class L10nZh extends L10n {
    String get phoneUnlockConfirmSecretsTitle => '允许 AI 填写密码和验证码？';
  
    @override
@@ -108838,7 +109017,7 @@ index c66b20de..765ad515 100644
  
    @override
    String get phoneUnlockCanTitle => '开启后，AI 可以';
-@@ -13240,10 +13641,10 @@ class L10nZh extends L10n {
+@@ -13240,10 +13652,10 @@ class L10nZh extends L10n {
    String get phoneUnlockSecretsRisk2 => '可能完成你并不想要的付款或转账';
  
    @override
@@ -108851,7 +109030,7 @@ index c66b20de..765ad515 100644
  
    @override
    String get phoneUnlockOwnAppRisk1 => '恶意指令可能诱导 AI 批准它自己发起的操作，或关掉确认';
-@@ -13258,7 +13659,7 @@ class L10nZh extends L10n {
+@@ -13258,7 +13670,7 @@ class L10nZh extends L10n {
    String get phoneUnlockDisclaimer2 => 'AI 可能被网页、消息或文件中的内容误导。';
  
    @override
@@ -108860,7 +109039,7 @@ index c66b20de..765ad515 100644
  
    @override
    String get phoneUnlockDisclaimer4 => '建议只在需要时临时开启，用完关闭。';
-@@ -13757,7 +14158,7 @@ class L10nZh extends L10n {
+@@ -13757,7 +14169,7 @@ class L10nZh extends L10n {
    String get pluginsFileWriteFailed => '没能写入文件';
  
    @override
@@ -108869,7 +109048,7 @@ index c66b20de..765ad515 100644
  
    @override
    String get pluginsGistTokenInvalid => 'GitHub 令牌无效或没有 Gist 权限';
-@@ -14341,7 +14742,7 @@ class L10nZh extends L10n {
+@@ -14341,7 +14753,7 @@ class L10nZh extends L10n {
    String get pluginsNotifications => '通知';
  
    @override
@@ -108878,7 +109057,7 @@ index c66b20de..765ad515 100644
  
    @override
    String get pluginsSystemNotificationsOff => '系统通知已关闭';
-@@ -14595,7 +14996,7 @@ class L10nZh extends L10n {
+@@ -14595,7 +15007,7 @@ class L10nZh extends L10n {
    String get pluginsShareOpenFailed => '没能打开这个分享码';
  
    @override
@@ -108887,7 +109066,7 @@ index c66b20de..765ad515 100644
  
    @override
    String get pluginsShareSheetOpenFailed => '没能打开分享';
-@@ -14855,7 +15256,7 @@ class L10nZh extends L10n {
+@@ -14855,7 +15267,7 @@ class L10nZh extends L10n {
  
    @override
    String plugslotsIssueNeedsApp(String version) {
@@ -108896,7 +109075,7 @@ index c66b20de..765ad515 100644
    }
  
    @override
-@@ -15338,7 +15739,7 @@ class L10nZh extends L10n {
+@@ -15338,7 +15750,7 @@ class L10nZh extends L10n {
    String get remoteErrHostNotOwned => '主机不在你的 DSH Remote 账号下';
  
    @override
@@ -108905,7 +109084,7 @@ index c66b20de..765ad515 100644
  
    @override
    String get remoteErrVersionIncompatible => '主机上的 DSH 或远程插件需要更新';
-@@ -16772,7 +17173,7 @@ class L10nZh extends L10n {
+@@ -16772,7 +17184,7 @@ class L10nZh extends L10n {
    String get remotePairNeedsDeepSeek => '先登录 DeepSeek 账号';
  
    @override
@@ -108914,7 +109093,7 @@ index c66b20de..765ad515 100644
  
    @override
    String get remotePairScanHint => '对准电脑上 Remote 插件显示的配对二维码';
-@@ -16866,7 +17267,7 @@ class L10nZh extends L10n {
+@@ -16866,7 +17278,7 @@ class L10nZh extends L10n {
  
    @override
    String remotePairOtherServerBody(String server) {
@@ -108923,7 +109102,7 @@ index c66b20de..765ad515 100644
    }
  
    @override
-@@ -16876,7 +17277,7 @@ class L10nZh extends L10n {
+@@ -16876,7 +17288,7 @@ class L10nZh extends L10n {
    String get remotePairScanAgain => '重新扫码';
  
    @override
@@ -108932,7 +109111,7 @@ index c66b20de..765ad515 100644
  
    @override
    String get remotePairErrOtherServer => '这个二维码来自另一个 Remote 服务器';
-@@ -16971,7 +17372,7 @@ class L10nZh extends L10n {
+@@ -16971,7 +17383,7 @@ class L10nZh extends L10n {
    String get riskPetOverlayTitle => '显示在其他应用上层？';
  
    @override
@@ -108941,7 +109120,7 @@ index c66b20de..765ad515 100644
  
    @override
    String get riskPetOverlayAction => '去设置';
-@@ -16987,19 +17388,19 @@ class L10nZh extends L10n {
+@@ -16987,19 +17399,19 @@ class L10nZh extends L10n {
  
    @override
    String askAiAboutApp(String question) {
@@ -108965,7 +109144,7 @@ index c66b20de..765ad515 100644
  
    @override
    String get askAiQuestionPhoneControl => '手机操控是怎么工作的？有什么风险？';
-@@ -18389,7 +18790,7 @@ class L10nZh extends L10n {
+@@ -18389,7 +18801,7 @@ class L10nZh extends L10n {
  
    @override
    String shellSkillInstallPrompt(String skill) {
@@ -108974,7 +109153,7 @@ index c66b20de..765ad515 100644
    }
  
    @override
-@@ -18775,6 +19176,9 @@ class L10nZh extends L10n {
+@@ -18775,6 +19187,9 @@ class L10nZh extends L10n {
    @override
    String get speechCallSettings => '通话设置';
  
@@ -108984,7 +109163,7 @@ index c66b20de..765ad515 100644
    @override
    String get speechCallPause => '停顿多久算说完';
  
-@@ -18838,17 +19242,71 @@ class L10nZh extends L10n {
+@@ -18838,17 +19253,71 @@ class L10nZh extends L10n {
    @override
    String get speechCallVisualGlass => '光球';
  
@@ -109059,7 +109238,7 @@ index c66b20de..765ad515 100644
      );
      return '$_temp0';
    }
-@@ -18869,7 +19327,7 @@ class L10nZh extends L10n {
+@@ -18869,7 +19338,7 @@ class L10nZh extends L10n {
    String get starPromptLater => '下次再说';
  
    @override
@@ -109068,7 +109247,7 @@ index c66b20de..765ad515 100644
  
    @override
    String get hubStartPage => '起始页';
-@@ -18898,7 +19356,7 @@ class L10nZh extends L10n {
+@@ -18898,7 +19367,7 @@ class L10nZh extends L10n {
    String get phoneStartupPortNotReady => '已收到启动标记，但本机服务端口尚未就绪，请查看日志';
  
    @override
@@ -109077,7 +109256,7 @@ index c66b20de..765ad515 100644
  
    @override
    String get stateStoragePermission => '没有存储权限，存不进「下载」';
-@@ -20159,7 +20617,7 @@ class L10nZh extends L10n {
+@@ -20159,7 +20628,7 @@ class L10nZh extends L10n {
    String get systemActionsWaitingEngine => '已开启，等本机引擎启动';
  
    @override
@@ -109086,7 +109265,7 @@ index c66b20de..765ad515 100644
  
    @override
    String get systemActionsConnecting => '正在连接';
-@@ -20180,10 +20638,10 @@ class L10nZh extends L10n {
+@@ -20180,10 +20649,10 @@ class L10nZh extends L10n {
    String get systemActionsRemoteHint => '系统操作只在本机引擎的对话里有效';
  
    @override
@@ -109099,7 +109278,7 @@ index c66b20de..765ad515 100644
  
    @override
    String get systemActionsCanTitle => '能做的';
-@@ -20285,7 +20743,7 @@ class L10nZh extends L10n {
+@@ -20285,7 +20754,7 @@ class L10nZh extends L10n {
    String get systemActionsDisclosureWhenTitle => '什么时候做';
  
    @override
@@ -109108,7 +109287,7 @@ index c66b20de..765ad515 100644
  
    @override
    String get systemActionsDisclosureWhoTitle => '发给谁';
-@@ -20309,7 +20767,7 @@ class L10nZh extends L10n {
+@@ -20309,7 +20778,7 @@ class L10nZh extends L10n {
    String get systemActionsHandoffTitle => '轮到你来操作';
  
    @override
@@ -109117,7 +109296,7 @@ index c66b20de..765ad515 100644
  
    @override
    String get systemActionsHandoffFailed => '这次没算上，提示如果还在可以再点一次';
-@@ -20336,7 +20794,7 @@ class L10nZh extends L10n {
+@@ -20336,7 +20805,7 @@ class L10nZh extends L10n {
    String get systemActionsResultUnsupported => '鸿蒙版不支持这个动作，没有执行。';
  
    @override
@@ -109126,7 +109305,7 @@ index c66b20de..765ad515 100644
  
    @override
    String get systemActionsResultUnavailable => '系统操作没开或暂时连不上，没有执行。到「设置 → 系统操作」看看。';
-@@ -21440,7 +21898,7 @@ class L10nZh extends L10n {
+@@ -21440,7 +21909,7 @@ class L10nZh extends L10n {
    }
  
    @override
@@ -109135,7 +109314,7 @@ index c66b20de..765ad515 100644
  
    @override
    String get tavernStorybookContents => '目录';
-@@ -24200,7 +24658,7 @@ class L10nZh extends L10n {
+@@ -24200,7 +24669,7 @@ class L10nZh extends L10n {
    String get updateSettingsOpenFailed => '没能打开系统设置';
  
    @override
@@ -109144,7 +109323,7 @@ index c66b20de..765ad515 100644
  
    @override
    String get updateInstallCancelled => '已取消安装';
-@@ -24218,7 +24676,7 @@ class L10nZh extends L10n {
+@@ -24218,7 +24687,7 @@ class L10nZh extends L10n {
    String get updateSignatureMismatch => '签名不一致，不能直接覆盖';
  
    @override
@@ -109153,7 +109332,7 @@ index c66b20de..765ad515 100644
  
    @override
    String get updateWrongPackage => '不是 DSH 的安装包';
-@@ -24281,7 +24739,7 @@ class L10nZh extends L10n {
+@@ -24281,7 +24750,7 @@ class L10nZh extends L10n {
    String get updateNoReleaseNotes => '这个版本没有写更新说明。';
  
    @override
@@ -109162,7 +109341,7 @@ index c66b20de..765ad515 100644
  
    @override
    String get updateNoCompatiblePackage => '没有适合本机的安装包';
-@@ -24316,7 +24774,7 @@ class L10nZh extends L10n {
+@@ -24316,7 +24785,7 @@ class L10nZh extends L10n {
    String get updateReadyToInstall => '校验通过，可以安装了。';
  
    @override
@@ -109171,7 +109350,7 @@ index c66b20de..765ad515 100644
  
    @override
    String get updateAllowInstallMessage => '在系统设置里打开「安装未知应用」，回来后自动继续。';
-@@ -24389,7 +24847,7 @@ class L10nZh extends L10n {
+@@ -24389,7 +24858,7 @@ class L10nZh extends L10n {
    String get usageStatsTitle => '发送匿名使用统计';
  
    @override
@@ -109180,7 +109359,7 @@ index c66b20de..765ad515 100644
  
    @override
    String get usageStatsFooter =>
-@@ -24399,7 +24857,7 @@ class L10nZh extends L10n {
+@@ -24399,7 +24868,7 @@ class L10nZh extends L10n {
    String get usageNoticeBody => '不含对话和个人信息，可随时关闭';
  
    @override
@@ -109189,7 +109368,7 @@ index c66b20de..765ad515 100644
  
    @override
    String get usageUpgradeLearn => '了解';
-@@ -25081,7 +25539,7 @@ class L10nZh extends L10n {
+@@ -25081,7 +25550,7 @@ class L10nZh extends L10n {
    String get viewTipKeyboard => '接了键盘：Ctrl+Enter 发送，连按两次 Esc 停止';
  
    @override
@@ -109198,7 +109377,7 @@ index c66b20de..765ad515 100644
  
    @override
    String get viewTipShareSelect => '分享对话时长按再滑动，可以一次选中多条消息';
-@@ -25318,7 +25776,7 @@ class L10nZh extends L10n {
+@@ -25318,7 +25787,7 @@ class L10nZh extends L10n {
  
    @override
    String viewContinueHeader(String value) {
@@ -109207,7 +109386,7 @@ index c66b20de..765ad515 100644
    }
  
    @override
-@@ -25372,7 +25830,7 @@ class L10nZh extends L10n {
+@@ -25372,7 +25841,7 @@ class L10nZh extends L10n {
  
    @override
    String viewShareLinkText(String first, String second) {
@@ -109216,7 +109395,7 @@ index c66b20de..765ad515 100644
    }
  
    @override
-@@ -25389,7 +25847,7 @@ class L10nZh extends L10n {
+@@ -25389,7 +25858,7 @@ class L10nZh extends L10n {
    }
  
    @override
@@ -109225,7 +109404,7 @@ index c66b20de..765ad515 100644
  
    @override
    String get viewShareWebHint => '任何浏览器都能打开，不用联网';
-@@ -26148,6 +26606,9 @@ class L10nZh extends L10n {
+@@ -26148,6 +26617,9 @@ class L10nZh extends L10n {
    @override
    String get wallpaperDim => '压暗';
  
@@ -109235,7 +109414,7 @@ index c66b20de..765ad515 100644
    @override
    String get wallpaperReplace => '更换图片';
  
-@@ -26414,7 +26875,7 @@ class L10nZh extends L10n {
+@@ -26414,7 +26886,7 @@ class L10nZh extends L10n {
  
    @override
    String workshopMinApp(String version) {
@@ -109743,7 +109922,7 @@ index b1175369..0c5f743b 100644
 +  "phonePrivilegedRootRiskBody": "root 管理器（Magisk、KernelSU 或 APatch）会弹窗问你。允许后，空空 以 root 运行自己的后台服务；只有打开「保持 root 通道」，断开或重启后才会自己再去申请。"
  }
 diff --git a/app/lib/l10n/parts/phone_en.arb b/app/lib/l10n/parts/phone_en.arb
-index 47d0cdf6..81ceed54 100644
+index 47d0cdf6..d3f9ae84 100644
 --- a/app/lib/l10n/parts/phone_en.arb
 +++ b/app/lib/l10n/parts/phone_en.arb
 @@ -253,6 +253,9 @@
@@ -109756,7 +109935,7 @@ index 47d0cdf6..81ceed54 100644
    "phoneControlRules": "Rules",
    "phoneControlRecentActions": "Recent actions",
    "phoneControlRecentActionsHint": "Every step is logged, without screen contents",
-@@ -690,5 +693,71 @@
+@@ -690,5 +693,81 @@
    "phoneIosServiceHint": "Starts on demand after approval and stops when the task ends, closing the system’s “Automation Running” indicator.",
    "phoneIosSetupHint": "Keep LocalDevVPN connected. On first use, allow control for 30 minutes.",
    "phoneIosReturnHint": "Return to this conversation when the task finishes, then stop the phone-control service.",
@@ -109826,6 +110005,16 @@ index 47d0cdf6..81ceed54 100644
 +    "placeholders": {
 +      "reason": {
 +        "type": "String"
++      }
++    }
++  },
++  "teachPaused": "Paused",
++  "teachPausedSub": "{count} steps recorded; try it yourself before resuming",
++  "teachResume": "Resume",
++  "@teachPausedSub": {
++    "placeholders": {
++      "count": {
++        "type": "int"
 +      }
 +    }
 +  }
@@ -109901,7 +110090,7 @@ index 40aa7258..9d400d53 100644
 +  "phoneSkillSaveFailed": "保存失败，请重试"
  }
 diff --git a/app/lib/l10n/parts/phone_zh.arb b/app/lib/l10n/parts/phone_zh.arb
-index 4d61a2d3..045dfb82 100644
+index 4d61a2d3..2610f126 100644
 --- a/app/lib/l10n/parts/phone_zh.arb
 +++ b/app/lib/l10n/parts/phone_zh.arb
 @@ -131,7 +131,7 @@
@@ -110053,7 +110242,7 @@ index 4d61a2d3..045dfb82 100644
    "@phoneTaskWaiting": {
      "placeholders": {
        "taskId": {
-@@ -919,5 +922,71 @@
+@@ -919,5 +922,81 @@
    "phoneIosServiceHint": "授权后按需启动。任务结束会停止服务，系统的“Automation Running”提示也会结束。",
    "phoneIosSetupHint": "保持 LocalDevVPN 已连接，首次使用时允许 30 分钟操控。",
    "phoneIosReturnHint": "任务完成后回到当前对话，并停止手机操控服务。",
@@ -110123,6 +110312,16 @@ index 4d61a2d3..045dfb82 100644
 +    "placeholders": {
 +      "reason": {
 +        "type": "String"
++      }
++    }
++  },
++  "teachPaused": "已暂停",
++  "teachPausedSub": "已记录 {count} 步，继续前可以先自己试一遍",
++  "teachResume": "继续",
++  "@teachPausedSub": {
++    "placeholders": {
++      "count": {
++        "type": "int"
 +      }
 +    }
 +  }
@@ -116061,10 +116260,10 @@ index 00000000..d492a5bd
 +}
 diff --git a/app/lib/ui/phone/teach_page.dart b/app/lib/ui/phone/teach_page.dart
 new file mode 100644
-index 00000000..034453b8
+index 00000000..462fe4ac
 --- /dev/null
 +++ b/app/lib/ui/phone/teach_page.dart
-@@ -0,0 +1,227 @@
+@@ -0,0 +1,262 @@
 +// 「教空空」页面：目标输入 → 开始示范 → 用户去手机上操作 → 结束 → 审阅步骤 → 保存技能。
 +
 +import 'dart:async';
@@ -116152,6 +116351,7 @@ index 00000000..034453b8
 +    final l10n = context.l10n;
 +    final snap = _snapshot;
 +    final recording = snap?.recording == true;
++    final paused = snap?.paused == true;
 +    final reviewing = snap?.reviewing == true;
 +
 +    return AppPage.list(
@@ -116166,7 +116366,7 @@ index 00000000..034453b8
 +            ),
 +          ],
 +        ),
-+        if (!recording && !reviewing)
++        if (!recording && !reviewing && !paused)
 +          ListPageCard(
 +            children: [
 +              Padding(
@@ -116217,6 +116417,40 @@ index 00000000..034453b8
 +                    const SizedBox(width: 8),
 +                    Expanded(
 +                      child: FilledButton(
++                        onPressed: _end,
++                        child: Text(l10n.teachEnd),
++                      ),
++                    ),
++                  ],
++                ),
++              ),
++            ],
++          ),
++        if (paused)
++          ListPageCard(
++            children: [
++              ListPageRow(
++                icon: AppIcons.skill,
++                title: l10n.teachPaused,
++                subtitle: l10n.teachPausedSub(snap?.steps.length ?? 0),
++                chevron: false,
++              ),
++              Padding(
++                padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
++                child: Row(
++                  children: [
++                    Expanded(
++                      child: FilledButton(
++                        onPressed: () async {
++                          await channel.resume();
++                          await _refresh();
++                        },
++                        child: Text(l10n.teachResume),
++                      ),
++                    ),
++                    const SizedBox(width: 8),
++                    Expanded(
++                      child: OutlinedButton(
 +                        onPressed: _end,
 +                        child: Text(l10n.teachEnd),
 +                      ),
