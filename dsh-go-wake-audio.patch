@@ -1,10 +1,10 @@
 From: dsh <dsh@local>
-Date: Sat, 28 Nov 2026 15:03:55 +0800
-Subject: [PATCH] 磨砂纯雾罩不卡+三界面全透明+技能保存reason透传
+Date: Sat, 28 Nov 2026 15:05:49 +0800
+Subject: [PATCH] 磨砂纯雾罩不卡+技能reason+快捷方式修复
 
  dsh-go-wake.patch                                  | 2065 +++++++++++++
  tooling/build-wake-apk.sh                          |   68 +
- 401 files changed, 20592 insertions(+), 1321 deletions(-)
+ 401 files changed, 20590 insertions(+), 1319 deletions(-)
 
 diff --git a/.gitattributes b/.gitattributes
 index 52e3e08a..3e877c7e 100644
@@ -28202,7 +28202,7 @@ index 1617f97d..72f31ad1 100644
      android:notificationTimeout="100"
      android:description="@string/phone_a11y_description"
 diff --git a/app/android/app/src/main/res/xml/shortcuts.xml b/app/android/app/src/main/res/xml/shortcuts.xml
-index 3540cb26..9d99e3af 100644
+index 3540cb26..7d528bda 100644
 --- a/app/android/app/src/main/res/xml/shortcuts.xml
 +++ b/app/android/app/src/main/res/xml/shortcuts.xml
 @@ -2,7 +2,8 @@
@@ -28220,10 +28220,9 @@ index 3540cb26..9d99e3af 100644
          android:shortcutLongLabel="@string/shortcut_new_chat">
          <intent
 -            android:action="io.github.ccch1mneyyy.dsh_app.action.NEW_CHAT"
--            android:targetClass="io.github.ccch1mneyyy.dsh_app.shortcuts.EntryActivity"
--            android:targetPackage="io.github.ccch1mneyyy.dsh_app" />
 +            android:action="io.github.ccch1mneyyy.kongkong.action.NEW_CHAT"
-+            android:targetClass="io.github.ccch1mneyyy.kongkong.shortcuts.EntryActivity"
+             android:targetClass="io.github.ccch1mneyyy.dsh_app.shortcuts.EntryActivity"
+-            android:targetPackage="io.github.ccch1mneyyy.dsh_app" />
 +            android:targetPackage="io.github.ccch1mneyyy.kongkong" />
      </shortcut>
      <shortcut
@@ -28233,10 +28232,9 @@ index 3540cb26..9d99e3af 100644
          android:shortcutLongLabel="@string/shortcut_voice_input">
          <intent
 -            android:action="io.github.ccch1mneyyy.dsh_app.action.VOICE_INPUT"
--            android:targetClass="io.github.ccch1mneyyy.dsh_app.shortcuts.EntryActivity"
--            android:targetPackage="io.github.ccch1mneyyy.dsh_app" />
 +            android:action="io.github.ccch1mneyyy.kongkong.action.VOICE_INPUT"
-+            android:targetClass="io.github.ccch1mneyyy.kongkong.shortcuts.EntryActivity"
+             android:targetClass="io.github.ccch1mneyyy.dsh_app.shortcuts.EntryActivity"
+-            android:targetPackage="io.github.ccch1mneyyy.dsh_app" />
 +            android:targetPackage="io.github.ccch1mneyyy.kongkong" />
 +    </shortcut>
 +    <shortcut
@@ -28247,7 +28245,7 @@ index 3540cb26..9d99e3af 100644
 +        android:shortcutLongLabel="@string/shortcut_voice_call">
 +        <intent
 +            android:action="io.github.ccch1mneyyy.kongkong.action.VOICE_CALL"
-+            android:targetClass="io.github.ccch1mneyyy.kongkong.MainActivity"
++            android:targetClass="io.github.ccch1mneyyy.dsh_app.MainActivity"
 +            android:targetPackage="io.github.ccch1mneyyy.kongkong" />
      </shortcut>
  </shortcuts>
