@@ -1,7 +1,7 @@
 == resources ==
-/dev/root       145G   55G   90G  39% /
+/dev/root       145G   56G   89G  39% /
                total        used        free      shared  buff/cache   available
-Mem:           15983        6991         256          50        9130        8991
+Mem:           15983        7094         213          50        9070        8888
 == tail ==
 
 ==> 依赖: flutter pub get
@@ -195,3 +195,7 @@ Note: Some input files use or override a deprecated API.
 Note: Recompile with -Xlint:deprecation for details.
 Note: Some input files use unchecked or unsafe operations.
 Note: Recompile with -Xlint:unchecked for details.
+Running Gradle task 'assembleArm64Release'...                     657.4s
+✓ Built build/app/outputs/flutter-apk/app-arm64-release.apk (236.4MB)
+APK JNI class definitions preserved
+build-apk: arm64: APK says package: name='io.github.ccch1mneyyy.kongkong' versionCode='11281304' versionName='1.1.0' platformBuildVersionName='16' platformBuildVersionCode='36' compileSdkVersion='36' compileSdkVersionCodename='16'; expected versionName '1.1.0' versionCode '11281302'
