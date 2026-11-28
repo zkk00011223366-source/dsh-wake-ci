@@ -1,10 +1,10 @@
 From: dsh <dsh@local>
-Date: Sat, 28 Nov 2026 22:21:45 +0800
-Subject: [PATCH] AI电话+无视锁屏+锁屏自动解锁+熄屏唤醒+教空空+技能模型可调用
+Date: Sat, 28 Nov 2026 22:26:32 +0800
+Subject: [PATCH] AI电话+锁屏+教空空闭环
 
  dsh-go-wake.patch                                  | 2065 +++++++++++++
  tooling/build-wake-apk.sh                          |   68 +
- 428 files changed, 26516 insertions(+), 1390 deletions(-)
+ 428 files changed, 26551 insertions(+), 1391 deletions(-)
 
 diff --git a/.gitattributes b/.gitattributes
 index 52e3e08a..3e877c7e 100644
@@ -11454,15 +11454,20 @@ index 00000000..a9912b42
 +}
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/teach/TeachRuntime.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/teach/TeachRuntime.kt
 new file mode 100644
-index 00000000..f9bd5179
+index 00000000..e70f0537
 --- /dev/null
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/teach/TeachRuntime.kt
-@@ -0,0 +1,214 @@
+@@ -0,0 +1,248 @@
 +package io.github.ccch1mneyyy.dsh_app.phone.teach
 +
++import android.app.Notification
++import android.app.NotificationChannel
++import android.app.NotificationManager
++import android.app.PendingIntent
 +import android.content.Context
++import android.content.Intent
 +import android.view.accessibility.AccessibilityEvent
-+import io.github.ccch1mneyyy.dsh_app.phone.PhoneRegistry
++import io.github.ccch1mneyyy.dsh_app.MainActivity
 +import java.util.UUID
 +import java.util.concurrent.Executors
 +
@@ -11515,6 +11520,7 @@ index 00000000..f9bd5179
 +        if (session?.phase?.blocksTasks() == true) return "busy"
 +        session = TeachSession(newId(), clean, TeachPhase.Recording, updatedAt = System.currentTimeMillis())
 +        save()
++        notifyRecording(clean)
 +        publish()
 +        return null
 +    }
@@ -11559,6 +11565,7 @@ index 00000000..f9bd5179
 +    fun discard() {
 +        session = null
 +        prefs.edit().remove(KEY).apply()
++        cancelNotify()
 +        publish()
 +    }
 +
@@ -11617,12 +11624,39 @@ index 00000000..f9bd5179
 +        null
 +    }
 +
++    private fun notifyRecording(goal: String) {
++        runCatching {
++            val nm = appContext.getSystemService(NotificationManager::class.java)
++            nm.createNotificationChannel(NotificationChannel(CHANNEL, "教空空", NotificationManager.IMPORTANCE_LOW))
++            val open = PendingIntent.getActivity(
++                appContext, 0, Intent(appContext, MainActivity::class.java),
++                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
++            )
++            val n = Notification.Builder(appContext, CHANNEL)
++                .setSmallIcon(android.R.drawable.ic_menu_edit)
++                .setContentTitle("教空空录制中")
++                .setContentText("目标：$goal。操作完回空空点「结束示范」")
++                .setContentIntent(open)
++                .setOngoing(true)
++                .build()
++            nm.notify(NOTIFY_ID, n)
++        }
++    }
++
++    private fun cancelNotify() {
++        runCatching {
++            appContext.getSystemService(NotificationManager::class.java).cancel(NOTIFY_ID)
++        }
++    }
++
 +    private fun newId(): String = UUID.randomUUID().toString().replace("-", "")
 +
 +    private fun String.isSecret(): Boolean = SECRET_HINTS.any { it.containsMatchIn(this) }
 +
 +    private companion object {
 +        const val KEY = "teach.session"
++        const val CHANNEL = "teach-recording"
++        const val NOTIFY_ID = 2911
 +        private val SECRET_HINTS = listOf(
 +            Regex("""验证码|校验码|动态码"""),
 +            Regex("""密码|口令|passcode|password""", RegexOption.IGNORE_CASE),
@@ -30640,12 +30674,15 @@ index 61ba2fd1..5ae1c417 100644
 +    <string name="phone_skill_save_action">Save as skill</string>
  </resources>
 diff --git a/app/android/app/src/main/res/xml/phone_accessibility_service.xml b/app/android/app/src/main/res/xml/phone_accessibility_service.xml
-index 1617f97d..72f31ad1 100644
+index 1617f97d..34dbed8e 100644
 --- a/app/android/app/src/main/res/xml/phone_accessibility_service.xml
 +++ b/app/android/app/src/main/res/xml/phone_accessibility_service.xml
-@@ -8,9 +8,10 @@
+@@ -6,11 +6,12 @@
+      Not an accessibility tool (isAccessibilityTool=false): Play / Play Protect rules, and
+      accessibilityDataSensitive views stay hidden from us, which is the safe side. -->
  <accessibility-service xmlns:android="http://schemas.android.com/apk/res/android"
-     android:accessibilityEventTypes="typeWindowStateChanged|typeWindowContentChanged|typeWindowsChanged|typeViewTextChanged|typeViewScrolled"
+-    android:accessibilityEventTypes="typeWindowStateChanged|typeWindowContentChanged|typeWindowsChanged|typeViewTextChanged|typeViewScrolled"
++    android:accessibilityEventTypes="typeWindowStateChanged|typeWindowContentChanged|typeWindowsChanged|typeViewTextChanged|typeViewScrolled|typeViewClicked|typeViewLongClicked"
      android:accessibilityFeedbackType="feedbackGeneric"
 -    android:accessibilityFlags="flagReportViewIds|flagRetrieveInteractiveWindows|flagIncludeNotImportantViews"
 +    android:accessibilityFlags="flagReportViewIds|flagRetrieveInteractiveWindows|flagIncludeNotImportantViews|flagRequestFilterKeyEvents"
