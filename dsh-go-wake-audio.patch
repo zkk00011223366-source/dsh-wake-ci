@@ -1,10 +1,10 @@
 From: dsh <dsh@local>
-Date: Sat, 28 Nov 2026 11:08:05 +0800
-Subject: [PATCH] 空空 去DSH: 启动页只留图标+最近任务/引擎标签/抽屉/guide技能名
+Date: Sat, 28 Nov 2026 12:40:42 +0800
+Subject: [PATCH] 4r系列: main粘性/冷启动轮询/存技能弹窗/删社区+去DSH+包名kongkong
 
  dsh-go-wake.patch                                  | 2065 +++++++++++++
  tooling/build-wake-apk.sh                          |   68 +
- 347 files changed, 20267 insertions(+), 1197 deletions(-)
+ 347 files changed, 20340 insertions(+), 1209 deletions(-)
 
 diff --git a/.gitattributes b/.gitattributes
 index 52e3e08a..3e877c7e 100644
@@ -1786,27 +1786,24 @@ index 612f94d1..f11875ff 100644
      @Volatile var overlayGate: UserGate? = null
      @Volatile var notificationGate: UserGate? = null
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneControl.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneControl.kt
-index 2fc7cd59..8e700baa 100644
+index 2fc7cd59..8b50ae09 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneControl.kt
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneControl.kt
-@@ -193,7 +193,15 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
+@@ -193,7 +193,12 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
          screenRecoveryReady = { isEnabled() && !isLocked() },
          prepareBackground = { task, owner -> background.prepareForTask(owner) { task.tasks.isCurrent(owner) } },
          startSkillScope = skillLifecycle::startManaged,
 -        completeSkillScope = skillLifecycle::completeDrained,
 +        completeSkillScope = { owner, epoch, completion ->
 +            val offered = skillLifecycle.completeDrained(owner, epoch, completion)
-+            // 【4l】候选生成成功 + 用户开了"任务成功后询问存技能" → 发系统通知。
-+            // 原来只在手机操控页可见时才弹窗，全程自动化的用户永远看不到（真机反馈）。
-+            if (offered && completion == "completed" && prefs.getBoolean(K_SKILL_PROMPT, false)) {
-+                notificationGate.notifySkillSave(owner.taskId, owner.lifecycle)
-+            }
++            // 【4r4】询问改由 Dart 在任务自然结束时弹窗（系统通知经常被吞，用户从未收到）。
++            // 这里只负责生成候选；Dart 侧 taskEnded 时看 askAfterSuccess 开关 + 新候选弹确认。
 +            offered
 +        },
          cancelScope = { record, state ->
              // Registry admission stays sealed until these lock-free side effects finish.
              background.sealTask(state.id)
-@@ -201,7 +209,9 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
+@@ -201,7 +206,9 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
              if (state.stopped) record.activeWorker?.interruptCurrent(record.tasks)
              prompts.stopTask(record.tasks)
          })
@@ -1817,7 +1814,7 @@ index 2fc7cd59..8e700baa 100644
          diagnostics = { args, caller -> RuntimeController.get(app).diagnosticsTool.call(args, caller) })
      private val bridge = PhoneBridge(server, { line -> logger(line) }, { call ->
          if (call.name == DiagnosticsTool.NAME) PhoneCallWork({ call.run() })
-@@ -297,7 +307,7 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
+@@ -297,7 +304,7 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
              override fun beforeHandoff(screen: PhoneScreen, owner: PhoneTasks.Owner): String? {
                  if (screen != PhoneScreen.BACKGROUND) return null
                  background.endTask(owner.taskId)
@@ -1826,7 +1823,7 @@ index 2fc7cd59..8e700baa 100644
              }
          }
          task.addListener { state -> onSessionTask(task, state) }
-@@ -345,6 +355,13 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
+@@ -345,6 +352,13 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
  
      init {
          PhoneRegistry.notificationGate = notificationGate
@@ -1840,7 +1837,7 @@ index 2fc7cd59..8e700baa 100644
          PhoneRegistry.promptGate = prompts
          PhoneRegistry.controlListener = this
          PhoneRegistry.unlocks = { policies().unlocks }
-@@ -353,7 +370,7 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
+@@ -353,7 +367,7 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
          background.onPreviewChanged = { main.post { preview.refresh() } }
          background.localOcrAllowed = { target ->
              isEnabled() && !isLocked() && target.packageName != app.packageName &&
@@ -1849,7 +1846,7 @@ index 2fc7cd59..8e700baa 100644
          }
          (app as? Application)?.let { AppVisibility.register(it) }
          tasks.addListener { onTask(it) }
-@@ -682,7 +699,8 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
+@@ -682,7 +696,8 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
                  selfCheck.stop()
                  preview.refresh()
                  background.requestInterrupt {
@@ -1859,7 +1856,7 @@ index 2fc7cd59..8e700baa 100644
                  }
                  cleanupIo.execute { background.finishInterrupt() }
              }
-@@ -806,6 +824,17 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
+@@ -806,6 +821,17 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
              "notifications" to nm.areNotificationsEnabled(),
              "confirmationNotifications" to notificationGate.available(),
              "background" to backgroundStatus(),
@@ -1877,7 +1874,7 @@ index 2fc7cd59..8e700baa 100644
              "a11yKeeper" to keeperStatus(),
              "task" to tasks.snapshot().toMap(),
              "taskInterruption" to taskJournal.status(),
-@@ -943,7 +972,14 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
+@@ -943,7 +969,14 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
      override fun shownControls(): TaskControls? =
          displaySelection.controls { task, owner, reason -> stopOwner(task, owner, reason) }
  
@@ -1893,7 +1890,7 @@ index 2fc7cd59..8e700baa 100644
  
      override fun onAccessibilityChanged(connected: Boolean) = emitStatus()
  
-@@ -990,7 +1026,7 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
+@@ -990,7 +1023,7 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
          if (screen != PhoneScreen.BACKGROUND) return null
          background.endTask(owner.taskId)
          // l10n:keep agent stop reason
@@ -1902,7 +1899,7 @@ index 2fc7cd59..8e700baa 100644
      }
  
      override fun a11yState(): A11yState = when {
-@@ -999,18 +1035,121 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
+@@ -999,18 +1032,121 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
          else -> A11yState.DISABLED
      }
  
@@ -2026,7 +2023,7 @@ index 2fc7cd59..8e700baa 100644
  
      override fun notifyFix(kind: String) = notifyFixFor(tasks, kind)
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneCore.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneCore.kt
-index 6c701851..2d47f9db 100644
+index 6c701851..b528f7b2 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneCore.kt
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneCore.kt
 @@ -1,9 +1,12 @@
@@ -2258,7 +2255,7 @@ index 6c701851..2d47f9db 100644
              confirmSystem(plan, scope, owner, summary)?.let { return it }
              val ticket = skillTrace.beginOpen(owner, PhoneScreen.MAIN)
              val result = try {
-@@ -556,50 +631,311 @@ class PhoneCore(
+@@ -556,50 +631,324 @@ class PhoneCore(
                      skillTrace.finish(ticket, it.ok, false, false)
                  }
              } catch (e: Throwable) { skillTrace.fail(ticket); throw e }
@@ -2524,11 +2521,24 @@ index 6c701851..2d47f9db 100644
 +                "open: first attempt failed (${r.message}) -> full reset and retry once (4ou)")
 +            io.github.ccch1mneyyy.dsh_app.phone.PhoneRegistry.vscreenSelfHealAt = nowAt
 +            runCatching { env.resetVscreenForReopen() }
-+            val d2 = runCatching { env.driver(PhoneScreen.BACKGROUND, owner) }.getOrNull()
-+            if (d2 != null && d2 !== driver) {
++            // 【4r3】reset 后驱动按需重建是异步的：最多等 3 秒拿新驱动，拿到就真重试一次；
++            // 拿不到就如实跳过（真机 11-28 11:26 `retry skipped (no fresh driver)`——旧代码
++            // reset 后立刻取驱动恒为 null，嘴上说重试、实际一次都没试）。
++            var d2: PhoneDriver? = null
++            val retryDeadline = android.os.SystemClock.elapsedRealtime() + 3000
++            while (android.os.SystemClock.elapsedRealtime() < retryDeadline) {
++                val candidate = runCatching { env.driver(PhoneScreen.BACKGROUND, owner) }.getOrNull()
++                if (candidate != null && candidate !== driver) {
++                    d2 = candidate
++                    break
++                }
++                Thread.sleep(400)
++            }
++            if (d2 != null) {
++                io.github.ccch1mneyyy.dsh_app.wake.WakeTrace.log("open: self-heal retry with fresh driver")
 +                r = doOpen(d2)
 +            } else {
-+                io.github.ccch1mneyyy.dsh_app.wake.WakeTrace.log("open: self-heal retry skipped (no fresh driver)")
++                io.github.ccch1mneyyy.dsh_app.wake.WakeTrace.log("open: self-heal retry skipped (no fresh driver in 3s)")
 +            }
 +        }
 +        return r
@@ -2581,7 +2591,7 @@ index 6c701851..2d47f9db 100644
      }
  
      /** The handler is a dispatch fact. Only the following read describes the actual foreground UI. */
-@@ -816,8 +1152,210 @@ class PhoneCore(
+@@ -816,8 +1165,210 @@ class PhoneCore(
          return Either.Right(d)
      }
  
@@ -2792,7 +2802,7 @@ index 6c701851..2d47f9db 100644
      /** Admission uses the same argument coercion and routing as the actual tool body. */
      fun requiredScreens(name: String, args: Map<String, Any?>): Either<String, List<PhoneScreen>> {
          return requiredScreens(name, Args(args))
-@@ -825,10 +1363,11 @@ class PhoneCore(
+@@ -825,10 +1376,11 @@ class PhoneCore(
  
      private fun requiredScreens(name: String, a: Args): Either<String, List<PhoneScreen>> {
          return when (name) {
@@ -2807,7 +2817,7 @@ index 6c701851..2d47f9db 100644
              // Arbitrary system commands take the main/global unknown-app lease, without reading a screen.
              PhoneToolCatalog.INTENT, PhoneToolCatalog.ANDROID_SHELL -> Either.Right(listOf(PhoneScreen.MAIN))
              PhoneToolCatalog.HANDOFF -> Either.Right(if (lastScreen == PhoneScreen.BACKGROUND)
-@@ -852,7 +1391,7 @@ class PhoneCore(
+@@ -852,7 +1404,7 @@ class PhoneCore(
          if (id == null) return Either.Left("缺少 $parameterName（屏幕号，如 s7）。先调用 screen 拿到屏幕号。")
          return PhoneScreen.ofScreenId(id)?.let { Either.Right(it) }
              // l10n:keep agent tool result
@@ -2816,7 +2826,7 @@ index 6c701851..2d47f9db 100644
      }
  
      private fun locked(summary: String) =
-@@ -871,21 +1410,56 @@ class PhoneCore(
+@@ -871,21 +1423,56 @@ class PhoneCore(
  
      private fun screen(a: Args, owner: PhoneTasks.Owner): Out {
          if (!current(owner)) return stoppedOut("screen")
@@ -2881,7 +2891,7 @@ index 6c701851..2d47f9db 100644
          return Out(
              // l10n:keep agent tool result
              if (refused) "没有读取这个屏幕的内容。" else "",
-@@ -897,6 +1471,40 @@ class PhoneCore(
+@@ -897,6 +1484,40 @@ class PhoneCore(
          )
      }
  
@@ -2922,7 +2932,7 @@ index 6c701851..2d47f9db 100644
      private fun collect(a: Args, owner: PhoneTasks.Owner): Out {
          if (!current(owner)) return stoppedOut("collect")
          val sid = a.str("screen")
-@@ -1270,8 +1878,13 @@ class PhoneCore(
+@@ -1270,8 +1891,13 @@ class PhoneCore(
              "home" -> PhoneAction.GlobalKey.HOME
              "recents" -> PhoneAction.GlobalKey.RECENTS
              "notifications" -> PhoneAction.GlobalKey.NOTIFICATIONS
@@ -2937,7 +2947,7 @@ index 6c701851..2d47f9db 100644
          }
          val sid = a.str("screen")
          val which = if (sid == null) {
-@@ -1288,12 +1901,22 @@ class PhoneCore(
+@@ -1288,12 +1914,22 @@ class PhoneCore(
              is Either.Right -> d.value
          }
          if (env.isLocked()) return locked(summary)
@@ -2960,7 +2970,7 @@ index 6c701851..2d47f9db 100644
          }))
          if (!current(owner)) return stoppedOut(summary)
          val action = PhoneAction.Key(sid ?: "${which.prefix}0", key)
-@@ -1314,6 +1937,22 @@ class PhoneCore(
+@@ -1314,6 +1950,22 @@ class PhoneCore(
          } catch (e: Throwable) { skillTrace.fail(ticket); throw e }
      }
  
@@ -2983,7 +2993,7 @@ index 6c701851..2d47f9db 100644
      private fun handoff(a: Args, scope: SerialWorker.Scope, owner: PhoneTasks.Owner): Out {
          if (!current(owner)) return stoppedOut("handoff")
          // l10n:keep agent tool result
-@@ -1362,6 +2001,7 @@ class PhoneCore(
+@@ -1362,6 +2014,7 @@ class PhoneCore(
          summary = summary, decision = "stopped")
  
      companion object {
@@ -2991,7 +3001,7 @@ index 6c701851..2d47f9db 100644
          internal const val REPLAY = "replay"
          internal const val FOCUS_TEXT = "focus_text"
  
-@@ -1370,6 +2010,9 @@ class PhoneCore(
+@@ -1370,6 +2023,9 @@ class PhoneCore(
          const val PAUSE_WAIT_MS = 600_000L
          const val HANDOFF_MS = 600_000L
  
@@ -3856,7 +3866,7 @@ index 3fd6e482..aa1bf338 100644
          // An implementation memory bound, not a measured throughput limit. Never evict a fence.
          const val MAX_RUNS_PER_LAUNCH = 256
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneTasks.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneTasks.kt
-index a09015e7..b9c4bf15 100644
+index a09015e7..f099f843 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneTasks.kt
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneTasks.kt
 @@ -16,7 +16,7 @@ import java.util.concurrent.CopyOnWriteArrayList
@@ -3939,7 +3949,7 @@ index a09015e7..b9c4bf15 100644
          stopReason = reason
          stopSource = source
          paused = false
-@@ -237,6 +270,34 @@ class PhoneTasks(
+@@ -237,6 +270,42 @@ class PhoneTasks(
              if (!active && !stopped) return null
              if (active) endLocked() else lifecycle++
              stoppedUntil = 0L
@@ -3959,6 +3969,14 @@ index a09015e7..b9c4bf15 100644
 +                io.github.ccch1mneyyy.dsh_app.wake.WakeTrace.log(
 +                    "vscreen: task-end channel=$endedChannel kept（v3.1 保留通道，窗口/条不收）")
 +            }
++            // 【4r1】main 例外：任务结束即清 main 粘性（回 none），下一次工具调用按设置
++            // 重新解析（真机 11-27 21:49 / 11-28 11:22：默认虚拟屏+隐藏，open 仍落主屏）。
++            // virtual/silent 保留不动（用户 11-23 拍板：任务完成别关屏，用户还要看）。
++            // ⇄ 后同样生效：⇄ 只是当下那一下回主屏，之后新任务按设置走。
++            if (endedChannel == "main") {
++                io.github.ccch1mneyyy.dsh_app.phone.PhoneRegistry.vscreenTarget = "none"
++                io.github.ccch1mneyyy.dsh_app.wake.WakeTrace.log("vscreen: task-end main sticky cleared (4r1)")
++            }
 +            // 【4op】条=窗口条形态：任务结束不再伸手收条，条的去留由唯一判定决定——
 +            // v3.1"任务自然结束保留通道、条不收"与之一致。
 +            // 自然结束：保住屏与应用（点 ✕ 才清）。
@@ -3974,7 +3992,7 @@ index a09015e7..b9c4bf15 100644
              stopReason = null
              interrupted = false
              owner = Owner(taskId, lifecycle, false)
-@@ -261,8 +322,23 @@ class PhoneTasks(
+@@ -261,8 +330,23 @@ class PhoneTasks(
          Owner(taskId, lifecycle, false)
      }
  
@@ -3998,7 +4016,7 @@ index a09015e7..b9c4bf15 100644
      /** Result bookkeeping must not adopt the task that replaced its call. Keep [action] short. */
      fun runIfCurrent(owner: Owner, action: () -> Unit): Boolean = synchronized(lock) {
          if (!currentLocked(owner)) return false
-@@ -527,6 +603,7 @@ class PhoneTasks(
+@@ -527,6 +611,7 @@ class PhoneTasks(
      private fun endLocked() {
          lifecycle++
          active = false
@@ -4006,7 +4024,7 @@ index a09015e7..b9c4bf15 100644
          approved.clear()
          grants.clear()
          visualScopes.clear(); visualGrants.clear(); visualLifecycle = lifecycle
-@@ -547,9 +624,9 @@ class PhoneTasks(
+@@ -547,9 +632,9 @@ class PhoneTasks(
      }
  
      companion object {
@@ -4018,7 +4036,7 @@ index a09015e7..b9c4bf15 100644
  
          /** This one action was cancelled; the rest of the turn is unaffected. */
          // l10n:keep agent cancel protocol
-@@ -557,11 +634,11 @@ class PhoneTasks(
+@@ -557,11 +642,11 @@ class PhoneTasks(
  
          /** 熄屏 / 无障碍断开 stopped this turn (not the person). */
          // l10n:keep agent environment-stop protocol
@@ -6694,7 +6712,7 @@ index c1c2ed09..b0b1dfe3 100644
          close()
          Bundle().apply { putBoolean(Proto.OK, false); putString(Proto.ERROR, "deviceUnavailable") }
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/PrivilegedDisplayCore.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/PrivilegedDisplayCore.kt
-index c7ed0f7a..8f13c886 100644
+index c7ed0f7a..87f6c619 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/PrivilegedDisplayCore.kt
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/PrivilegedDisplayCore.kt
 @@ -11,6 +11,7 @@ package io.github.ccch1mneyyy.dsh_app.phone.background
@@ -6891,7 +6909,7 @@ index c7ed0f7a..8f13c886 100644
          val opening = op == Proto.OP_CREATE || op == Proto.OP_LAUNCH
          if (!opening) requireDisplay() else owner = ownerId
          // The app the App addressed: what it opened, or what its last read showed on top.
-@@ -340,12 +451,96 @@ class PrivilegedDisplayCore internal constructor(
+@@ -340,12 +451,105 @@ class PrivilegedDisplayCore internal constructor(
                  // A task keeps the screen it opened first; its driver always asks for the same viewport.
                  if (display == null) createDisplay(request)
                  response.putInt(Proto.DISPLAY_ID, displayId())
@@ -6971,7 +6989,16 @@ index c7ed0f7a..8f13c886 100644
 +                // 真机 10:19 实证：`open: done ok=true pkg=com.hihonor.deskclock`，而请求的是
 +                // com.hihonor.calculator —— 回复里的 msg 仍是"已在虚拟屏打开"，执行方据此说"打开了"，
 +                // 用户看到的却是时钟。以后：目标没在虚拟屏前台 → ok=false + targetNotVisible。
-+                val topOnHere = runCatching { foregroundPackage() }.getOrNull()
++                // 【4r2】到前台校验改成轮询等待：应用冷启动要 1-2 秒，固定一次检查会把正在启动
++                // 的应用误判成「没到前台」（真机 11-28 11:26 美团 498ms 被判失败）。
++                // 每 100ms 看一次，目标一成为前台立刻成功；1 秒还不到才判失败（交 4ou 重试兜底）。
++                var topOnHere = runCatching { foregroundPackage() }.getOrNull()
++                val frontDeadline = android.os.SystemClock.uptimeMillis() + 1000
++                while (topOnHere != null && topOnHere != pkg &&
++                    android.os.SystemClock.uptimeMillis() < frontDeadline) {
++                    sleepChecked(100)
++                    topOnHere = runCatching { foregroundPackage() }.getOrNull()
++                }
 +                if (topOnHere != null && topOnHere != pkg) {
 +                    response.putBoolean(Proto.OK, false)
 +                    response.putString(Proto.ERROR, "targetNotVisible")
@@ -6990,7 +7017,7 @@ index c7ed0f7a..8f13c886 100644
              Proto.OP_COORDINATE -> coordinate(pkg, expected?.uid, request, response)
              Proto.OP_TAP -> {
                  requireShown(pkg, expected?.uid)
-@@ -355,13 +550,50 @@ class PrivilegedDisplayCore internal constructor(
+@@ -355,13 +559,50 @@ class PrivilegedDisplayCore internal constructor(
                  if (localVisual) response.putString(Proto.VISUAL_CHANGE,
                      visualObservation?.changeFrom(previousVisual, SystemClock.uptimeMillis()) ?: "unavailable")
              }
@@ -7044,7 +7071,7 @@ index c7ed0f7a..8f13c886 100644
              }
              Proto.OP_KEY -> {
                  requireShown(pkg, expected?.uid)
-@@ -379,6 +611,8 @@ class PrivilegedDisplayCore internal constructor(
+@@ -379,6 +620,8 @@ class PrivilegedDisplayCore internal constructor(
          }
          // Every reply names the app now on top (none when the screen is empty). A read already did.
          if (!response.containsKey(Proto.TARGET_IDENTITY_VERSION)) putShown(response, openedPackage(request, pkg), shownApp())
@@ -7053,7 +7080,7 @@ index c7ed0f7a..8f13c886 100644
          if (op == Proto.OP_LAUNCH && expected != null) {
              val shown = TargetIdentity.shown(response.get(Proto.PKG), response.get(Proto.TARGET_UID))
              val actualDisplay = display?.display
-@@ -729,57 +963,817 @@ class PrivilegedDisplayCore internal constructor(
+@@ -729,57 +972,817 @@ class PrivilegedDisplayCore internal constructor(
      private fun displayId(): Int = display?.display?.displayId ?: throw Fault("displayMissing")
      private fun requireDisplay() { if (display == null) throw Fault("displayMissing") }
  
@@ -7815,9 +7842,9 @@ index c7ed0f7a..8f13c886 100644
 +            rollbackDisplayAttempt()
 +            // SecurityException 原样上抛：调用方据此决定要不要去掉可信标志重开。
 +            throw if (e is Fault || e is SecurityException) e else Fault("displayUnsupported")
-+        }
-+    }
-+
+         }
+     }
+ 
 +    /**
 +     * A throwing newInstance returns no reader: nothing is left to close.
 +     * An Honor/Qualcomm GraphicsBuffer on this phone answers the first allocation with an
@@ -7833,9 +7860,9 @@ index c7ed0f7a..8f13c886 100644
 +            ImageReader.newInstance(w, h, PixelFormat.RGBA_8888, 2)
 +        } catch (_: Throwable) {
 +            throw Fault("displayUnsupported")
-         }
-     }
- 
++        }
++    }
++
 +    /** 这一次建屏失败：收掉它留下的句柄与句柄表项，别挡住下一次 open。 */
 +    private fun rollbackDisplayAttempt() {
 +        // Only a handle that would not close stays, for the owner's release to settle.
@@ -7893,7 +7920,7 @@ index c7ed0f7a..8f13c886 100644
      private fun resolveLaunch(pkg: String, expected: PhoneAppIdentity?): Intent {
          val pm = privileged.packageManager
          val intent = runCatching { pm.getLaunchIntentForPackage(pkg) }.getOrNull() ?: throw Fault("notLaunchable")
-@@ -821,6 +1815,44 @@ class PrivilegedDisplayCore internal constructor(
+@@ -821,6 +1824,44 @@ class PrivilegedDisplayCore internal constructor(
      }
  
      /** (displayId, packages of that task) rows of one running-task read. */
@@ -7938,7 +7965,7 @@ index c7ed0f7a..8f13c886 100644
      private fun taskRows(): List<Pair<Int, Set<String>>>? {
          val field = taskDisplayIdField ?: return null
          @Suppress("DEPRECATION")
-@@ -862,8 +1894,29 @@ class PrivilegedDisplayCore internal constructor(
+@@ -862,8 +1903,29 @@ class PrivilegedDisplayCore internal constructor(
  
      private fun launchPackage(pkg: String, intent: Intent) {
          val display = this.display ?: throw Fault("displayMissing")
@@ -7969,7 +7996,7 @@ index c7ed0f7a..8f13c886 100644
          // A shell/UserService is not an ActivityManager-attached app process: a PendingIntent
          // avoids Context.startActivity's caller check (Phase, after Aether).
          var pending: PendingIntent? = null
-@@ -873,23 +1926,161 @@ class PrivilegedDisplayCore internal constructor(
+@@ -873,23 +1935,161 @@ class PrivilegedDisplayCore internal constructor(
                  PendingIntent.FLAG_ONE_SHOT or PendingIntent.FLAG_IMMUTABLE,
              )
              pending.send(privileged, 0, null, null, null, null, options.toBundle())
@@ -8137,7 +8164,7 @@ index c7ed0f7a..8f13c886 100644
      /** Legacy success shape stays unchanged; failed physical cleanup retains its original handles. */
      private fun releaseAll() = lock.withLock {
          if (strictOwner) throw Fault("releaseReceiptRequired")
-@@ -906,8 +2097,140 @@ class PrivilegedDisplayCore internal constructor(
+@@ -906,8 +2106,140 @@ class PrivilegedDisplayCore internal constructor(
          if (readerAllocationUncertain) throw Fault("releaseUnconfirmed")
      }
  
@@ -8278,7 +8305,7 @@ index c7ed0f7a..8f13c886 100644
          closeTreeConnection()
          visualObservation = null
          stopPreview()
-@@ -925,11 +2248,42 @@ class PrivilegedDisplayCore internal constructor(
+@@ -925,11 +2257,42 @@ class PrivilegedDisplayCore internal constructor(
              closeReaders()
          } else {
              val displayId = releasingDisplayId ?: throw Fault("releaseUnconfirmed")
@@ -8322,7 +8349,7 @@ index c7ed0f7a..8f13c886 100644
              closeReaders()
              val deadline = SystemClock.uptimeMillis() + 1_000
              // The display itself is already released. A ROM whose task query is unreadable cannot
-@@ -944,6 +2298,7 @@ class PrivilegedDisplayCore internal constructor(
+@@ -944,6 +2307,7 @@ class PrivilegedDisplayCore internal constructor(
      }
  
      private fun clearResourceState() {
@@ -8330,7 +8357,7 @@ index c7ed0f7a..8f13c886 100644
          display = null; owner = null; strictOwner = false; selfCheckOwner = false
          targetSequence = null; targetSnapshot = null; targetMain = null
          releasingDisplayId = null; displayCreationAttempted = false; displayApiReleased = false; probeDisplay = false
-@@ -1044,6 +2399,17 @@ class PrivilegedDisplayCore internal constructor(
+@@ -1044,6 +2408,17 @@ class PrivilegedDisplayCore internal constructor(
          // must not turn that write into a failed action that a caller might replay.
          val tree = if (requireTree) treeResult.getOrThrow() else treeResult.getOrNull()
          if (captureResult.isSuccess && shot == null) {
@@ -8348,7 +8375,7 @@ index c7ed0f7a..8f13c886 100644
              if (requireTree) throw Fault("frameNotReady")
              // The action already happened. Never make the caller replay it for an absent frame.
              response.putBoolean(Proto.FRAME_NOT_READY, true)
-@@ -1054,6 +2420,7 @@ class PrivilegedDisplayCore internal constructor(
+@@ -1054,6 +2429,7 @@ class PrivilegedDisplayCore internal constructor(
          // The screenshot contains the whole viewport, including nodes beyond the emitted
          // text prefix. Never attach it when secrets were found or the scan was incomplete.
          // The typing unlock changes permission to write, never permission to reveal a secret.
@@ -8356,7 +8383,7 @@ index c7ed0f7a..8f13c886 100644
          if (wantImage && shot != null) {
              if (tree != null && tree.complete && !tree.hasSecrets) {
                  response.putByteArray("imageBytes", shot.jpeg)
-@@ -1166,7 +2533,15 @@ class PrivilegedDisplayCore internal constructor(
+@@ -1166,7 +2542,15 @@ class PrivilegedDisplayCore internal constructor(
      private class CaptureResult(val jpeg: ByteArray, val raw: BackgroundPreviewState.RawFrame?, val local: ImageObservation?, val targetMatched: Boolean? = null)
  
      /** Null means only absent/black frames; other capture failures remain distinguishable. */
@@ -8373,7 +8400,7 @@ index c7ed0f7a..8f13c886 100644
          val ir = lock.withLock {
              if (pendingReader != null || readerAllocationUncertain) throw Fault("releasePending")
              val vd = display ?: throw Fault("displayMissing")
-@@ -1332,6 +2707,13 @@ class PrivilegedDisplayCore internal constructor(
+@@ -1332,6 +2716,13 @@ class PrivilegedDisplayCore internal constructor(
  
      internal fun previewDrained(): Boolean = lock.withLock { previewWorker.drained() }
  
@@ -8387,7 +8414,7 @@ index c7ed0f7a..8f13c886 100644
      private fun renderPreview(ticket: BackgroundPreviewState.Ticket) {
          var bitmap: Bitmap? = null
          var thumbnail: Bitmap? = null
-@@ -1359,8 +2741,23 @@ class PrivilegedDisplayCore internal constructor(
+@@ -1359,8 +2750,23 @@ class PrivilegedDisplayCore internal constructor(
                  } finally { image.close() }
                  // All Image/buffer access ends before releaseAll can close its ImageReader.
              } finally { lock.unlock() }
@@ -8412,7 +8439,7 @@ index c7ed0f7a..8f13c886 100644
                  bitmap = Bitmap.createBitmap(raw.width, raw.height, Bitmap.Config.ARGB_8888)
                  bitmap!!.copyPixelsFromBuffer(ByteBuffer.wrap(raw.pixels))
              }
-@@ -1382,6 +2779,18 @@ class PrivilegedDisplayCore internal constructor(
+@@ -1382,6 +2788,18 @@ class PrivilegedDisplayCore internal constructor(
                  preview.unavailable(ticket, "frameTooLarge"); return
              }
              preview.publish(ticket, BackgroundPreviewState.Frame(w, h, pixels, bytes), SystemClock.uptimeMillis())
@@ -8431,7 +8458,7 @@ index c7ed0f7a..8f13c886 100644
          } catch (_: Exception) {
              preview.unavailable(ticket, "captureFailed")
          } finally {
-@@ -1394,7 +2803,8 @@ class PrivilegedDisplayCore internal constructor(
+@@ -1394,7 +2812,8 @@ class PrivilegedDisplayCore internal constructor(
      // ---- UiAutomation control-tree read ------------------------------------
  
      private class TreeRead(val targetId: Int = 0, val inspectVisual: Boolean = false,
@@ -8441,7 +8468,7 @@ index c7ed0f7a..8f13c886 100644
          val coordinateDigest: MessageDigest? = if (coordinates) MessageDigest.getInstance("SHA-256") else null
          val coordinateNodes: ArrayList<VisualNode>? = if (coordinates) ArrayList() else null
          val coordinateElementIds = HashMap<Int, Int>()
-@@ -1414,6 +2824,17 @@ class PrivilegedDisplayCore internal constructor(
+@@ -1414,6 +2833,17 @@ class PrivilegedDisplayCore internal constructor(
          var hasSecrets = false
          var targetWindowId: Int? = null
          var target: AccessibilityNodeInfo? = null
@@ -8459,7 +8486,7 @@ index c7ed0f7a..8f13c886 100644
      }
  
      private fun requireTreeReady() {
-@@ -1475,7 +2896,7 @@ class PrivilegedDisplayCore internal constructor(
+@@ -1475,7 +2905,7 @@ class PrivilegedDisplayCore internal constructor(
              for (window in windows) roots.add(window.root)
              val selected = BackgroundTree.selectApplicationWindow(roots.map { it?.packageName?.toString() }, pkg)
                  ?: throw Fault(if (roots.firstOrNull() != null) "displayTargetChanged" else "treeUnavailable")
@@ -8468,7 +8495,7 @@ index c7ed0f7a..8f13c886 100644
              if (targetEvidence != null) tree.targetWindowId = windows[selected.index].id
              if (displayWindows.size == 1 && windows.size == 1) {
                  val window = windows[selected.index]
-@@ -1486,13 +2907,13 @@ class PrivilegedDisplayCore internal constructor(
+@@ -1486,13 +2916,13 @@ class PrivilegedDisplayCore internal constructor(
              }
              if (!scanOtherWindows && roots.size > 1) tree.complete = false
              try {
@@ -8484,7 +8511,7 @@ index c7ed0f7a..8f13c886 100644
                      } catch (e: Exception) {
                          if (e is InterruptedException || e is java.util.concurrent.CancellationException || e is Fault) throw e
                          // A secondary read failure prevents an image, not the already
-@@ -1514,10 +2935,19 @@ class PrivilegedDisplayCore internal constructor(
+@@ -1514,10 +2944,19 @@ class PrivilegedDisplayCore internal constructor(
      }
  
      private fun walk(node: AccessibilityNodeInfo?, tree: TreeRead, indent: Int, budget: Int, emitElements: Boolean = true, parentIndex: Int = -1,
@@ -8506,7 +8533,7 @@ index c7ed0f7a..8f13c886 100644
          if (navigation != null) {
              if (Thread.currentThread().isInterrupted) throw InterruptedException()
              val refreshed = node.refresh()
-@@ -1543,7 +2973,7 @@ class PrivilegedDisplayCore internal constructor(
+@@ -1543,7 +2982,7 @@ class PrivilegedDisplayCore internal constructor(
              }
          }
          if (node.isVisibleToUser && isSecret(node)) tree.hasSecrets = true
@@ -8515,7 +8542,7 @@ index c7ed0f7a..8f13c886 100644
          if (tree.inspectVisual && node.isVisibleToUser && !tree.hasSensitive) {
              tree.hasSensitive = try {
                  // Check raw text too: bestText may drop an oversized blank value.
-@@ -1572,7 +3002,7 @@ class PrivilegedDisplayCore internal constructor(
+@@ -1572,7 +3011,7 @@ class PrivilegedDisplayCore internal constructor(
              digest.update(ByteBuffer.allocate(metadata.size * 4).apply { metadata.forEach { putInt(it) } }.array())
          }
          var childIndent = indent
@@ -8524,7 +8551,7 @@ index c7ed0f7a..8f13c886 100644
              val actionable = node.isClickable || node.isLongClickable || node.isEditable || node.isCheckable || node.isScrollable
              val emit = actionable || (text.isNotEmpty() && node.isVisibleToUser)
              if (emit && node.isVisibleToUser) {
-@@ -1585,9 +3015,8 @@ class PrivilegedDisplayCore internal constructor(
+@@ -1585,9 +3024,8 @@ class PrivilegedDisplayCore internal constructor(
              }
          }
          for (i in 0 until node.childCount) {
@@ -8535,7 +8562,7 @@ index c7ed0f7a..8f13c886 100644
          }
      }
  
-@@ -1687,8 +3116,9 @@ class PrivilegedDisplayCore internal constructor(
+@@ -1687,8 +3125,9 @@ class PrivilegedDisplayCore internal constructor(
      private fun resolveElement(pkg: String, request: Bundle, target: TargetSnapshot? = null): BgNode {
          val index = request.getInt(Proto.ELEMENT, -1)
          if (index < 1) throw Fault("invalidArguments")
@@ -8546,7 +8573,7 @@ index c7ed0f7a..8f13c886 100644
          } else {
              val fresh = readTargetSnapshot(target.run, 0)
              if (fresh.windowId != target.windowId || fresh.index != index || fresh.element.bounds != target.element.bounds)
-@@ -1702,7 +3132,17 @@ class PrivilegedDisplayCore internal constructor(
+@@ -1702,7 +3141,17 @@ class PrivilegedDisplayCore internal constructor(
          // target, so "Invoice 12 view" turning into "Invoice 12 delete" must not pass.
          if (expectRole != null && expectRole != e.role ||
              expectLabel != null && expectLabel != e.label ||
@@ -8565,7 +8592,7 @@ index c7ed0f7a..8f13c886 100644
          return e
      }
  
-@@ -1724,17 +3164,37 @@ class PrivilegedDisplayCore internal constructor(
+@@ -1724,17 +3173,37 @@ class PrivilegedDisplayCore internal constructor(
  
      private fun coordinate(pkg: String, uid: Int?, request: Bundle, response: Bundle) {
          val action = BackgroundCoordinateRequest.parse(request.keySet()) { request.get(it) } ?: throw Fault("invalidArguments")
@@ -8607,7 +8634,7 @@ index c7ed0f7a..8f13c886 100644
          if (!tree.complete || tree.hasSecrets || tree.hasSensitive ||
              !observed.matches(scope, tree.visualWindow, tree.coordinateContext(), geometry, SystemClock.uptimeMillis()))
              throw Fault("targetChanged")
-@@ -1872,7 +3332,7 @@ class PrivilegedDisplayCore internal constructor(
+@@ -1872,7 +3341,7 @@ class PrivilegedDisplayCore internal constructor(
          injectTap(cx, cy, long)
      }
  
@@ -8616,7 +8643,7 @@ index c7ed0f7a..8f13c886 100644
          val dir = request.getString(Proto.DIR) ?: "down"
          val bounds = if (request.containsKey(Proto.ELEMENT)) {
              val target = resolveElement(pkg, request)
-@@ -1881,8 +3341,20 @@ class PrivilegedDisplayCore internal constructor(
+@@ -1881,8 +3350,20 @@ class PrivilegedDisplayCore internal constructor(
                  if (!it.intersect(0, 0, width, height)) throw Fault("inputRejected")
              }
          } else null
@@ -8639,7 +8666,7 @@ index c7ed0f7a..8f13c886 100644
          val span = if (bounds == null) (if (dir == "left" || dir == "right") width else height) / 3 else
              (if (dir == "left" || dir == "right") bounds.width() else bounds.height()) / 3
          if (bounds != null && span < 1) throw Fault("inputRejected")
-@@ -1893,7 +3365,8 @@ class PrivilegedDisplayCore internal constructor(
+@@ -1893,7 +3374,8 @@ class PrivilegedDisplayCore internal constructor(
              "right" -> intArrayOf(cx + span, cy, cx - span, cy)
              else -> throw Fault("invalidArguments")
          }
@@ -8649,7 +8676,7 @@ index c7ed0f7a..8f13c886 100644
          if (bounds != null) {
              val vd = display ?: throw Fault("displayMissing")
              val displayContext = context.createDisplayContext(vd.display)
-@@ -1907,9 +3380,31 @@ class PrivilegedDisplayCore internal constructor(
+@@ -1907,9 +3389,31 @@ class PrivilegedDisplayCore internal constructor(
          }
          requireShown(pkg, null)
          injectSwipe(p[0], p[1], p[2], p[3], duration)
@@ -8681,7 +8708,7 @@ index c7ed0f7a..8f13c886 100644
          val code = KEYS[key] ?: throw Fault("invalidArguments")
          val now = SystemClock.uptimeMillis()
          injectKey(KeyEvent(now, now, KeyEvent.ACTION_DOWN, code, 0))
-@@ -1999,7 +3494,35 @@ class PrivilegedDisplayCore internal constructor(
+@@ -1999,7 +3503,35 @@ class PrivilegedDisplayCore internal constructor(
      private fun injectKey(src: KeyEvent) {
          val event = KeyEvent(src.downTime, src.eventTime, src.action, src.keyCode, 0, src.metaState,
              KeyCharacterMap.VIRTUAL_KEYBOARD, src.scanCode, src.flags, InputDevice.SOURCE_KEYBOARD)
@@ -8718,7 +8745,7 @@ index c7ed0f7a..8f13c886 100644
      }
  
      // Runs in the shell-uid privileged process (Shizuku UserService or app_process),
-@@ -2025,14 +3548,45 @@ class PrivilegedDisplayCore internal constructor(
+@@ -2025,14 +3557,45 @@ class PrivilegedDisplayCore internal constructor(
          if (waitForFinish && !accepted) throw Fault("inputRejected")
      }
  
@@ -8766,7 +8793,7 @@ index c7ed0f7a..8f13c886 100644
      }
  
      /**
-@@ -2079,13 +3633,22 @@ class PrivilegedDisplayCore internal constructor(
+@@ -2079,13 +3642,22 @@ class PrivilegedDisplayCore internal constructor(
  
      companion object {
          private val PACKAGE = Regex("[a-zA-Z][a-zA-Z0-9_]*(\\.[a-zA-Z0-9_]+)+")
@@ -9203,10 +9230,20 @@ index 2857ceef..41380764 100644
                  append(instruction(step, n)).append("。\n")
                  append("   核对 {{check_").append(n).append("}}，不能只凭工具返回正常判断业务完成。历史记录仅表明请求已交给驱动/系统并返回接受；")
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/skills/PhoneTaskTrace.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/skills/PhoneTaskTrace.kt
-index 6be40b5d..1091ff36 100644
+index 6be40b5d..b2add1ca 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/skills/PhoneTaskTrace.kt
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/skills/PhoneTaskTrace.kt
-@@ -73,6 +73,8 @@ class PhoneTaskTrace {
+@@ -24,8 +24,7 @@ class PhoneTaskTrace {
+     data class Snapshot internal constructor(
+         val owner: OwnerKey, val steps: List<Step>, val ended: Boolean, val eligible: Boolean, val gap: Gap?,
+     ) {
+-        val canDraft: Boolean get() = ended && eligible && gap == null && steps.isNotEmpty() &&
+-            steps.all { it.receipt == Receipt.RETURNED_OK }
++        val canDraft: Boolean get() = ended && eligible && gap == null && steps.isNotEmpty()
+     }
+     class Ticket internal constructor(internal val owner: OwnerKey, internal val serial: Long, internal val index: Int)
+     private class Entry(val serial: Long) {
+@@ -73,6 +72,8 @@ class PhoneTaskTrace {
                  PhoneAction.GlobalKey.HOME -> Action.KEY_HOME
                  PhoneAction.GlobalKey.RECENTS -> Action.KEY_RECENTS
                  PhoneAction.GlobalKey.NOTIFICATIONS -> Action.KEY_NOTIFICATIONS
@@ -106180,7 +106217,7 @@ index 4365d141..99e3efe1 100644
  
  /// The guide page a question of the person's own (typed into settings
 diff --git a/app/lib/state/phone_state.dart b/app/lib/state/phone_state.dart
-index a99b77b5..ef299ea2 100644
+index a99b77b5..49d2595f 100644
 --- a/app/lib/state/phone_state.dart
 +++ b/app/lib/state/phone_state.dart
 @@ -4,6 +4,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -106192,7 +106229,7 @@ index a99b77b5..ef299ea2 100644
  import '../l10n/l10n.dart';
  import '../runtime/runtime_bridge.dart';
  import '../runtime/runtime_state.dart';
-@@ -142,6 +144,9 @@ class PhoneController extends Notifier<PhoneState> {
+@@ -142,17 +144,49 @@ class PhoneController extends Notifier<PhoneState> {
  
    bool _apply(PhoneStatus status) {
      if (!ref.mounted) return false;
@@ -106202,10 +106239,32 @@ index a99b77b5..ef299ea2 100644
      final revision = status.statusRevision;
      if (status.statusRevisionPresent && revision == null) return false;
      final previous = _statusRevision;
-@@ -153,6 +158,18 @@ class PhoneController extends Notifier<PhoneState> {
+     if (previous != null && (revision == null || revision <= previous)) return false;
+     if (revision != null) _statusRevision = revision;
+     final taskEnded = state.status.task.active && !status.task.active;
++    final endedTaskId = state.status.task.id;
+     state = state.copyWith(status: status, loaded: true);
+-    if (taskEnded) unawaited(refreshLog());
++    if (taskEnded) {
++      unawaited(refreshLog());
++      unawaited(_maybeAskSkillSave(status, endedTaskId));
++    }
      return true;
    }
  
++  /// 【4r4】任务自然结束：开了「任务成功后询问存技能」且这次有候选 → 弹确认，同意直接保存。
++  Future<void> _maybeAskSkillSave(PhoneStatus status, int? endedTaskId) async {
++    if (endedTaskId == null || !status.skills.askAfterSuccess) return;
++    final candidate = status.skills.candidates
++        .where((c) => c.taskId == endedTaskId)
++        .firstOrNull;
++    if (candidate == null) return;
++    final context = appNavigatorKey.currentContext;
++    if (context == null) return;
++    await openPhoneSkillCandidate(context, ref.read(phoneChannelProvider),
++        () => ref.read(phoneProvider.notifier).refreshStatus(), candidate, autoSave: true);
++  }
++
 +  /// 打开与事件匹配的候选；找不到就静默（候选可能已被保存或作废）。
 +  Future<void> _handleSkillSave(PhoneSkillSaveEvent event) async {
 +    final candidate = state.status.skills.candidates
@@ -107877,7 +107936,7 @@ index 00000000..fdb4e163
 +  }
 +}
 diff --git a/app/lib/ui/phone/phone_skill_section.dart b/app/lib/ui/phone/phone_skill_section.dart
-index 23358526..2b6b33d4 100644
+index 23358526..bee1d01c 100644
 --- a/app/lib/ui/phone/phone_skill_section.dart
 +++ b/app/lib/ui/phone/phone_skill_section.dart
 @@ -82,7 +82,8 @@ class _PhoneSkillAutoPromptState extends ConsumerState<PhoneSkillAutoPrompt> {
@@ -107890,22 +107949,24 @@ index 23358526..2b6b33d4 100644
      if (mounted) _presenting = false;
    }
  
-@@ -91,7 +92,8 @@ class _PhoneSkillAutoPromptState extends ConsumerState<PhoneSkillAutoPrompt> {
+@@ -91,7 +92,10 @@ class _PhoneSkillAutoPromptState extends ConsumerState<PhoneSkillAutoPrompt> {
  }
  
  /// Confirms the goal first; only a confirmed candidate opens the draft editor.
 -Future<void> openPhoneSkillCandidate(BuildContext context, WidgetRef ref, PhoneSkillCandidate candidate) async {
++/// 【4r4】[autoSave]：确认后不打开编辑器，直接按候选保存为技能（任务自然结束的询问用）。
 +Future<void> openPhoneSkillCandidate(BuildContext context, PhoneChannel channel,
-+    Future<void> Function() refreshStatus, PhoneSkillCandidate candidate) async {
++    Future<void> Function() refreshStatus, PhoneSkillCandidate candidate,
++    {bool autoSave = false}) async {
    final confirmed = await showDialog<bool>(
      context: context,
      builder: (context) => AlertDialog(
-@@ -107,10 +109,10 @@ Future<void> openPhoneSkillCandidate(BuildContext context, WidgetRef ref, PhoneS
+@@ -107,10 +111,10 @@ Future<void> openPhoneSkillCandidate(BuildContext context, WidgetRef ref, PhoneS
    await showDialog<void>(
      context: context,
      barrierDismissible: false,
 -    builder: (_) => PhoneSkillEditor(channel: ref.read(phoneChannelProvider), candidate: candidate),
-+    builder: (_) => PhoneSkillEditor(channel: channel, candidate: candidate),
++    builder: (_) => PhoneSkillEditor(channel: channel, candidate: candidate, autoSave: autoSave),
    );
    if (!context.mounted) return;
 -  unawaited(ref.read(phoneProvider.notifier).refreshStatus());
@@ -107913,7 +107974,7 @@ index 23358526..2b6b33d4 100644
  }
  
  /// Only offers local, completed native candidates; opening and saving are separate decisions.
-@@ -129,7 +131,8 @@ class _PhoneSkillSectionState extends ConsumerState<PhoneSkillSection> {
+@@ -129,7 +133,8 @@ class _PhoneSkillSectionState extends ConsumerState<PhoneSkillSection> {
    Future<void> _open(PhoneSkillCandidate candidate) async {
      if (_presenting) return;
      setState(() => _presenting = true);
@@ -107923,6 +107984,59 @@ index 23358526..2b6b33d4 100644
      if (!mounted) return;
      setState(() => _presenting = false);
    }
+@@ -188,14 +193,18 @@ class _PhoneSkillSectionState extends ConsumerState<PhoneSkillSection> {
+ }
+ 
+ class PhoneSkillEditor extends StatefulWidget {
+-  const PhoneSkillEditor({super.key, required this.channel, required PhoneSkillCandidate this.candidate})
++  const PhoneSkillEditor({super.key, required this.channel, required PhoneSkillCandidate this.candidate,
++      this.autoSave = false})
+     : result = null;
+   const PhoneSkillEditor.result({super.key, required this.channel, required PhoneSkillSaveResult this.result})
+-    : candidate = null;
++    : candidate = null, autoSave = false;
+   final PhoneChannel channel;
+   final PhoneSkillCandidate? candidate;
+   final PhoneSkillSaveResult? result;
+ 
++  /// 【4r4】确认后直接保存：草稿一打开就自动提交，不显示编辑交互。
++  final bool autoSave;
++
+   @override
+   State<PhoneSkillEditor> createState() => _PhoneSkillEditorState();
+ }
+@@ -282,6 +291,8 @@ class _PhoneSkillEditorState extends State<PhoneSkillEditor> {
+           _confirmed = false;
+           _pendingWrite = _writeDraft?.bundleRevision != null || view.phase == 'staging' || view.phase == 'committing';
+           if (_pendingWrite && view.bundleRevision != null) _queryHandle ??= PhoneSkillSaveHandle.fromDraft(view);
++          // 【4r4】确认后直接保存：草稿一打开就自动提交，不走编辑交互。
++          if (widget.autoSave && !_saved) unawaited(_autoSave());
+         case PhoneSkillReplyKind.saved:
+           if (!openTerminal && !_matchesWrite(reply)) { _error = 'stale'; _confirmed = false; return; }
+           _saved = true;
+@@ -321,6 +332,22 @@ class _PhoneSkillEditorState extends State<PhoneSkillEditor> {
+ 
+   void _changed() => setState(() { _dirty = true; _confirmed = false; });
+ 
++  /// 【4r4】直接保存：跳过编辑，按打开时的草稿提交；saved 后自动关闭对话框。
++  Future<void> _autoSave() async {
++    final draft = _draft;
++    if (draft == null || _busy || _saved) return;
++    setState(() { _busy = true; _confirmed = false; });
++    final reply = await widget.channel.saveSkillDraft(draft, confirmed: true);
++    if (!mounted) return;
++    _accept(reply);
++    if (_saved || _unverified != null) {
++      _allowPop = true;
++      WidgetsBinding.instance.addPostFrameCallback((_) {
++        if (mounted) Navigator.of(context).pop();
++      });
++    }
++  }
++
+   Future<void> _applyEdits() async {
+     if (_busy || _pendingWrite || _unverified != null || _saved || _closing) return;
+     final draft = _draft!;
 diff --git a/app/lib/ui/phone/phone_task_card.dart b/app/lib/ui/phone/phone_task_card.dart
 new file mode 100644
 index 00000000..26e07421
@@ -109337,7 +109451,7 @@ index 00000000..adebc521
 +  }
 +}
 diff --git a/app/lib/ui/settings/settings_screen.dart b/app/lib/ui/settings/settings_screen.dart
-index f48b78e3..0be28fd0 100644
+index f48b78e3..ee0efee3 100644
 --- a/app/lib/ui/settings/settings_screen.dart
 +++ b/app/lib/ui/settings/settings_screen.dart
 @@ -7,6 +7,7 @@ import '../../l10n/l10n.dart';
@@ -109348,7 +109462,28 @@ index f48b78e3..0be28fd0 100644
  import '../../state/android_features.dart';
  import '../../state/ask_ai.dart' show askAiAvailableProvider;
  import '../../state/balance_state.dart';
-@@ -330,15 +331,18 @@ class SettingsScreen extends ConsumerWidget {
+@@ -33,7 +34,7 @@ import '../engine/engine_status.dart';
+ import '../engine_settings/engine_settings_hub.dart';
+ import '../engine_settings/web_search_page.dart';
+ import 'media_settings_page.dart';
+-import '../features/feature_catalog.dart' show communityPage;
++
+ import '../features/feature_format.dart' show permissionName;
+ import '../features/permission_page.dart';
+ import '../onboarding/api_key_page.dart' show maskApiKey;
+@@ -318,27 +319,24 @@ class SettingsScreen extends ConsumerWidget {
+                 value: Text(l10n.askAiTooltip),
+                 onTap: () => unawaited(askAi(context, AskAiTopic.overview)),
+               ),
+-            SettingsTile(
+-              icon: AppIcons.community,
+-              tint: SettingsHues.help,
+-              spot: Spots.community,
+-              onTap: () => _push(context, communityPage()),
+-            ),
+             SettingsTile(
+               icon: AppIcons.diagnostics,
+               tint: SettingsHues.help,
                spot: SettingsIndex.entry(SettingsPageId.diagnostics),
                onTap: () => _push(context, const DiagnosticsPage()),
              ),
