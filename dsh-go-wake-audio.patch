@@ -1,10 +1,10 @@
 From: dsh <dsh@local>
-Date: Sat, 28 Nov 2026 12:56:54 +0800
-Subject: [PATCH] 4r系列: main粘性/冷启动轮询/存技能弹窗/删社区/图标全换空字
+Date: Sat, 28 Nov 2026 13:57:25 +0800
+Subject: [PATCH] 磨砂三界面+图标切换修复+黑底白空图标+页面不透明度底
 
  dsh-go-wake.patch                                  | 2065 +++++++++++++
  tooling/build-wake-apk.sh                          |   68 +
- 353 files changed, 20373 insertions(+), 1246 deletions(-)
+ 401 files changed, 20567 insertions(+), 1320 deletions(-)
 
 diff --git a/.gitattributes b/.gitattributes
 index 52e3e08a..3e877c7e 100644
@@ -1066,18 +1066,17 @@ index 12327204..adae1c23 100644
          fun register(context: Context, plugin: LauncherIconPlugin): LauncherIconProbe? {
              if (context.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE == 0) return null
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/icons/LauncherIcons.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/icons/LauncherIcons.kt
-index 71fb6ec7..96adc1a2 100644
+index 71fb6ec7..3a0cd4ce 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/icons/LauncherIcons.kt
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/icons/LauncherIcons.kt
-@@ -35,7 +35,7 @@ internal object LauncherIcons {
+@@ -35,6 +35,7 @@ internal object LauncherIcons {
      /** The mipmap a variant's launcher entry uses (its alias's android:icon; LaunchThemesTest checks). */
      fun mipmapOf(variant: String): String = if (variant == MIST) "ic_launcher" else "ic_launcher_$variant"
  
--    private const val PKG = "io.github.ccch1mneyyy.dsh_app"
-+    private const val PKG = "io.github.ccch1mneyyy.kongkong"
++    /** 别名组件的类名前缀 = gradle namespace（manifest 相对名按它展开），不是 applicationId。 */
+     private const val PKG = "io.github.ccch1mneyyy.dsh_app"
  
      class Alias(val variant: String, val className: String, val enabledByManifest: Boolean) {
-         override fun toString() = className.substringAfterLast('.')
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/icons/PictureShortcutPlugin.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/icons/PictureShortcutPlugin.kt
 index 89de4c56..6c0726bb 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/icons/PictureShortcutPlugin.kt
@@ -13456,7 +13455,7 @@ index 1f74de24..d4babd75 100644
          private const val EXTRA_STOP_GENERATION = "stopGeneration"
  
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/runtime/GuestSetup.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/runtime/GuestSetup.kt
-index 3e902fed..b0e3eb66 100644
+index 3e902fed..5898151c 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/runtime/GuestSetup.kt
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/runtime/GuestSetup.kt
 @@ -9,6 +9,7 @@ import android.content.Context
@@ -13467,7 +13466,70 @@ index 3e902fed..b0e3eb66 100644
  import io.github.ccch1mneyyy.dsh_app.files.GuestFiles
  import io.github.ccch1mneyyy.dsh_app.phone.PhoneGuest
  import java.io.File
-@@ -160,6 +161,46 @@ object GuestSetup {
+@@ -27,8 +28,9 @@ object GuestSetup {
+     // l10n:keep agent prompt
+     private val AGENTS_MD = ("""
+         |<!-- dsh-app:managed — 删除这一行后，DSH App 不再覆盖本文件 -->
+-        |# 运行环境（DSH 手机版）
++        |# 运行环境（空空手机版）
+         |
++        |- **身份**：你是「空空」——用户自己手机上的私人 AI 助手。对用户自我介绍时自称「空空」；底层引擎是 DeepSeek Harness（DSH），那只是技术底座，不要自称 DSH Go、DSH 助手。
+         |- 你运行在 Android 手机上的 Ubuntu 24.04 环境里（proot，免 Root）。这里没有可用的沙箱后端（bubblewrap / Landlock 都不可用），`workspace-write` 沙箱模式一定会被拒绝。
+ """ +
+         // l10n:keep agent prompt
+@@ -39,16 +41,17 @@ object GuestSetup {
+         |
+         |## 界面与技能
+         |
+-        |- 这个 App 的对话界面是 Flutter 原生界面，不是 Harness Web Client。改 App 自己的样子用 dsh-go-ui（ui.json）；给 App 加胶囊、菜单项、状态条、原生面板、工具卡这类功能用 dsh-go-plugin；只有用户明确要做 Cordis 插件、或要改 Harness 网页版 / 桌面端时，才用官方 cordis-plugin-development 等技能。
++        |- 这个 App 的对话界面是 Flutter 原生界面，不是 Harness Web Client。改 App 自己的样子用 kongkong-ui（ui.json）；给 App 加胶囊、菜单项、状态条、原生面板、工具卡这类功能用 kongkong-plugin；只有用户明确要做 Cordis 插件、或要改 Harness 网页版 / 桌面端时，才用官方 cordis-plugin-development 等技能。
+         |- 没点名界面载体时，手机上的默认目标是 dsh-go 原生界面；先确定载体再选技能，不要按加载顺序决定。
+         |- dsh-go 原生插件不是 Cordis bundle：目录在 `${'$'}DSH_HOME/dsh-go/plugins/`，安装用 `dsh plugin --profile web add`；官方技能里的「工作区建包 + plugin_manager install_bundle」只用于 Cordis 插件，两套不要混用。
+-        |- 用户报障、排查问题、写 bug 反馈时加载 `dsh-go-support` 技能：它教你怎么读本机诊断、按症状定位、生成脱敏的 issue 草稿。
++        |- 用户报障、排查问题、写 bug 反馈时加载 `kongkong-support` 技能：它教你怎么读本机诊断、按症状定位、生成脱敏的 issue 草稿。
+         |""").trimMargin()
+ 
+     private val AGENTS_MD_EN = """
+         |<!-- dsh-app:managed — Remove this line to prevent DSH App from overwriting this file -->
+-        |# Runtime environment (DSH mobile app)
++        |# Runtime environment (Kongkong mobile app)
+         |
++        |- **Identity**: you are "Kongkong" (空空), the user's private AI assistant on their own phone. Introduce yourself as "Kongkong"; DeepSeek Harness (DSH) is only the underlying engine, so do not call yourself DSH Go or the DSH assistant.
+         |- You are running in an Ubuntu 24.04 environment (proot, no root required) on an Android phone. There is no usable sandbox backend here (neither bubblewrap nor Landlock is available), and the `workspace-write` sandbox mode will always be rejected.
+         |- When you need to run a bash command, request execution directly with `sandbox_permissions: "danger-full-access"` and give a one-sentence reason; do not try sandbox mode first.
+         |- The default working directory is `/root/workspace`. {STORAGE_LINE}
+@@ -57,10 +60,10 @@ object GuestSetup {
+         |
+         |## Interface and skills
+         |
+-        |- This App's chat interface is a native Flutter interface, not Harness Web Client. Use dsh-go-ui (ui.json) to change the App's appearance; use dsh-go-plugin to add features such as capsules, menu items, status bars, native panels, and tool cards. Use official skills such as cordis-plugin-development only when the user explicitly asks to create a Cordis plugin or change the Harness web or desktop interface.
++        |- This App's chat interface is a native Flutter interface, not Harness Web Client. Use kongkong-ui (ui.json) to change the App's appearance; use kongkong-plugin to add features such as capsules, menu items, status bars, native panels, and tool cards. Use official skills such as cordis-plugin-development only when the user explicitly asks to create a Cordis plugin or change the Harness web or desktop interface.
+         |- If the user does not specify an interface, the default target on the phone is the dsh-go native interface. Identify the interface first, then choose a skill; do not choose based on loading order.
+         |- dsh-go native plugins are not Cordis bundles: their directory is `${'$'}DSH_HOME/dsh-go/plugins/`, and they are installed with `dsh plugin --profile web add`. The official skills' "create a package in the workspace + plugin_manager install_bundle" workflow is only for Cordis plugins; do not mix the two.
+-        |- When the user reports an issue, when troubleshooting, or when writing a bug report, load the `dsh-go-support` skill: it explains how to read local diagnostics, investigate by symptom, and generate a redacted issue draft.
++        |- When the user reports an issue, when troubleshooting, or when writing a bug report, load the `kongkong-support` skill: it explains how to read local diagnostics, investigate by symptom, and generate a redacted issue draft.
+         |""".trimMargin()
+ 
+     /**
+@@ -118,7 +121,7 @@ object GuestSetup {
+         |- 新版本提供 `mcp__phone__diagnostics` 时，报障后先自行刷新并按 summary/evidence/appErrors/voice/engine/failure 段读取，无需先读屏、开启手机操控或授予高权限。核对采集时间、refreshed 和错误码；不支持时读已有快照。工具不采系统输入法证据，不替用户外发报告。
+         |- 需要更多细节时，再让用户在 设置 → 诊断 里导出诊断包（zip）；它仍受日志数量和大小限制。数据不足就直说，不要凭猜测下结论。
+         |- 报告会尝试脱敏，但不能保证没有遗漏。外发前人工检查凭据、路径和设备信息，不把完整报告或秘密原样贴到聊天或 issue 里。
+-        |- 完整的排查流程（症状清单、issue 模板、隐私红线）在 `dsh-go-support` 技能里；用户报障时加载它再动手。
++        |- 完整的排查流程（症状清单、issue 模板、隐私红线）在 `kongkong-support` 技能里；用户报障时加载它再动手。
+         |""".trimMargin()
+ 
+     private val DIAGNOSTICS_SECTION_EN = """
+@@ -130,7 +133,7 @@ object GuestSetup {
+         |- When a newer version provides `mcp__phone__diagnostics`, refresh the diagnostics yourself after a problem is reported, then read the summary/evidence/appErrors/voice/engine/failure sections, without first reading the screen, enabling phone control, or obtaining elevated permissions. Check the collection time, refreshed, and error codes; if the tool is not supported, read the existing snapshots. The tool does not collect system input-method evidence or send reports externally on the user's behalf.
+         |- If more detail is needed, ask the user to export a diagnostic bundle (zip) from Settings → Diagnostics; it is still subject to limits on log count and size. Say explicitly when the data is insufficient; do not draw conclusions from guesses.
+         |- Reports attempt to redact sensitive data, but omissions are still possible. Before sharing externally, have a person check credentials, paths, and device information; do not paste complete reports or secrets verbatim into chat or issues.
+-        |- The complete troubleshooting workflow (symptom checklist, issue template, and privacy boundaries) is in the `dsh-go-support` skill; load it before starting when the user reports a problem.
++        |- The complete troubleshooting workflow (symptom checklist, issue template, and privacy boundaries) is in the `kongkong-support` skill; load it before starting when the user reports a problem.
+         |""".trimMargin()
+ 
+     // l10n:keep guest path
+@@ -160,6 +163,46 @@ object GuestSetup {
          return file
      }
  
@@ -13514,7 +13576,7 @@ index 3e902fed..b0e3eb66 100644
      /** Global DSH instructions ($DSH_HOME/AGENTS.md); left alone once the user removes the marker. */
      fun writeAgentsMd(
          rootfs: File,
-@@ -169,6 +210,7 @@ object GuestSetup {
+@@ -169,6 +212,7 @@ object GuestSetup {
          directEngine: Boolean = false,
          nativeLocale: String = "zh-CN",
      ) {
@@ -13522,7 +13584,7 @@ index 3e902fed..b0e3eb66 100644
          try {
              val file = File(rootfs, "root/.dsh/AGENTS.md")
              val source = file.takeIf { it.isFile } ?: GuestFiles.resolve(
-@@ -215,8 +257,11 @@ object GuestSetup {
+@@ -215,8 +259,11 @@ object GuestSetup {
                  else "\$DSH_HOME/dsh-app/diagnostics.md",
              )
              file.parentFile?.mkdirs()
@@ -13535,6 +13597,19 @@ index 3e902fed..b0e3eb66 100644
          } catch (_: Exception) {
          }
      }
+diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/runtime/ManagedSkillInstaller.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/runtime/ManagedSkillInstaller.kt
+index bb671033..56fd3890 100644
+--- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/runtime/ManagedSkillInstaller.kt
++++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/runtime/ManagedSkillInstaller.kt
+@@ -93,7 +93,7 @@ internal class ManagedSkillRequest private constructor(
+         const val MAX_FILES = 64
+         const val MAX_FILE_BYTES = 512 * 1024
+         const val MAX_BYTES = 1024 * 1024
+-        private val names = setOf("dsh-go-ui", "dsh-go-plugin", "dsh-go-guide", "dsh-go-support", "companion-adapt")
++        private val names = setOf("kongkong-ui", "kongkong-plugin", "kongkong-guide", "kongkong-support", "companion-adapt")
+         private val path = Regex("^[A-Za-z0-9_-][A-Za-z0-9._-]*(/[A-Za-z0-9_-][A-Za-z0-9._-]*)*$")
+ 
+         /** Cheap bounded checks on the main thread; UTF-8 encoding happens on the runtime worker. */
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/runtime/PhoneSkillBundleReader.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/runtime/PhoneSkillBundleReader.kt
 index 98fceb58..eea1266d 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/runtime/PhoneSkillBundleReader.kt
@@ -14608,29 +14683,38 @@ literal 0
 HcmV?d00001
 
 diff --git a/app/android/app/src/main/res/drawable/ic_launcher_background.xml b/app/android/app/src/main/res/drawable/ic_launcher_background.xml
-index b0c16a1b..9952934f 100644
+index b0c16a1b..572d36b8 100644
 --- a/app/android/app/src/main/res/drawable/ic_launcher_background.xml
 +++ b/app/android/app/src/main/res/drawable/ic_launcher_background.xml
-@@ -1,6 +1,6 @@
+@@ -1,23 +1,12 @@
  <?xml version="1.0" encoding="utf-8"?>
 -<!-- Launcher background: the blue diagonal gradient of the app icon art, light top-left to
 -     deep bottom-right (sampled from the source art; #8BA1DE / #4F68B7 at the visible corners). -->
-+<!-- Launcher background, 空 icon: the 108-grid diagonal gradient, matching the
-+     mipmap-* PNG and the in-app icon picker preview. -->
++<!-- Launcher background, 空 icon: solid black, matching the mipmap-* PNG and
++     the in-app icon picker preview. -->
  <vector xmlns:android="http://schemas.android.com/apk/res/android"
-     xmlns:aapt="http://schemas.android.com/aapt"
+-    xmlns:aapt="http://schemas.android.com/aapt"
      android:width="108dp"
-@@ -15,8 +15,8 @@
-                 android:startY="-5.87"
-                 android:endX="100.43"
-                 android:endY="113.87">
+     android:height="108dp"
+     android:viewportWidth="108"
+     android:viewportHeight="108">
+-    <path android:pathData="M0,0h108v108h-108z">
+-        <aapt:attr name="android:fillColor">
+-            <gradient
+-                android:type="linear"
+-                android:startX="7.57"
+-                android:startY="-5.87"
+-                android:endX="100.43"
+-                android:endY="113.87">
 -                <item android:offset="0" android:color="#FF9AB0E8" />
 -                <item android:offset="1" android:color="#FF405AAD" />
-+                <item android:offset="0" android:color="#FF7C9CF5" />
-+                <item android:offset="1" android:color="#FF4A5BD6" />
-             </gradient>
-         </aapt:attr>
-     </path>
+-            </gradient>
+-        </aapt:attr>
+-    </path>
++    <path
++        android:pathData="M0,0h108v108h-108z"
++        android:fillColor="#FF000000" />
+ </vector>
 diff --git a/app/android/app/src/main/res/drawable/ic_launcher_frost_background.xml b/app/android/app/src/main/res/drawable/ic_launcher_frost_background.xml
 index ec78cb78..5baf4206 100644
 --- a/app/android/app/src/main/res/drawable/ic_launcher_frost_background.xml
@@ -14806,37 +14890,30 @@ index b6ed3ca0..48c35edc 100644
 -    <monochrome android:drawable="@drawable/ic_launcher_monochrome" />
  </adaptive-icon>
 diff --git a/app/android/app/src/main/res/mipmap-hdpi/ic_launcher.png b/app/android/app/src/main/res/mipmap-hdpi/ic_launcher.png
-index 59cd81c064ead722b8d98f4fdd10f6858f857afa..2d7cd67d1683752583054ad51c8c032db2584b52 100644
+index 59cd81c064ead722b8d98f4fdd10f6858f857afa..fcb8c3eddb8d01a6099ee9dc02c23c437fb226b2 100644
 GIT binary patch
-delta 1421
-zcmV;81#<e5DxM3FBYy>DNkl<Zc%1E=OKclO7{~wnh`qM+vXfXL&>&jU7NzB(1htAv
-zAVqMfpobi|wFvdV5rl+#L0sX+2_yspAzl&}QhGqBlu{A34WR+0X+xAW5u~NTG>#M7
-ziJv<hg6;KspV?VDjrS)-$|SQh-~9c}_s!0DmwV&GG;BibUVp$CoSn)dA(qB_w~L}g
-zITll~L=%0slQ3G8#-}Tkkq2#eag-3~h$QOBP*38N&=g6_gX&S75;Y>JV^BSdQ=&>F
-z5fz0zaVnHWGRtChPe~w8rdkL9&gw$3ZqZBg9{(W{crIiB@q)AoqUS)ycphW|GXmWk
-z6>xMgP%eKkl7B{_aOaI<W{QRU9Cmj%l*>E_Sg?&54^rDf*wDxFj-u-j)q;!=0v2qe
-z=0S}?9zn_0c5fBYh)`3`=C*E}ECaU_#Vuc7f?5n3>X-1$!GL*1i@bik#nJVNq>MM;
-zi#xW1nHb~-G{#0P1}WRg<q4AOvTj|;#~~EptNymUT7Nqo+FAtDI!XdQ9>G9mn$sAY
-z=(q(9uFU4}@u@Z4|L^D&aq^{bx%|$j30%LCuc>!nzl3AYH30x_{9VA?AFUYnJJ=V%
-z3(q!g(Q0j6n_@=owzpP$Ml4>`uCI~$jXSkj-vSh;nBsRBr|A3dsW@(WL&j=Kd+KPV
-zenT5jWq$;nDdvg?nJn^p6f5SrKl8eEwHA+t-B#;E$AhRXS1pdFJuINRt0K_sA319y
-zu`uGbWD#?Vo3SjFmZ>O2&4Xg`BBtka0DzmZg05{(_6N&nDl!2sU(4!`!=^_}OlL7M
-zowZ}ODb!-n=)^ikC)N$?bVWrx^>}45IXRO-e1El|Tff>i^IMO$76H4u8!$eVp*Au2
-z&5y?YpOD1k#BeJ_VbgzP8Tj_6wDEOnO!|nl2skm^inm_vz`&ycDt7-bE9r2vfLD%%
-z(G{&^ukSCWv7oW`QKGbs<2X~VXb%hJ{-O~&;nmf<d7cNJJ{ZFDLrn<yD=XaT`7B1x
-zCVx$*%$g$ocZ3D(-RVO-QG~2<o#f*&*cU99|BB@)t)yMhr>#}Mz+(X%>I)*Gx?Q+B
-zm&LnZtRSB^@A&pgMIgVA!)q@_EcIU~5L}zfQaKK#;z2wQJiJ@No}E7IdBBeyoekhr
-zJ0H0`!Kt%JoVk#KtbdzU#jRK#zf5hQe}A97U4rxD>sU=X-|7GWk%j{mW#EyABs`&T
-z@e+js!OvGVaQep-V$1p&OON-zTEXS38T9t}(G=tnkoX$$fz6;FUoGPI`K)O+wF9*n
-z^w~EF^gifEq(uNBz~a*8r+<Dtjbz%Q%V<z60%Mcw7@MRwXgg4gLHRtvCtoMf+<(Yp
-zYBo#F#qTs!v)JU!2DP?W!L@bJp}r8psto2fsdN$N#%zD@+Yr~j-7$0^gk9Y}cN*8>
-z);|TDyF^(a7LHb^;lfdoYg6pPL>e;-*6*zM^+;9QAU|A8A!GB{Cz;aOnRI|_N6%+Q
-zleX&j_DDGSa<p9j^7M+Mb1_;lbARmP9X*?%wqx5JJv&8h1}h%Kn^&oCn3-Z~ck!l}
-z3TA^e6IKAs1|cdQbYEu!4i7XtYGeOisj7T@xDA=CGvj9FGZ_2L*{uha7}U`w;>eIQ
-zfz%uxXmZ>J&jXi!O*v|ViU%<;6LfKE8<iMzb18?<N0uG8Lz{)gtYd|!cz@7RERT`z
-z63!c95N6UmtFV*i8O8G;6GQ^S!FwcA56*ky&;)jFRvD!fgS=^0i}&2T6_jb-^P&os
-zS5v4w$P=md<t8<H)U!ynugB4mq8>%ke!-GKny)93j9$@Y>B8+Ql=(~Ew$RYsE|#t5
-bM*jt9*S+pCv-m;)0000<MFvhpu0mjf7X7`}
+delta 1066
+zcmV+_1l9YJD!vGiBYy-1Nkl<Zc%1E=JxKdp6o*f$v`~Zy0Y4&Wp^7L7Ep*U=2)Y&#
+zLAumMTy*H5t4kFf#X&miA`~PpItg6_2L}-Zbx;JYx=5E+DimAJf2uFGy}4;UY4Y0p
+zK$hm_*Lxmv?@iJV35<g^wEaIIQ8fB%QdlrOICKtb7C8VqwSTe%HItkYRco#$s2Syy
+zsHnYMP&3OZ@xy_GwWG=TcHt<0LGTR%=&xb|5Q4Z!AcmJN;tb*-1aT08I0!);gdh$=
+z5C>Zc>hJFdkH=$mH!46Yx6#p2+}+*9R4RofVzHQ|eJb0md-M7Ed1T@9`K%UWy`bac
+zW2PWY)2tSQ0Dpj%&OujKSIm90v$HTfJlw$ERHv0POjT6~hr=MtvZ3}}U0uw5k|e?H
+z?JdM&F~jfw@$mtgror>`v*BZmKyoU!wYA~v>nn4}G>UXOjf$e!Z;1K*e(34xp^B>;
+zMNuFa43g!M339nyR8hZ%vM;u}P_!dL5C<WMLqi0uu79pVcXu~<JRUeaJY=>TA0G#=
+z*9%WiPs}#)cpSW5FRZVxo6yrrNUwufWV2c5=;(lhg98{D8DX|tSXh8mDy4hFy1cv$
+zGcz-g$z)9EX(bI2w6(PbvMhts>C|oa`S}TbeSO?KRaHS%Rpx#~thtYRkX%qrO-=pk
+z0`Knb4u3m4J24OlU?!9KRaPJnpu8WW3F__b#X_M_S3#$zrzp$vkE}!@QCHUH<|g$G
+zD_z*p(NWC>?d<GeYin!Oys@z{ytufiDK8$6+gH%#<)z_5(&;o#Pfv3*B}u|aB!Vw5
+zFNSgpg#x-<F0z_PKUqCFIe}0pWT<U2nS{5uH-E#~Znqoe=H|HV9v>fJU|@iBq9(KL
+z^ZD@W>#L?AK}kNJ$6zpM-ysG7xUsQenV`kRMQS<pf}Bn#YMRz?Inij;3_0|IO55Jv
+zUc=-h5(%^9nD<ONnM|4$UBUhRy=mE|eLtwBr3JRPw;>b?={~^XJ%!X;>59c7oS&b=
+z(tpwtWV6}2`^v+#)6>YdwzkF`I*~}k(!PP2L+r001aT08I0!);NLR7R$w`PtqtM>o
+zZuppqi3#2PXJ==IvvRo{?C<Y`rfG(cF#^eKuP6%Ua=C_G9I_}Di#RkiWWQBxaBvXZ
+zZZ}n2-8dW$@caFAd1OHj`%Gt)eIZLi;(rI_zk#wZWP%<Z9w493Q^nN{BErqh4Ot%9
+z$3E}x?+^}$VP$2-@b`nLDXn7H*Vkm3;>Ro;>@&046d{O%5X3<U;vfWZ5P~>3z~H~2
+zG%1oegE$C597=-3FsnoY_<05iN&oTfqI`%6No5YI%|Xp9siJn)B;AaXs@ANxiX%0X
+kBxbF(Ncd~djSSWP4{Uu*O|Uon%K!iX07*qoM6N<$f-LC)vj6}9
 
 literal 5394
 zcmV+t747PYP)<h;3K|Lk000e1NJLTq002k;002k`1^@s6RqeA!000!(Nkl<Zc-rlo
@@ -16241,37 +16318,30 @@ z_=d?P0&_u1K4wWhQ3W_IFa)w4VH5B)n&+{YreDp88Y<iX_t-B9%q!a~+bi3@%JzQ&
 XGrDSwrS*-c00000NkvXXu0mjfu3Rjy
 
 diff --git a/app/android/app/src/main/res/mipmap-hdpi/ic_launcher_round.png b/app/android/app/src/main/res/mipmap-hdpi/ic_launcher_round.png
-index b1f8814e676690afc2f6dfc009d15696fb1d9f01..c8e26fd86c00b55558e4906b83345bf0223e04c1 100644
+index b1f8814e676690afc2f6dfc009d15696fb1d9f01..fcb8c3eddb8d01a6099ee9dc02c23c437fb226b2 100644
 GIT binary patch
-delta 1421
-zcmV;81#<eNHJ%HQBYy>DNkl<Zc%1EATWB0r82)B<_LhWP8rvo0qG_dh(3T>FN<j)f
-zDX1X&&<9`i$x`r5P!W7nL8RiN2DL@-#TG$)C_<o$)tCw)U8!~(+omx|voYDMdzrn>
-z@nJIK>}2k9&dly+KUj8$J@cRQfAgLHT<36aPZtpqh|BaGlYdg!Kp@0zIX%N~M*8~$
-zAxvP*4@>J>+sw#frJ%rMsmqT#Q37RGf+of+e`-Y0Qc&2$=s}Gr8ZoHV$kBqpCrJXl
-zGt|n&XyHpuUKP|X<Y?hZO<o9UM{*RnCdqA(Zf9~7xFX3-Gv5j1C~!=YK%DvAN#rPS
-zM3R#j)QRLMuzw}Vu9@#-auisS#CovW_OK#oFHvWzBC{&Cm&j3INK&_o*}$ly7z$-V
-zgv0x<4FLe||I@$+7q-JF#x51LjDiROqJmtuNQCn-hNcUB3<|GUME5&9hMH8wL_xfV
-zi3Lt`56^p_#36+4Q|8XTyRO=%VUXv5kKfo&!;~jXUw_JD{?7^xQyc*BG%R&8s8=zq
-zx$T04-)~h7)1`(ZI5ZwrudmLFyV9IImazO^!NiDwv6P_ZPtzx*nWtt_YiKoF$Cuyb
-z4bz=Cl28fyH7y#ZQyedg#MBM|JbS8FB?yFo;z9(+R6&6G(;QVC0+8Ko*gkcq<s^i%
-zf|xg_CV%$FH3a>&Ts2PD)bv}FQ{Pje=o3=~nLW*9oWta(T)iX$EH2e7`LT;D`J#lC
-z^*R8cEE4K5h$=-AfVs3BP*>LLhVkI!u^z;ta!)6nsi0huOsxG+kySBgW{a4aWwJ|!
-z&|Z25A;9$4In)1#`XhMeRG)f%Wv=9`iLgj>_<x}oMpFWQo-aeJ&~=DcszDH+-XxDR
-zrw5Tt$m;pyb`{reR!q}3@nc~(H7wxt)BX7H^#h0s9Mv)hwm<05L<}!KKY-M*9Gpv{
-zgbUx~EUQkfCVwYlJd$w^CDFJlPL3%y2`W{y>go;DtC$`SKN!Q4Cwg%F(WE-wDwQRi
-zJAc24>}JFA-dw%`APSxb-Z}dKwzhY72VyY}6C-lKzq?YSKHR3Rpq>PesmU0o4#six
-za2yAQg{J=(m#X;uQVweybz56M{#L?ckI230eFG8f8;F>uB?S2XYJpZKQH4NTKz)5Y
-zUU_i{$$0a4{QgEAmwzhYhifIr&G5oa5r6M}x`D@!Cehy)QDc`Dk_2q!8<<@v<HjPD
-zL247ID`+iS!^O+nc<H%8<O>qg84<G!Wu!Brr~XOiP6e4e^c{B!CNb#BTnV?9s<^jm
-z+yQJSFloi=b%MKp%cFQ9!ZF{EN(j(suz3>9=cM0ybw4J@VodXxzaiqI^BYWTGk<U9
-z0|O&J1VRYM&OC7KdKtHujVH~thzcB@INqyX&-_wwoX7HNje7IG1N!qpdVD)$KGCIx
-zpdn~^t%ffyZm}$uW3ZnOatfz2Z2_aD77neh!-CSxGmS%zK$?FC_>zqoIH0Q_TXfgO
-zY@qE)hg!|FiXk>rtO0=C+WZSo4S!<lVBGb6${aNSjE}_d=9!eI{L3Q2xzE<^6FP*x
-znfI-t@sTKwOeK943V>%D{}vm50~p)=L4~4(&7A#Y7%LP?5|gE8EqtlyldrPA3KTNB
-zdlcQmY^V`_$1!*qZv(ba&|V^`yVKq)>_+o@K}FUtvp7&tCzIshbtq@PcYh*D&R(c<
-z;dUpH<ouOPmxIDiAj$1Zy`C~?SCRsGEnLZ{-AM9wuz-(|oswaz6Xow{3JM*?R#p>@
-z!%e98)@o{^cRUVdm%=8B{sBv@mTY&vgCdIM5nZfI186Qd?VN%+<SmFycA$62En%S?
-b6ZjtuoxYo-Ke_M#0000<MFvhpu0mjfU1YKW
+delta 1066
+zcmV+_1l9YbHNFUtBYy-1Nkl<Zc%1E=JxKdp6o*f$v`~Zy0Y4&Wp^7L7Ep*U=2)Y&#
+zLAumMTy*H5t4kFf#X&miA`~PpItg6_2L}-Zbx;JYx=5E+DimAJf2uFGy}4;UY4Y0p
+zK$hm_*Lxmv?@iJV35<g^wEaIIQ8fB%QdlrOICKtb7C8VqwSTe%HItkYRco#$s2Syy
+zsHnYMP&3OZ@xy_GwWG=TcHt<0LGTR%=&xb|5Q4Z!AcmJN;tb*-1aT08I0!);gdh$=
+z5C>Zc>hJFdkH=$mH!46Yx6#p2+}+*9R4RofVzHQ|eJb0md-M7Ed1T@9`K%UWy`bac
+zW2PWY)2tSQ0Dpj%&OujKSIm90v$HTfJlw$ERHv0POjT6~hr=MtvZ3}}U0uw5k|e?H
+z?JdM&F~jfw@$mtgror>`v*BZmKyoU!wYA~v>nn4}G>UXOjf$e!Z;1K*e(34xp^B>;
+zMNuFa43g!M339nyR8hZ%vM;u}P_!dL5C<WMLqi0uu79pVcXu~<JRUeaJY=>TA0G#=
+z*9%WiPs}#)cpSW5FRZVxo6yrrNUwufWV2c5=;(lhg98{D8DX|tSXh8mDy4hFy1cv$
+zGcz-g$z)9EX(bI2w6(PbvMhts>C|oa`S}TbeSO?KRaHS%Rpx#~thtYRkX%qrO-=pk
+z0`Knb4u3m4J24OlU?!9KRaPJnpu8WW3F__b#X_M_S3#$zrzp$vkE}!@QCHUH<|g$G
+zD_z*p(NWC>?d<GeYin!Oys@z{ytufiDK8$6+gH%#<)z_5(&;o#Pfv3*B}u|aB!Vw5
+zFNSgpg#x-<F0z_PKUqCFIe}0pWT<U2nS{5uH-E#~Znqoe=H|HV9v>fJU|@iBq9(KL
+z^ZD@W>#L?AK}kNJ$6zpM-ysG7xUsQenV`kRMQS<pf}Bn#YMRz?Inij;3_0|IO55Jv
+zUc=-h5(%^9nD<ONnM|4$UBUhRy=mE|eLtwBr3JRPw;>b?={~^XJ%!X;>59c7oS&b=
+z(tpwtWV6}2`^v+#)6>YdwzkF`I*~}k(!PP2L+r001aT08I0!);NLR7R$w`PtqtM>o
+zZuppqi3#2PXJ==IvvRo{?C<Y`rfG(cF#^eKuP6%Ua=C_G9I_}Di#RkiWWQBxaBvXZ
+zZZ}n2-8dW$@caFAd1OHj`%Gt)eIZLi;(rI_zk#wZWP%<Z9w493Q^nN{BErqh4Ot%9
+z$3E}x?+^}$VP$2-@b`nLDXn7H*Vkm3;>Ro;>@&046d{O%5X3<U;vfWZ5P~>3z~H~2
+zG%1oegE$C597=-3FsnoY_<05iN&oTfqI`%6No5YI%|Xp9siJn)B;AaXs@ANxiX%0X
+kBxbF(Ncd~djSSWP4{Uu*O|Uon%K!iX07*qoM6N<$f~BAV&;S4c
 
 literal 6820
 zcmV;V8e8RwP)<h;3K|Lk000e1NJLTq002k;002k`1^@s6RqeA!000_mNkl<Zc-rlp
@@ -16408,33 +16478,27 @@ zMJIuJHTI~|0cKHsF|>mpLwU$Lo-n5TGfI^EP*ufSrMybOymq{HymtJp9RC+~D;+c}
 Sp(&040000<MNUMnLSTY6ZXlij
 
 diff --git a/app/android/app/src/main/res/mipmap-mdpi/ic_launcher.png b/app/android/app/src/main/res/mipmap-mdpi/ic_launcher.png
-index 690025578396917fc8561ca1c1635a63c87a0afc..2e4f115da9447c946faef8c3536bcfe87c70fa0f 100644
+index 690025578396917fc8561ca1c1635a63c87a0afc..3514997695a4a2c9cd2ff8dd73a18f43336ccf05 100644
 GIT binary patch
-delta 1044
-zcmV+v1nc|U7pMr3BYy+$Nkl<Zc%0pu?`s@I7{@<*H<!y@lIC*BT`p|{)>5p9;)@nh
-z{Ly!TfcnCUh+0HMM10p`LHq}Nq4d4JkiJv|6$HhC2-*~bCd3d8cZEyT(Ac!OTyn|%
-z*xm8PdFSr!-MO=7!)?E>mU-rxd7hc?JoC)VYVUklq6=g<;eP=_>m(4S+1AEhF}#6>
-zJq|~Nlnz^a&3G#$Elvn&Ix6%!Y))8bAPB}c&~&2VK#+`YKmuATg#rg5+pOXMK?>PE
-zj0OfG(Bn`0ePCY@?bEpTSOkFi<*F}z0Qg3sL-7#jrUw9+`?carAK)W}tnK<qQ)LPr
-zKN?{$-Z8goVt+gtZhk*-BI2rTDPbY2MmJ>&O+6grp1a%`)W9oG54oyW(<SHMyQS2&
-zXA0%lbP7eoRyLUtj3(+MKfhcdq}6B2G$jw7i~^8dtx?*w@1C*#P;*dJ?dg<GcSM77
-z-(1^e{x|#LoO&eAQ)dRqt=9P9)1pmw>8&v$LgS;)i+>ch?G7AC3*LTp1gJZ!<bdZe
-zDkZJDN7D7t|9xF|$o^Gx>RD4UReL;BNJ{&3i?GJ=$vy!7Sg&=YLaQEtZa{IzL^q^5
-zg;W>u>|&YxT8$eUI#%6BPsK<Kg)mK6%vR{st~8}Xwzgj5;`=u}rNqh<`u^u#N7+Cu
-z#PnnJO@HgBrLtpjTT!0@d!PMLjSDX)`TB<vvx{XVd;WJiJw7UU<M{+b10hO#CLe!Q
-zq+OflKV{K~=8&fng2_yTQ}@OAaY5AqkBi`NO7QsUI8U68Bf=WHWs^&nZ+9I1t!;z!
-zsNl^P65J{nwqyFlm;fOEXVuFhcCQc$!Lw7t+<$)}N+u<m<xAHqT>h-UMxirxzW8>V
-z7oSX!P72aV;gH|Bsq@`z$%6w56f#WM+%m|d1eK~}VY$qenG(5`|K9#*=JuHVrOfbP
-zh-jZZ6{%Dun?<8ZGZiRP=*ra{R@SOy^Hp?1O}AE)Y;5lD8CKbWnl4$&l^Hn{=H%V|
-z`+s7D1g_0HqnjIejzW`}2(LYt^rqYb!-SbO;n@v5N1@wWI#;`NI*}F}J6hkFyVZkE
-z>4iIJFP&fU<+w4Citz5m2>{MrSoNa|z|Rwz^}Cl&WNu+?*Uzgb<@11BSljih5AgF|
-z=)ey33ZpZY6r6cz&{f^T<9*HVXQqZ-_kS_Bw8!-o_t!8=Yao>jb9Q>fb^QiZbc#C$
-zxxD*~REa`=ZRmXR<)(WD56I>#N|e*izMc#8?Wk{I^q_DD+)fAoeL!ji^NkGdls7V{
-zKUoHC7HrR~je?*!VR`5_9fDqWqUBcuXB_QiC))k&(Y0c)IMVS+=x=o)<}QX~XASrO
-O0000<MNUMnLSTX-D-T-$
+delta 754
+zcmV<O0uBA#7l{UtBYy(WNkl<Zc%1E8F>5kG5PhCs2qzXXL9kOBAy~vx5CkC>F*a8l
+zu=F<sA*GdIVI$fYL?lJ3RH9%fHezcN#VRo&t;$82R34tj%eQx)dg6lxcV_42z1`Ve
+zPBlRp^oM_2FtIxJh4?a7_%0jvmH09w-rR!GDCB_!uAI^+BY$8nz(}({2LT7L0wx%9
+z_9Ym81&#uCjemMPl;b$~{eDCu5e$bzWV2a4(nz39w|qWNiwFb)8_zLsx|9&l^Rj+2
+znbac<0F@;aiA3P>c-H#OX0xn+b8~}SE{ATnyEf+a^%XBKFKXzpEt%8lB)#DAc=RtJ
+zo6V+bmi`Cl=YQwSF@`@zH4CU#s}KYMf*|1G;X$%D8V$+*^z<az^ZC4FZ!{WO(*t0v
+zIiJrbtJ_>IM*t`ukJD&0lKF0LZ|UmlibPSA*=w~L`FuVq7K<{w-|uJM1DY=~m&=7x
+zsf4?`JDFV+MSOgGz-F`I<m5!=yS~0gyWIxI$qQgS9)GLiz@*r2x6@=YQ9Mn)zP>0J
+z3`#M<V30bUj$%wQnN)k3u?J-`nYBb(trof6?$zUt<0z3x(C6ppuW`@M&)XBwY&L%-
+zk;!DpZnx9f+1c9Wa=EBdsjS2f27~Ph2#3Rp<-m&X?{5l)LfaDnfbQ?_Hzpt&jjAQD
+zUH|}ke1Ck@Ouk;PYay@g7)__sm`<lSJw09V#bPm8zg#Y_jG4`5C=?1>C;-r)Ua3u|
+zQ)!mp-`{n~0qFETuuT|VfT}&faU3ibi{hBYml~_p3aizsIDR}HV>X+qp~F^lJkL|F
+z*VBCZEaUC%jV>-O^xp$crxR|sTh&Y{!QpV=@@w*vIgVL?D2mKU^n5n+9_aOYNTpKn
+zdcDlal+f?@(Qdby<BnhM?ixn{yT(BXSo<Tg0bn|a6#$I63MSw{_P`uQS_RX}hb8Rm
+k?fmDTJ(jUALe}#90pz1^dtsQ?9smFU07*qoM6N<$g0_2aVE_OC
 
 delta 3031
-zcmV;|3n=uc2;3KtBYz8{Nkl<ZXx{CaTaO&ab;p0Fs(NmF<8nzYce%WYA{bgWgw+i(
+zcmV;|3n=u72HY2rBYz8{Nkl<ZXx{CaTaO&ab;p0Fs(NmF<8nzYce%WYA{bgWgw+i(
 zVk<IWI1dJFz_0=P1H|7UZ+QxkM?YG5$V-9<QGh@)0>nm;1PWpc5k-oUt;ixJidS)$
 z%e~H}FI9E&&^@~|yF=~xIc#92duqD7{-@6Ee@?-Z<H_;=`+t!A1Ap~5A0x(s;6Qxv
 z5$oiKs{904R@He`>Y%71stO>gpeQJ)Dhi-ljRRWUsmk!Z)tkz%OqCT?y^8X>5Bi2N
@@ -16492,7 +16556,7 @@ zhpNp!Vvj2hTw5zxYf;Q@5@LTOsegPVj_Sq@ah@UYsPa<{jFktRs$Nyq?^hG|`}3h6
 zVu$w(2Ay1qF%p9kVkCx0i2dv8KONoF9f*87FrTYx;qL=ikukQIg#L>2ma0CFa=F@G
 zvh>@I2MQk@QA<C5*XGN1bgIq3YD<gDpw9zuAvhVa#WbQj9Z(ey;()8h@KBNu{1Etw
 zsxGTCuV|feA{n6GGQ?RPw_&j-pbpr3KTTz-x>D{+^15~MM)10~Yg+E0J~^HoPmY1(
-Z{{T-@PWqG^HXHx|002ovPDHLkV1nVI(cu69
+Z{{T-@PWqG^HXHx|002ovPDHLkV1ioS(ZB!z
 
 diff --git a/app/android/app/src/main/res/mipmap-mdpi/ic_launcher_foreground.png b/app/android/app/src/main/res/mipmap-mdpi/ic_launcher_foreground.png
 index a22b44b0856ccde982ab9179bc66f91ef0c8d5a5..227e499d395e7ef66edab853195f6e9aef4b0e19 100644
@@ -17351,30 +17415,24 @@ z-H1Mc3L@Dcy=QdtO2Gd|j~Xl(Ue_HOhgj+3q+xBl&vX!-rK;gk19T0_GCk!{gFw|e
 yfQCm6fNg<QhITyaWACt?Tf7?ZzkB^Qy#5R9_-MFKB}Qie0000<MNUMnLSTYg6%%Rz
 
 diff --git a/app/android/app/src/main/res/mipmap-mdpi/ic_launcher_round.png b/app/android/app/src/main/res/mipmap-mdpi/ic_launcher_round.png
-index e6209630ecbad8c5ca43448b5c9f7b944bd1c2cd..9a2a2d42414b3675115ec5b339f4ccd54aec9671 100644
+index e6209630ecbad8c5ca43448b5c9f7b944bd1c2cd..3514997695a4a2c9cd2ff8dd73a18f43336ccf05 100644
 GIT binary patch
-delta 1046
-zcmV+x1nK+v9;yhCBYy+&Nkl<Zc%0puO^6&t6vuzn)03IW>~6BjE(ReghDFGNr$rAU
-zL|933(BNh9Vn7fN3K0)Eh(S<1=)qeK3ZlV_xk(7<MM#1<BsutXSV1#>tZU+${p#KM
-z*!k!x51pRr-kF~6uI_Os{-I%pdR6cJ`@O1qud2nFk1M1I6@O7qq@~c5GOEr%=nUZP
-zlZcF|loo-+tOLf1O~zC*k;1g0h)E)j2L@?)FFlcnL?!TF8NXd;D2XT`v=hdAb@wF^
-z=7F6w-bG&$rV3t0hrxIkfh5cT2Mm+(E_#ya6+**kyo)Xp{X*!T!1fSImCe(S7pT=G
-zSHG{PIjqkM-hU8E-4(~5D6neTeDmE_+C#TV3_OGsFi0Iit59F$bAmTt8V{8-4453x
-z@XjmyLS@fg*rc@BjBSgXPRF95B<vkEXfzdT8~&~QzWo^hYFnKliv>Z}bi#IN#rDaM
-z6%7h`fnh+*)LsEXE1h<`++1jK_WZi9?aa&jxPQ{*?SBtf*r+(<rXI-h`U~THb+y99
-zEB*p%?&v5-W(p{!(6L1;gxo&L^BW**3J&ZyvC0yw-0_U+(YIHljxDB=@w>GXK;@sH
-z(}#9p7_e}w>7Tf=W8n4){p+6%OcT~DTW7K>tq`i!6>ptgrqS%U-4Jl%sSyCazE<&t
-zL;H7+Fn_sqr^U^M1}m0-ZbXHlr1M7OJko~0@3dH5w;gXNm^(JcfeDkJe{b+psp0R_
-zwpnzIHFG%6yQe0}WxLy=Ji0ZpV~&7F9@@oovtvAbFpIS*`Rsz#^_DADCx&LGbJ$X0
-z+a0ex_Gq4RRZ`oEU)zEvfr-5tjy*ZT^i-b7aersooG;Zm_r*G^Jwjn|slj}y&f!Bj
-zo;fn&Yf}o&f7wksIspyhYnEi{!5qcB;QEg>E?uke%O8zEc?Ep%$qJ)IgWUzgmrib!
-zB~{J04<KHAV^NEGv0zZEOQgQ;RG>Wv%2g*+UOPEKCZlh_xAQeFU)Mh!)CwUlrl)f4
-zG=D({xBqF8#0GKl^g^Ok(J+GBK7H>X%WEx8zkfSWMk&1=*oCR25+tYv>^^VLmSEdp
-zw+5C@3$0uzE(WP1(MA>(gVf>H1Bt>Y7z$8v^Zcj~0OI*mzj?Jq!n3n`I5E2?RBm^{
-znc>x1_%d_jhbkX^z8uvANKzATY})*_6n|d+W$vy}{U*ALRjZ{{JBztjOWyzY${~^W
-zSf#6B*h&2FPUgA@46_${9qtAS4jYMp<MrSW8YU8bE;#z{lEXkE<ccYLjowKT5ia?n
-z<taNsBGqeF?|_3Q67!-vel;{mZ)kjKpqJ`;6(uE;^ka{N>h;K^_PNc!nspXPXAdI`
-Q)c^nh07*qoM6N<$f@|Ca(EtDd
+delta 754
+zcmV<O0uBB79*G8!BYy(WNkl<Zc%1E8F>5kG5PhCs2qzXXL9kOBAy~vx5CkC>F*a8l
+zu=F<sA*GdIVI$fYL?lJ3RH9%fHezcN#VRo&t;$82R34tj%eQx)dg6lxcV_42z1`Ve
+zPBlRp^oM_2FtIxJh4?a7_%0jvmH09w-rR!GDCB_!uAI^+BY$8nz(}({2LT7L0wx%9
+z_9Ym81&#uCjemMPl;b$~{eDCu5e$bzWV2a4(nz39w|qWNiwFb)8_zLsx|9&l^Rj+2
+znbac<0F@;aiA3P>c-H#OX0xn+b8~}SE{ATnyEf+a^%XBKFKXzpEt%8lB)#DAc=RtJ
+zo6V+bmi`Cl=YQwSF@`@zH4CU#s}KYMf*|1G;X$%D8V$+*^z<az^ZC4FZ!{WO(*t0v
+zIiJrbtJ_>IM*t`ukJD&0lKF0LZ|UmlibPSA*=w~L`FuVq7K<{w-|uJM1DY=~m&=7x
+zsf4?`JDFV+MSOgGz-F`I<m5!=yS~0gyWIxI$qQgS9)GLiz@*r2x6@=YQ9Mn)zP>0J
+z3`#M<V30bUj$%wQnN)k3u?J-`nYBb(trof6?$zUt<0z3x(C6ppuW`@M&)XBwY&L%-
+zk;!DpZnx9f+1c9Wa=EBdsjS2f27~Ph2#3Rp<-m&X?{5l)LfaDnfbQ?_Hzpt&jjAQD
+zUH|}ke1Ck@Ouk;PYay@g7)__sm`<lSJw09V#bPm8zg#Y_jG4`5C=?1>C;-r)Ua3u|
+zQ)!mp-`{n~0qFETuuT|VfT}&faU3ibi{hBYml~_p3aizsIDR}HV>X+qp~F^lJkL|F
+z*VBCZEaUC%jV>-O^xp$crxR|sTh&Y{!QpV=@@w*vIgVL?D2mKU^n5n+9_aOYNTpKn
+zdcDlal+f?@(Qdby<BnhM?ixn{yT(BXSo<Tg0bn|a6#$I63MSw{_P`uQS_RX}hb8Rm
+k?fmDTJ(jUALe}#90pz1^dtsQ?9smFU07*qoM6N<$f*^};g#Z8m
 
 literal 3961
 zcmV-<4~FoGP)<h;3K|Lk000e1NJLTq001xm001xu1^@s6R|5Hm000j_Nkl<ZXx{Cb
@@ -17456,44 +17514,39 @@ zJiJHn9*H}VZV|ju(sZikkamVerAg{X5|0QyY}n~U0+8n$4$@y2_@7+=AFlrZqyY*p
 T%Wub%00000NkvXXu0mjfXLXnP
 
 diff --git a/app/android/app/src/main/res/mipmap-xhdpi/ic_launcher.png b/app/android/app/src/main/res/mipmap-xhdpi/ic_launcher.png
-index 98b71d2b972cf0307173880e5e1c23b8ead5e2bc..31213f405eb9de9e64261056fd567593975ad1d2 100644
+index 98b71d2b972cf0307173880e5e1c23b8ead5e2bc..42e3345317f0a23b4b15cfa42c20c1bfe170589b 100644
 GIT binary patch
-delta 1765
-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
-Hu0mjfb|GRL
+delta 1515
+zcmZvcYd8}M7{|A=9BjF@%q6!Wb4{H`$)c?-iA=|oJ$0C6<kDy;mu8N+&;3#iop6%n
+zIaG?W6HAQRO3|=mlRH@+mnpZUv%Z}Vz0dD?{-53t@BjI~{~TAjS^=C6dg+cq;o~Y7
+zs&F=!0`~OeZ-!R9D6#usj3S|wa-k0$njeNfSlX}YZ0%^)MM9HapiQ+@oVBd8(ufwi
+za8H{na(0?-mh0bTS-Gl{0T&!*TUooV1bqCMI9G|IYA-xryj{GwR<%V5*fIrvVCd!L
+zx@lnyx@!0*S{kX!kCy23nd~Nao|#R10x3*~57-;vT%>nempdVK!`s&WP#oqAT%r1I
+zWi5RW;&Se67O(E|zMSgR$2XfHWbjlI@WxlBGVtk+-oTxi?g0O!Q{$?}>5!i@<Eu9o
+zbF{jn!)S1DkVqzj=#^gkV^6cVL+^@;ilU;TG;m&COHM9-st@${_eSGIz1juBgoK37
+zRJwr61;pot{o6oDS&_-iw>WKW+~8)F*C$>5bAf7VYDM21D<DUmox9Cy4^5FRTc1fN
+zugJZ#vhj+;k-ai}|F%z1>8@-hvzpCTDJm}Z?JF!VM~LW=ts~=dxdE@I$G7Jxhr>uq
+z0}YGC_+uHrfv-C`JL@+!Hk$Q~-ohAba63EECQ#!kJ#SxM5CVZPMSn^WMWm}6x%`r4
+z-UVnD*_h@uX1?AKeomQyIwr#u1dezkyl^-Z82IF8{+l<D#KrY>Kbc>HP<4043Diwq
+z;5z+W!;>ez)REbkqj1Ba!NK%Dj*q<>W-`@oeBY)G4_8(iti~Y&qv_jnrwO@GC@gY{
+zjg9T@bHpQpn{|0S9+65t7;%`?EE<yzHH}f9p%=+PLEQOytEuVfv^Ue#XT<Puwcy}j
+z)2|&${&-MHNy*sTw|P@>m@Wo`@y;Qd9v$t_12^6LmSmu-`(kx9rZIWe%)$a48EGF8
+z5pg^;G*qy>wzgK?!RPbI-4Fb1-bo~ojEoHX8J>iB;7(oLE-~dWSY4gJ35cQ5Ap7?1
+zs~+<4@yVXJd+*)}8jU7^)g1Uoz+$n2Y&EGzTwHkl{rwMM5C|kLD(a3$&H#PDM<5XF
+zd8DM`Fec$#kBg6I6Ux4PiH$j8aCXwn+&nNOWdH4|DmIHA5~8fHum7IX%G3(T0Rob-
+zSnRrN7AKs*d3xUICKW=hZEYcLZf*`RuvOmVHO|BOddqDv%+T<hxm+aDRpjk{Ho?y?
+z)5F6f`%=Pl|6j{Jm&siE=4Knoq@A{vP9P9impB*gkVqtc&(^|7D>_E=n)L+#mc94c
+zvnGl1xj9Qu9F8HOD03u@h?XH~+RRMwoK(taYilc;3<(JtUt9dhB3Yp_2lg^S9rW*w
+zPgOC^91fGsX4l*_y6T|;AY!o~7bMa<+@Mq@i?*?})IiYN{dNKX8R_Zuv3b4I)8wv-
+z8&^XB0HTM78YME)C)|)kq3kX$E=F|eT-QueSOpf3j&{oBNbLFnq@lW4EH3D>;OI=r
+zHtNwCs46x0PvxE#^3_k;U*;K!iHT)}g{T@Jz<8s0MI;gxuvk`!@_ZxLny;W8Ky06?
+z5`&IfN_f6B+h-)|fdR|6!dM>{^Aj9763U9aq(x_$#_a&>AOAl&4=!l#&e%CGl|mOb
+z;DHbQYQC11mZEUD{JM>ANv<~b_Aj@$+w0;>i0l4C!Oi1M0Ub(7?LwYJ^81ZrCO!m$
+zio)n0uOkejtqi!);hLmmVHi~N<ax}rKqrut3QNv3?VQW5uS|oDEyrO}-<Q_b!cDHG
+zO7gbXm*J0FTf;}w_0AY;BzJdXFGofyvZ(xWvXE}H)bvuZJ`DIdo_AJUQHR<JxX>Th
+z2m*G->1yG20L}*iobn-KRvK=nq_a@21*}gy7jBD+NV%FCs=uJewU|@X-(9=Th?FFZ
+z@Zg|b=9zbSf2C7fsv}YqeR&UmaT}C|43gfT{v3ShcFk%2cc3u7fhV5KE(a*a9qWZ@
+IL=#i~1L5i2V*mgE
 
 literal 8076
 zcmV;7A9LV|P)<h;3K|Lk000e1NJLTq003YB003YJ1^@s6;+S_h0019TNkl<Zc-rlq
@@ -19416,45 +19469,39 @@ z39<UhB1=J*`*>n8Fi&8n?_<s-uA-kr%eV%JJ-`-mTD}J1DO_jDXj1_T6QoQYzi!}P
 k*<RUR*<RUR*<RWHFN6tK7j@D&1ONa407*qoM6N<$f~2?*82|tP
 
 diff --git a/app/android/app/src/main/res/mipmap-xhdpi/ic_launcher_round.png b/app/android/app/src/main/res/mipmap-xhdpi/ic_launcher_round.png
-index 91791695f64e203b4232d67cbc39597b7fdeb9c1..f1839296cdb9084dc57256414e486ee10b3b328c 100644
+index 91791695f64e203b4232d67cbc39597b7fdeb9c1..42e3345317f0a23b4b15cfa42c20c1bfe170589b 100644
 GIT binary patch
-delta 1833
-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
-X8Ai8sCj}qF00000NkvXXu0mjfz`c0z
+delta 1515
+zcmZvcYd8}M7{|A=9GB&m%>6QCuBr1VS+un!k?EM?slzNImxiI-W{$bf{Zb5_aFXRY
+zQz^<$EHP>;qG5;C++}%OCfB92zMT)f&+mEupWYAe|M|cFw-~8X5tIUY<%U9F<Es~I
+zFxFQC4)hjohgQ8Tv;AO%z$4`HH6PixJPLidd`Qj7%E7c7kHo)3ny4!{saxe_;LNq5
+z9@f{Tj127@m%l4=@)f57F5Azw(f3^s`1C1hz8XW)SbVW`r*vtfW``KCV*>m@)hWn#
+zRY&P{*Ktp`GD-4}mnjR`jAl2EsdYypK1_=XI2hnmqH|80Jt=m@+SLD04C*{orn;^b
+zt^Hu!O8#69r{S7@UTyl5TP<LM@^mvWd7UN?e72`AaBsF7z(3{egrZR<_~*>}=!jxZ
+z)OL0n4i69G2m}zN+VfD{IXZh}proWEDk@49<LSBV==`V3(BNQS3|7#mQN&M7OzcXh
+z@YrlXLP6NSO@3*s5{cOktG%5a+@kR2jEjFhP)SLt<eNhk_=J;Fk7@nUX@W)Db0P6H
+zp>IwyQFSb`Pl6rX^$sfEmrJA7G8hUarKLXo#g&yX0VT3+Y(gs4<Mj6W^gd&;s2Lfc
+z(eZKY$*kX$Z#p_T={7T&ru`ppql{G9U0q0HO`~ZYFCQNe3<fhneohlaWU3fC|B_?Y
+z4QLTqo8&RG-)!-}q)lo%q(Wo_j(Nd6F&JZr@|iE(w{O8oOPia%65l4i;{L4Dh+CY%
+zP0Gclr%!!IV{@@5pavtu!<m1a61^U!(Ug+E?~+GHtE=_a;^BcYlwGOgq?FI+mpI17
+z#r5<%U}3>6+8hoCM<N}GIEHT#h{Pk!BGPl@5+Nvvy|7?8Ju{Q>c82sE7apz@92{)2
+z-YMsg1(lVRiQc^{n2twvQ>oMe`xr`0jD0WEWcyo+p0@VOwY6Ag>YS;$IWjWRE+Qi0
+zRA^`@Z)Ia+qqdXF<q~=x`dSYNh2X5LEW25bkaqZPL&Lst;xT0v749}5mP`ig>+9E!
+zczb*2PTsqJ|1_CQ=0WNX|HGrx=|MJXq~p%coWa4thY&Cr93K^R*FA5DGUUzU@eVwe
+zQ?M5aSvTVo5*U6JU%$r19@o1tWol*?7!q>mPE8GiP6-K-*VWa1Pi&*92jl?(sc1BM
+zQ!<C)Phvbg?)Kn|HLYxHz^<;Y_7G*uf~gy<M~#gZyUGv)gNtTTfk0c9w+Fd?zP{P+
+z?(Vr)6JPlMTIsPuU{kiY+wsO7<ef}EKR^0a))iYg9F9G(vpCj<j8(f~HOakg=XK$N
+zagua?-ogWep$dueEFlxtIwH=PoeiEBi>dAH?G;lYAt4hROP}a?OGNh2K^mx&@}2oi
+z5!J$C(HIOy-7UjtcU1rmjRrZx;a=f-<q}DZwS|Q$jMCw|7XZl0%xsJ+=$n}#bXO%u
+zhX4RLcXuUXWTbbv0iH<QUs_rU>(;udmLjuCdHmzYE~ylb-aHI9P#GT|FX}dDX-!ME
+z8j)Fu8YQ>Sl^*8Owa*$~7pO@|NfpJ#h&mv^XsdKpAP^MM>6S^-LPM9jb<iFlx?fR_
+zN<l0qzF3~?Hx%?jfR#I8^iNBLi4H6waaCH@s<lF9cPi_i`agLOFRSg(+PfeYYc6g<
+z10VU;t(TXVBQTi4hOKWYF4lH-uXcAk8WPHIoBkugEfdWFopLE1e2!4~d-6$RZ$Cc;
+znbAL9haW~>9de~W)$pnOFio{Hmryf2tw4M_BsJTlYd*KJIs+nFiASZsFR!nM8b_xK
+z3wAeGpikP`!aru}oHtTU?dd^Zi;R?IQU29bF~xAX`IT&a6!3FA?ykBZj<y%EHGf>g
+z3)ma4t&Z6PxD*6%ECh=zRb9`D=QP>okbaGPs0|__Ejm3^cTtCJJ};}kd$wH>X(=fF
+zkzw2H^8*EcWs+KJBhqAjc^`Xa7nA`H5<i&v5`6Sd-8t@eAU~mrGd`7D36PB&+7rb@
+H;?n*D!BX9{
 
 literal 10189
 zcmV;;Co<THP)<h;3K|Lk000e1NJLTq003YB003YJ1^@s6;+S_h001YHNkl<Zc-rlq
@@ -19656,56 +19703,51 @@ zgt4HbBAoQTPJxjm>d2#kFsDzG(4V=Uxt_V6xt_V6xd8qz2$2|c=6r!;00000NkvXX
 Hu0mjfL<q@G
 
 diff --git a/app/android/app/src/main/res/mipmap-xxhdpi/ic_launcher.png b/app/android/app/src/main/res/mipmap-xxhdpi/ic_launcher.png
-index ab01f98b6f932c8e44f2a8018261b4bbe779af33..de8139ddaaab83b3a13ca5e1a4f19cb079bb3b3a 100644
+index ab01f98b6f932c8e44f2a8018261b4bbe779af33..8e20699815419dfeb3c972890667b8b6b5ba5887 100644
 GIT binary patch
-delta 2432
-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
+literal 2211
+zcmai0c{tSD8=o|n$vU=VAIp%jg-XR}T*L^MS&%(MT!k=}v9D1HAtB3HT7(RdJt4~2
+zZ<b35<JxA%V~mmY{=V*i_j!K5=l91s?|II7&w1YSIq&=VoK$NoQ$B79ZV(8>hc+|D
+z05;>eK{$ba`P#yJ5D4OnHa5hC71E!(nqfC&`>u|=Ubk~*`OllFD;U{^%asb{gb0Q_
+z>5(Tf_PF4N&N!$@g;~f=YsJ>oG>9T5RRa#W4ww7WB->KQQbqgrsJ8ktJ5tmA$YOYQ
+zD12yh%a7RkBdD})xeZzTba;zaIMk3C0^#Z7+^d6kmt-hiK3Bcr#S8Yyl2qaHbm0xe
+z@EB=$p3y%;MI(8)akU{(Wu(~@4^jt8Mav2?LP#8jMJ$EVB4v4C!gYadP=w0hqO5$d
+z;4qYd!Yg^|!14NSh<vLv?fhVnpbt;tG*^#%z9jaSczu}6-<RUyyk=TAU=#zGjgnIr
+zFStAwg-UygvhRp>0SkJ;V5h(wm?_ABSO!Q3n!&+wLIw8!OmElSrXW*m3CQ^*5=s6_
+z)ZY1bjg4dd{g6iwA6k2RE8}sv08{MgOa|V@My|%SQzL>%G*SE1*Vj8y?KoYJu&14v
+zLg?z+=>t0}&tq3NHpB?6&yh{;y)v;C+B!NWL?ZDc)A(}q!6hQ0Hw_884xG4>YYLGw
+zh}u&mlgU$CRT!VvRF_slb?IcYlg5?cm5k3mSx*~8SGrRKl3j^x+KsmMV(|X?ew(f3
+zVX-c^kr8dBM5t-H)Xl%eMO4@zKfIltw>_+LPE%W3dn$&Lu_voy5glznpX)3Jg7p5J
+zRTsH?ue(-VO|87HPAh`7k{KSSB*>rgs;cTiet!PS_WES5RJYoc`owGJRzhm=)fkB)
+zIZP7Z8%UedVn_EN;Ke*aSDv#N-}D^b2grqrz#&P$;xHHz)uNo*`c_(xfGR>$p6R6M
+z%Ls(>T4syf9?ZWmE0|sO^5uQKcqMc0>}StDOB-IsA(hR!!C738e;$te-=@O9a_we7
+zKt_#oYvr#0KAT=PHa3>n#|`GdVX<4oJ4_~X<&Rg`mZ0!<mo*0CXqhOc;bitol}^*8
+zR!-!o+6B)ANA5D08Uo4n^}UZIb$P$_=!Y|@J(sLrV1q+LB_)(axKsD`BIbjyD1Tbt
+z*qB6Gd3Y!gUEM{9pzC0Sy1Hm|r|Zroo1=qW1t*QCF!{|NT_?L2jZbkVEFA1^eVh*{
+z&qk><agk@}I7i3pbUGbpZ-4f}P^D!-Kb<iCy`5MQq;CH<_H|X&>f!!Qc5$&LvItR5
+zk-2~WWm{Wen~SEXm{@^!(V$nEsH$zAwrzG{p%k`nQRx;Kp`ucnp3Xo1Nm5q!1u*zB
+zFragXf>T_|Jy-uecvXmxm)F|SQL;U1KUa^RkB=|Vbi^1Pmk52+*BQC1{dHo(Dw4h#
+z_OiD2v6i3>;JCi&9UrB9^<BCQ5^-452PrEnTlf%nGXL3WO&7Jb^>vf8BKg}+!$nB!
+z?kOl6H2%7z1a)w9NVF|rEe(j-*xH`fomu-@W#Zwn_-3gke5*1~*I$PCTb4OYUP#%h
+zFz=nxZlpnGK|z(O>x~=F!j2A_m!=&Y9B?tGi;=Nj>JAP4%)cOVJ=Km)iQV((3hT*a
+z42#9G&mUdiChsV$f?wCvG&ZQjp-^G^GFbATbVA@?6!BN472fh^c++S!KX#E~4hpzu
+z?s+4KoP(odh~|ydKghQRdgwDvCYPixBDbhSA4CpWOemqN1inZh5HQZp(#P-;dLy(4
+z2M1Z3i>57Mn<O6(egT2;osBt5$zi|a1ZOhujmJEAl9Qh=!H%X_(@wZg_;onj=GfJ`
+zpzkoNHQ>dM9xnu6Ssg6UZSedo#5k+Q%f~mG%qMvpNKHL+i|n=>!KL-dS{xqVE1hs$
+zBg`;;^8w+cD2a!50<s2F7qr*&1TFz`@ecR_5;g1468!4t!LCl|Z{A5}it<Cx_4=ZR
+zu*W#wZJJ@KcFZ39+%)o=CMO*_y(mW+$6S?)1X6!Cs_`L`$bMVw(O$t)ia^W<<N@&B
+z_Vi5DOM@qN-()~q(1<wF&%<a2BzNTN*IsEuU9^g|k<rOe@c8C#BzpfrS4a9<HHBg^
+zIy*~gzoqpkF7CuUp>=w=DigD39;}a0RrQ%^yhFX$-0xK{F4MQdWq<L)1#ttV(Yb<h
+zgW|`G*=CRF!Nuv=Z|)2U8JP*>??5djBAd8#vWc(~ekjE3L|m-Me>LWFU#8v%D&X<>
+z(Y@_;6;;&%^5PqZcV9-<0q(T4V#dg4LUs?MeSLjNt)UwZ1SuW2PN^Dvihyh*_0+H@
+z_2_V)c9>T>b<&~=D3HzdNliwFN-yJE>-0VeZ_bFj=>Oe<KP5pg8AF?Ge)12$c(Rqt
+zDmhf`YN+WYsaYJK59W$+CSQX{<tSJ<AQ8t*V~r_6!9D;a)DgA+N!m~t{>vJT2DnRU
+zy0raBhYGVF*f@l2d`B{V5B)MSK3>L5v8dx3dD9%UoK|I5D-q!?j|WI^VRNxhIHt*>
+z7qjPu5VW~=jZ;)a#6Cg?ZvtFudwY9yW#w#Wwz!Q8tmLBkU6LUa^uJL0H+15xon!>)
+z+S{9)92gV~W`cvMd7v~e%2QA%At3lXHE6C@##!MSH(=dD6jBep-*+|r_8=+)ax9Pb
+zA7e%8z#rAXm88`k3mvE;hmCs+)c;h1vD-B+q3M%`Bo_SchVVCIBhs<>u7`_prjDf~
+z67S%+BT1&dq#3TV$+&Zp6*9>YzR8fhN5^7LDMG`r_uL%js-4ncPaN#W*8c|8?uqb`
+TooR8v=L3W`u`;gt)h+%%UlaG+
 
 literal 14448
 zcma)DV|ymB5-qp3?X7Lw+S;~l+vav_+qP}n=38y`w!M4rFSyT>WWFUcNzP<4$%*=<
@@ -22744,60 +22786,51 @@ zwBS524(!C_z-<!Kly(isvk2=^z7SkH>?)=4ys)X~r3jk+WB=Gc_K*Ez|JXnFkNso+
 h*gy7<{bO&9{~tPy&S`YiKGpyL002ovPDHLkV1jgN$`k+q
 
 diff --git a/app/android/app/src/main/res/mipmap-xxhdpi/ic_launcher_round.png b/app/android/app/src/main/res/mipmap-xxhdpi/ic_launcher_round.png
-index 8026f5882d6219bfbe8f33c5163ac425428d8863..72103e430a8c60abcebdb8220b73902d6a023686 100644
+index 8026f5882d6219bfbe8f33c5163ac425428d8863..8e20699815419dfeb3c972890667b8b6b5ba5887 100644
 GIT binary patch
-delta 2604
-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
-O0000<MNUMnLSTY>Nbalv
+literal 2211
+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
+TooR8v=L3W`u`;gt)h+%%UlaG+
 
 literal 17509
 zcmV)+K#0GIP)<h;3K|Lk000e1NJLTq0058x0058(1^@s6=SJeV002ZRNkl<Zc-rl~
@@ -23140,69 +23173,65 @@ ze7k(Re7k(Re7k(Re7k(Re7k(Re7k)6$9DVw0m^w--()jn5C8xG07*qoM6N<$f<<FZ
 Aa{vGU
 
 diff --git a/app/android/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png b/app/android/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png
-index c1dde2ba8a41fff5a61637c0cb10a959bad4d99f..3541ea22026ba18713b24893d8dd156a2867496d 100644
+index c1dde2ba8a41fff5a61637c0cb10a959bad4d99f..4ec39cd0c1cb6a000664c897fb457c1dbbd75b22 100644
 GIT binary patch
-delta 3087
-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
+literal 3040
+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
 
 literal 21668
 zcmbqaWmg?dv&G#41a}GU5Zn{o-QC^Yf(CaB?(XjH?#{sv5;Vxc4lmFB3wN!anKfT#
@@ -27401,74 +27430,65 @@ zJirs?%sQaIcVdz!#>AKy6JugbjEONZCdR~=7!zY+OpJ*!F($^um>3gdVoZ#Q@sb$-
 YA9Ld;u`N&=umAu607*qoM6N<$f|KzWPXGV_
 
 diff --git a/app/android/app/src/main/res/mipmap-xxxhdpi/ic_launcher_round.png b/app/android/app/src/main/res/mipmap-xxxhdpi/ic_launcher_round.png
-index c03398effcbcf22ec645f8f8930eb705ee99a4fb..68ed5904a8c57d2eb2731ec12be458b3708269c6 100644
+index c03398effcbcf22ec645f8f8930eb705ee99a4fb..4ec39cd0c1cb6a000664c897fb457c1dbbd75b22 100644
 GIT binary patch
-delta 3335
-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
-R%k2OF002ovPDHLkV1iV}aY_IH
+literal 3040
+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
 
 literal 25963
 zcmaf4RYM%j5)HvUxNBHkgS)%Cdw}3Bi$n0>?(Xgmi@OAOclWUP<@*KqVWwYuYWh@H
@@ -101663,8 +101683,173 @@ diff --git a/app/assets/skills/dsh-go-guide/zh-18-schedules.md b/app/assets/skil
 similarity index 100%
 rename from app/assets/skills/dsh-go-guide/zh-18-schedules.md
 rename to app/assets/skills/kongkong-guide/zh-18-schedules.md
+diff --git a/app/assets/skills/dsh-go-plugin/SKILL.md b/app/assets/skills/kongkong-plugin/SKILL.md
+similarity index 99%
+rename from app/assets/skills/dsh-go-plugin/SKILL.md
+rename to app/assets/skills/kongkong-plugin/SKILL.md
+index 1af24b66..9a1395ee 100644
+--- a/app/assets/skills/dsh-go-plugin/SKILL.md
++++ b/app/assets/skills/kongkong-plugin/SKILL.md
+@@ -1,6 +1,6 @@
+ ---
+ # dsh-go:managed — the dsh-go app keeps this skill up to date; delete this line to keep your own edits.
+-name: dsh-go-plugin
++name: kongkong-plugin
+ description: 给 dsh-go 手机 App 写一个本地小插件，在**手机原生界面**里出现：输入框上方的胶囊、回复长按菜单里的操作、状态条、原生面板、工具结果卡片，还能朗读、开口即停、显示字幕；写完用自带的检查器检查，装进当前主机。用户要给 dsh-go App 加需要逻辑或数据的东西时先加载它，比如「输入框上面加个按钮，把剪贴板译成英文」「长按消息加个『存到笔记』」「输入框上方显示今天用了多少」「做个面板看我的待办」「这个工具的结果画成卡片」「加个按钮把回复读出来」。只用于 dsh-go 手机原生界面；用户要做 Cordis 插件、改 Harness 网页版 / 桌面端，或明确说的是网页插件时，用官方 cordis-plugin-development 技能，不要用本技能的目录和安装方式。Write a small local DSH plugin that shows up natively in the dsh-go phone app; for Cordis / Harness Web UI plugins use the official skill instead.
+ whenToUse: The user wants to add something of their own to the dsh-go phone app (手机 App / 原生界面) that needs logic or data. For fixed buttons, layout, theme or hiding things use the dsh-go-ui skill (ui.json) instead. For Cordis plugins or the Harness Web UI / desktop, use the official cordis-plugin-development skill — different directory and install entry.
+ ---
+diff --git a/app/assets/skills/dsh-go-plugin/kit-bin-check.mjs b/app/assets/skills/kongkong-plugin/kit-bin-check.mjs
+similarity index 100%
+rename from app/assets/skills/dsh-go-plugin/kit-bin-check.mjs
+rename to app/assets/skills/kongkong-plugin/kit-bin-check.mjs
+diff --git a/app/assets/skills/dsh-go-plugin/kit-lib-bridge-capabilities.js b/app/assets/skills/kongkong-plugin/kit-lib-bridge-capabilities.js
+similarity index 100%
+rename from app/assets/skills/dsh-go-plugin/kit-lib-bridge-capabilities.js
+rename to app/assets/skills/kongkong-plugin/kit-lib-bridge-capabilities.js
+diff --git a/app/assets/skills/dsh-go-plugin/kit-lib-bridge-effects.js b/app/assets/skills/kongkong-plugin/kit-lib-bridge-effects.js
+similarity index 100%
+rename from app/assets/skills/dsh-go-plugin/kit-lib-bridge-effects.js
+rename to app/assets/skills/kongkong-plugin/kit-lib-bridge-effects.js
+diff --git a/app/assets/skills/dsh-go-plugin/kit-lib-bridge-limits.js b/app/assets/skills/kongkong-plugin/kit-lib-bridge-limits.js
+similarity index 100%
+rename from app/assets/skills/dsh-go-plugin/kit-lib-bridge-limits.js
+rename to app/assets/skills/kongkong-plugin/kit-lib-bridge-limits.js
+diff --git a/app/assets/skills/dsh-go-plugin/kit-lib-bridge-manifest.js b/app/assets/skills/kongkong-plugin/kit-lib-bridge-manifest.js
+similarity index 100%
+rename from app/assets/skills/dsh-go-plugin/kit-lib-bridge-manifest.js
+rename to app/assets/skills/kongkong-plugin/kit-lib-bridge-manifest.js
+diff --git a/app/assets/skills/dsh-go-plugin/kit-lib-bridge-util.js b/app/assets/skills/kongkong-plugin/kit-lib-bridge-util.js
+similarity index 100%
+rename from app/assets/skills/dsh-go-plugin/kit-lib-bridge-util.js
+rename to app/assets/skills/kongkong-plugin/kit-lib-bridge-util.js
+diff --git a/app/assets/skills/dsh-go-plugin/kit-lib-check.js b/app/assets/skills/kongkong-plugin/kit-lib-check.js
+similarity index 100%
+rename from app/assets/skills/dsh-go-plugin/kit-lib-check.js
+rename to app/assets/skills/kongkong-plugin/kit-lib-check.js
+diff --git a/app/assets/skills/dsh-go-plugin/kit-lib-controls-check.js b/app/assets/skills/kongkong-plugin/kit-lib-controls-check.js
+similarity index 100%
+rename from app/assets/skills/dsh-go-plugin/kit-lib-controls-check.js
+rename to app/assets/skills/kongkong-plugin/kit-lib-controls-check.js
+diff --git a/app/assets/skills/dsh-go-plugin/kit-lib-formula.js b/app/assets/skills/kongkong-plugin/kit-lib-formula.js
+similarity index 100%
+rename from app/assets/skills/dsh-go-plugin/kit-lib-formula.js
+rename to app/assets/skills/kongkong-plugin/kit-lib-formula.js
+diff --git a/app/assets/skills/dsh-go-plugin/kit-lib-json-schema.js b/app/assets/skills/kongkong-plugin/kit-lib-json-schema.js
+similarity index 100%
+rename from app/assets/skills/dsh-go-plugin/kit-lib-json-schema.js
+rename to app/assets/skills/kongkong-plugin/kit-lib-json-schema.js
+diff --git a/app/assets/skills/dsh-go-plugin/kit-lib-messages.json b/app/assets/skills/kongkong-plugin/kit-lib-messages.json
+similarity index 100%
+rename from app/assets/skills/dsh-go-plugin/kit-lib-messages.json
+rename to app/assets/skills/kongkong-plugin/kit-lib-messages.json
+diff --git a/app/assets/skills/dsh-go-plugin/kit-lib-style-check.js b/app/assets/skills/kongkong-plugin/kit-lib-style-check.js
+similarity index 100%
+rename from app/assets/skills/dsh-go-plugin/kit-lib-style-check.js
+rename to app/assets/skills/kongkong-plugin/kit-lib-style-check.js
+diff --git a/app/assets/skills/dsh-go-plugin/kit-lib-testing.js b/app/assets/skills/kongkong-plugin/kit-lib-testing.js
+similarity index 100%
+rename from app/assets/skills/dsh-go-plugin/kit-lib-testing.js
+rename to app/assets/skills/kongkong-plugin/kit-lib-testing.js
+diff --git a/app/assets/skills/dsh-go-plugin/kit-lib-view-check.js b/app/assets/skills/kongkong-plugin/kit-lib-view-check.js
+similarity index 100%
+rename from app/assets/skills/dsh-go-plugin/kit-lib-view-check.js
+rename to app/assets/skills/kongkong-plugin/kit-lib-view-check.js
+diff --git a/app/assets/skills/dsh-go-plugin/kit-schema-contributions.schema.json b/app/assets/skills/kongkong-plugin/kit-schema-contributions.schema.json
+similarity index 100%
+rename from app/assets/skills/dsh-go-plugin/kit-schema-contributions.schema.json
+rename to app/assets/skills/kongkong-plugin/kit-schema-contributions.schema.json
+diff --git a/app/assets/skills/dsh-go-plugin/kit-schema-invoke.schema.json b/app/assets/skills/kongkong-plugin/kit-schema-invoke.schema.json
+similarity index 100%
+rename from app/assets/skills/dsh-go-plugin/kit-schema-invoke.schema.json
+rename to app/assets/skills/kongkong-plugin/kit-schema-invoke.schema.json
+diff --git a/app/assets/skills/dsh-go-plugin/kit-schema-manifest.schema.json b/app/assets/skills/kongkong-plugin/kit-schema-manifest.schema.json
+similarity index 100%
+rename from app/assets/skills/dsh-go-plugin/kit-schema-manifest.schema.json
+rename to app/assets/skills/kongkong-plugin/kit-schema-manifest.schema.json
+diff --git a/app/assets/skills/dsh-go-plugin/kit-schema-stream.schema.json b/app/assets/skills/kongkong-plugin/kit-schema-stream.schema.json
+similarity index 100%
+rename from app/assets/skills/dsh-go-plugin/kit-schema-stream.schema.json
+rename to app/assets/skills/kongkong-plugin/kit-schema-stream.schema.json
+diff --git a/app/assets/skills/dsh-go-plugin/kit-schema-view.schema.json b/app/assets/skills/kongkong-plugin/kit-schema-view.schema.json
+similarity index 100%
+rename from app/assets/skills/dsh-go-plugin/kit-schema-view.schema.json
+rename to app/assets/skills/kongkong-plugin/kit-schema-view.schema.json
+diff --git a/app/assets/skills/dsh-go-plugin/manifest.json b/app/assets/skills/kongkong-plugin/manifest.json
+similarity index 100%
+rename from app/assets/skills/dsh-go-plugin/manifest.json
+rename to app/assets/skills/kongkong-plugin/manifest.json
+diff --git a/app/assets/skills/dsh-go-plugin/template-cordis.patch.yml b/app/assets/skills/kongkong-plugin/template-cordis.patch.yml
+similarity index 100%
+rename from app/assets/skills/dsh-go-plugin/template-cordis.patch.yml
+rename to app/assets/skills/kongkong-plugin/template-cordis.patch.yml
+diff --git a/app/assets/skills/dsh-go-plugin/template-lib-index.js b/app/assets/skills/kongkong-plugin/template-lib-index.js
+similarity index 100%
+rename from app/assets/skills/dsh-go-plugin/template-lib-index.js
+rename to app/assets/skills/kongkong-plugin/template-lib-index.js
+diff --git a/app/assets/skills/dsh-go-plugin/template-package.json b/app/assets/skills/kongkong-plugin/template-package.json
+similarity index 100%
+rename from app/assets/skills/dsh-go-plugin/template-package.json
+rename to app/assets/skills/kongkong-plugin/template-package.json
+diff --git a/app/assets/skills/dsh-go-support/SKILL.md b/app/assets/skills/kongkong-support/SKILL.md
+similarity index 99%
+rename from app/assets/skills/dsh-go-support/SKILL.md
+rename to app/assets/skills/kongkong-support/SKILL.md
+index 434b0e44..e505d946 100644
+--- a/app/assets/skills/dsh-go-support/SKILL.md
++++ b/app/assets/skills/kongkong-support/SKILL.md
+@@ -1,6 +1,6 @@
+ ---
+ # dsh-go:managed — the dsh-go app keeps this skill up to date; delete this line to keep your own edits.
+-name: dsh-go-support
++name: kongkong-support
+ description: dsh-go 手机 App 的排障与反馈：读 App 写好的本机诊断（路径见 AGENTS.md 的「本机诊断」一节，通常是 `$DSH_HOME/dsh-app/diagnostics.md`）、按症状清单定位、生成脱敏的环境摘要和 issue 草稿。用户说卡顿、发热、耗电、连不上、闪退、更新装不上、插件不生效、手机操控失败，或要反馈 bug 时，先加载它。Diagnose and report dsh-go problems from the on-device diagnostics snapshot.
+ whenToUse: The person reports a problem with DSH Go (lag, heat, battery, connection, crash, update, plugin, phone control) or asks to file an issue. Not for changing the app's UI (dsh-go-ui) or writing a plugin (dsh-go-plugin).
+ ---
+diff --git a/app/assets/skills/dsh-go-support/manifest.json b/app/assets/skills/kongkong-support/manifest.json
+similarity index 100%
+rename from app/assets/skills/dsh-go-support/manifest.json
+rename to app/assets/skills/kongkong-support/manifest.json
+diff --git a/app/assets/skills/dsh-go-ui/SKILL.md b/app/assets/skills/kongkong-ui/SKILL.md
+similarity index 99%
+rename from app/assets/skills/dsh-go-ui/SKILL.md
+rename to app/assets/skills/kongkong-ui/SKILL.md
+index 1fdc36a3..b865885f 100644
+--- a/app/assets/skills/dsh-go-ui/SKILL.md
++++ b/app/assets/skills/kongkong-ui/SKILL.md
+@@ -1,6 +1,6 @@
+ ---
+ # dsh-go:managed — the dsh-go app keeps this skill up to date; delete this line to keep your own edits.
+-name: dsh-go-ui
++name: kongkong-ui
+ description: dsh-go 手机 App 原生界面的配置（$DSH_HOME/dsh-go/ui.json）：顶栏按钮、输入框上方的快捷胶囊、新对话建议卡、抽屉分组与排序、密度、隐藏元素、主题和强调色、平板快捷键、插件座位。只改 **dsh-go 手机原生界面**；用户要改 Harness 网页版 / 桌面端、做 Cordis 插件或网页插件时，用官方技能，不要用本技能。用户要改 App 本身的样子时先加载它，比如「把顶栏的 XX 换成 YY」「输入框上面加个总结按钮」「新对话页放几个常用问题」「抽屉按创建时间排」「把回合脚注藏掉」「换成暗色 / 黛青」「加个 ctrl+k 打开搜索」。Change how the dsh-go phone app's native screens look and behave by editing ui.json; the Harness Web UI / Cordis plugins are the official skills' business.
+ whenToUse: The user asks to change the dsh-go app (手机 App / 原生界面) itself. Not for the Harness Web UI, Cordis plugins or DSH settings; anything that needs logic or data is a plugin (dsh-go-plugin).
+ ---
+diff --git a/app/assets/skills/dsh-go-ui/check.mjs b/app/assets/skills/kongkong-ui/check.mjs
+similarity index 100%
+rename from app/assets/skills/dsh-go-ui/check.mjs
+rename to app/assets/skills/kongkong-ui/check.mjs
+diff --git a/app/assets/skills/dsh-go-ui/example-full.json b/app/assets/skills/kongkong-ui/example-full.json
+similarity index 100%
+rename from app/assets/skills/dsh-go-ui/example-full.json
+rename to app/assets/skills/kongkong-ui/example-full.json
+diff --git a/app/assets/skills/dsh-go-ui/example-header.json b/app/assets/skills/kongkong-ui/example-header.json
+similarity index 100%
+rename from app/assets/skills/dsh-go-ui/example-header.json
+rename to app/assets/skills/kongkong-ui/example-header.json
+diff --git a/app/assets/skills/dsh-go-ui/example-quiet.json b/app/assets/skills/kongkong-ui/example-quiet.json
+similarity index 100%
+rename from app/assets/skills/dsh-go-ui/example-quiet.json
+rename to app/assets/skills/kongkong-ui/example-quiet.json
+diff --git a/app/assets/skills/dsh-go-ui/manifest.json b/app/assets/skills/kongkong-ui/manifest.json
+similarity index 100%
+rename from app/assets/skills/dsh-go-ui/manifest.json
+rename to app/assets/skills/kongkong-ui/manifest.json
+diff --git a/app/assets/skills/dsh-go-ui/schema.json b/app/assets/skills/kongkong-ui/schema.json
+similarity index 100%
+rename from app/assets/skills/dsh-go-ui/schema.json
+rename to app/assets/skills/kongkong-ui/schema.json
 diff --git a/app/lib/app.dart b/app/lib/app.dart
-index 1b1e7de5..ec5aedb5 100644
+index 1b1e7de5..5721d18d 100644
 --- a/app/lib/app.dart
 +++ b/app/lib/app.dart
 @@ -5,6 +5,8 @@ import 'package:flutter/material.dart';
@@ -101684,7 +101869,15 @@ index 1b1e7de5..ec5aedb5 100644
  import 'ui/chat/dsh_ui/dsh_ui_model.dart' show DshUiAppAccent;
  import 'ui/common/keyboard_motion.dart';
  import 'ui/common/side_insets.dart';
-@@ -76,6 +79,8 @@ class _DshAppState extends ConsumerState<DshApp> with WidgetsBindingObserver {
+@@ -41,6 +44,7 @@ class _DshAppState extends ConsumerState<DshApp> with WidgetsBindingObserver {
+   bool? _glassBlur;
+   bool? _instantPages;
+   bool? _fluid;
++  double? _pageOpacity;
+   late ThemeData _light;
+   late ThemeData _dark;
+ 
+@@ -76,6 +80,8 @@ class _DshAppState extends ConsumerState<DshApp> with WidgetsBindingObserver {
      if (ref.read(starPromptGateProvider)) ref.read(starPromptProvider);
      // 伙伴小屋: her invitation ledger is read now, so it is known before the room opens.
      ref.read(companionInitiativeProvider);
@@ -101693,7 +101886,57 @@ index 1b1e7de5..ec5aedb5 100644
      // 刷新率: some systems cap third-party apps at 60 Hz and then show their per-app
      // switch as an in-app setting; the app answers frames to run at the fastest rate
      // while it is actually drawing (see RefreshRateService).
-@@ -178,6 +183,7 @@ class _DshAppState extends ConsumerState<DshApp> with WidgetsBindingObserver {
+@@ -100,12 +106,14 @@ class _DshAppState extends ConsumerState<DshApp> with WidgetsBindingObserver {
+   @override
+   void didChangeAccessibilityFeatures() => setState(() {});
+ 
+-  void _themesFor(AppAccent accent, bool english, bool glassBlur, bool instantPages, bool fluid) {
++  void _themesFor(AppAccent accent, bool english, bool glassBlur, bool instantPages, bool fluid,
++      double pageOpacity) {
+     if (accent == _accent &&
+         english == _english &&
+         glassBlur == _glassBlur &&
+         instantPages == _instantPages &&
+-        fluid == _fluid) {
++        fluid == _fluid &&
++        pageOpacity == _pageOpacity) {
+       return;
+     }
+     _accent = accent;
+@@ -113,6 +121,7 @@ class _DshAppState extends ConsumerState<DshApp> with WidgetsBindingObserver {
+     _glassBlur = glassBlur;
+     _instantPages = instantPages;
+     _fluid = fluid;
++    _pageOpacity = pageOpacity;
+     // Plugin views that ask for `accent: "app"` follow the palette.
+     DshUiAppAccent.set(accent.seed.toARGB32());
+     // English UI still shows Chinese content: keep its glyphs Chinese.
+@@ -123,6 +132,7 @@ class _DshAppState extends ConsumerState<DshApp> with WidgetsBindingObserver {
+       glassBlur: glassBlur,
+       instantPages: instantPages,
+       fluid: fluid,
++      pageOpacity: pageOpacity,
+     );
+     _dark = buildDarkTheme(
+       accent: accent,
+@@ -130,6 +140,7 @@ class _DshAppState extends ConsumerState<DshApp> with WidgetsBindingObserver {
+       glassBlur: glassBlur,
+       instantPages: instantPages,
+       fluid: fluid,
++      pageOpacity: pageOpacity,
+     );
+   }
+ 
+@@ -171,13 +182,15 @@ class _DshAppState extends ConsumerState<DshApp> with WidgetsBindingObserver {
+         performance.reduceMotion || WidgetsBinding.instance.platformDispatcher.accessibilityFeatures.disableAnimations;
+     final fluid = performance.fluidMotion && !reduced;
+     FrameClock.instance.enabled = fluid;
+-    _themesFor(ref.watch(accentProvider), locale.languageCode == 'en', performance.blur, reduced, fluid);
++    _themesFor(ref.watch(accentProvider), locale.languageCode == 'en', performance.blur, reduced, fluid,
++        appearance.pageOpacity);
+     if (!waiting && !_settled) {
+       WidgetsBinding.instance.addPostFrameCallback((_) => _settled = true);
+     }
      final reducedChanged = _reducedBefore != null && _reducedBefore != reduced;
      _reducedBefore = reduced;
      return MaterialApp(
@@ -101712,7 +101955,7 @@ index 00000000..8e1a253a
 +/// 全局导航键：通话悬浮球等"不挂在某个页面下"的入口用它在任何界面 push/pop。
 +final GlobalKey<NavigatorState> appNavigatorKey = GlobalKey<NavigatorState>();
 diff --git a/app/lib/l10n/app_en.arb b/app/lib/l10n/app_en.arb
-index e1de7125..b2d95ed1 100644
+index e1de7125..7bf005eb 100644
 --- a/app/lib/l10n/app_en.arb
 +++ b/app/lib/l10n/app_en.arb
 @@ -563,6 +563,7 @@
@@ -101800,8 +102043,16 @@ index e1de7125..b2d95ed1 100644
    "starPromptTitle": "{hours, plural, =0{I’ve kept you company in DSH Go for half an hour now~} =1{I’ve kept you company in DSH Go for an hour now~} other{I’ve kept you company in DSH Go for {hours} hours now~}}",
    "starPromptBody": "DSH Go is free and open source. If it’s made your phone a little nicer to use, please give it a Star — it means so much to this little whale!",
    "starPromptPlea": "Pretty please~ It really matters!!",
+@@ -7932,6 +7974,7 @@
+   "wallpaperBlur": "Blur",
+   "wallpaperLighten": "Lighten",
+   "wallpaperDim": "Dim",
++  "wallpaperFrost": "Background frost",
+   "wallpaperReplace": "Replace picture",
+   "wallpaperPreview": "Preview",
+   "wallpaperFooter": "Shown on home, in chats and in the drawer. Lighten applies in light mode, Dim in dark mode; text always stays clear. PNG, JPEG or WebP, up to 15 MB.",
 diff --git a/app/lib/l10n/app_zh.arb b/app/lib/l10n/app_zh.arb
-index ec1a316d..16719c4c 100644
+index ec1a316d..8a930caf 100644
 --- a/app/lib/l10n/app_zh.arb
 +++ b/app/lib/l10n/app_zh.arb
 @@ -3,8 +3,8 @@
@@ -102554,7 +102805,15 @@ index ec1a316d..16719c4c 100644
    "viewShareWebHint": "任何浏览器都能打开，不用联网",
    "viewShareMarkdownHint": "纯文本，随处可读",
    "viewShareLinkHint": "端到端加密，服务器看不到内容",
-@@ -16364,7 +16406,7 @@
+@@ -16257,6 +16299,7 @@
+   "wallpaperBlur": "模糊",
+   "wallpaperLighten": "提亮",
+   "wallpaperDim": "压暗",
++  "wallpaperFrost": "背景磨砂",
+   "wallpaperReplace": "更换图片",
+   "wallpaperPreview": "预览",
+   "wallpaperFooter": "用于首页、对话和抽屉。提亮在浅色模式、压暗在深色模式下各自生效，文字始终清晰。PNG、JPEG、WebP，15 MB 以内",
+@@ -16364,7 +16407,7 @@
    "workshopAbout": "简介",
    "workshopNoDescription": "作者没有写简介。",
    "workshopSource": "来源",
@@ -102564,7 +102823,7 @@ index ec1a316d..16719c4c 100644
      "placeholders": {
        "version": {
 diff --git a/app/lib/l10n/gen/app_localizations.dart b/app/lib/l10n/gen/app_localizations.dart
-index 05ad2de7..8713d3b3 100644
+index 05ad2de7..660a685a 100644
 --- a/app/lib/l10n/gen/app_localizations.dart
 +++ b/app/lib/l10n/gen/app_localizations.dart
 @@ -113,13 +113,13 @@ abstract class L10n {
@@ -103685,7 +103944,20 @@ index 05ad2de7..8713d3b3 100644
    String get viewShareFileHint;
  
    /// No description provided for @viewShareWebHint.
-@@ -48203,7 +48455,7 @@ abstract class L10n {
+@@ -47684,6 +47936,12 @@ abstract class L10n {
+   /// **'压暗'**
+   String get wallpaperDim;
+ 
++  /// No description provided for @wallpaperFrost.
++  ///
++  /// In zh, this message translates to:
++  /// **'背景磨砂'**
++  String get wallpaperFrost;
++
+   /// No description provided for @wallpaperReplace.
+   ///
+   /// In zh, this message translates to:
+@@ -48203,7 +48461,7 @@ abstract class L10n {
    /// No description provided for @workshopMinApp.
    ///
    /// In zh, this message translates to:
@@ -103695,7 +103967,7 @@ index 05ad2de7..8713d3b3 100644
  
    /// No description provided for @workshopInstalledVersion.
 diff --git a/app/lib/l10n/gen/app_localizations_en.dart b/app/lib/l10n/gen/app_localizations_en.dart
-index 546fef86..0c43ffea 100644
+index 546fef86..33bbdb2b 100644
 --- a/app/lib/l10n/gen/app_localizations_en.dart
 +++ b/app/lib/l10n/gen/app_localizations_en.dart
 @@ -1925,6 +1925,9 @@ class L10nEn extends L10n {
@@ -103873,8 +104145,18 @@ index 546fef86..0c43ffea 100644
    @override
    String starPromptTitle(int hours) {
      String _temp0 = intl.Intl.pluralLogic(
+@@ -27559,6 +27689,9 @@ class L10nEn extends L10n {
+   @override
+   String get wallpaperDim => 'Dim';
+ 
++  @override
++  String get wallpaperFrost => 'Background frost';
++
+   @override
+   String get wallpaperReplace => 'Replace picture';
+ 
 diff --git a/app/lib/l10n/gen/app_localizations_zh.dart b/app/lib/l10n/gen/app_localizations_zh.dart
-index c66b20de..889c3d8c 100644
+index c66b20de..df93f6c1 100644
 --- a/app/lib/l10n/gen/app_localizations_zh.dart
 +++ b/app/lib/l10n/gen/app_localizations_zh.dart
 @@ -19,10 +19,10 @@ class L10nZh extends L10n {
@@ -104810,7 +105092,17 @@ index c66b20de..889c3d8c 100644
  
    @override
    String get viewShareWebHint => '任何浏览器都能打开，不用联网';
-@@ -26414,7 +26540,7 @@ class L10nZh extends L10n {
+@@ -26148,6 +26274,9 @@ class L10nZh extends L10n {
+   @override
+   String get wallpaperDim => '压暗';
+ 
++  @override
++  String get wallpaperFrost => '背景磨砂';
++
+   @override
+   String get wallpaperReplace => '更换图片';
+ 
+@@ -26414,7 +26543,7 @@ class L10nZh extends L10n {
  
    @override
    String workshopMinApp(String version) {
@@ -105784,6 +106076,30 @@ index 25262e93..86403ec3 100644
    "viewShareWebHint": "任何浏览器都能打开，不用联网",
    "viewShareMarkdownHint": "纯文本，随处可读",
    "viewShareLinkHint": "端到端加密，服务器看不到内容",
+diff --git a/app/lib/l10n/parts/wallpaper_en.arb b/app/lib/l10n/parts/wallpaper_en.arb
+index ce3b64fd..f36902b0 100644
+--- a/app/lib/l10n/parts/wallpaper_en.arb
++++ b/app/lib/l10n/parts/wallpaper_en.arb
+@@ -6,6 +6,7 @@
+   "wallpaperBlur": "Blur",
+   "wallpaperLighten": "Lighten",
+   "wallpaperDim": "Dim",
++  "wallpaperFrost": "Background frost",
+   "wallpaperReplace": "Replace picture",
+   "wallpaperPreview": "Preview",
+   "wallpaperFooter": "Shown on home, in chats and in the drawer. Lighten applies in light mode, Dim in dark mode; text always stays clear. PNG, JPEG or WebP, up to 15 MB.",
+diff --git a/app/lib/l10n/parts/wallpaper_zh.arb b/app/lib/l10n/parts/wallpaper_zh.arb
+index 72162b42..10cebb25 100644
+--- a/app/lib/l10n/parts/wallpaper_zh.arb
++++ b/app/lib/l10n/parts/wallpaper_zh.arb
+@@ -6,6 +6,7 @@
+   "wallpaperBlur": "模糊",
+   "wallpaperLighten": "提亮",
+   "wallpaperDim": "压暗",
++  "wallpaperFrost": "背景磨砂",
+   "wallpaperReplace": "更换图片",
+   "wallpaperPreview": "预览",
+   "wallpaperFooter": "用于首页、对话和抽屉。提亮在浅色模式、压暗在深色模式下各自生效，文字始终清晰。PNG、JPEG、WebP，15 MB 以内",
 diff --git a/app/lib/l10n/parts/workshop_zh.arb b/app/lib/l10n/parts/workshop_zh.arb
 index 7190dae5..91d2bbfa 100644
 --- a/app/lib/l10n/parts/workshop_zh.arb
@@ -106832,6 +107148,85 @@ index 18b01c2e..69a746d4 100644
  
    /// Required wording: the app is built on DSH but is not an official DeepSeek product.
    /// Shown on the About and licence pages.
+diff --git a/app/lib/state/appearance_state.dart b/app/lib/state/appearance_state.dart
+index 311ddb94..65245db9 100644
+--- a/app/lib/state/appearance_state.dart
++++ b/app/lib/state/appearance_state.dart
+@@ -28,6 +28,8 @@ class AppearanceSettings {
+     this.presetId = 'mist',
+     this.customColor = defaultCustom,
+     this.loaded = false,
++    this.pageOpacity = 1.0,
++    this.frost = 0.0,
+   });
+ 
+   final AccentSource source;
+@@ -39,16 +41,25 @@ class AppearanceSettings {
+   final int customColor;
+   final bool loaded;
+ 
++  /// 【bg-opacity】页面底色不透明度（0–1）：1=不透明；越小越透出壁纸。
++  final double pageOpacity;
++
++  /// 【frost】背景磨砂度（0–1）：0=玻璃完全透明（壁纸直出）；越大磨砂越重。
++  final double frost;
++
+   /// 自定义色的初值:一抹灰调的苔绿(色相 140°),第一次打开时和六套预设
+   /// 都不撞。
+   static const defaultCustom = 0xFF5F7A55;
+ 
+-  AppearanceSettings copyWith({AccentSource? source, String? presetId, int? customColor, bool? loaded}) =>
++  AppearanceSettings copyWith({AccentSource? source, String? presetId, int? customColor, bool? loaded,
++      double? pageOpacity, double? frost}) =>
+       AppearanceSettings(
+         source: source ?? this.source,
+         presetId: presetId ?? this.presetId,
+         customColor: customColor ?? this.customColor,
+         loaded: loaded ?? this.loaded,
++        pageOpacity: pageOpacity ?? this.pageOpacity,
++        frost: frost ?? this.frost,
+       );
+ }
+ 
+@@ -56,6 +67,8 @@ class AppearanceController extends Notifier<AppearanceSettings> {
+   static const _sourceKey = 'appearance.accent_source';
+   static const _presetKey = 'appearance.preset';
+   static const _customKey = 'appearance.custom_color';
++  static const _pageOpacityKey = 'appearance.page_opacity';
++  static const _frostKey = 'appearance.page_frost';
+ 
+   /// 当前配色的浅色主色(ARGB),给原生通知的强调色读
+   /// (`DynamicColorPlugin.kt` 的 `ThemeAccent`)。
+@@ -77,6 +90,8 @@ class AppearanceController extends Notifier<AppearanceSettings> {
+         source: source,
+         presetId: AppAccent.preset(prefs.getString(_presetKey)).id,
+         customColor: prefs.getInt(_customKey) ?? AppearanceSettings.defaultCustom,
++        pageOpacity: (prefs.getDouble(_pageOpacityKey) ?? 1.0).clamp(0.0, 1.0),
++        frost: (prefs.getDouble(_frostKey) ?? 0.0).clamp(0.0, 1.0),
+         loaded: true,
+       );
+     } catch (_) {
+@@ -115,6 +130,20 @@ class AppearanceController extends Notifier<AppearanceSettings> {
+ 
+   /// 关掉跟随壁纸:回到上一次的预设。
+   Future<void> leaveWallpaper() => selectPreset(state.presetId);
++
++  /// 【bg-opacity】页面底色不透明度：0=绝对透明（完全透出壁纸），1=不透明。
++  Future<void> setPageOpacity(double value) {
++    final next = value.clamp(0.0, 1.0);
++    if (next == state.pageOpacity) return Future.value();
++    return _save(state.copyWith(pageOpacity: next), (p) => p.setDouble(_pageOpacityKey, next));
++  }
++
++  /// 【frost】背景磨砂度：0=玻璃完全透明（壁纸直出），越大磨砂越重。
++  Future<void> setFrost(double value) {
++    final next = value.clamp(0.0, 1.0);
++    if (next == state.frost) return Future.value();
++    return _save(state.copyWith(frost: next), (p) => p.setDouble(_frostKey, next));
++  }
+ }
+ 
+ final appearanceProvider = NotifierProvider<AppearanceController, AppearanceSettings>(AppearanceController.new);
 diff --git a/app/lib/state/ask_ai.dart b/app/lib/state/ask_ai.dart
 index 4365d141..99e3efe1 100644
 --- a/app/lib/state/ask_ai.dart
@@ -110104,7 +110499,7 @@ index 00000000..adebc521
 +  }
 +}
 diff --git a/app/lib/ui/settings/appearance/app_icon_picker.dart b/app/lib/ui/settings/appearance/app_icon_picker.dart
-index 4e1b7667..31a1887c 100644
+index 4e1b7667..427ac8c6 100644
 --- a/app/lib/ui/settings/appearance/app_icon_picker.dart
 +++ b/app/lib/ui/settings/appearance/app_icon_picker.dart
 @@ -12,7 +12,6 @@ import '../../../l10n/l10n.dart';
@@ -110125,8 +110520,8 @@ index 4e1b7667..31a1887c 100644
 -    AppIcon.night => const AppIconArt._(Color(0xFF2C3D6C), Color(0xFF0C122D), AppIconGlyph.glassDark),
 -    AppIcon.frost => const AppIconArt._(Color(0xFFFCFDFF), Color(0xFFDDE5F8), AppIconGlyph.glassLight),
 -    AppIcon.ink => const AppIconArt._(Color(0xFF292B30), Color(0xFF0D0E11), AppIconGlyph.mono, Color(0xFFF5F7FB)),
-+    // 【4r5】去 LOGO：四套图标统一为「空」字，渐变与 res/mipmap-* 的 PNG 一致。
-+    AppIcon.mist => const AppIconArt._(Color(0xFF7C9CF5), Color(0xFF4A5BD6), AppIconGlyph.glassDark),
++    // 【4r5】去 LOGO：四套图标统一为「空」字，与 res/mipmap-* 的 PNG 一致。默认雾蓝=黑底白字。
++    AppIcon.mist => const AppIconArt._(Color(0xFF000000), Color(0xFF000000), AppIconGlyph.glassDark),
 +    AppIcon.night => const AppIconArt._(Color(0xFF232B52), Color(0xFF0F1330), AppIconGlyph.glassDark),
 +    AppIcon.frost => const AppIconArt._(Color(0xFFF4F7FF), Color(0xFFD8E3FF), AppIconGlyph.glassLight),
 +    AppIcon.ink => const AppIconArt._(Color(0xFF2A2F3A), Color(0xFF12151C), AppIconGlyph.mono, Color(0xFFF5F7FB)),
@@ -110168,6 +110563,45 @@ index 4e1b7667..31a1887c 100644
      canvas
        ..restore()
        // Half of it falls outside the clip: a 1 px line just inside the edge.
+diff --git a/app/lib/ui/settings/appearance/wallpaper_section.dart b/app/lib/ui/settings/appearance/wallpaper_section.dart
+index 98a8185e..4d52100c 100644
+--- a/app/lib/ui/settings/appearance/wallpaper_section.dart
++++ b/app/lib/ui/settings/appearance/wallpaper_section.dart
+@@ -27,6 +27,7 @@ import 'package:flutter/services.dart';
+ import 'package:flutter_riverpod/flutter_riverpod.dart';
+ 
+ import '../../../l10n/l10n.dart';
++import '../../../state/appearance_state.dart';
+ import '../../../state/wallpaper_state.dart';
+ import '../../../wallpaper/custom_wallpaper.dart';
+ import '../../../wallpaper/wallpaper_look.dart';
+@@ -57,6 +58,9 @@ class _WallpaperSectionState extends ConsumerState<WallpaperSection> {
+   /// The wallpaper as a slider being dragged has it; null when nothing is being dragged.
+   CustomWallpaper? _draft;
+ 
++  /// The page-frost slider's value while it is being dragged; null otherwise.
++  double? _frostDraft;
++
+   /// The custom phone's picture: the real bake, small. [_thumbFor] is what it was baked from.
+   ui.Image? _thumb;
+   (CustomWallpaper, WallpaperFrame)? _thumbFor;
+@@ -182,6 +186,16 @@ class _WallpaperSectionState extends ConsumerState<WallpaperSection> {
+                   unawaited(notifier.setTone(brightness, v));
+                 },
+               ),
++              WallpaperSliderRow(
++                key: const ValueKey('page-frost'),
++                title: l10n.wallpaperFrost,
++                value: _frostDraft ?? ref.watch(appearanceProvider).frost,
++                onChanged: (v) => setState(() => _frostDraft = v),
++                onChangeEnd: (v) {
++                  setState(() => _frostDraft = null);
++                  unawaited(ref.read(appearanceProvider.notifier).setFrost(v));
++                },
++              ),
+               SettingsTile(
+                 key: const ValueKey('wallpaper-replace'),
+                 title: l10n.wallpaperReplace,
 diff --git a/app/lib/ui/settings/settings_screen.dart b/app/lib/ui/settings/settings_screen.dart
 index f48b78e3..ee0efee3 100644
 --- a/app/lib/ui/settings/settings_screen.dart
@@ -110412,6 +110846,26 @@ index 38418e6a..997bcccd 100644
        ],
      );
    }
+diff --git a/app/lib/ui/share_code/share_out.dart b/app/lib/ui/share_code/share_out.dart
+index a3fe8eca..ebbd3506 100644
+--- a/app/lib/ui/share_code/share_out.dart
++++ b/app/lib/ui/share_code/share_out.dart
+@@ -39,13 +39,13 @@ class ShareOut {
+ 
+   Future<void> shareText(String text) => _share(ShareParams(text: text));
+ 
+-  /// `dsh-go-profile-20261024.dshgo` / `dsh-go-plugin-notes.dshgo`.
++  /// `dsh-go-profile-20261024.dshgo` / `kongkong-plugin-notes.dshgo`.
+   String fileName({required bool profile, String? name}) {
+     final t = _clock();
+     String two(int n) => n.toString().padLeft(2, '0');
+     if (profile) return 'dsh-go-profile-${t.year}${two(t.month)}${two(t.day)}.$shareFileExtension';
+     final slug = (name ?? 'plugin').split('/').last.replaceAll(RegExp(r'[^A-Za-z0-9._-]+'), '-');
+-    return 'dsh-go-plugin-${slug.isEmpty ? 'plugin' : slug}.$shareFileExtension';
++    return 'kongkong-plugin-${slug.isEmpty ? 'plugin' : slug}.$shareFileExtension';
+   }
+ 
+   /// Writes [content] into the cache's `share_code/` (keeping the last few).
 diff --git a/app/lib/ui/shell/brand_mark.dart b/app/lib/ui/shell/brand_mark.dart
 index c782196c..0b00be16 100644
 --- a/app/lib/ui/shell/brand_mark.dart
@@ -110599,6 +111053,29 @@ index 9a236c71..005e9e7e 100644
                        // Forum links (sign-in return, topics): registers them with the router.
                        const ForumLinkHost(),
                        // DS Bot: keeps its feed and notifications alive with the shell.
+diff --git a/app/lib/ui/shell/root_gate.dart b/app/lib/ui/shell/root_gate.dart
+index d55e314f..e39f3a3a 100644
+--- a/app/lib/ui/shell/root_gate.dart
++++ b/app/lib/ui/shell/root_gate.dart
+@@ -324,15 +324,15 @@ class _RootGateState extends ConsumerState<RootGate> {
+         _startEngineBeside();
+       }
+     });
+-    // Each start of the on-device engine writes the bundled skills (dsh-go-ui,
+-    // dsh-go-plugin) into its skills folder, while they are still the app's.
++    // Each start of the on-device engine writes the bundled skills (kongkong-ui,
++    // kongkong-plugin) into its skills folder, while they are still the app's.
+     ref.listen(uiSkillAutoInstallProvider, (_, _) {});
+     // The rootfs came or went: files read straight from it look again.
+     ref.listen(localRuntimeProvider.select((s) => s.status.installedVersion), (prev, next) {
+       if (prev != next) ref.invalidate(guestFsProvider);
+     });
+     // The engine is up: write this run's diagnostics where its agent can read them
+-    // (dsh-go-support does). A restart publishes the next snapshot.
++    // (kongkong-support does). A restart publishes the next snapshot.
+     ref.listen(localRuntimeProvider.select((s) => s.status.phase), (_, next) {
+       if (next == RuntimePhase.running) {
+         _publishDiagnostics();
 diff --git a/app/lib/ui/shell/sessions_drawer.dart b/app/lib/ui/shell/sessions_drawer.dart
 index 216e55cc..5a8ae0d1 100644
 --- a/app/lib/ui/shell/sessions_drawer.dart
@@ -111147,6 +111624,280 @@ index 0d611ff7..a10a74ef 100644
    /// 语音通话: the call's captions in full (as 回放's 全文).
    static const callTranscript = DshGlyphs.article;
  
+diff --git a/app/lib/ui/theme/app_theme.dart b/app/lib/ui/theme/app_theme.dart
+index 6838c632..dcbf2906 100644
+--- a/app/lib/ui/theme/app_theme.dart
++++ b/app/lib/ui/theme/app_theme.dart
+@@ -37,6 +37,7 @@ ThemeData buildLightTheme({
+   Locale? glyphLocale,
+   bool instantPages = false,
+   bool fluid = false,
++  double pageOpacity = 1.0,
+ }) => _build(
+   DshPalette.lightScheme(accent),
+   DshColors.forAccent(Brightness.light, accent),
+@@ -45,6 +46,7 @@ ThemeData buildLightTheme({
+   glyphLocale,
+   instantPages,
+   fluid,
++  pageOpacity,
+ );
+ 
+ /// 深色主题。
+@@ -54,6 +56,7 @@ ThemeData buildDarkTheme({
+   Locale? glyphLocale,
+   bool instantPages = false,
+   bool fluid = false,
++  double pageOpacity = 1.0,
+ }) => _build(
+   DshPalette.darkScheme(accent),
+   DshColors.forAccent(Brightness.dark, accent),
+@@ -62,6 +65,7 @@ ThemeData buildDarkTheme({
+   glyphLocale,
+   instantPages,
+   fluid,
++  pageOpacity,
+ );
+ 
+ /// 边到边(edge-to-edge)的系统栏样式:状态栏、导航栏全透明,图标随明暗。
+@@ -105,6 +109,7 @@ ThemeData _build(
+   Locale? glyphLocale,
+   bool instantPages,
+   bool fluid,
++  double pageOpacity,
+ ) {
+   // iOS 式水平推入,上一页左移变暗;系统预测返回与边缘右滑都跟手
+   // (见 page_transitions.dart)。全平台同一套,二级页的观感只此一处。
+@@ -137,8 +142,10 @@ ThemeData _build(
+     adaptations: const [_SwitchAdaptation()],
+     platform: themePlatformFor(Platform.operatingSystem),
+     colorScheme: scheme,
+-    scaffoldBackgroundColor: scheme.surface,
+-    canvasColor: scheme.surface,
++    // 【bg-opacity】页面底色不透明度：1.0=不透明（默认）；越小越透出全局壁纸。
++    // 设置子页面、push 路由的 Scaffold 都吃这一条。
++    scaffoldBackgroundColor: scheme.surface.withValues(alpha: pageOpacity.clamp(0.0, 1.0)),
++    canvasColor: scheme.surface.withValues(alpha: pageOpacity.clamp(0.0, 1.0)),
+     textTheme: textTheme,
+     extensions: [colors, surfaces],
+     pageTransitionsTheme: transitions,
+diff --git a/app/lib/ui/theme/backdrop.dart b/app/lib/ui/theme/backdrop.dart
+index a3f5f043..e43e661b 100644
+--- a/app/lib/ui/theme/backdrop.dart
++++ b/app/lib/ui/theme/backdrop.dart
+@@ -3,10 +3,13 @@
+ // See THIRD_PARTY_NOTICES.md.
+ 
+ import 'dart:ui' as ui;
++import 'dart:ui' show ImageFilter;
+ 
+ import 'package:flutter/foundation.dart';
+ import 'package:flutter/material.dart';
++import 'package:flutter_riverpod/flutter_riverpod.dart';
+ 
++import '../../state/appearance_state.dart';
+ import 'backdrop_frame.dart';
+ import 'surfaces.dart';
+ 
+@@ -25,7 +28,7 @@ import 'surfaces.dart';
+ ///
+ /// 给了 [picture](自定义壁纸,lib/ui/wallpaper/wallpaper_backdrop.dart)就画那张
+ /// 预先烘好的图,不画渐变;子树里的 [BackdropVeil] 跟着画同一张图。
+-class AppBackdrop extends StatelessWidget {
++class AppBackdrop extends ConsumerWidget {
+   const AppBackdrop({super.key, required this.child, this.glow = true, this.picture});
+ 
+   final Widget child;
+@@ -36,9 +39,20 @@ class AppBackdrop extends StatelessWidget {
+   /// A picture in place of the gradient; null: the gradient.
+   final BackdropPicture? picture;
+ 
++  /// 【frost】磨砂度到 blur sigma 的换算:0=无磨砂,1=重磨砂。
++  static const double frostSigma = 18;
++
++  /// 【frost】浅色白 tint / 深色黑 tint 在磨砂上的最大 alpha(随磨砂度)。
++  static const double frostTint = 0.10;
++
+   @override
+-  Widget build(BuildContext context) {
++  Widget build(BuildContext context, WidgetRef ref) {
+     final s = DshSurfaces.of(context);
++    // 【frost】背景磨砂:0=玻璃完全透明(现状),越大壁纸越毛、文字对比越好。
++    // 模糊总开关(减少透明效果/性能档)关闭时退回实色现状。
++    final frost = s.blurEnabled ? ref.watch(appearanceProvider).frost : 0.0;
++    final sigma = frost * frostSigma;
++    final tintAlpha = frost * frostTint;
+     return _BackdropScope(
+       picture: picture,
+       child: Stack(
+@@ -47,14 +61,31 @@ class AppBackdrop extends StatelessWidget {
+           Positioned.fill(
+             child: IgnorePointer(
+               child: RepaintBoundary(
+-                child: CustomPaint(
+-                  painter: _BackdropPainter(
+-                    top: s.backdropTop,
+-                    bottom: s.backdropBottom,
+-                    glowPrimary: glow ? s.glowPrimary : null,
+-                    glowSecondary: glow ? s.glowSecondary : null,
+-                    picture: picture,
+-                  ),
++                child: Stack(
++                  fit: StackFit.expand,
++                  children: [
++                    CustomPaint(
++                      painter: _BackdropPainter(
++                        top: s.backdropTop,
++                        bottom: s.backdropBottom,
++                        glowPrimary: glow ? s.glowPrimary : null,
++                        glowSecondary: glow ? s.glowSecondary : null,
++                        picture: picture,
++                      ),
++                    ),
++                    // 单层全页磨砂(只采壁纸层,包在同一个 RepaintBoundary 里缓存),
++                    // 上面滚动的文字与卡片不参与,可读性由磨砂保。
++                    if (sigma > 0)
++                      BackdropFilter(
++                        filter: ImageFilter.blur(sigmaX: sigma, sigmaY: sigma),
++                        child: ColoredBox(
++                          color: (Theme.of(context).brightness == Brightness.dark
++                                  ? const Color(0xFF000000)
++                                  : const Color(0xFFFFFFFF))
++                              .withValues(alpha: tintAlpha),
++                        ),
++                      ),
++                  ],
+                 ),
+               ),
+             ),
+@@ -110,7 +141,7 @@ class _BackdropScope extends InheritedWidget {
+ /// 这一条,所以和真背景严丝合缝;键盘弹起页面变矮时也对得上。要求铺满
+ /// 整页、和页面左上角对齐。分栏布局里的一栏(宽屏的聊天栏、详情栏)由
+ /// [BackdropFrame] 告知它在整张背景里的位置,照样对得上。
+-class BackdropVeil extends StatelessWidget {
++class BackdropVeil extends ConsumerWidget {
+   const BackdropVeil({super.key, required this.solidHeight, this.feather = 14, this.glow = true}) : fromTop = false;
+ 
+   /// 顶部版:从顶边往下 [height] 实心,再往下 [feather] 缓缓淡出(页面顶栏
+@@ -131,9 +162,11 @@ class BackdropVeil extends StatelessWidget {
+   final bool fromTop;
+ 
+   @override
+-  Widget build(BuildContext context) {
++  Widget build(BuildContext context, WidgetRef ref) {
+     final s = DshSurfaces.of(context);
+     final frame = BackdropFrame.maybeOf(context);
++    // 【frost】veil 的壁纸副本跟着页面磨砂,不然带内清晰、带外磨砂会割裂。
++    final frost = s.blurEnabled ? ref.watch(appearanceProvider).frost : 0.0;
+     return IgnorePointer(
+       child: CustomPaint(
+         size: Size.infinite,
+@@ -141,6 +174,7 @@ class BackdropVeil extends StatelessWidget {
+           solidHeight: solidHeight,
+           feather: feather,
+           fromTop: fromTop,
++          frost: frost,
+           backdrop: _BackdropPainter(
+             top: s.backdropTop,
+             bottom: s.backdropBottom,
+@@ -178,14 +212,22 @@ class _FixedHeight implements ValueListenable<double> {
+ 
+ /// [BackdropVeil] 的一条:底部实心,往上缓缓淡出(顶部版反过来)。
+ class _VeilPainter extends CustomPainter {
+-  _VeilPainter({required this.solidHeight, required this.feather, required this.backdrop, this.fromTop = false})
+-    : super(repaint: backdrop.picture == null ? solidHeight : Listenable.merge([solidHeight, backdrop.picture!.fade]));
++  _VeilPainter({
++    required this.solidHeight,
++    required this.feather,
++    required this.backdrop,
++    this.fromTop = false,
++    this.frost = 0,
++  }) : super(repaint: backdrop.picture == null ? solidHeight : Listenable.merge([solidHeight, backdrop.picture!.fade]));
+ 
+   final ValueListenable<double> solidHeight;
+   final double feather;
+   final _BackdropPainter backdrop;
+   final bool fromTop;
+ 
++  /// 【frost】页面磨砂度(0–1),带内的壁纸副本按同一 sigma 磨砂。
++  final double frost;
++
+   @override
+   void paint(Canvas canvas, Size size) {
+     final band = (solidHeight.value + feather).clamp(0.0, size.height);
+@@ -213,7 +255,13 @@ class _VeilPainter extends CustomPainter {
+       colors.add(Colors.black);
+     }
+ 
+-    canvas.saveLayer(rect, Paint());
++    // 【frost】带内先按页面磨砂度模糊,再 dstIn 遮罩;0 时 imageFilter 为 null,
++    // 与磨砂层未开启前的绘制完全一致。
++    final sigma = frost * AppBackdrop.frostSigma;
++    canvas.saveLayer(
++      rect,
++      Paint()..imageFilter = sigma > 0 ? ui.ImageFilter.blur(sigmaX: sigma, sigmaY: sigma) : null,
++    );
+     canvas.clipRect(rect);
+     // The whole backdrop from the page's top, so the band lines up with it.
+     backdrop.paint(canvas, size);
+@@ -236,6 +284,7 @@ class _VeilPainter extends CustomPainter {
+       old.solidHeight != solidHeight ||
+       old.feather != feather ||
+       old.fromTop != fromTop ||
++      old.frost != frost ||
+       backdrop.shouldRepaint(old.backdrop);
+ }
+ 
+diff --git a/app/lib/ui/theme/glass.dart b/app/lib/ui/theme/glass.dart
+index 2ebac55e..4da0dcda 100644
+--- a/app/lib/ui/theme/glass.dart
++++ b/app/lib/ui/theme/glass.dart
+@@ -1,7 +1,9 @@
+ import 'dart:math' as math;
+ 
+ import 'package:flutter/material.dart';
++import 'package:flutter_riverpod/flutter_riverpod.dart';
+ 
++import '../../state/appearance_state.dart';
+ import '../common/pressable.dart';
+ import '../common/ui_trace.dart';
+ 
+@@ -37,7 +39,7 @@ import 'surfaces.dart';
+ ///
+ /// 玻璃内部是半透明的,普通 `BoxShadow` 画在形状下方会透过玻璃、又被模糊
+ /// 一次,玻璃中间发灰。这里用 even-odd 裁剪,只在形状**外部**画投影。
+-class GlassSurface extends StatelessWidget {
++class GlassSurface extends ConsumerWidget {
+   const GlassSurface({
+     super.key,
+     this.tier = GlassTier.card,
+@@ -105,12 +107,16 @@ class GlassSurface extends StatelessWidget {
+   }
+ 
+   @override
+-  Widget build(BuildContext context) {
++  Widget build(BuildContext context, WidgetRef ref) {
+     final surfaces = DshSurfaces.of(context);
+     final s = style ?? surfaces.glass(tier);
++    // 【frost】背景磨砂滑块也管 sheet 玻璃(抽屉/弹层/菜单)的模糊度:
++    // 0=现状,越大面板后面越糊;fill 不动,面板上的字靠它保可读。
++    final frost = ref.watch(appearanceProvider).frost;
+     final highContrast = MediaQuery.maybeHighContrastOf(context) ?? false;
+     final reduce = !surfaces.blurEnabled || highContrast || uiTraceNoBlur;
+     final useBlur = !reduce && (blur ?? s.blurs);
++    final frostSigma = (tier == GlassTier.sheet && useBlur) ? frost * 20 : 0.0;
+     if (uiTraceEnabled) {
+       uiTrace('glass', 'build', {'tier': tier.name, 'blur': useBlur, 'grouped': grouped});
+     }
+@@ -151,7 +157,7 @@ class GlassSurface extends StatelessWidget {
+     );
+ 
+     if (useBlur) {
+-      final config = _filterFor(s.blurs ? s.blurSigma : 14, s.saturation);
++      final config = _filterFor((s.blurs ? s.blurSigma : 14) + frostSigma, s.saturation);
+       final sampling = settled != 0;
+       content = grouped
+           ? BackdropFilter.grouped(filterConfig: config, enabled: sampling, child: content)
 diff --git a/app/lib/ui/update/update_tiles.dart b/app/lib/ui/update/update_tiles.dart
 index 1bb918d6..540577b5 100644
 --- a/app/lib/ui/update/update_tiles.dart
@@ -111164,12 +111915,133 @@ index 1bb918d6..540577b5 100644
      if (!update.checkable) return const SizedBox.shrink();
      final controller = ref.read(appUpdateProvider.notifier);
      final tint = this.tint;
+diff --git a/app/lib/ui_config/ui_config_parser.dart b/app/lib/ui_config/ui_config_parser.dart
+index a6cc807a..c349e7e9 100644
+--- a/app/lib/ui_config/ui_config_parser.dart
++++ b/app/lib/ui_config/ui_config_parser.dart
+@@ -2,7 +2,7 @@
+ // with a JSON Pointer and a short reason, the rest applies. A file that cannot
+ // be read as a whole (syntax, size, version) keeps the last good configuration.
+ //
+-// `assets/skills/dsh-go-ui/check.mjs` is this file's twin for the agent on the
++// `assets/skills/kongkong-ui/check.mjs` is this file's twin for the agent on the
+ // Host: same traversal order, same pointers, same words. Change both together;
+ // test/ui_config/check_mjs_parity_test.dart runs the shared fixtures through
+ // each.
+diff --git a/app/lib/ui_config/ui_config_schema.dart b/app/lib/ui_config/ui_config_schema.dart
+index ebd45ae6..e6575d12 100644
+--- a/app/lib/ui_config/ui_config_schema.dart
++++ b/app/lib/ui_config/ui_config_schema.dart
+@@ -1,5 +1,5 @@
+ // The fixed vocabulary of `$DSH_HOME/dsh-go/ui.json` v1. The same lists and
+-// limits are in the skill's `schema.json` (assets/skills/dsh-go-ui/), which the
++// limits are in the skill's `schema.json` (assets/skills/kongkong-ui/), which the
+ // zero-dependency checker `check.mjs` reads;
+ // test/ui_config/schema_sync_test.dart keeps the two equal, and the shared
+ // fixtures keep both validators' output equal.
+diff --git a/app/lib/ui_config/ui_config_source.dart b/app/lib/ui_config/ui_config_source.dart
+index 2b4be2c2..337a60df 100644
+--- a/app/lib/ui_config/ui_config_source.dart
++++ b/app/lib/ui_config/ui_config_source.dart
+@@ -32,7 +32,7 @@ final class UiConfigText extends UiConfigRead {
+ }
+ 
+ /// There is no ui.json. On a remote host whose DSH home was only guessed,
+-/// [skillMissing] says the dsh-go-ui skill is not installed there either.
++/// [skillMissing] says the kongkong-ui skill is not installed there either.
+ final class UiConfigAbsent extends UiConfigRead {
+   const UiConfigAbsent({this.skillMissing = false});
+ 
+@@ -307,7 +307,7 @@ abstract interface class UiRemoteHost {
+   /// A conversation to scope `workspaceFiles/*` to (the most recent one).
+   Future<String?> recentSessionId();
+ 
+-  /// `skills/list`'s path of the `dsh-go-ui` skill (its SKILL.md).
++  /// `skills/list`'s path of the `kongkong-ui` skill (its SKILL.md).
+   Future<String?> skillFile(String sessionId);
+ 
+   /// The host user's `$HOME` (from the connection handshake).
+@@ -322,7 +322,7 @@ abstract interface class UiRemoteHost {
+   Stream<void> get changes;
+ }
+ 
+-/// DSH home from the skill's SKILL.md path: `<home>/skills/dsh-go-ui/SKILL.md`
++/// DSH home from the skill's SKILL.md path: `<home>/skills/kongkong-ui/SKILL.md`
+ /// (or the folder itself). Null when the path does not have that shape.
+ String? dshHomeFromSkillPath(String path) {
+   final parts = path.split('/');
+@@ -330,7 +330,7 @@ String? dshHomeFromSkillPath(String path) {
+     parts.removeLast();
+   }
+   if (parts.isNotEmpty && parts.last == 'SKILL.md') parts.removeLast();
+-  if (parts.length < 3 || parts.last != 'dsh-go-ui' || parts[parts.length - 2] != 'skills') return null;
++  if (parts.length < 3 || parts.last != 'kongkong-ui' || parts[parts.length - 2] != 'skills') return null;
+   final home = parts.sublist(0, parts.length - 2).join('/');
+   return home.isEmpty ? null : home;
+ }
+@@ -627,7 +627,7 @@ class DshUiRemoteHost implements UiRemoteHost {
+   @override
+   Future<String?> skillFile(String sessionId) async {
+     for (final skill in await client.listSkills(sessionId)) {
+-      if (skill.name == 'dsh-go-ui') return skill.path;
++      if (skill.name == 'kongkong-ui') return skill.path;
+     }
+     return null;
+   }
+diff --git a/app/lib/ui_config/ui_config_state.dart b/app/lib/ui_config/ui_config_state.dart
+index 1f8a094a..e8a44627 100644
+--- a/app/lib/ui_config/ui_config_state.dart
++++ b/app/lib/ui_config/ui_config_state.dart
+@@ -106,7 +106,7 @@ enum UiConfigAvailability {
+   /// A remote host with no conversation yet.
+   noSession,
+ 
+-  /// A remote host where the dsh-go-ui skill is not installed and DSH home
++  /// A remote host where the kongkong-ui skill is not installed and DSH home
+   /// is unknown.
+   noSkill,
+ 
+@@ -134,7 +134,7 @@ class UiConfigState {
+   /// this before drawing what ui.json decides, to avoid a flash).
+   final bool restored;
+ 
+-  /// A remote host without the dsh-go-ui skill.
++  /// A remote host without the kongkong-ui skill.
+   final bool skillMissing;
+ 
+   /// Offer to install the skill (remote hosts only).
 diff --git a/app/lib/ui_config/ui_skill.dart b/app/lib/ui_config/ui_skill.dart
-index 671223fc..5b90ca55 100644
+index 671223fc..e147628a 100644
 --- a/app/lib/ui_config/ui_skill.dart
 +++ b/app/lib/ui_config/ui_skill.dart
-@@ -38,9 +38,9 @@ const uiSkillAssetDir = 'assets/skills/dsh-go-ui/';
- const pluginSkillName = 'dsh-go-plugin';
+@@ -1,8 +1,8 @@
+-// The dsh-go-ui skill that teaches a host's agent to edit ui.json. The files
+-// ship in assets/skills/dsh-go-ui/ (flat; manifest.json maps each to its place
++// The kongkong-ui skill that teaches a host's agent to edit ui.json. The files
++// ship in assets/skills/kongkong-ui/ (flat; manifest.json maps each to its place
+ // in the skill folder).
+ //
+-// - On-device engine: written into `$DSH_HOME/skills/dsh-go-ui/` each time the
++// - On-device engine: written into `$DSH_HOME/skills/kongkong-ui/` each time the
+ //   engine comes up. DSH watches that root, so the skill appears without a
+ //   restart. The app keeps the folder current while SKILL.md carries the
+ //   managed line (a YAML comment inside the front matter — DSH only reads a
+@@ -28,24 +28,24 @@ import '../state/android_features.dart' show operatingSystemProvider;
+ import '../state/hosts_state.dart';
+ import 'ui_config_state.dart';
+ 
+-const uiSkillName = 'dsh-go-ui';
+-const uiSkillAssetDir = 'assets/skills/dsh-go-ui/';
++const uiSkillName = 'kongkong-ui';
++const uiSkillAssetDir = 'assets/skills/kongkong-ui/';
+ 
+ /// The second skill the app ships: teaches a host's agent to write a small
+ /// local native plugin (sdk/plugin-kit/skill, built into
+-/// assets/skills/dsh-go-plugin/ by sdk/plugin-kit/scripts/sync-skill.mjs).
++/// assets/skills/kongkong-plugin/ by sdk/plugin-kit/scripts/sync-skill.mjs).
+ /// Installed and kept current exactly like [uiSkillName], in its own folder.
+-const pluginSkillName = 'dsh-go-plugin';
++const pluginSkillName = 'kongkong-plugin';
  
  /// The third: the app's own user guide (docs/guide, built into
 -/// assets/skills/dsh-go-guide/ by tool/guide_sync.py), so the agent can answer
@@ -111180,6 +112052,34 @@ index 671223fc..5b90ca55 100644
  
  /// The fourth: troubleshooting and bug-report playbook. Reads the diagnostics
  /// snapshot the app writes into the engine (`$DSH_HOME/dsh-app/diagnostics.md`)
+ /// and turns a symptom into a redacted environment summary / issue draft.
+-const supportSkillName = 'dsh-go-support';
++const supportSkillName = 'kongkong-support';
+ 
+ /// Uses the same report, prompt and checked adapter as companion light mode.
+ const companionAdaptSkillName = 'companion-adapt';
+@@ -377,7 +377,7 @@ abstract interface class UiSkillRemoteInstaller {
+ final uiSkillRemoteInstallerProvider = Provider<UiSkillRemoteInstaller?>((ref) => null);
+ 
+ /// A POSIX `sh` script that writes [bundle] to
+-/// `${DSH_HOME:-$HOME/.dsh}/skills/dsh-go-ui/` (leaving a folder the person
++/// `${DSH_HOME:-$HOME/.dsh}/skills/kongkong-ui/` (leaving a folder the person
+ /// took over alone) and prints `DSHAPP skill=installed` or
+ /// `DSHAPP skill=user-owned`.
+ String uiSkillShellScript(UiSkillBundle bundle) {
+diff --git a/app/lib/ui_config/widgets/ui_config_status.dart b/app/lib/ui_config/widgets/ui_config_status.dart
+index 5eea60f3..8f9ddbf7 100644
+--- a/app/lib/ui_config/widgets/ui_config_status.dart
++++ b/app/lib/ui_config/widgets/ui_config_status.dart
+@@ -1,7 +1,7 @@
+ // ui.json's one quiet line in settings and the sheet behind it: 「界面配置 · 2
+ // 处没生效」, and on tap what did not apply, with the JSON Pointer of each. No
+ // banners, no notifications. Without a ui.json the line is not there — except
+-// on a remote host without the dsh-go-ui skill, where it offers to install it
++// on a remote host without the kongkong-ui skill, where it offers to install it
+ // (when the app's wiring provides an installer).
+ 
+ import 'dart:async';
 diff --git a/app/lib/voice/wake_keywords.dart b/app/lib/voice/wake_keywords.dart
 new file mode 100644
 index 00000000..8a882710
@@ -112255,7 +113155,7 @@ index d2ab1143..5ad801da 100644
      dependency: transitive
      description:
 diff --git a/app/pubspec.yaml b/app/pubspec.yaml
-index 182116db..d02b5693 100644
+index 182116db..b5a34253 100644
 --- a/app/pubspec.yaml
 +++ b/app/pubspec.yaml
 @@ -52,6 +52,8 @@ dependencies:
@@ -112276,15 +113176,21 @@ index 182116db..d02b5693 100644
      - assets/web/
      # Whale-tail activity sprites (lib/ui/chat/widgets/whale_tail.dart),
      # generated by tool/make_whale_sprites.py.
-@@ -186,7 +190,7 @@ flutter:
+@@ -184,10 +188,10 @@ flutter:
+     # 伙伴小屋's page (lib/ui/companion). Its Live2D runtime and models are a
+     # separate download, see docs/design/companion.md.
      - assets/companion/
-     - assets/skills/dsh-go-ui/
-     - assets/skills/dsh-go-plugin/
+-    - assets/skills/dsh-go-ui/
+-    - assets/skills/dsh-go-plugin/
 -    - assets/skills/dsh-go-guide/
+-    - assets/skills/dsh-go-support/
++    - assets/skills/kongkong-ui/
++    - assets/skills/kongkong-plugin/
 +    - assets/skills/kongkong-guide/
-     - assets/skills/dsh-go-support/
++    - assets/skills/kongkong-support/
      - assets/skills/companion-adapt/
      - assets/skills/pet-theme/
+ 
 diff --git a/app/tool/guide_sync.py b/app/tool/guide_sync.py
 index 5e86021c..2ce10517 100644
 --- a/app/tool/guide_sync.py
