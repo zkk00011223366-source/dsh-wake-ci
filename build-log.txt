@@ -1,7 +1,7 @@
 == resources ==
 /dev/root       145G   49G   96G  34% /
                total        used        free      shared  buff/cache   available
-Mem:           15983        3252         288          49       12836       12730
+Mem:           15983        3096         444          49       12836       12886
 == tail ==
 
 ==> 依赖: flutter pub get
@@ -138,4 +138,29 @@ Downloading packages...
 Got dependencies!
 52 packages have newer versions incompatible with dependency constraints.
 Try `flutter pub outdated` for more information.
+Running Gradle task 'assembleArm64Release'...                   
+
+FAILURE: Build failed with an exception.
+
+* What went wrong:
+Could not resolve all artifacts for configuration 'classpath'.
+> Could not resolve com.google.errorprone:error_prone_annotations:2.28.0.
+  Required by:
+      settings file 'settings.gradle.kts' > com.android.application:com.android.application.gradle.plugin:9.1.0 > com.android.tools.build:gradle:9.1.0 > com.android.tools.build:bundletool:1.18.3
+   > Repository maven is disabled due to earlier error below:
+      > Could not resolve org.checkerframework:checker-qual:3.43.0.
+         > Could not get resource 'https://maven.aliyun.com/repository/google/org/checkerframework/checker-qual/3.43.0/checker-qual-3.43.0.pom'.
+            > Could not GET 'https://maven.aliyun.com/repository/google/org/checkerframework/checker-qual/3.43.0/checker-qual-3.43.0.pom'. Received status code 502 from server: Bad Gateway
+> There are 19 more failures with identical causes.
+
+* Try:
+> Run with --stacktrace option to get the stack trace.
+> Run with --info or --debug option to get more log output.
+> Run with --scan to get full insights from a Build Scan (powered by Develocity).
+> Get more help at https://help.gradle.org.
+
+BUILD FAILED in 1m 59s
+Running Gradle task 'assembleArm64Release'...                     120.1s
+[!] Gradle threw an error while downloading artifacts from the network.
+Retrying Gradle Build: #1, wait time: 100ms
 Running Gradle task 'assembleArm64Release'...                   
