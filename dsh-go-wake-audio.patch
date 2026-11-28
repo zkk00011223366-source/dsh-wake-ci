@@ -1,10 +1,10 @@
 From: dsh <dsh@local>
-Date: Sat, 28 Nov 2026 19:33:27 +0800
-Subject: [PATCH] AI电话拨号+自动接听+shell电话音频+火山实时语音
+Date: Sat, 28 Nov 2026 20:50:45 +0800
+Subject: [PATCH] AI电话拨号+自动接听+无视锁屏
 
  dsh-go-wake.patch                                  | 2065 +++++++++++++
  tooling/build-wake-apk.sh                          |   68 +
- 419 files changed, 24450 insertions(+), 1338 deletions(-)
+ 419 files changed, 24466 insertions(+), 1392 deletions(-)
 
 diff --git a/.gitattributes b/.gitattributes
 index 52e3e08a..3e877c7e 100644
@@ -1289,7 +1289,7 @@ index 9856b79f..2bcb366d 100644
      }
  }
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneAndroidShell.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneAndroidShell.kt
-index bb9c8031..1a9f4d29 100644
+index bb9c8031..0be2a817 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneAndroidShell.kt
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneAndroidShell.kt
 @@ -14,6 +14,18 @@ object PhoneAndroidShell {
@@ -1311,7 +1311,21 @@ index bb9c8031..1a9f4d29 100644
      data class Request(val command: String, val timeoutMs: Long)
  
      fun parse(args: Args): Request? {
-@@ -59,8 +71,12 @@ object PhoneAndroidShell {
+@@ -47,20 +59,23 @@ object PhoneAndroidShell {
+     }
+ 
+     fun run(request: Request, owner: PhoneTasks.Owner, tasks: PhoneTasks, scope: SerialWorker.Scope,
+-            executor: PhoneShellExecutor?, enabled: () -> Boolean, locked: () -> Boolean,
++            executor: PhoneShellExecutor?, enabled: () -> Boolean,
+             gate: () -> UserGate?, ui: PhoneUiText): Map<String, Any?> {
+-        fun live() = tasks.isCurrent(owner) && !tasks.isPaused && enabled() && !locked() &&
++        fun live() = tasks.isCurrent(owner) && !tasks.isPaused && enabled() &&
+             !Thread.currentThread().isInterrupted
+         // 通道未开启 / 锁屏 / 本轮已结束 refuse this one command; they never end the turn.
+         if (!enabled()) return failure("disabled")
+-        if (locked()) return failure("locked")
+         if (!tasks.isCurrent(owner) || tasks.isPaused || Thread.currentThread().isInterrupted) return failure("stopped")
+         if (executor == null) return failure("unsupported")
          return executor.execute(owner.taskId, request.command, request.timeoutMs, ::live) { backend, uid ->
              if (!live()) Decision.STOP
              else if (!(backend == "adb" && uid == 2000 || backend == "shizuku" && uid in setOf(0, 2000))) Decision.DENY
@@ -1835,11 +1849,24 @@ index 612f94d1..0fb929f6 100644
  }
  
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneControl.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneControl.kt
-index 2fc7cd59..8b50ae09 100644
+index 2fc7cd59..36a5b452 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneControl.kt
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneControl.kt
-@@ -193,7 +193,12 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
-         screenRecoveryReady = { isEnabled() && !isLocked() },
+@@ -179,7 +179,7 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
+     val core = PhoneCore(this, tasks, log, skillTrace = skillTrace,
+         onExecution = { owner -> selectExecution(tasks, owner) })
+     val notificationGate = NotificationGate(app) { text, ifCurrent -> setStatusLine(text, ifCurrent) }
+-    val prompts: PhonePrompts = PhonePrompts(app, tasks, ::isEnabled, ::isLocked, notificationGate, ::reopen, displaySelection) { id, session ->
++    val prompts: PhonePrompts = PhonePrompts(app, tasks, ::isEnabled, notificationGate, ::reopen, displaySelection) { id, session ->
+         sessions.task(id)?.takeIf { it.sessionId == null || it.sessionId == session }?.tasks
+     }
+     private val sessions = PhoneTaskSessions(SystemClock::elapsedRealtime, taskIds::incrementAndGet, ::createSessionCore, tasks, core, ::emitStatus,
+@@ -190,10 +190,15 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
+         },
+         journal = taskJournal,
+         backgroundCapacity = { background.parallelism().effectiveLimit },
+-        screenRecoveryReady = { isEnabled() && !isLocked() },
++        screenRecoveryReady = { isEnabled() },
          prepareBackground = { task, owner -> background.prepareForTask(owner) { task.tasks.isCurrent(owner) } },
          startSkillScope = skillLifecycle::startManaged,
 -        completeSkillScope = skillLifecycle::completeDrained,
@@ -1872,7 +1899,24 @@ index 2fc7cd59..8b50ae09 100644
              }
          }
          task.addListener { state -> onSessionTask(task, state) }
-@@ -345,6 +352,13 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
+@@ -329,7 +336,7 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
+     }
+     val preview = BackgroundPreview(app, background::previewTarget, { taskId ->
+         val task = sessions.task(taskId)?.tasks?.snapshot()
+-        task?.active == true && task.id == taskId && !isLocked()
++        task?.active == true && task.id == taskId
+     }, ::emitStatus)
+ 
+     internal val selfCheck = PhoneSelfCheck(sessions, background, SystemClock::elapsedRealtime,
+@@ -337,7 +344,6 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
+             when {
+                 !isEnabled() -> PhoneSelfCheckReport.Reason.PHONE_DISABLED
+                 Build.VERSION.SDK_INT < io.github.ccch1mneyyy.dsh_app.phone.background.BackgroundPolicy.MIN_SDK -> PhoneSelfCheckReport.Reason.UNSUPPORTED
+-                isLocked() -> PhoneSelfCheckReport.Reason.LOCKED
+                 else -> null
+             }
+         }, prepareReceiver = ::registerScreenOffNow,
+@@ -345,6 +351,13 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
  
      init {
          PhoneRegistry.notificationGate = notificationGate
@@ -1886,26 +1930,39 @@ index 2fc7cd59..8b50ae09 100644
          PhoneRegistry.promptGate = prompts
          PhoneRegistry.controlListener = this
          PhoneRegistry.unlocks = { policies().unlocks }
-@@ -353,7 +367,7 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
+@@ -352,8 +365,8 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
+         background.onStatusChanged = { ticker.execute { sessions.backgroundCapacityChanged() } }
          background.onPreviewChanged = { main.post { preview.refresh() } }
          background.localOcrAllowed = { target ->
-             isEnabled() && !isLocked() && target.packageName != app.packageName &&
+-            isEnabled() && !isLocked() && target.packageName != app.packageName &&
 -                target.packageName !in policies().denyPackages
++            isEnabled() && target.packageName != app.packageName &&
 +                (allGranted() || target.packageName !in policies().denyPackages)
          }
          (app as? Application)?.let { AppVisibility.register(it) }
          tasks.addListener { onTask(it) }
-@@ -682,7 +696,8 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
+@@ -681,10 +694,7 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
+                 if (intent.action != Intent.ACTION_SCREEN_OFF) return
                  selfCheck.stop()
                  preview.refresh()
-                 background.requestInterrupt {
+-                background.requestInterrupt {
 -                    sessions.stopAll("熄屏", PhoneTasks.StopSource.SCREEN_OFF) // l10n:keep agent stop reason
-+                    // 虚拟屏任务熄屏后照跑（验收单 #32），只停主屏任务。
-+                    sessions.stopAllExceptBackground("熄屏", PhoneTasks.StopSource.SCREEN_OFF) // l10n:keep agent stop reason
-                 }
-                 cleanupIo.execute { background.finishInterrupt() }
+-                }
+-                cleanupIo.execute { background.finishInterrupt() }
++                // 熄屏不停任何任务：主屏任务靠设备解锁原语唤醒屏幕后继续，虚拟屏任务本就照跑。
              }
-@@ -806,6 +821,17 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
+         }
+         return try {
+@@ -715,7 +725,7 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
+     internal fun collectNavigationMaterial(driver: io.github.ccch1mneyyy.dsh_app.phone.a11y.MainScreenDriver,
+                                           seq: Int, publish: (ByteArray) -> Unit) {
+         fun allowed(): Boolean = app.applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE != 0 &&
+-            PhoneRegistry.mainDriver === driver && enabled() && !isLocked() &&
++            PhoneRegistry.mainDriver === driver && enabled() &&
+             core.safety.checkReadSources(policies(), listOf(io.github.ccch1mneyyy.dsh_app.phone.a11y.MarkorNavigation.PACKAGE)) == null
+         fun unavailable(reason: String) = Json.write(mapOf("schema" to 1, "seq" to seq,
+             "kind" to "unavailable", "reason" to reason)).toByteArray(Charsets.UTF_8)
+@@ -806,6 +816,17 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
              "notifications" to nm.areNotificationsEnabled(),
              "confirmationNotifications" to notificationGate.available(),
              "background" to backgroundStatus(),
@@ -1923,23 +1980,34 @@ index 2fc7cd59..8b50ae09 100644
              "a11yKeeper" to keeperStatus(),
              "task" to tasks.snapshot().toMap(),
              "taskInterruption" to taskJournal.status(),
-@@ -943,7 +969,14 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
+@@ -943,7 +964,12 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
      override fun shownControls(): TaskControls? =
          displaySelection.controls { task, owner, reason -> stopOwner(task, owner, reason) }
  
 -    override fun onStopAllRequested(reason: String, source: PhoneTasks.StopSource) { shell.cancelAll(); selfCheck.stop(); sessions.stopAll(reason, source) }
 +    override fun onStopAllRequested(reason: String, source: PhoneTasks.StopSource) {
 +        shell.cancelAll(); selfCheck.stop()
-+        // 熄屏：虚拟屏上的任务照跑（验收单 #32），只停主屏任务。
-+        // 之前无障碍服务的熄屏广播走到这里直接 stopAll，把虚拟屏任务也一起杀了
-+        // —— 模型因此回答"锁屏就结束"（用户 20:57）。
-+        if (source == PhoneTasks.StopSource.SCREEN_OFF) sessions.stopAllExceptBackground(reason, source)
-+        else sessions.stopAll(reason, source)
++        // 熄屏不停任何任务（主屏任务由解锁原语唤醒后继续）；其余来源照停。
++        if (source == PhoneTasks.StopSource.SCREEN_OFF) return
++        sessions.stopAll(reason, source)
 +    }
  
      override fun onAccessibilityChanged(connected: Boolean) = emitStatus()
  
-@@ -990,7 +1023,7 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
+@@ -953,12 +979,6 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
+ 
+     override fun enabled(): Boolean = isEnabled()
+ 
+-    override fun isLocked(): Boolean {
+-        val km = app.getSystemService(Context.KEYGUARD_SERVICE) as KeyguardManager
+-        val power = app.getSystemService(Context.POWER_SERVICE) as PowerManager
+-        return km.isKeyguardLocked || !power.isInteractive
+-    }
+-
+     override fun gate(): UserGate = prompts
+ 
+     /**
+@@ -990,7 +1010,7 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
          if (screen != PhoneScreen.BACKGROUND) return null
          background.endTask(owner.taskId)
          // l10n:keep agent stop reason
@@ -1948,7 +2016,7 @@ index 2fc7cd59..8b50ae09 100644
      }
  
      override fun a11yState(): A11yState = when {
-@@ -999,18 +1032,121 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
+@@ -999,18 +1019,121 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
          else -> A11yState.DISABLED
      }
  
@@ -2004,13 +2072,13 @@ index 2fc7cd59..8b50ae09 100644
          // l10n:keep agent stop reason
 -        return "不打扰模式（后台屏）用不了$reason。只能在主屏操作；要用后台屏请用户到 设置 → 手机操控 → 不打扰模式 开通。"
 +        return "虚拟屏用不了$reason。这轮请在主屏操作（background:false），或请用户到 设置 → 手机操控 → 不打扰模式 授权 Shizuku / ADB 后再用虚拟屏。"
-     }
- 
++    }
++
 +    /** 【4ou】通用自愈：open 失败后的全量重置（新身份+清账+断旧通道）。 */
 +    override fun resetVscreenForReopen() {
 +        runCatching { background.resetForReopen() }
-+    }
-+
+     }
+ 
 +    /** 【4oy】上一任务"停止"的中断收尾是否还在进行：进行中新任务 open 应等它走完，不硬拒。 */
 +    override fun vscreenInterruptInProgress(): Boolean = background.interruptInProgress()
 +
@@ -2072,7 +2140,7 @@ index 2fc7cd59..8b50ae09 100644
  
      override fun notifyFix(kind: String) = notifyFixFor(tasks, kind)
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneCore.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneCore.kt
-index 6c701851..b528f7b2 100644
+index 6c701851..dd176d43 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneCore.kt
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneCore.kt
 @@ -1,9 +1,12 @@
@@ -2088,7 +2156,15 @@ index 6c701851..b528f7b2 100644
  import java.time.ZoneId
  import java.util.concurrent.atomic.AtomicReference
  
-@@ -23,6 +26,20 @@ interface PhoneEnv {
+@@ -14,7 +17,6 @@ interface PhoneEnv {
+     /** The master switch. */
+     fun enabled(): Boolean
+     fun policies(): PhonePolicies
+-    fun isLocked(): Boolean
+     fun gate(): UserGate?
+     fun driver(screen: PhoneScreen): PhoneDriver?
+     fun driver(screen: PhoneScreen, owner: PhoneTasks.Owner): PhoneDriver? = driver(screen)
+@@ -23,6 +25,20 @@ interface PhoneEnv {
      fun a11yState(): A11yState
      /** Why the background display can't be used, as a sentence for the model. */
      fun backgroundUnavailable(): String
@@ -2109,7 +2185,7 @@ index 6c701851..b528f7b2 100644
      fun system(): SystemApi
      fun androidShell(): PhoneShellExecutor? = null
      fun uiText(): PhoneUiText = PhoneUiText.DEFAULT
-@@ -55,7 +72,7 @@ class PhoneCore(
+@@ -55,7 +71,7 @@ class PhoneCore(
      },
  ) {
      private val ui: PhoneUiText get() = env.uiText()
@@ -2118,7 +2194,7 @@ index 6c701851..b528f7b2 100644
  
      // An abandoned body may overlap a later execution of the same Owner. Keep its display
      // serial with that body, not a mutable Core-wide field or a fresh lookup when say runs.
-@@ -64,12 +81,26 @@ class PhoneCore(
+@@ -64,12 +80,26 @@ class PhoneCore(
      /** The overlay's status line; 免确认 stays visible the whole time nothing is asked. */
      private fun say(owner: PhoneTasks.Owner, text: String) {
          if (!current(owner)) return
@@ -2146,7 +2222,7 @@ index 6c701851..b528f7b2 100644
  
      /**
       * The task's last hard refusal (密码框, 系统设置, 不碰名单), for the `handoff` that usually
-@@ -97,15 +128,30 @@ class PhoneCore(
+@@ -97,15 +127,30 @@ class PhoneCore(
          internal val replayOutcomes: PhoneSkillOutcomes? = null,
          internal val replayDriver: PhoneDriver? = null,
          private val replayApp: PhoneAppIdentity? = null,
@@ -2178,7 +2254,7 @@ index 6c701851..b528f7b2 100644
      }
  
      /** Only a first claimed native Selection reaches this path; public args never construct it. */
-@@ -119,14 +165,15 @@ class PhoneCore(
+@@ -119,28 +164,29 @@ class PhoneCore(
          val app = PhoneAppIdentity(selection.app.packageName, selection.app.uid)
          val originalDriver = if (screen == PhoneScreen.BACKGROUND) {
              env.existingReplayDriver(owner, app)?.takeIf { it.screen == PhoneScreen.BACKGROUND }
@@ -2196,7 +2272,14 @@ index 6c701851..b528f7b2 100644
      }
  
      private fun replay(call: PreparedCall, scope: SerialWorker.Scope, owner: PhoneTasks.Owner): Out {
-@@ -140,7 +187,7 @@ class PhoneCore(
+         val selection = checkNotNull(call.replay)
+         val selections = checkNotNull(call.replaySelections)
+         val outcomes = checkNotNull(call.replayOutcomes)
+-        fun live() = current(owner) && !tasks.isPaused && !env.isLocked() && env.enabled() &&
++        fun live() = current(owner) && !tasks.isPaused && env.enabled() &&
+             selection.sourceCurrent() && selections.current(selection)
+         fun stop(reason: String): Out = Out(reason + " 已停止路线，不会自动重试；请交回用户或模型。", // l10n:keep replay result
+             error = true, summary = REPLAY, decision = "handed_back")
          if (!live()) return stop("原任务或路线已不可继续。") // l10n:keep replay result
          val screen = call.screens.single()
          val driver = if (screen == PhoneScreen.BACKGROUND) {
@@ -2205,7 +2288,7 @@ index 6c701851..b528f7b2 100644
          } else when (val result = driverFor(screen, owner)) {
              is Either.Left -> return stop(result.value)
              is Either.Right -> result.value
-@@ -255,7 +302,9 @@ class PhoneCore(
+@@ -255,7 +301,9 @@ class PhoneCore(
              // l10n:keep agent tool result
              return ToolOutput("没有这个手机工具：$name。可用：${PhoneToolCatalog.names.joinToString("、")}", isError = true)
          }
@@ -2216,7 +2299,7 @@ index 6c701851..b528f7b2 100644
              // l10n:keep agent tool result
              return ToolOutput("手机操控已在 DSH 设置里关闭。请用户在 设置 → 手机操控 里打开后重启引擎。", isError = true)
          }
-@@ -361,7 +410,7 @@ class PhoneCore(
+@@ -361,7 +409,7 @@ class PhoneCore(
              // MAIN already excludes other app holders. Resolve again after waiting for it,
              // keeping the originally selected package if its label or launcher has changed.
              val refreshMain = name == PhoneToolCatalog.INTENT ||
@@ -2225,7 +2308,7 @@ index 6c701851..b528f7b2 100644
              val call = if (prepared != null && !refreshMain) prepared else when (
                  val result = prepare(name, a, owner, prepared?.requestedApp)
              ) {
-@@ -383,6 +432,8 @@ class PhoneCore(
+@@ -383,6 +431,8 @@ class PhoneCore(
                  PhoneToolCatalog.TAP, PhoneToolCatalog.TYPE, PhoneToolCatalog.SCROLL, PhoneToolCatalog.TAP_XY -> act(name, a, scope, owner)
                  PhoneToolCatalog.KEY -> key(a, owner)
                  PhoneToolCatalog.HANDOFF -> handoff(a, scope, owner)
@@ -2234,7 +2317,7 @@ index 6c701851..b528f7b2 100644
                  // l10n:keep agent tool result
                  else -> Out("没有这个手机工具：$name", error = true)
              }
-@@ -391,6 +442,18 @@ class PhoneCore(
+@@ -391,6 +441,18 @@ class PhoneCore(
          }
      }
  
@@ -2253,8 +2336,28 @@ index 6c701851..b528f7b2 100644
      private fun current(owner: PhoneTasks.Owner): Boolean =
          tasks.isCurrent(owner) && !Thread.currentThread().isInterrupted
  
-@@ -468,7 +531,7 @@ class PhoneCore(
-                 if (env.isLocked()) return Either.Left(locked("open"))
+@@ -400,7 +462,7 @@ class PhoneCore(
+         // Arbitrary system effects cannot become an implicitly verified UI replay route.
+         skillTrace.markIncomplete(owner, PhoneTaskTrace.Gap.UNCERTAIN_RESULT)
+         val result = PhoneAndroidShell.run(request, owner, tasks, scope, env.androidShell(),
+-            env::enabled, env::isLocked, env::gate, ui)
++            env::enabled, env::gate, ui)
+         val successfulExit = when (val code = result["exitCode"]) {
+             is Int -> code == 0
+             is Long -> code == 0L
+@@ -457,18 +519,15 @@ class PhoneCore(
+             PhoneToolCatalog.ANDROID_SHELL -> {
+                 if (PhoneAndroidShell.parse(a) == null) return Either.Left(Out(
+                     Json.write(PhoneAndroidShell.failure("invalidArguments")), error = true))
+-                if (env.isLocked()) return Either.Left(Out(
+-                    Json.write(PhoneAndroidShell.failure("locked")), error = true))
+             }
+             PhoneToolCatalog.OPEN -> {
+                 val appQ = a.str("app")
+                 val url = a.str("url")
+                 // l10n:keep agent tool result
+                 if ((appQ == null) == (url == null)) return Either.Left(Out("open 需要 app 或 url，二选一。", error = true))
+-                if (env.isLocked()) return Either.Left(locked("open"))
                  if (url != null) {
                      // l10n:keep agent tool result
 -                    if (a.bool("background") == true) return Either.Left(Out("后台屏只能用 app 打开应用，不支持链接。", error = true))
@@ -2262,7 +2365,15 @@ index 6c701851..b528f7b2 100644
                      UrlPolicy.check(url)?.let {
                          return Either.Left(Out(it, error = true, summary = ui.get("phone_log_open_url", "打开链接"), decision = "refused:url")) // l10n:keep test default
                      }
-@@ -516,14 +579,23 @@ class PhoneCore(
+@@ -496,7 +555,6 @@ class PhoneCore(
+                     is Either.Right -> parsed.value
+                 }
+                 val kind = a.str("kind") ?: ""
+-                if (env.isLocked()) return Either.Left(locked("intent $kind"))
+                 val appQuery = when (spec) {
+                     is IntentSpec.Share -> spec.app
+                     is IntentSpec.Settings -> spec.app
+@@ -516,15 +574,23 @@ class PhoneCore(
              }
          }
          if (!current(owner)) return Either.Left(stoppedOut(name))
@@ -2279,16 +2390,17 @@ index 6c701851..b528f7b2 100644
 +            "open: param=${a.str("background")} switch=${env.prefersBackground()} resolved=${backgroundTarget(a)}")
          val url = a.str("url")
 -        val background = a.bool("background") == true
+-        if (env.isLocked()) return locked("open")
 +        // 虚拟屏 is the default target; a link, or an app whose launch identity could not be
 +        // read, stays on the phone's own screen. The virtual screen is created on demand below,
 +        // and an open that cannot have it reports that — it never quietly lands on 主屏.
 +        val wantsBackground = url == null && call.opensInBackground
 +        // 第二十一节 is decided below, once the package is known; a link never goes to a display.
 +        var background = wantsBackground
-         if (env.isLocked()) return locked("open")
          val plan = checkNotNull(call.launch)
          if (url != null) {
-@@ -543,12 +615,15 @@ class PhoneCore(
+             val summary = ui.get("phone_log_open_url_scheme", "打开链接 %1\$s:", url.substringBefore(':')) // l10n:keep test default
+@@ -543,12 +609,15 @@ class PhoneCore(
          // An explicit package is still subject to app rules even when its handler UID is unknown.
          val app = (plan.target as? SystemTarget.Known)?.app
              ?: checkNotNull(call.requestedApp)
@@ -2304,7 +2416,7 @@ index 6c701851..b528f7b2 100644
              confirmSystem(plan, scope, owner, summary)?.let { return it }
              val ticket = skillTrace.beginOpen(owner, PhoneScreen.MAIN)
              val result = try {
-@@ -556,50 +631,324 @@ class PhoneCore(
+@@ -556,50 +625,324 @@ class PhoneCore(
                      skillTrace.finish(ticket, it.ok, false, false)
                  }
              } catch (e: Throwable) { skillTrace.fail(ticket); throw e }
@@ -2640,7 +2752,24 @@ index 6c701851..b528f7b2 100644
      }
  
      /** The handler is a dispatch fact. Only the following read describes the actual foreground UI. */
-@@ -816,8 +1165,210 @@ class PhoneCore(
+@@ -690,7 +1033,6 @@ class PhoneCore(
+     private fun intent(call: PreparedCall, scope: SerialWorker.Scope, owner: PhoneTasks.Owner): Out {
+         if (!current(owner)) return stoppedOut("intent")
+         val kind = call.args.str("kind") ?: ""
+-        if (env.isLocked()) return locked("intent $kind")
+         val subject = call.requestedApp.takeIf { kind == "share" }
+         subject?.let { subject ->
+             safety.checkOpen(subject.packageName, subject.label)?.let {
+@@ -728,7 +1070,7 @@ class PhoneCore(
+             is SafetyGate.Result.Go -> Unit
+         }
+         if (!current(owner)) return stoppedOut(summary)
+-        return if (env.isLocked()) locked(summary) else null
++        return null
+     }
+ 
+     /** Consent may wait; recheck the fixed request's app rules at start admission. */
+@@ -816,8 +1158,210 @@ class PhoneCore(
          return Either.Right(d)
      }
  
@@ -2851,7 +2980,7 @@ index 6c701851..b528f7b2 100644
      /** Admission uses the same argument coercion and routing as the actual tool body. */
      fun requiredScreens(name: String, args: Map<String, Any?>): Either<String, List<PhoneScreen>> {
          return requiredScreens(name, Args(args))
-@@ -825,10 +1376,11 @@ class PhoneCore(
+@@ -825,10 +1369,11 @@ class PhoneCore(
  
      private fun requiredScreens(name: String, a: Args): Either<String, List<PhoneScreen>> {
          return when (name) {
@@ -2866,7 +2995,7 @@ index 6c701851..b528f7b2 100644
              // Arbitrary system commands take the main/global unknown-app lease, without reading a screen.
              PhoneToolCatalog.INTENT, PhoneToolCatalog.ANDROID_SHELL -> Either.Right(listOf(PhoneScreen.MAIN))
              PhoneToolCatalog.HANDOFF -> Either.Right(if (lastScreen == PhoneScreen.BACKGROUND)
-@@ -852,7 +1404,7 @@ class PhoneCore(
+@@ -852,13 +1397,9 @@ class PhoneCore(
          if (id == null) return Either.Left("缺少 $parameterName（屏幕号，如 s7）。先调用 screen 拿到屏幕号。")
          return PhoneScreen.ofScreenId(id)?.let { Either.Right(it) }
              // l10n:keep agent tool result
@@ -2874,8 +3003,14 @@ index 6c701851..b528f7b2 100644
 +            ?: Either.Left("屏幕号「$id」不对：主屏以 s 开头（如 s7），虚拟屏以 b 开头（如 b3）。先调用 screen 拿到屏幕号。")
      }
  
-     private fun locked(summary: String) =
-@@ -871,21 +1423,56 @@ class PhoneCore(
+-    private fun locked(summary: String) =
+-        // l10n:keep agent tool result
+-        Out("手机锁着屏，DSH 不在锁屏状态下操作。请用户解锁后再说一声。", error = true, summary = summary, decision = "refused:locked")
+-
+     /** Every returned observation passes the final read policy before a driver candidate is
+      * committed. This also covers post-action and stale-refresh frames, not just screen(). */
+     private fun returnedScreen(driver: PhoneDriver, snapshot: ScreenSnapshot, owner: PhoneTasks.Owner,
+@@ -871,21 +1412,55 @@ class PhoneCore(
  
      private fun screen(a: Args, owner: PhoneTasks.Owner): Out {
          if (!current(owner)) return stoppedOut("screen")
@@ -2891,7 +3026,7 @@ index 6c701851..b528f7b2 100644
 +            is Either.Left -> return Out(picked.value, error = true, summary = summary, decision = "unavailable")
 +            is Either.Right -> picked.value
          }
-         if (env.isLocked()) return locked(summary)
+-        if (env.isLocked()) return locked(summary)
          lastScreen = which
 -        say(owner, if (which == PhoneScreen.BACKGROUND) ui.get("phone_reading_background", "DSH 正在看后台屏") else ui.get("phone_reading_screen", "DSH 正在看屏幕")) // l10n:keep test default
 +        say(owner, if (which == PhoneScreen.BACKGROUND) ui.get("phone_reading_background", "DSH 正在看虚拟屏") else ui.get("phone_reading_screen", "DSH 正在看屏幕")) // l10n:keep test default
@@ -2940,7 +3075,7 @@ index 6c701851..b528f7b2 100644
          return Out(
              // l10n:keep agent tool result
              if (refused) "没有读取这个屏幕的内容。" else "",
-@@ -897,6 +1484,40 @@ class PhoneCore(
+@@ -897,6 +1472,40 @@ class PhoneCore(
          )
      }
  
@@ -2981,7 +3116,58 @@ index 6c701851..b528f7b2 100644
      private fun collect(a: Args, owner: PhoneTasks.Owner): Out {
          if (!current(owner)) return stoppedOut("collect")
          val sid = a.str("screen")
-@@ -1270,8 +1891,13 @@ class PhoneCore(
+@@ -912,7 +1521,6 @@ class PhoneCore(
+             is Either.Left -> return Out(d.value, error = true, summary = summary, decision = "unavailable")
+             is Either.Right -> d.value
+         }
+-        if (env.isLocked()) return locked(summary)
+         lastScreen = which
+         val pkg = driver.foregroundPackage()
+         safety.checkRead(pkg, null)?.let { return Out(it.message, error = true, app = pkg, summary = summary, decision = "refused:${it.rule}") }
+@@ -993,7 +1601,6 @@ class PhoneCore(
+             is Either.Right -> route.value
+         }
+         if (!current(owner)) return stoppedOut(summary)
+-        if (env.isLocked()) return locked(summary)
+         val driver = when (val d = driverFor(which, owner)) {
+             is Either.Left -> return Out(d.value, error = true, summary = summary, decision = "unavailable")
+             is Either.Right -> d.value
+@@ -1027,7 +1634,7 @@ class PhoneCore(
+             }
+             val failure = AtomicReference<SafetyGate.Verdict.Refuse?>(null)
+             fun allowed(): Boolean {
+-                if (!current(owner) || tasks.isPaused || env.isLocked()) return false
++                if (!current(owner) || tasks.isPaused) return false
+                 if (failure.get() != null) return false
+                 (verdict() as? SafetyGate.Verdict.Refuse)?.let { failure.compareAndSet(null, it) }
+                 return failure.get() == null
+@@ -1129,7 +1736,6 @@ class PhoneCore(
+             is Either.Left -> return Out(d.value, error = true, summary = summary, decision = "unavailable")
+             is Either.Right -> d.value
+         }
+-        if (env.isLocked()) return locked(summary)
+         lastScreen = which
+         val visual = (action as? PhoneAction.TapXY)?.let { driver.coordinateTarget(it) }
+         val target: TargetInfo? = if (id != null && kind != WriteKind.TAP_XY) {
+@@ -1235,14 +1841,14 @@ class PhoneCore(
+     /** The element no longer matches its snapshot: refuse and show the screen as it is now. */
+     private fun stale(driver: PhoneDriver, sid: String, summary: String, owner: PhoneTasks.Owner, refusal: String? = null): Out {
+         val now = try {
+-            if (!tasks.isCurrent(owner) || Thread.currentThread().isInterrupted || env.isLocked()) null
++            if (!tasks.isCurrent(owner) || Thread.currentThread().isInterrupted) null
+             else {
+                 val pkg = driver.foregroundPackage()
+                 if (safety.checkRead(pkg, null) != null || !tasks.isCurrent(owner) ||
+-                    Thread.currentThread().isInterrupted || env.isLocked()) null
++                    Thread.currentThread().isInterrupted) null
+                 else {
+                     val observed = driver.observe(detail = false, image = false)
+-                    if (!tasks.isCurrent(owner) || Thread.currentThread().isInterrupted || env.isLocked()) null
++                    if (!tasks.isCurrent(owner) || Thread.currentThread().isInterrupted) null
+                     else returnedScreen(driver, observed, owner)
+                 }
+             }
+@@ -1270,8 +1876,13 @@ class PhoneCore(
              "home" -> PhoneAction.GlobalKey.HOME
              "recents" -> PhoneAction.GlobalKey.RECENTS
              "notifications" -> PhoneAction.GlobalKey.NOTIFICATIONS
@@ -2996,10 +3182,11 @@ index 6c701851..b528f7b2 100644
          }
          val sid = a.str("screen")
          val which = if (sid == null) {
-@@ -1288,12 +1914,22 @@ class PhoneCore(
+@@ -1287,13 +1898,22 @@ class PhoneCore(
+             is Either.Left -> return Out(d.value, error = true, summary = summary, decision = "unavailable")
              is Either.Right -> d.value
          }
-         if (env.isLocked()) return locked(summary)
+-        if (env.isLocked()) return locked(summary)
 +        // 【4oz-paste】粘贴/回车/全选只在虚拟屏通道有效，主屏明确拒绝，不给模型含糊的回包。
 +        if (which != PhoneScreen.BACKGROUND && (key == PhoneAction.GlobalKey.PASTE || key == PhoneAction.GlobalKey.ENTER ||
 +                key == PhoneAction.GlobalKey.SELECT_ALL || key == PhoneAction.GlobalKey.DELETE)) {
@@ -3019,7 +3206,7 @@ index 6c701851..b528f7b2 100644
          }))
          if (!current(owner)) return stoppedOut(summary)
          val action = PhoneAction.Key(sid ?: "${which.prefix}0", key)
-@@ -1314,6 +1950,22 @@ class PhoneCore(
+@@ -1314,6 +1934,22 @@ class PhoneCore(
          } catch (e: Throwable) { skillTrace.fail(ticket); throw e }
      }
  
@@ -3042,7 +3229,7 @@ index 6c701851..b528f7b2 100644
      private fun handoff(a: Args, scope: SerialWorker.Scope, owner: PhoneTasks.Owner): Out {
          if (!current(owner)) return stoppedOut("handoff")
          // l10n:keep agent tool result
-@@ -1362,6 +2014,7 @@ class PhoneCore(
+@@ -1362,6 +1998,7 @@ class PhoneCore(
          summary = summary, decision = "stopped")
  
      companion object {
@@ -3050,7 +3237,7 @@ index 6c701851..b528f7b2 100644
          internal const val REPLAY = "replay"
          internal const val FOCUS_TEXT = "focus_text"
  
-@@ -1370,6 +2023,9 @@ class PhoneCore(
+@@ -1370,6 +2007,9 @@ class PhoneCore(
          const val PAUSE_WAIT_MS = 600_000L
          const val HANDOFF_MS = 600_000L
  
@@ -3871,10 +4058,49 @@ index bfce8b83..447c4445 100644
      fun handoffCause(ctx: Context, cause: HandoffCause): String = AppStrings.get(ctx, when (cause) {
          HandoffCause.SECRET -> R.string.overlay_handoff_secret
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhonePrompts.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhonePrompts.kt
-index 48cf1684..7fcc3d74 100644
+index 48cf1684..0959532d 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhonePrompts.kt
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhonePrompts.kt
-@@ -243,7 +243,7 @@ class PhonePrompts(
+@@ -14,7 +14,6 @@ class PhonePrompts(
+     private val app: Context,
+     private val tasks: PhoneTasks,
+     private val enabled: () -> Boolean,
+-    private val locked: () -> Boolean,
+     private val notifications: NotificationGate,
+     private val reopen: (String?, String?) -> Boolean,
+     private val displaySelection: PhoneDisplaySelection,
+@@ -43,10 +42,10 @@ class PhonePrompts(
+         val bound = request.taskId?.let { resolveTask(it, request.sessionId) } ?: if (request.taskId == null) tasks else null
+         if (bound == null) { reply(unavailable("stale")); return }
+         val taskOwner = if (request.taskId == null) bound.beforeTaskOwner() else bound.activeOwner(request.taskId)
+-        if (taskOwner == null || locked()) { reply(unavailable("stale")); return }
++        if (taskOwner == null) { reply(unavailable("stale")); return }
+         val ticket = arbiter.begin(request.requestId, owner,
+             PromptContent(request.kind, request.text, sessionId = request.sessionId, host = request.host), 30_000,
+-            { sourceCurrent() && enabled() && !locked() && bound.isCurrent(taskOwner) })
++            { sourceCurrent() && enabled() && bound.isCurrent(taskOwner) })
+         if (ticket == null) { reply(unavailable("busy")); return }
+         ticket.onFinished {
+             onMain {
+@@ -75,7 +74,7 @@ class PhonePrompts(
+         val shown = if (sessionId == null) request else request.copy(sentence = "[$sessionId]\n${request.sentence}")
+         val ticket = arbiter.begin(null, task,
+             PromptContent(PromptKind.NATIVE_CONFIRM, shown.sentence.take(4096), shown, sessionId = sessionId), request.timeoutMs.coerceIn(1, 30_000),
+-            { enabled() && !locked() && task.isCurrent(taskOwner) }) ?: return Decision.UNAVAILABLE
++            { enabled() && task.isCurrent(taskOwner) }) ?: return Decision.UNAVAILABLE
+         schedule(ticket)
+         val result = ticket.await()
+         // Revocation/lock is not a user STOP. Reuse the worker interruption path.
+@@ -103,7 +102,7 @@ class PhonePrompts(
+         val taskOwner = owner ?: return HandoffResult.STOP
+         if (!task.isCurrent(taskOwner)) return HandoffResult.STOP
+         val ticket = arbiter.begin(null, task, PromptContent(PromptKind.HANDOFF, (if (sessionId == null) reason else "[$sessionId]\n$reason").take(4096), cause = cause, sessionId = sessionId),
+-            timeoutMs.coerceIn(1, 600_000), { enabled() && !locked() && task.isCurrent(taskOwner) }) ?: return HandoffResult.STOP
++            timeoutMs.coerceIn(1, 600_000), { enabled() && task.isCurrent(taskOwner) }) ?: return HandoffResult.STOP
+         schedule(ticket)
+         val result = ticket.await()
+         // Revocation/lock is not a user STOP. Reuse the worker interruption path.
+@@ -243,7 +242,7 @@ class PhonePrompts(
      } == true
  
      companion object {
@@ -4605,10 +4831,47 @@ index 91560593..3f956f3b 100644
      }
  }
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/a11y/MainScreenDriver.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/a11y/MainScreenDriver.kt
-index 0d55002e..9a05c305 100644
+index 0d55002e..4cbc7000 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/a11y/MainScreenDriver.kt
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/a11y/MainScreenDriver.kt
-@@ -1048,7 +1048,7 @@ internal class MainScreenDriver(private val service: PhoneA11yService, private v
+@@ -11,7 +11,6 @@ import io.github.ccch1mneyyy.dsh_app.phone.background.Reasons
+ import io.github.ccch1mneyyy.dsh_app.phone.PhoneAppIdentity
+ import io.github.ccch1mneyyy.dsh_app.i18n.AppStrings
+ import io.github.ccch1mneyyy.dsh_app.R
+-import android.app.KeyguardManager
+ import android.content.Intent
+ import android.content.ClipData
+ import android.content.ClipboardManager
+@@ -20,7 +19,6 @@ import android.hardware.display.DisplayManager
+ import android.os.Build
+ import android.os.Handler
+ import android.os.Looper
+-import android.os.PowerManager
+ import android.os.SystemClock
+ import android.util.Log
+ import android.view.Display
+@@ -74,8 +72,6 @@ internal class MainScreenDriver(private val service: PhoneA11yService, private v
+     private val shooter = ScreenShooter(service, overlay, localOcr)
+     private var actionDeadline = 0L
+     private var actionBeforeImage: ImageObservation? = null
+-    private val power = service.getSystemService(PowerManager::class.java)
+-    private val keyguard = service.getSystemService(KeyguardManager::class.java)
+     private val displays = service.getSystemService(DisplayManager::class.java)
+     private val labels = ConcurrentHashMap<String, String>()
+ 
+@@ -134,10 +130,7 @@ internal class MainScreenDriver(private val service: PhoneA11yService, private v
+         !published() ->
+             // l10n:keep agent screen result
+             Availability(false, "DSH 的无障碍服务没有连接。请用户到 系统设置 → 无障碍 里重新打开「DSH 手机操控」。", AppStrings.get(service, R.string.phone_availability_disconnected))
+-        // l10n:keep agent screen result
+-        !power.isInteractive -> Availability(false, "屏幕已关闭。DSH 只在亮屏、解锁时操作手机，请用户点亮并解锁。", AppStrings.get(service, R.string.phone_availability_screen_off))
+-        // l10n:keep agent screen result
+-        keyguard.isKeyguardLocked -> Availability(false, "手机已锁屏。请用户解锁后再继续。", AppStrings.get(service, R.string.phone_availability_locked))
++        // 无视锁屏/熄屏：操作手机不受锁屏限制，读不到内容时由模型自行处理。
+         else -> Availability(true)
+     }).also { if (!it.ok) { visual.invalidate(); clearFocusCandidate() } }
+ 
+@@ -1048,7 +1041,7 @@ internal class MainScreenDriver(private val service: PhoneA11yService, private v
                  // l10n:keep agent screen result
                  if (cap.ownAppInFront && !lifted.ownApp) return ActionResult(false, "这是 DSH 自己的界面，不操作。")
                  // l10n:keep agent screen result
@@ -4617,7 +4880,7 @@ index 0d55002e..9a05c305 100644
                  // l10n:keep agent screen result
                  val current = observation(cap)
                  if (!current.reusableCoordinates(snap.observation)) {
-@@ -1105,6 +1105,8 @@ internal class MainScreenDriver(private val service: PhoneA11yService, private v
+@@ -1105,6 +1098,8 @@ internal class MainScreenDriver(private val service: PhoneA11yService, private v
              PhoneAction.GlobalKey.RECENTS -> "已提交打开最近任务的按键操作。"
              // l10n:keep agent screen result
              PhoneAction.GlobalKey.NOTIFICATIONS -> "已提交打开通知栏的按键操作。"
