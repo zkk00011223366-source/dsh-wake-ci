@@ -1,10 +1,10 @@
 From: dsh <dsh@local>
-Date: Sat, 28 Nov 2026 10:22:48 +0800
-Subject: [PATCH] kongkong 自己的包: 改包名+应用内LOGO/词标去DSH+说明技能开放编辑+四刀
+Date: Sat, 28 Nov 2026 11:04:48 +0800
+Subject: [PATCH] 空空 去DSH: 启动页/最近任务名/引擎标签/抽屉词标/guide技能名 全部清零
 
  dsh-go-wake.patch                                  | 2065 +++++++++++++
  tooling/build-wake-apk.sh                          |   68 +
- 275 files changed, 20240 insertions(+), 1170 deletions(-)
+ 346 files changed, 20266 insertions(+), 1196 deletions(-)
 
 diff --git a/.gitattributes b/.gitattributes
 index 52e3e08a..3e877c7e 100644
@@ -3716,6 +3716,19 @@ index 4a76535f..0407b997 100644
      private fun inspectSkillReplay(call: MethodCall, result: MethodChannel.Result) {
          val args = call.arguments as? Map<*, *>
          val name = args?.get("skillId") as? String
+diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhonePromptUi.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhonePromptUi.kt
+index bfce8b83..447c4445 100644
+--- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhonePromptUi.kt
++++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhonePromptUi.kt
+@@ -38,7 +38,7 @@ internal object PhonePromptUi {
+ 
+     /** The card's title: a handoff behind a hard rule names the rule (「密码和验证码需要你来输入」). */
+     fun title(ctx: Context, content: PromptContent): String =
+-        content.cause?.let { "DSH Go · " + handoffCause(ctx, it) } ?: title(ctx, content.kind)
++        content.cause?.let { "空空 · " + handoffCause(ctx, it) } ?: title(ctx, content.kind)
+ 
+     fun handoffCause(ctx: Context, cause: HandoffCause): String = AppStrings.get(ctx, when (cause) {
+         HandoffCause.SECRET -> R.string.overlay_handoff_secret
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhonePrompts.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhonePrompts.kt
 index 48cf1684..7fcc3d74 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhonePrompts.kt
@@ -4021,7 +4034,7 @@ index a09015e7..b9c4bf15 100644
          /** No confirmation surface is reachable, so this one action did not run. */
          // l10n:keep agent no-gate protocol
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneToolCatalog.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneToolCatalog.kt
-index cbfb0de3..582ea03f 100644
+index cbfb0de3..aaafae38 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneToolCatalog.kt
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneToolCatalog.kt
 @@ -22,8 +22,10 @@ object PhoneToolCatalog {
@@ -4103,6 +4116,15 @@ index cbfb0de3..582ea03f 100644
              ),
              emptyList(),
          ),
+@@ -159,7 +187,7 @@ object PhoneToolCatalog {
+         Tool(
+             CLIPBOARD,
+             // l10n:keep agent tool catalog
+-            "读写剪贴板：set 写入文字；get:true 读取（系统只允许前台应用读，DSH 不在前台时读不到）。",
++            "读写剪贴板：set 写入文字；get:true 读取（系统只允许前台应用读，空空不在前台时读不到）。",
+             // l10n:keep agent tool catalog
+             linkedMapOf("set" to str("要写入的文字"), "get" to bool("读取剪贴板")),
+             emptyList(),
 @@ -167,14 +195,17 @@ object PhoneToolCatalog {
          Tool(
              SCREEN,
@@ -100688,6 +100710,269 @@ index 00000000..5880fbff
 +#27 224
 +#28 225
 +#29 226
+diff --git a/app/assets/skills/dsh-go-guide/README.md b/app/assets/skills/kongkong-guide/README.md
+similarity index 100%
+rename from app/assets/skills/dsh-go-guide/README.md
+rename to app/assets/skills/kongkong-guide/README.md
+diff --git a/app/assets/skills/dsh-go-guide/SKILL.md b/app/assets/skills/kongkong-guide/SKILL.md
+similarity index 99%
+rename from app/assets/skills/dsh-go-guide/SKILL.md
+rename to app/assets/skills/kongkong-guide/SKILL.md
+index 954f1114..8983866b 100644
+--- a/app/assets/skills/dsh-go-guide/SKILL.md
++++ b/app/assets/skills/kongkong-guide/SKILL.md
+@@ -1,6 +1,6 @@
+ ---
+ # dsh-go:managed — the dsh-go app keeps this skill up to date; delete this line to keep your own edits.
+-name: dsh-go-guide
++name: kongkong-guide
+ description: dsh-go 手机 App 自带的使用说明（中文 / English）：功能在哪、怎么用、每个设置的作用、删除或重置会丢什么。用户问 dsh-go App 本身怎么用时先加载它，比如「悬浮条怎么调透明度」「怎么接入自己的模型」「本机环境能卸载吗」「分享链接怎么删」「酒馆怎么导入角色卡」「子代理和智能体团队在哪」「终端怎么开」「全部功能里有什么」「创意工坊怎么投稿」「宠物不见了」。The dsh-go app's own user guide — where each feature is, what each setting does, what an action deletes. Covers chat, models, engine and remote hosts, phone control, web mode, pets, companion, workshop, sharing, plugins, tavern, subagents and agent teams, terminal, workspaces, automations and settings.
+ whenToUse: The user asks how to use the dsh-go app (手机 App) itself. Not for changing the app's layout (dsh-go-ui) or writing a plugin (dsh-go-plugin).
+ ---
+diff --git a/app/assets/skills/dsh-go-guide/en-01-chat.md b/app/assets/skills/kongkong-guide/en-01-chat.md
+similarity index 100%
+rename from app/assets/skills/dsh-go-guide/en-01-chat.md
+rename to app/assets/skills/kongkong-guide/en-01-chat.md
+diff --git a/app/assets/skills/dsh-go-guide/en-02-models.md b/app/assets/skills/kongkong-guide/en-02-models.md
+similarity index 100%
+rename from app/assets/skills/dsh-go-guide/en-02-models.md
+rename to app/assets/skills/kongkong-guide/en-02-models.md
+diff --git a/app/assets/skills/dsh-go-guide/en-03-engine-hosts.md b/app/assets/skills/kongkong-guide/en-03-engine-hosts.md
+similarity index 100%
+rename from app/assets/skills/dsh-go-guide/en-03-engine-hosts.md
+rename to app/assets/skills/kongkong-guide/en-03-engine-hosts.md
+diff --git a/app/assets/skills/dsh-go-guide/en-04-phone-control.md b/app/assets/skills/kongkong-guide/en-04-phone-control.md
+similarity index 100%
+rename from app/assets/skills/dsh-go-guide/en-04-phone-control.md
+rename to app/assets/skills/kongkong-guide/en-04-phone-control.md
+diff --git a/app/assets/skills/dsh-go-guide/en-05-web.md b/app/assets/skills/kongkong-guide/en-05-web.md
+similarity index 100%
+rename from app/assets/skills/dsh-go-guide/en-05-web.md
+rename to app/assets/skills/kongkong-guide/en-05-web.md
+diff --git a/app/assets/skills/dsh-go-guide/en-06-pets.md b/app/assets/skills/kongkong-guide/en-06-pets.md
+similarity index 100%
+rename from app/assets/skills/dsh-go-guide/en-06-pets.md
+rename to app/assets/skills/kongkong-guide/en-06-pets.md
+diff --git a/app/assets/skills/dsh-go-guide/en-07-sharing.md b/app/assets/skills/kongkong-guide/en-07-sharing.md
+similarity index 100%
+rename from app/assets/skills/dsh-go-guide/en-07-sharing.md
+rename to app/assets/skills/kongkong-guide/en-07-sharing.md
+diff --git a/app/assets/skills/dsh-go-guide/en-08-plugins.md b/app/assets/skills/kongkong-guide/en-08-plugins.md
+similarity index 100%
+rename from app/assets/skills/dsh-go-guide/en-08-plugins.md
+rename to app/assets/skills/kongkong-guide/en-08-plugins.md
+diff --git a/app/assets/skills/dsh-go-guide/en-09-appearance.md b/app/assets/skills/kongkong-guide/en-09-appearance.md
+similarity index 100%
+rename from app/assets/skills/dsh-go-guide/en-09-appearance.md
+rename to app/assets/skills/kongkong-guide/en-09-appearance.md
+diff --git a/app/assets/skills/dsh-go-guide/en-10-settings.md b/app/assets/skills/kongkong-guide/en-10-settings.md
+similarity index 100%
+rename from app/assets/skills/dsh-go-guide/en-10-settings.md
+rename to app/assets/skills/kongkong-guide/en-10-settings.md
+diff --git a/app/assets/skills/dsh-go-guide/en-11-faq.md b/app/assets/skills/kongkong-guide/en-11-faq.md
+similarity index 100%
+rename from app/assets/skills/dsh-go-guide/en-11-faq.md
+rename to app/assets/skills/kongkong-guide/en-11-faq.md
+diff --git a/app/assets/skills/dsh-go-guide/en-12-bots.md b/app/assets/skills/kongkong-guide/en-12-bots.md
+similarity index 100%
+rename from app/assets/skills/dsh-go-guide/en-12-bots.md
+rename to app/assets/skills/kongkong-guide/en-12-bots.md
+diff --git a/app/assets/skills/dsh-go-guide/en-13-tavern.md b/app/assets/skills/kongkong-guide/en-13-tavern.md
+similarity index 100%
+rename from app/assets/skills/dsh-go-guide/en-13-tavern.md
+rename to app/assets/skills/kongkong-guide/en-13-tavern.md
+diff --git a/app/assets/skills/dsh-go-guide/en-14-all-features.md b/app/assets/skills/kongkong-guide/en-14-all-features.md
+similarity index 100%
+rename from app/assets/skills/dsh-go-guide/en-14-all-features.md
+rename to app/assets/skills/kongkong-guide/en-14-all-features.md
+diff --git a/app/assets/skills/dsh-go-guide/en-15-agents.md b/app/assets/skills/kongkong-guide/en-15-agents.md
+similarity index 100%
+rename from app/assets/skills/dsh-go-guide/en-15-agents.md
+rename to app/assets/skills/kongkong-guide/en-15-agents.md
+diff --git a/app/assets/skills/dsh-go-guide/en-16-terminal.md b/app/assets/skills/kongkong-guide/en-16-terminal.md
+similarity index 100%
+rename from app/assets/skills/dsh-go-guide/en-16-terminal.md
+rename to app/assets/skills/kongkong-guide/en-16-terminal.md
+diff --git a/app/assets/skills/dsh-go-guide/en-17-workspaces.md b/app/assets/skills/kongkong-guide/en-17-workspaces.md
+similarity index 100%
+rename from app/assets/skills/dsh-go-guide/en-17-workspaces.md
+rename to app/assets/skills/kongkong-guide/en-17-workspaces.md
+diff --git a/app/assets/skills/dsh-go-guide/en-18-schedules.md b/app/assets/skills/kongkong-guide/en-18-schedules.md
+similarity index 100%
+rename from app/assets/skills/dsh-go-guide/en-18-schedules.md
+rename to app/assets/skills/kongkong-guide/en-18-schedules.md
+diff --git a/app/assets/skills/dsh-go-guide/harmony-README.md b/app/assets/skills/kongkong-guide/harmony-README.md
+similarity index 100%
+rename from app/assets/skills/dsh-go-guide/harmony-README.md
+rename to app/assets/skills/kongkong-guide/harmony-README.md
+diff --git a/app/assets/skills/dsh-go-guide/harmony-SKILL.md b/app/assets/skills/kongkong-guide/harmony-SKILL.md
+similarity index 100%
+rename from app/assets/skills/dsh-go-guide/harmony-SKILL.md
+rename to app/assets/skills/kongkong-guide/harmony-SKILL.md
+diff --git a/app/assets/skills/dsh-go-guide/harmony-en-01-chat.md b/app/assets/skills/kongkong-guide/harmony-en-01-chat.md
+similarity index 100%
+rename from app/assets/skills/dsh-go-guide/harmony-en-01-chat.md
+rename to app/assets/skills/kongkong-guide/harmony-en-01-chat.md
+diff --git a/app/assets/skills/dsh-go-guide/harmony-en-03-engine-hosts.md b/app/assets/skills/kongkong-guide/harmony-en-03-engine-hosts.md
+similarity index 100%
+rename from app/assets/skills/dsh-go-guide/harmony-en-03-engine-hosts.md
+rename to app/assets/skills/kongkong-guide/harmony-en-03-engine-hosts.md
+diff --git a/app/assets/skills/dsh-go-guide/harmony-en-04-phone-control.md b/app/assets/skills/kongkong-guide/harmony-en-04-phone-control.md
+similarity index 100%
+rename from app/assets/skills/dsh-go-guide/harmony-en-04-phone-control.md
+rename to app/assets/skills/kongkong-guide/harmony-en-04-phone-control.md
+diff --git a/app/assets/skills/dsh-go-guide/harmony-en-06-pets.md b/app/assets/skills/kongkong-guide/harmony-en-06-pets.md
+similarity index 100%
+rename from app/assets/skills/dsh-go-guide/harmony-en-06-pets.md
+rename to app/assets/skills/kongkong-guide/harmony-en-06-pets.md
+diff --git a/app/assets/skills/dsh-go-guide/harmony-en-07-sharing.md b/app/assets/skills/kongkong-guide/harmony-en-07-sharing.md
+similarity index 100%
+rename from app/assets/skills/dsh-go-guide/harmony-en-07-sharing.md
+rename to app/assets/skills/kongkong-guide/harmony-en-07-sharing.md
+diff --git a/app/assets/skills/dsh-go-guide/harmony-en-08-plugins.md b/app/assets/skills/kongkong-guide/harmony-en-08-plugins.md
+similarity index 100%
+rename from app/assets/skills/dsh-go-guide/harmony-en-08-plugins.md
+rename to app/assets/skills/kongkong-guide/harmony-en-08-plugins.md
+diff --git a/app/assets/skills/dsh-go-guide/harmony-en-09-appearance.md b/app/assets/skills/kongkong-guide/harmony-en-09-appearance.md
+similarity index 100%
+rename from app/assets/skills/dsh-go-guide/harmony-en-09-appearance.md
+rename to app/assets/skills/kongkong-guide/harmony-en-09-appearance.md
+diff --git a/app/assets/skills/dsh-go-guide/harmony-en-10-settings.md b/app/assets/skills/kongkong-guide/harmony-en-10-settings.md
+similarity index 100%
+rename from app/assets/skills/dsh-go-guide/harmony-en-10-settings.md
+rename to app/assets/skills/kongkong-guide/harmony-en-10-settings.md
+diff --git a/app/assets/skills/dsh-go-guide/harmony-en-11-faq.md b/app/assets/skills/kongkong-guide/harmony-en-11-faq.md
+similarity index 100%
+rename from app/assets/skills/dsh-go-guide/harmony-en-11-faq.md
+rename to app/assets/skills/kongkong-guide/harmony-en-11-faq.md
+diff --git a/app/assets/skills/dsh-go-guide/harmony-en-16-terminal.md b/app/assets/skills/kongkong-guide/harmony-en-16-terminal.md
+similarity index 100%
+rename from app/assets/skills/dsh-go-guide/harmony-en-16-terminal.md
+rename to app/assets/skills/kongkong-guide/harmony-en-16-terminal.md
+diff --git a/app/assets/skills/dsh-go-guide/harmony-en-18-schedules.md b/app/assets/skills/kongkong-guide/harmony-en-18-schedules.md
+similarity index 100%
+rename from app/assets/skills/dsh-go-guide/harmony-en-18-schedules.md
+rename to app/assets/skills/kongkong-guide/harmony-en-18-schedules.md
+diff --git a/app/assets/skills/dsh-go-guide/harmony-zh-01-chat.md b/app/assets/skills/kongkong-guide/harmony-zh-01-chat.md
+similarity index 100%
+rename from app/assets/skills/dsh-go-guide/harmony-zh-01-chat.md
+rename to app/assets/skills/kongkong-guide/harmony-zh-01-chat.md
+diff --git a/app/assets/skills/dsh-go-guide/harmony-zh-03-engine-hosts.md b/app/assets/skills/kongkong-guide/harmony-zh-03-engine-hosts.md
+similarity index 100%
+rename from app/assets/skills/dsh-go-guide/harmony-zh-03-engine-hosts.md
+rename to app/assets/skills/kongkong-guide/harmony-zh-03-engine-hosts.md
+diff --git a/app/assets/skills/dsh-go-guide/harmony-zh-04-phone-control.md b/app/assets/skills/kongkong-guide/harmony-zh-04-phone-control.md
+similarity index 100%
+rename from app/assets/skills/dsh-go-guide/harmony-zh-04-phone-control.md
+rename to app/assets/skills/kongkong-guide/harmony-zh-04-phone-control.md
+diff --git a/app/assets/skills/dsh-go-guide/harmony-zh-06-pets.md b/app/assets/skills/kongkong-guide/harmony-zh-06-pets.md
+similarity index 100%
+rename from app/assets/skills/dsh-go-guide/harmony-zh-06-pets.md
+rename to app/assets/skills/kongkong-guide/harmony-zh-06-pets.md
+diff --git a/app/assets/skills/dsh-go-guide/harmony-zh-07-sharing.md b/app/assets/skills/kongkong-guide/harmony-zh-07-sharing.md
+similarity index 100%
+rename from app/assets/skills/dsh-go-guide/harmony-zh-07-sharing.md
+rename to app/assets/skills/kongkong-guide/harmony-zh-07-sharing.md
+diff --git a/app/assets/skills/dsh-go-guide/harmony-zh-08-plugins.md b/app/assets/skills/kongkong-guide/harmony-zh-08-plugins.md
+similarity index 100%
+rename from app/assets/skills/dsh-go-guide/harmony-zh-08-plugins.md
+rename to app/assets/skills/kongkong-guide/harmony-zh-08-plugins.md
+diff --git a/app/assets/skills/dsh-go-guide/harmony-zh-09-appearance.md b/app/assets/skills/kongkong-guide/harmony-zh-09-appearance.md
+similarity index 100%
+rename from app/assets/skills/dsh-go-guide/harmony-zh-09-appearance.md
+rename to app/assets/skills/kongkong-guide/harmony-zh-09-appearance.md
+diff --git a/app/assets/skills/dsh-go-guide/harmony-zh-10-settings.md b/app/assets/skills/kongkong-guide/harmony-zh-10-settings.md
+similarity index 100%
+rename from app/assets/skills/dsh-go-guide/harmony-zh-10-settings.md
+rename to app/assets/skills/kongkong-guide/harmony-zh-10-settings.md
+diff --git a/app/assets/skills/dsh-go-guide/harmony-zh-11-faq.md b/app/assets/skills/kongkong-guide/harmony-zh-11-faq.md
+similarity index 100%
+rename from app/assets/skills/dsh-go-guide/harmony-zh-11-faq.md
+rename to app/assets/skills/kongkong-guide/harmony-zh-11-faq.md
+diff --git a/app/assets/skills/dsh-go-guide/harmony-zh-16-terminal.md b/app/assets/skills/kongkong-guide/harmony-zh-16-terminal.md
+similarity index 100%
+rename from app/assets/skills/dsh-go-guide/harmony-zh-16-terminal.md
+rename to app/assets/skills/kongkong-guide/harmony-zh-16-terminal.md
+diff --git a/app/assets/skills/dsh-go-guide/harmony-zh-18-schedules.md b/app/assets/skills/kongkong-guide/harmony-zh-18-schedules.md
+similarity index 100%
+rename from app/assets/skills/dsh-go-guide/harmony-zh-18-schedules.md
+rename to app/assets/skills/kongkong-guide/harmony-zh-18-schedules.md
+diff --git a/app/assets/skills/dsh-go-guide/manifest.json b/app/assets/skills/kongkong-guide/manifest.json
+similarity index 100%
+rename from app/assets/skills/dsh-go-guide/manifest.json
+rename to app/assets/skills/kongkong-guide/manifest.json
+diff --git a/app/assets/skills/dsh-go-guide/zh-01-chat.md b/app/assets/skills/kongkong-guide/zh-01-chat.md
+similarity index 100%
+rename from app/assets/skills/dsh-go-guide/zh-01-chat.md
+rename to app/assets/skills/kongkong-guide/zh-01-chat.md
+diff --git a/app/assets/skills/dsh-go-guide/zh-02-models.md b/app/assets/skills/kongkong-guide/zh-02-models.md
+similarity index 100%
+rename from app/assets/skills/dsh-go-guide/zh-02-models.md
+rename to app/assets/skills/kongkong-guide/zh-02-models.md
+diff --git a/app/assets/skills/dsh-go-guide/zh-03-engine-hosts.md b/app/assets/skills/kongkong-guide/zh-03-engine-hosts.md
+similarity index 100%
+rename from app/assets/skills/dsh-go-guide/zh-03-engine-hosts.md
+rename to app/assets/skills/kongkong-guide/zh-03-engine-hosts.md
+diff --git a/app/assets/skills/dsh-go-guide/zh-04-phone-control.md b/app/assets/skills/kongkong-guide/zh-04-phone-control.md
+similarity index 100%
+rename from app/assets/skills/dsh-go-guide/zh-04-phone-control.md
+rename to app/assets/skills/kongkong-guide/zh-04-phone-control.md
+diff --git a/app/assets/skills/dsh-go-guide/zh-05-web.md b/app/assets/skills/kongkong-guide/zh-05-web.md
+similarity index 100%
+rename from app/assets/skills/dsh-go-guide/zh-05-web.md
+rename to app/assets/skills/kongkong-guide/zh-05-web.md
+diff --git a/app/assets/skills/dsh-go-guide/zh-06-pets.md b/app/assets/skills/kongkong-guide/zh-06-pets.md
+similarity index 100%
+rename from app/assets/skills/dsh-go-guide/zh-06-pets.md
+rename to app/assets/skills/kongkong-guide/zh-06-pets.md
+diff --git a/app/assets/skills/dsh-go-guide/zh-07-sharing.md b/app/assets/skills/kongkong-guide/zh-07-sharing.md
+similarity index 100%
+rename from app/assets/skills/dsh-go-guide/zh-07-sharing.md
+rename to app/assets/skills/kongkong-guide/zh-07-sharing.md
+diff --git a/app/assets/skills/dsh-go-guide/zh-08-plugins.md b/app/assets/skills/kongkong-guide/zh-08-plugins.md
+similarity index 100%
+rename from app/assets/skills/dsh-go-guide/zh-08-plugins.md
+rename to app/assets/skills/kongkong-guide/zh-08-plugins.md
+diff --git a/app/assets/skills/dsh-go-guide/zh-09-appearance.md b/app/assets/skills/kongkong-guide/zh-09-appearance.md
+similarity index 100%
+rename from app/assets/skills/dsh-go-guide/zh-09-appearance.md
+rename to app/assets/skills/kongkong-guide/zh-09-appearance.md
+diff --git a/app/assets/skills/dsh-go-guide/zh-10-settings.md b/app/assets/skills/kongkong-guide/zh-10-settings.md
+similarity index 100%
+rename from app/assets/skills/dsh-go-guide/zh-10-settings.md
+rename to app/assets/skills/kongkong-guide/zh-10-settings.md
+diff --git a/app/assets/skills/dsh-go-guide/zh-11-faq.md b/app/assets/skills/kongkong-guide/zh-11-faq.md
+similarity index 100%
+rename from app/assets/skills/dsh-go-guide/zh-11-faq.md
+rename to app/assets/skills/kongkong-guide/zh-11-faq.md
+diff --git a/app/assets/skills/dsh-go-guide/zh-12-bots.md b/app/assets/skills/kongkong-guide/zh-12-bots.md
+similarity index 100%
+rename from app/assets/skills/dsh-go-guide/zh-12-bots.md
+rename to app/assets/skills/kongkong-guide/zh-12-bots.md
+diff --git a/app/assets/skills/dsh-go-guide/zh-13-tavern.md b/app/assets/skills/kongkong-guide/zh-13-tavern.md
+similarity index 100%
+rename from app/assets/skills/dsh-go-guide/zh-13-tavern.md
+rename to app/assets/skills/kongkong-guide/zh-13-tavern.md
+diff --git a/app/assets/skills/dsh-go-guide/zh-14-all-features.md b/app/assets/skills/kongkong-guide/zh-14-all-features.md
+similarity index 100%
+rename from app/assets/skills/dsh-go-guide/zh-14-all-features.md
+rename to app/assets/skills/kongkong-guide/zh-14-all-features.md
+diff --git a/app/assets/skills/dsh-go-guide/zh-15-agents.md b/app/assets/skills/kongkong-guide/zh-15-agents.md
+similarity index 100%
+rename from app/assets/skills/dsh-go-guide/zh-15-agents.md
+rename to app/assets/skills/kongkong-guide/zh-15-agents.md
+diff --git a/app/assets/skills/dsh-go-guide/zh-16-terminal.md b/app/assets/skills/kongkong-guide/zh-16-terminal.md
+similarity index 100%
+rename from app/assets/skills/dsh-go-guide/zh-16-terminal.md
+rename to app/assets/skills/kongkong-guide/zh-16-terminal.md
+diff --git a/app/assets/skills/dsh-go-guide/zh-17-workspaces.md b/app/assets/skills/kongkong-guide/zh-17-workspaces.md
+similarity index 100%
+rename from app/assets/skills/dsh-go-guide/zh-17-workspaces.md
+rename to app/assets/skills/kongkong-guide/zh-17-workspaces.md
+diff --git a/app/assets/skills/dsh-go-guide/zh-18-schedules.md b/app/assets/skills/kongkong-guide/zh-18-schedules.md
+similarity index 100%
+rename from app/assets/skills/dsh-go-guide/zh-18-schedules.md
+rename to app/assets/skills/kongkong-guide/zh-18-schedules.md
 diff --git a/app/lib/app.dart b/app/lib/app.dart
 index 1b1e7de5..ec5aedb5 100644
 --- a/app/lib/app.dart
@@ -104847,6 +105132,17 @@ index d0e32a53..73484ed0 100644
  
    final String text;
  
+diff --git a/app/lib/links/page_links.dart b/app/lib/links/page_links.dart
+index 49e128b9..f111beb5 100644
+--- a/app/lib/links/page_links.dart
++++ b/app/lib/links/page_links.dart
+@@ -1,5 +1,5 @@
+ // `dshgo://open/<page>` opens one of the app's pages and
+-// does nothing else. The bundled guide (docs/guide, the dsh-go-guide skill)
++// does nothing else. The bundled guide (docs/guide, the kongkong-guide skill)
+ // links to pages this way, so a reply can say 「在这里打开」. A reply's
+ // Markdown link reaches the router through [openReplyPageLink]
+ // (ui/chat/render/markdown_body.dart); a link from outside the app arrives
 diff --git a/app/lib/phone/phone_channel.dart b/app/lib/phone/phone_channel.dart
 index 61789e5d..6ea5e544 100644
 --- a/app/lib/phone/phone_channel.dart
@@ -105817,7 +106113,7 @@ index 00000000..4f137961
 +  return voice;
 +});
 diff --git a/app/lib/state/app_info.dart b/app/lib/state/app_info.dart
-index 18b01c2e..6a6d0cbd 100644
+index 18b01c2e..69a746d4 100644
 --- a/app/lib/state/app_info.dart
 +++ b/app/lib/state/app_info.dart
 @@ -8,6 +8,11 @@ import '../l10n/l10n.dart';
@@ -105832,7 +106128,12 @@ index 18b01c2e..6a6d0cbd 100644
    /// "1.0.0 (1)" for display.
    static String get displayVersion {
      final parts = version.split('+');
-@@ -20,7 +25,7 @@ abstract final class AppInfo {
+@@ -16,11 +21,11 @@ abstract final class AppInfo {
+ 
+   /// The app's name as the phone shows it: launcher, Recents, notifications, system
+   /// settings, the licence page. Matches `android:label` in AndroidManifest.xml.
+-  static const name = 'DSH Go';
++  static const name = '空空';
  
    /// The in-app wordmark: the drawer's lockup, the welcome page and the brand mark's
    /// spoken label.
@@ -105841,6 +106142,43 @@ index 18b01c2e..6a6d0cbd 100644
  
    /// Required wording: the app is built on DSH but is not an official DeepSeek product.
    /// Shown on the About and licence pages.
+diff --git a/app/lib/state/ask_ai.dart b/app/lib/state/ask_ai.dart
+index 4365d141..99e3efe1 100644
+--- a/app/lib/state/ask_ai.dart
++++ b/app/lib/state/ask_ai.dart
+@@ -1,12 +1,12 @@
+ // 「问 AI」: a question about the app, put in a new conversation's composer
+ // (not sent) so the agent answers it from the bundled user guide
+-// (docs/guide, the dsh-go-guide skill). The UI side — closing the pages and
++// (docs/guide, the kongkong-guide skill). The UI side — closing the pages and
+ // handing the request to the chat — is ui/common/ask_ai.dart; the design is
+ // docs/design/risk-notices-and-ask-ai.md §4.
+ //
+ // How the guide reaches the agent depends on the host:
+ //
+-//   this phone's engine   `/dsh-go-guide <question>`: the skill is installed
++//   this phone's engine   `/kongkong-guide <question>`: the skill is installed
+ //                         at every engine start (ui_config/ui_skill.dart), and
+ //                         a `/name` word makes the Host load it
+ //   a remote host that    the question, plus the matching guide page from the
+@@ -80,7 +80,7 @@ enum AskAiTopic {
+ 
+ /// How the guide gets to the host's agent.
+ enum GuideRoute {
+-  /// The host has the skill: a `/dsh-go-guide` word loads it.
++  /// The host has the skill: a `/kongkong-guide` word loads it.
+   skill,
+ 
+   /// No skill, but files go through: the page rides along as an attachment.
+@@ -108,7 +108,7 @@ final guidePageReaderProvider = Provider<GuidePageReader>((ref) => rootBundle.lo
+ String guidePageAsset(String page, {required bool english}) =>
+     'assets/skills/$guideSkillName/${english ? 'en' : 'zh'}-$page.md';
+ 
+-/// The attachment's name: `dsh-go-guide-phone-control.md`.
++/// The attachment's name: `kongkong-guide-phone-control.md`.
+ String guideAttachmentName(String page) => '$guideSkillName-${page.replaceFirst(RegExp(r'^\d+-'), '')}.md';
+ 
+ /// The guide page a question of the person's own (typed into settings
 diff --git a/app/lib/state/phone_state.dart b/app/lib/state/phone_state.dart
 index a99b77b5..ef299ea2 100644
 --- a/app/lib/state/phone_state.dart
@@ -106612,6 +106950,19 @@ index 2a34ba31..f146fdcb 100644
 +    (:final kind, rest: _) => kind == GenerateKind.video ? appL10n.mediaTitleVideo : appL10n.mediaTitleImage,
 +  };
 +}
+diff --git a/app/lib/ui/engine/engine_screen.dart b/app/lib/ui/engine/engine_screen.dart
+index 77c82cf9..b1b65869 100644
+--- a/app/lib/ui/engine/engine_screen.dart
++++ b/app/lib/ui/engine/engine_screen.dart
+@@ -120,7 +120,7 @@ class EngineScreen extends ConsumerWidget {
+         // Leading letters keep the figures whole (a bare number would be read
+         // as "number + unit").
+         stats: [
+-          (status.dshVersion == null ? '—' : 'v${status.dshVersion}', 'DSH'),
++          (status.dshVersion == null ? '—' : 'v${status.dshVersion}', '引擎'),
+           (status.nodeVersion == null ? '—' : 'v${status.nodeVersion}', 'Node.js'),
+         ],
+       ),
 diff --git a/app/lib/ui/phone/android_shell_page.dart b/app/lib/ui/phone/android_shell_page.dart
 index 1214058f..167d6461 100644
 --- a/app/lib/ui/phone/android_shell_page.dart
@@ -109382,6 +109733,19 @@ index 9a236c71..005e9e7e 100644
                        // Forum links (sign-in return, topics): registers them with the router.
                        const ForumLinkHost(),
                        // DS Bot: keeps its feed and notifications alive with the shell.
+diff --git a/app/lib/ui/shell/sessions_drawer.dart b/app/lib/ui/shell/sessions_drawer.dart
+index 216e55cc..5a8ae0d1 100644
+--- a/app/lib/ui/shell/sessions_drawer.dart
++++ b/app/lib/ui/shell/sessions_drawer.dart
+@@ -164,7 +164,7 @@ class SessionsDrawer extends ConsumerWidget {
+                       const Expanded(
+                         child: Align(
+                           alignment: AlignmentDirectional.centerStart,
+-                          child: FittedBox(fit: BoxFit.scaleDown, child: BrandLockup(height: 19)),
++                          child: FittedBox(fit: BoxFit.scaleDown, child: BrandLockup(height: 19, label: '')),
+                         ),
+                       ),
+                       // 模式 and 网页模式, quietly: the one solid element stays 新对话.
 diff --git a/app/lib/ui/shell/system_entry_host.dart b/app/lib/ui/shell/system_entry_host.dart
 index 172e773b..3f2fdd94 100644
 --- a/app/lib/ui/shell/system_entry_host.dart
@@ -109934,6 +110298,22 @@ index 1bb918d6..540577b5 100644
      if (!update.checkable) return const SizedBox.shrink();
      final controller = ref.read(appUpdateProvider.notifier);
      final tint = this.tint;
+diff --git a/app/lib/ui_config/ui_skill.dart b/app/lib/ui_config/ui_skill.dart
+index 671223fc..5b90ca55 100644
+--- a/app/lib/ui_config/ui_skill.dart
++++ b/app/lib/ui_config/ui_skill.dart
+@@ -38,9 +38,9 @@ const uiSkillAssetDir = 'assets/skills/dsh-go-ui/';
+ const pluginSkillName = 'dsh-go-plugin';
+ 
+ /// The third: the app's own user guide (docs/guide, built into
+-/// assets/skills/dsh-go-guide/ by tool/guide_sync.py), so the agent can answer
++/// assets/skills/kongkong-guide/ by tool/guide_sync.py), so the agent can answer
+ /// how to use the app. Read-only; installed and kept current the same way.
+-const guideSkillName = 'dsh-go-guide';
++const guideSkillName = 'kongkong-guide';
+ 
+ /// The fourth: troubleshooting and bug-report playbook. Reads the diagnostics
+ /// snapshot the app writes into the engine (`$DSH_HOME/dsh-app/diagnostics.md`)
 diff --git a/app/lib/voice/wake_keywords.dart b/app/lib/voice/wake_keywords.dart
 new file mode 100644
 index 00000000..8a882710
@@ -111009,7 +111389,7 @@ index d2ab1143..5ad801da 100644
      dependency: transitive
      description:
 diff --git a/app/pubspec.yaml b/app/pubspec.yaml
-index 182116db..f248ad17 100644
+index 182116db..d02b5693 100644
 --- a/app/pubspec.yaml
 +++ b/app/pubspec.yaml
 @@ -52,6 +52,8 @@ dependencies:
@@ -111030,6 +111410,106 @@ index 182116db..f248ad17 100644
      - assets/web/
      # Whale-tail activity sprites (lib/ui/chat/widgets/whale_tail.dart),
      # generated by tool/make_whale_sprites.py.
+@@ -186,7 +190,7 @@ flutter:
+     - assets/companion/
+     - assets/skills/dsh-go-ui/
+     - assets/skills/dsh-go-plugin/
+-    - assets/skills/dsh-go-guide/
++    - assets/skills/kongkong-guide/
+     - assets/skills/dsh-go-support/
+     - assets/skills/companion-adapt/
+     - assets/skills/pet-theme/
+diff --git a/app/tool/guide_sync.py b/app/tool/guide_sync.py
+index 5e86021c..2ce10517 100644
+--- a/app/tool/guide_sync.py
++++ b/app/tool/guide_sync.py
+@@ -1,12 +1,12 @@
+ #!/usr/bin/env python3
+-"""Check the user guide against the app, then build the dsh-go-guide skill.
++"""Check the user guide against the app, then build the kongkong-guide skill.
+ 
+-    python3 app/tool/guide_sync.py           # check, then write app/assets/skills/dsh-go-guide/
++    python3 app/tool/guide_sync.py           # check, then write app/assets/skills/kongkong-guide/
+     python3 app/tool/guide_sync.py --check   # check only, write nothing; exit 1 on any problem
+ 
+ The guide lives in docs/guide/ (SKILL.md, README.md, zh/*.md, en/*.md) and ships
+-as the dsh-go-guide skill: the app installs it into the on-device engine
+-(lib/ui_config/ui_skill.dart), flat in app/assets/skills/dsh-go-guide/ with
++as the kongkong-guide skill: the app installs it into the on-device engine
++(lib/ui_config/ui_skill.dart), flat in app/assets/skills/kongkong-guide/ with
+ manifest.json mapping each file back to its place. Rules for the pages:
+ 
+ - zh/ and en/ hold the same pages. README.md says `> dsh-go <version>`, the
+@@ -36,7 +36,7 @@ import sys
+ import xml.etree.ElementTree as ET
+ from pathlib import Path
+ 
+-SKILL = 'dsh-go-guide'
++SKILL = 'kongkong-guide'
+ LOCALES = ('zh', 'en')
+ HARMONY = 'harmony'
+ NAV = re.compile(r'^<!-- nav: ([A-Za-z][A-Za-z0-9_]*(?:,[A-Za-z][A-Za-z0-9_]*)*) -->$')
+diff --git a/app/tool/test_guide_sync.py b/app/tool/test_guide_sync.py
+index fc8054d3..e289895e 100644
+--- a/app/tool/test_guide_sync.py
++++ b/app/tool/test_guide_sync.py
+@@ -10,7 +10,7 @@ REPO = Path(__file__).resolve().parents[2]
+ 
+ SKILL = """---
+ # dsh-go:managed — the dsh-go app keeps this skill up to date
+-name: dsh-go-guide
++name: kongkong-guide
+ description: The guide.
+ whenToUse: How to use the app.
+ ---
+@@ -78,9 +78,9 @@ class GuideSyncTest(unittest.TestCase):
+         self.assertEqual(self.errors(), [])
+         self.assertEqual(guide_sync.run(self.repo, write=True), [])
+         self.assertEqual(guide_sync.run(self.repo, write=False), [])
+-        assets = self.repo / 'app/assets/skills/dsh-go-guide'
++        assets = self.repo / 'app/assets/skills/kongkong-guide'
+         manifest = json.loads((assets / 'manifest.json').read_text())
+-        self.assertEqual(manifest['name'], 'dsh-go-guide')
++        self.assertEqual(manifest['name'], 'kongkong-guide')
+         self.assertEqual(manifest['files']['zh-01-engine.md'], 'zh/01-engine.md')
+         self.assertEqual(set(manifest['files']), {p.name for p in assets.iterdir()} - {'manifest.json'})
+         for flat, target in manifest['files'].items():
+@@ -91,7 +91,7 @@ class GuideSyncTest(unittest.TestCase):
+         self.write('app/lib/l10n/parts/._hub_zh.arb', 'not JSON')
+         self.write('app/android/app/src/main/res/values/._s.xml', 'not XML')
+         self.assertEqual(guide_sync.run(self.repo, write=True), [])
+-        assets = self.repo / 'app/assets/skills/dsh-go-guide'
++        assets = self.repo / 'app/assets/skills/kongkong-guide'
+         (assets / '._SKILL.md').write_bytes(b'\x00\x05\x16\x07metadata')
+         self.assertEqual(guide_sync.run(self.repo, write=False), [])
+         manifest = json.loads((assets / 'manifest.json').read_text())
+@@ -99,7 +99,7 @@ class GuideSyncTest(unittest.TestCase):
+ 
+     def test_generated_assets_cannot_drift(self):
+         guide_sync.run(self.repo, write=True)
+-        assets = self.repo / 'app/assets/skills/dsh-go-guide'
++        assets = self.repo / 'app/assets/skills/kongkong-guide'
+         (assets / 'zh-01-engine.md').write_text('edited by hand')
+         self.assertTrue(any('out of date' in e for e in guide_sync.run(self.repo, write=False)))
+         guide_sync.run(self.repo, write=True)
+@@ -118,7 +118,7 @@ class GuideSyncTest(unittest.TestCase):
+         self.write('docs/guide/harmony/README.md', '# Guide\n\n> dsh-go 0.9.2\n\n[引擎](zh/01-engine.md)\n')
+         self.assertEqual(guide_sync.run(self.repo, write=True), [])
+         self.assertEqual(guide_sync.run(self.repo, write=False), [])
+-        assets = self.repo / 'app/assets/skills/dsh-go-guide'
++        assets = self.repo / 'app/assets/skills/kongkong-guide'
+         manifest = json.loads((assets / 'manifest.json').read_text())
+         self.assertEqual(manifest['harmony']['harmony-zh-01-engine.md'], 'zh/01-engine.md')
+         self.assertEqual(manifest['harmony']['harmony-SKILL.md'], 'SKILL.md')
+@@ -130,7 +130,7 @@ class GuideSyncTest(unittest.TestCase):
+ 
+     def test_no_harmony_pages_no_harmony_in_the_manifest(self):
+         self.assertEqual(guide_sync.run(self.repo, write=True), [])
+-        manifest = json.loads((self.repo / 'app/assets/skills/dsh-go-guide/manifest.json').read_text())
++        manifest = json.loads((self.repo / 'app/assets/skills/kongkong-guide/manifest.json').read_text())
+         self.assertNotIn('harmony', manifest)
+ 
+     def test_harmony_page_must_replace_a_page_in_both_languages(self):
 diff --git a/docs/wake-word.md b/docs/wake-word.md
 new file mode 100644
 index 00000000..3ff7806a
