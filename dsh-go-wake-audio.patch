@@ -1,10 +1,10 @@
 From: dsh <dsh@local>
-Date: Sat, 28 Nov 2026 22:07:21 +0800
-Subject: [PATCH] AI电话+无视锁屏+锁屏自动解锁+熄屏唤醒+教空空录制教学
+Date: Sat, 28 Nov 2026 22:21:45 +0800
+Subject: [PATCH] AI电话+无视锁屏+锁屏自动解锁+熄屏唤醒+教空空+技能模型可调用
 
  dsh-go-wake.patch                                  | 2065 +++++++++++++
  tooling/build-wake-apk.sh                          |   68 +
- 427 files changed, 26514 insertions(+), 1387 deletions(-)
+ 428 files changed, 26516 insertions(+), 1390 deletions(-)
 
 diff --git a/.gitattributes b/.gitattributes
 index 52e3e08a..3e877c7e 100644
@@ -11185,9 +11185,18 @@ index d75b0bc5..b120e28e 100644
      } }
  }
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/skills/PhoneSkillDraft.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/skills/PhoneSkillDraft.kt
-index 2857ceef..41380764 100644
+index 2857ceef..889d734f 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/skills/PhoneSkillDraft.kt
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/skills/PhoneSkillDraft.kt
+@@ -24,7 +24,7 @@ object PhoneSkillDraft {
+         val markdown = buildString {
+             append("---\nname: ").append(skillName)
+             append("\ndescription: 手机任务的本地参数化步骤，使用前核对目标与环境\n")
+-            append("disable-model-invocation: true\nuser-invocable: true\n---\n\n")
++            append("user-invocable: true\n---\n\n")
+             append("# 手机任务步骤草稿\n\n## 目标与参数\n\n")
+             if (userEdited) append("这是用户重新整理的步骤模板，顺序可能不同于原任务；不是可执行的历史路线。\n")
+             append("目标：{{goal}}。所有参数在本次使用时由用户提供；不要把个人值写回技能。\n")
 @@ -33,7 +33,7 @@ object PhoneSkillDraft {
              append("## 步骤\n\n")
              trace.steps.forEachIndexed { index, step ->
@@ -11197,6 +11206,15 @@ index 2857ceef..41380764 100644
                  append(n).append(". 在").append(screen).append("重新观察并确认应用 {{app_").append(n).append("}}；")
                  append(instruction(step, n)).append("。\n")
                  append("   核对 {{check_").append(n).append("}}，不能只凭工具返回正常判断业务完成。历史记录仅表明请求已交给驱动/系统并返回接受；")
+@@ -55,7 +55,7 @@ object PhoneSkillDraft {
+         val markdown = buildString {
+             append("---\nname: ").append(document.skillName)
+             append("\ndescription: 本机公共路线，使用时重新核对应用、目标与许可\n")
+-            append("disable-model-invocation: true\nuser-invocable: true\n---\n\n")
++            append("user-invocable: true\n---\n\n")
+             append("# 公共路线预览\n\n").append(summary)
+             append("\n\n保存确认不授予执行权限。任一步前置、唯一目标、许可或后置不符就停止交回模型；失败或未知不自动重复。\n")
+             append("不可逆操作仍须本次独立确认。编辑步骤会移除此数据路线。\n")
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/skills/PhoneTaskTrace.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/skills/PhoneTaskTrace.kt
 index 6be40b5d..80b16d3d 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/skills/PhoneTaskTrace.kt
@@ -30956,6 +30974,19 @@ index 00000000..f8a53ff8
 +            ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED))
 +    }
 +}
+diff --git a/app/android/app/src/test/kotlin/io/github/ccch1mneyyy/dsh_app/phone/skills/PhoneTaskTraceTest.kt b/app/android/app/src/test/kotlin/io/github/ccch1mneyyy/dsh_app/phone/skills/PhoneTaskTraceTest.kt
+index 2f5816e1..0b098e59 100644
+--- a/app/android/app/src/test/kotlin/io/github/ccch1mneyyy/dsh_app/phone/skills/PhoneTaskTraceTest.kt
++++ b/app/android/app/src/test/kotlin/io/github/ccch1mneyyy/dsh_app/phone/skills/PhoneTaskTraceTest.kt
+@@ -202,7 +202,7 @@ class PhoneTaskTraceTest {
+     @Test fun fixedTemplateIsUserInvokedBoundedAndRejectsPaths() {
+         val trace = PhoneTaskTrace(); val owner = owner(); trace.start(owner); accepted(trace, owner); trace.complete(owner, true)
+         val draft = render(trace, owner) as PhoneSkillDraft.Ready
+-        assertTrue(draft.markdown.contains("disable-model-invocation: true\nuser-invocable: true"))
++        assertTrue(draft.markdown.contains("user-invocable: true"))
+         assertTrue(draft.markdown.contains("不是自动回放程序"))
+         assertTrue(draft.markdown.toByteArray(Charsets.UTF_8).size <= PhoneTaskTrace.MAX_BYTES)
+         for (name in listOf("../escape", "phone-task-a\nname: evil", "builtin", "phone-task-" + "a".repeat(33))) {
 diff --git a/app/android/app/src/test/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/DisplayFrameGeometryTest.kt b/app/android/app/src/test/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/DisplayFrameGeometryTest.kt
 new file mode 100644
 index 00000000..c1c2dd1a
@@ -111663,10 +111694,10 @@ index f7b0da28..2f24ba85 100644
    const PhoneSkillCandidate({required this.taskId, required this.generation, required this.steps});
 diff --git a/app/lib/phone/teach_channel.dart b/app/lib/phone/teach_channel.dart
 new file mode 100644
-index 00000000..c392895b
+index 00000000..0b521015
 --- /dev/null
 +++ b/app/lib/phone/teach_channel.dart
-@@ -0,0 +1,151 @@
+@@ -0,0 +1,150 @@
 +// 「教空空」录制教学的通道封装：会话控制 + 保存技能。
 +// 技能经 savePhoneSkillManual 直存引擎技能目录（与技能管理同一条保存路）。
 +
@@ -111793,8 +111824,7 @@ index 00000000..c392895b
 +    final buffer = StringBuffer()
 +      ..writeln('---')
 +      ..writeln('name: $skillId')
-+      ..writeln('description: 教空空录制的手机操作步骤，使用前核对目标与环境')
-+      ..writeln('disable-model-invocation: true')
++      ..writeln('description: ${s.goal.length > 80 ? s.goal.substring(0, 80) : s.goal}（手机操作步骤，录自用户示范）')
 +      ..writeln('user-invocable: true')
 +      ..writeln('---')
 +      ..writeln()
