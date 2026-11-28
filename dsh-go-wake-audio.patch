@@ -1,10 +1,10 @@
 From: dsh <dsh@local>
-Date: Sat, 28 Nov 2026 22:51:40 +0800
-Subject: [PATCH] AI电话+锁屏+教空空+记忆库
+Date: Sat, 28 Nov 2026 23:04:26 +0800
+Subject: [PATCH] AI电话+锁屏+教空空+记忆库+任务技能真实步骤
 
  dsh-go-wake.patch                                  | 2065 +++++++++++++
  tooling/build-wake-apk.sh                          |   68 +
- 432 files changed, 27425 insertions(+), 1391 deletions(-)
+ 432 files changed, 27463 insertions(+), 1414 deletions(-)
 
 diff --git a/.gitattributes b/.gitattributes
 index 52e3e08a..3e877c7e 100644
@@ -11341,10 +11341,10 @@ index d75b0bc5..b120e28e 100644
      } }
  }
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/skills/PhoneSkillDraft.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/skills/PhoneSkillDraft.kt
-index 2857ceef..889d734f 100644
+index 2857ceef..d84b5f62 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/skills/PhoneSkillDraft.kt
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/skills/PhoneSkillDraft.kt
-@@ -24,7 +24,7 @@ object PhoneSkillDraft {
+@@ -24,20 +24,18 @@ object PhoneSkillDraft {
          val markdown = buildString {
              append("---\nname: ").append(skillName)
              append("\ndescription: 手机任务的本地参数化步骤，使用前核对目标与环境\n")
@@ -11352,17 +11352,27 @@ index 2857ceef..889d734f 100644
 +            append("user-invocable: true\n---\n\n")
              append("# 手机任务步骤草稿\n\n## 目标与参数\n\n")
              if (userEdited) append("这是用户重新整理的步骤模板，顺序可能不同于原任务；不是可执行的历史路线。\n")
-             append("目标：{{goal}}。所有参数在本次使用时由用户提供；不要把个人值写回技能。\n")
-@@ -33,7 +33,7 @@ object PhoneSkillDraft {
+-            append("目标：{{goal}}。所有参数在本次使用时由用户提供；不要把个人值写回技能。\n")
+-            append("应用、版本及登录前提未保留：{{application_requirements}}。先核对当前应用与权限。\n")
+-            append("目标、输入和检查点占位符尚未填写时，停止并询问用户。\n\n")
++            append("目标与参数由本次使用时用户提供，不要把个人值写回技能。\n")
++            append("应用与权限前提未保留，先核对当前应用。\n\n")
              append("## 步骤\n\n")
              trace.steps.forEachIndexed { index, step ->
                  val n = index + 1
 -                val screen = if (step.screen == PhoneScreen.BACKGROUND) "后台屏" else "主屏"
+-                append(n).append(". 在").append(screen).append("重新观察并确认应用 {{app_").append(n).append("}}；")
+-                append(instruction(step, n)).append("。\n")
+-                append("   核对 {{check_").append(n).append("}}，不能只凭工具返回正常判断业务完成。历史记录仅表明请求已交给驱动/系统并返回接受；")
+-                append(if (step.postObservationAvailable) "曾取得允许读取的后置观察，未验证预期变化。\n" else "没有可用的安全后置观察证据。\n")
 +                val screen = if (step.screen == PhoneScreen.BACKGROUND) "虚拟屏" else "主屏"
-                 append(n).append(". 在").append(screen).append("重新观察并确认应用 {{app_").append(n).append("}}；")
-                 append(instruction(step, n)).append("。\n")
-                 append("   核对 {{check_").append(n).append("}}，不能只凭工具返回正常判断业务完成。历史记录仅表明请求已交给驱动/系统并返回接受；")
-@@ -55,7 +55,7 @@ object PhoneSkillDraft {
++                append(n).append(". 在").append(screen).append("：").append(instruction(step)).append("。\n")
++                append("   每步重新读取页面确认目标，不能只凭工具返回正常判断业务完成；")
++                append(if (step.postObservationAvailable) "曾有后置观察，未验证预期变化。\n" else "没有可用的安全后置观察证据。\n")
+             }
+             append("\n## 必须停下的情况\n\n")
+             append("每步都重新读取页面，不复用旧屏幕号、元素号或坐标。目标不唯一、页面/应用不符、权限改变或没有可核对结果时停下，请用户或模型重新判断。\n")
+@@ -55,7 +53,7 @@ object PhoneSkillDraft {
          val markdown = buildString {
              append("---\nname: ").append(document.skillName)
              append("\ndescription: 本机公共路线，使用时重新核对应用、目标与许可\n")
@@ -11371,11 +11381,55 @@ index 2857ceef..889d734f 100644
              append("# 公共路线预览\n\n").append(summary)
              append("\n\n保存确认不授予执行权限。任一步前置、唯一目标、许可或后置不符就停止交回模型；失败或未知不自动重复。\n")
              append("不可逆操作仍须本次独立确认。编辑步骤会移除此数据路线。\n")
+@@ -64,18 +62,19 @@ object PhoneSkillDraft {
+         return Document(document.owner, document.skillName, markdown)
+     }
+ 
+-    private fun instruction(step: PhoneTaskTrace.Step, n: Int): String {
+-        val target = step.anchor?.let { "固定动作词「${anchor(it)}」（仍须核对唯一目标）" } ?: "{{target_$n}}"
++    private fun instruction(step: PhoneTaskTrace.Step): String {
++        val label = step.label ?: step.anchor?.let { "「${anchor(it)}」" } ?: "页面上的目标"
++        val target = step.label?.let { "「$it」" } ?: step.anchor?.let { "「${anchor(it)}」" } ?: "页面上的目标"
+         return when (step.action) {
+             PhoneTaskTrace.Action.OPEN_APP -> "打开用户指定的应用"
+-            PhoneTaskTrace.Action.TAP -> "点击$target"
++            PhoneTaskTrace.Action.TAP -> "点击$target（核对该按钮/文字唯一）"
+             PhoneTaskTrace.Action.LONG_TAP -> "长按$target"
+-            PhoneTaskTrace.Action.TYPE -> "向$target 输入 {{input_$n}}"
+-            PhoneTaskTrace.Action.TYPE_SUBMIT -> "向$target 输入 {{input_$n}}，提交前重新确认"
+-            PhoneTaskTrace.Action.SCROLL_UP -> "向上滚动用户确认的区域 {{target_$n}}"
+-            PhoneTaskTrace.Action.SCROLL_DOWN -> "向下滚动用户确认的区域 {{target_$n}}"
+-            PhoneTaskTrace.Action.SCROLL_LEFT -> "向左滚动用户确认的区域 {{target_$n}}"
+-            PhoneTaskTrace.Action.SCROLL_RIGHT -> "向右滚动用户确认的区域 {{target_$n}}"
++            PhoneTaskTrace.Action.TYPE -> "在$target 输入本次的内容（输入内容不写回技能）"
++            PhoneTaskTrace.Action.TYPE_SUBMIT -> "在$target 输入本次的内容并提交（提交前重新确认）"
++            PhoneTaskTrace.Action.SCROLL_UP -> "向上滚动"
++            PhoneTaskTrace.Action.SCROLL_DOWN -> "向下滚动"
++            PhoneTaskTrace.Action.SCROLL_LEFT -> "向左滚动"
++            PhoneTaskTrace.Action.SCROLL_RIGHT -> "向右滚动"
+             PhoneTaskTrace.Action.KEY_BACK -> "按返回键"
+             PhoneTaskTrace.Action.KEY_HOME -> "回到桌面"
+             PhoneTaskTrace.Action.KEY_RECENTS -> "打开最近任务"
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/skills/PhoneTaskTrace.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/skills/PhoneTaskTrace.kt
-index 6be40b5d..80b16d3d 100644
+index 6be40b5d..58b6c32a 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/skills/PhoneTaskTrace.kt
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/skills/PhoneTaskTrace.kt
-@@ -24,8 +24,9 @@ class PhoneTaskTrace {
+@@ -4,6 +4,7 @@ import io.github.ccch1mneyyy.dsh_app.phone.PhoneAction
+ import io.github.ccch1mneyyy.dsh_app.phone.PhoneScreen
+ import io.github.ccch1mneyyy.dsh_app.phone.PhoneTasks
+ import io.github.ccch1mneyyy.dsh_app.phone.SafetyRules
++import io.github.ccch1mneyyy.dsh_app.phone.SensitiveWords
+ import io.github.ccch1mneyyy.dsh_app.phone.TargetInfo
+ 
+ /** Bounded, process-local facts. No action arguments, screen text, images or Throwable are retained. */
+@@ -18,14 +19,16 @@ class PhoneTaskTrace {
+     enum class Gap { UNSUPPORTED_EFFECT, SECRET_TARGET, LIMIT, UNCERTAIN_RESULT }
+     data class Step internal constructor(
+         val action: Action, val screen: PhoneScreen, val role: Role, val anchor: Anchor?,
++        val label: String? = null,
+         val receipt: Receipt = Receipt.CALLED, val postObservationAvailable: Boolean = false,
+         internal val navigation: PhoneSkillNavigationWitness? = null,
+     )
      data class Snapshot internal constructor(
          val owner: OwnerKey, val steps: List<Step>, val ended: Boolean, val eligible: Boolean, val gap: Gap?,
      ) {
@@ -11387,7 +11441,7 @@ index 6be40b5d..80b16d3d 100644
      }
      class Ticket internal constructor(internal val owner: OwnerKey, internal val serial: Long, internal val index: Int)
      private class Entry(val serial: Long) {
-@@ -73,6 +74,8 @@ class PhoneTaskTrace {
+@@ -73,6 +76,8 @@ class PhoneTaskTrace {
                  PhoneAction.GlobalKey.HOME -> Action.KEY_HOME
                  PhoneAction.GlobalKey.RECENTS -> Action.KEY_RECENTS
                  PhoneAction.GlobalKey.NOTIFICATIONS -> Action.KEY_NOTIFICATIONS
@@ -11396,6 +11450,23 @@ index 6be40b5d..80b16d3d 100644
              }
              is PhoneAction.TapXY -> { markIncomplete(owner, Gap.UNSUPPORTED_EFFECT); return null }
          }
+@@ -102,7 +107,15 @@ class PhoneTaskTrace {
+                 else -> null
+             }
+         } else null
+-        return append(owner, Step(kind, screen, role, anchor))
++        // 目标文字让技能渲染真实步骤；只存「界面词形态」的标签：
++        // 秘密词、长数字串（手机号/卡号）、邮箱、网址、换行一律不存。
++        val label = target?.label?.trim()?.take(40)
++            ?.takeIf { it.isNotEmpty() && it.length <= 40 &&
++                !it.contains('\n') && !it.contains('\r') &&
++                SensitiveWords.secretHit(it, null, null) == null &&
++                !Regex("\\d{6,}").containsMatchIn(it) &&
++                !it.contains('@') && !it.contains("http", ignoreCase = true) }
++        return append(owner, Step(kind, screen, role, anchor, label))
+     }
+ 
+     /** App/package/version are intentionally parameters in this first slice. */
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/teach/Teach.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/teach/Teach.kt
 new file mode 100644
 index 00000000..a9912b42
@@ -31464,10 +31535,45 @@ index 00000000..f8a53ff8
 +    }
 +}
 diff --git a/app/android/app/src/test/kotlin/io/github/ccch1mneyyy/dsh_app/phone/skills/PhoneTaskTraceTest.kt b/app/android/app/src/test/kotlin/io/github/ccch1mneyyy/dsh_app/phone/skills/PhoneTaskTraceTest.kt
-index 2f5816e1..0b098e59 100644
+index 2f5816e1..04ac810a 100644
 --- a/app/android/app/src/test/kotlin/io/github/ccch1mneyyy/dsh_app/phone/skills/PhoneTaskTraceTest.kt
 +++ b/app/android/app/src/test/kotlin/io/github/ccch1mneyyy/dsh_app/phone/skills/PhoneTaskTraceTest.kt
-@@ -202,7 +202,7 @@ class PhoneTaskTraceTest {
+@@ -47,10 +47,12 @@ class PhoneTaskTraceTest {
+         }
+     }
+ 
+-    @Test fun arbitraryLabelsAndEveryInputValueAreParametersNotStoredText() {
+-        val privateValues = listOf("张三", "北京市海淀区一号", "13800138000", "me@example.com", "https://example.com/?token=SECRET",
+-            "发送给Alice", "密码abc", "---\nname: injected\n```", "😀".repeat(100))
+-        for (value in privateValues) {
++    @Test fun secretLikeLabelsAndEveryInputValueAreNotStoredText() {
++        // 秘密形态的目标文字（密码/手机号/邮箱/网址/换行/超长）不写进技能；
++        // 普通短界面词（如「张三」「北京市海淀区一号」）作为真实步骤目标保留。
++        val secretValues = listOf("13800138000", "me@example.com", "https://example.com/?token=SECRET",
++            "密码abc", "---\nname: injected\n```", "😀".repeat(100))
++        for (value in secretValues) {
+             val trace = PhoneTaskTrace(); val owner = owner(); trace.start(owner)
+             accepted(trace, owner, PhoneAction.Type("s91", 32, value), target("联系人张三", "输入框"))
+             accepted(trace, owner, target = target(value))
+@@ -58,11 +60,15 @@ class PhoneTaskTraceTest {
+             val draft = render(trace, owner) as PhoneSkillDraft.Ready
+             assertFalse(draft.markdown.contains(value))
+             assertFalse(trace.snapshot(owner).toString().contains(value))
+-            assertTrue(draft.markdown.contains("{{input_1}}"))
+-            assertTrue(draft.markdown.contains("{{target_1}}"))
+             assertFalse(draft.markdown.contains("private.package"))
+             assertFalse(draft.markdown.contains("s91"))
+         }
++        // 输入内容永不写回：输入框的 text 只当参数，不进技能正文。
++        val typed = PhoneTaskTrace(); val tOwner = owner(); typed.start(tOwner)
++        accepted(typed, tOwner, PhoneAction.Type("s91", 32, "我爱吃辣"), target("备注", "输入框"))
++        typed.complete(tOwner, true)
++        val typedDraft = render(typed, tOwner) as PhoneSkillDraft.Ready
++        assertFalse(typedDraft.markdown.contains("我爱吃辣"))
+     }
+ 
+     @Test fun onlyExactPublicActionWordsOnStructuralControlsCanAnchor() {
+@@ -202,7 +208,7 @@ class PhoneTaskTraceTest {
      @Test fun fixedTemplateIsUserInvokedBoundedAndRejectsPaths() {
          val trace = PhoneTaskTrace(); val owner = owner(); trace.start(owner); accepted(trace, owner); trace.complete(owner, true)
          val draft = render(trace, owner) as PhoneSkillDraft.Ready
