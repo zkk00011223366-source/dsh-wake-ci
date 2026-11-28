@@ -1,7 +1,7 @@
 == resources ==
-/dev/root       145G   55G   90G  39% /
+/dev/root       145G   56G   89G  39% /
                total        used        free      shared  buff/cache   available
-Mem:           15982        7359         212          51        8805        8622
+Mem:           15982        7177         535          51        8681        8804
 == tail ==
 
 ==> 依赖: flutter pub get
@@ -170,3 +170,4 @@ Note: Some input files use or override a deprecated API.
 Note: Recompile with -Xlint:deprecation for details.
 Note: Some input files use unchecked or unsafe operations.
 Note: Recompile with -Xlint:unchecked for details.
+Running Gradle task 'assembleArm64Release'...                     798.9s
