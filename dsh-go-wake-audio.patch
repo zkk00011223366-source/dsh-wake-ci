@@ -1,10 +1,10 @@
 From: dsh <dsh@local>
-Date: Sat, 28 Nov 2026 10:17:03 +0800
-Subject: [PATCH] kongkong 自己的包: 改包名+去应用内LOGO+工具说明/技能开放编辑+open说明+四刀
+Date: Sat, 28 Nov 2026 10:22:48 +0800
+Subject: [PATCH] kongkong 自己的包: 改包名+应用内LOGO/词标去DSH+说明技能开放编辑+四刀
 
  dsh-go-wake.patch                                  | 2065 +++++++++++++
  tooling/build-wake-apk.sh                          |   68 +
- 275 files changed, 20239 insertions(+), 1169 deletions(-)
+ 275 files changed, 20240 insertions(+), 1170 deletions(-)
 
 diff --git a/.gitattributes b/.gitattributes
 index 52e3e08a..3e877c7e 100644
@@ -105817,7 +105817,7 @@ index 00000000..4f137961
 +  return voice;
 +});
 diff --git a/app/lib/state/app_info.dart b/app/lib/state/app_info.dart
-index 18b01c2e..f532b20a 100644
+index 18b01c2e..6a6d0cbd 100644
 --- a/app/lib/state/app_info.dart
 +++ b/app/lib/state/app_info.dart
 @@ -8,6 +8,11 @@ import '../l10n/l10n.dart';
@@ -105832,6 +105832,15 @@ index 18b01c2e..f532b20a 100644
    /// "1.0.0 (1)" for display.
    static String get displayVersion {
      final parts = version.split('+');
+@@ -20,7 +25,7 @@ abstract final class AppInfo {
+ 
+   /// The in-app wordmark: the drawer's lockup, the welcome page and the brand mark's
+   /// spoken label.
+-  static const wordmark = 'DSH';
++  static const wordmark = '空空';
+ 
+   /// Required wording: the app is built on DSH but is not an official DeepSeek product.
+   /// Shown on the About and licence pages.
 diff --git a/app/lib/state/phone_state.dart b/app/lib/state/phone_state.dart
 index a99b77b5..ef299ea2 100644
 --- a/app/lib/state/phone_state.dart
