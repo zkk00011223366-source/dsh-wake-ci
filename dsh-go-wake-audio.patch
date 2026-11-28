@@ -1,10 +1,10 @@
 From: dsh <dsh@local>
-Date: Sat, 28 Nov 2026 16:52:42 +0800
-Subject: [PATCH] 设置页接壁纸+磨砂全链+技能失败原因固定码与全链日志
+Date: Sat, 28 Nov 2026 17:41:39 +0800
+Subject: [PATCH] 用户气泡磨砂+技能原因码+磨砂全链
 
  dsh-go-wake.patch                                  | 2065 +++++++++++++
  tooling/build-wake-apk.sh                          |   68 +
- 404 files changed, 20663 insertions(+), 1329 deletions(-)
+ 405 files changed, 20672 insertions(+), 1332 deletions(-)
 
 diff --git a/.gitattributes b/.gitattributes
 index 52e3e08a..3e877c7e 100644
@@ -108148,6 +108148,52 @@ index 2a34ba31..f146fdcb 100644
 +    (:final kind, rest: _) => kind == GenerateKind.video ? appL10n.mediaTitleVideo : appL10n.mediaTitleImage,
 +  };
 +}
+diff --git a/app/lib/ui/chat/widgets/user_bubble.dart b/app/lib/ui/chat/widgets/user_bubble.dart
+index f81430a1..fd5defc2 100644
+--- a/app/lib/ui/chat/widgets/user_bubble.dart
++++ b/app/lib/ui/chat/widgets/user_bubble.dart
+@@ -3,7 +3,9 @@
+ // See THIRD_PARTY_NOTICES.md.
+ 
+ import 'package:flutter/material.dart';
++import 'package:flutter_riverpod/flutter_riverpod.dart';
+ 
++import '../../../state/appearance_state.dart';
+ import '../../../state/composer_quote.dart' show splitQuote;
+ import '../../common/expand_reveal.dart';
+ import '../../common/fluid_bits.dart';
+@@ -29,7 +31,7 @@ import 'quote_chip.dart';
+ /// 可识别的凭据(API Key、令牌、私钥、地址里的密码)只在屏幕上遮挡
+ /// ([SecretText]);复制、选择文字、编辑拿到的都是原文。已发送的消息每段
+ /// 带眼睛可以显示,乐观气泡只遮挡。
+-class UserBubble extends StatelessWidget {
++class UserBubble extends ConsumerWidget {
+   const UserBubble({
+     super.key,
+     required this.text,
+@@ -87,8 +89,12 @@ class UserBubble extends StatelessWidget {
+   }
+ 
+   @override
+-  Widget build(BuildContext context) {
++  Widget build(BuildContext context, WidgetRef ref) {
+     final surfaces = DshSurfaces.of(context);
++    // 【frost】用户气泡也挂磨砂滑块:保底半透明(透壁纸),1=原样,与其他玻璃一致。
++    final frost = ref.watch(appearanceProvider).frost;
++    final bubbleColor = surfaces.userBubble
++        .withValues(alpha: surfaces.userBubble.a * (0.60 + 0.40 * frost));
+     final style = AppType.chatBody(context, color: surfaces.onUserBubble);
+     // A generation request (generation mode's parameter header on the first
+     // line): the description is the bubble, the parameters a small line under
+@@ -120,7 +126,7 @@ class UserBubble extends StatelessWidget {
+       child: HoldLift(
+         onLongPress: () => _menu(context),
+         child: DecoratedBox(
+-          decoration: ShapeDecoration(color: surfaces.userBubble, shape: AppShape.bubble),
++          decoration: ShapeDecoration(color: bubbleColor, shape: AppShape.bubble),
+           child: Padding(padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8), child: content),
+         ),
+       ),
 diff --git a/app/lib/ui/engine/engine_screen.dart b/app/lib/ui/engine/engine_screen.dart
 index 77c82cf9..b1b65869 100644
 --- a/app/lib/ui/engine/engine_screen.dart
