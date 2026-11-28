@@ -1,10 +1,10 @@
 From: dsh <dsh@local>
-Date: Sat, 28 Nov 2026 14:23:41 +0800
-Subject: [PATCH] 磨砂+图标修复+黑底白空+品牌空空+主题图标层+滑块常驻+技能保存与4r4弹窗修复
+Date: Sat, 28 Nov 2026 15:03:55 +0800
+Subject: [PATCH] 磨砂纯雾罩不卡+三界面全透明+技能保存reason透传
 
  dsh-go-wake.patch                                  | 2065 +++++++++++++
  tooling/build-wake-apk.sh                          |   68 +
- 401 files changed, 20582 insertions(+), 1320 deletions(-)
+ 401 files changed, 20592 insertions(+), 1321 deletions(-)
 
 diff --git a/.gitattributes b/.gitattributes
 index 52e3e08a..3e877c7e 100644
@@ -3024,7 +3024,7 @@ index 6c701851..b528f7b2 100644
          private val WRITES = setOf(FOCUS_TEXT, PhoneToolCatalog.TAP, PhoneToolCatalog.TYPE, PhoneToolCatalog.TAP_XY, PhoneToolCatalog.OPEN)
          /** An uncertain effect call tightens draft eligibility; it does not prove input was dispatched. */
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhonePlugin.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhonePlugin.kt
-index 4a76535f..0407b997 100644
+index 4a76535f..9fb0d704 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhonePlugin.kt
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhonePlugin.kt
 @@ -2,7 +2,13 @@ package io.github.ccch1mneyyy.dsh_app.phone
@@ -3697,22 +3697,22 @@ index 4a76535f..0407b997 100644
 +            mapOf("name" to it.first, "description" to it.second) }))
 +    }
 +
-+    /** 【4qw】设置页：手动新建/编辑技能（用户自己写的 SKILL.md）。 */
++    /** 【4qw】设置页：手动新建/编辑技能（用户自己写的 SKILL.md）。失败带 reason，UI 直接显示。 */
 +    private fun savePhoneSkillManual(call: MethodCall, result: MethodChannel.Result) {
 +        val args = call.arguments as? Map<*, *>
 +        val name = args?.get("skillId") as? String
 +        val markdown = args?.get("markdown") as? String
 +        if (args?.keys != setOf("skillId", "markdown") || name == null || markdown == null ||
 +            !Regex("phone-task-[a-f0-9]{32}").matches(name)) {
-+            result.success(mapOf("ok" to false)); return
++            result.success(mapOf("ok" to false, "reason" to "invalid-args")); return
 +        }
-+        if (!attached) { result.success(mapOf("ok" to false)); return }
++        if (!attached) { result.success(mapOf("ok" to false, "reason" to "detached")); return }
 +        val runtime = RuntimeController.get(appContext)
 +        val origin = runtime.capturePhoneSkillOrigin()
-+        if (origin == null) { result.success(mapOf("ok" to false)); return }
++        if (origin == null) { result.success(mapOf("ok" to false, "reason" to "origin-unavailable")); return }
 +        runtime.savePhoneSkillManual(origin, name, markdown) { outcome ->
 +            val ok = outcome is PhoneSkillManualSave.Saved
-+            result.success(mapOf("ok" to ok))
++            result.success(mapOf("ok" to ok, "reason" to outcome.javaClass.simpleName))
 +        }
 +    }
 +
@@ -13626,7 +13626,7 @@ index bb671033..56fd3890 100644
  
          /** Cheap bounded checks on the main thread; UTF-8 encoding happens on the runtime worker. */
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/runtime/PhoneSkillBundleReader.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/runtime/PhoneSkillBundleReader.kt
-index 98fceb58..eea1266d 100644
+index 98fceb58..6d82c353 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/runtime/PhoneSkillBundleReader.kt
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/runtime/PhoneSkillBundleReader.kt
 @@ -13,9 +13,22 @@ import java.nio.charset.CodingErrorAction
@@ -13652,7 +13652,7 @@ index 98fceb58..eea1266d 100644
  /** Fixed local bundle reader for the existing rootfs worker, not an execution grant.
   * Root generation/worker admission belongs to RuntimeController. Path checks share the installer's
   * boundary: they are not a sandbox against a hostile same-UID process replacing parent paths.
-@@ -62,6 +75,119 @@ internal object PhoneSkillBundleReader {
+@@ -62,6 +75,123 @@ internal object PhoneSkillBundleReader {
          catch (_: SecurityException) { Read.Rejected(Reason.IO) }
      }
  
@@ -13724,7 +13724,11 @@ index 98fceb58..eea1266d 100644
 +            val rootPath = root.canonicalFile.toPath()
 +            val rawHome = rootPath.resolve("root/.dsh")
 +            val home = rawHome.toFile().canonicalFile.toPath()
-+            if (!home.startsWith(rootPath) || !Files.isDirectory(rawHome, NOFOLLOW_LINKS)) return PhoneSkillManualSave.NO_HOME
++            if (!home.startsWith(rootPath) || !Files.isDirectory(rawHome, NOFOLLOW_LINKS)) {
++                io.github.ccch1mneyyy.dsh_app.wake.WakeTrace.log(
++                    "skill-manual: no home (raw=$rawHome canonical=$home root=$rootPath)")
++                return PhoneSkillManualSave.NO_HOME
++            }
 +            val skills = home.resolve("skills")
 +            try { Files.createDirectory(skills) } catch (_: FileAlreadyExistsException) {
 +                if (!Files.isDirectory(skills, NOFOLLOW_LINKS)) return PhoneSkillManualSave.NO_HOME
@@ -106169,7 +106173,7 @@ index 49e128b9..f111beb5 100644
  // Markdown link reaches the router through [openReplyPageLink]
  // (ui/chat/render/markdown_body.dart); a link from outside the app arrives
 diff --git a/app/lib/phone/phone_channel.dart b/app/lib/phone/phone_channel.dart
-index 61789e5d..4ad04164 100644
+index 61789e5d..4d232c8e 100644
 --- a/app/lib/phone/phone_channel.dart
 +++ b/app/lib/phone/phone_channel.dart
 @@ -226,7 +226,10 @@ class AdbStatus {
@@ -106401,7 +106405,7 @@ index 61789e5d..4ad04164 100644
    Future<bool> setSkillSavePrompt(bool enabled) => _bool('setSkillSavePrompt', {'enabled': enabled});
  
    Future<PhoneSkillReply> openSkillDraft(PhoneSkillCandidate candidate, {required bool confirmed}) =>
-@@ -1391,6 +1528,85 @@ class PhoneChannel {
+@@ -1391,6 +1528,87 @@ class PhoneChannel {
      }
    }
  
@@ -106456,16 +106460,18 @@ index 61789e5d..4ad04164 100644
 +  }
 +
 +  /// 【4qw】设置页：手动新建/编辑技能（用户自己写的 SKILL.md）。
-+  Future<bool> savePhoneSkillManual(String skillId, String markdown) async {
++  /// 返回 (是否保存成功, 失败原因)；失败原因直接给 UI 显示，方便定位。
++  Future<(bool, String?)> savePhoneSkillManual(String skillId, String markdown) async {
 +    try {
 +      final raw = await _methods.invokeMapMethod<Object?, Object?>('savePhoneSkillManual', {
 +        'skillId': skillId, 'markdown': markdown,
 +      });
-+      return raw?['ok'] == true;
++      if (raw?['ok'] == true) return (true, null);
++      return (false, raw?['reason'] as String? ?? 'unknown');
 +    } on MissingPluginException {
-+      return false;
++      return (false, 'plugin-missing');
 +    } on PlatformException {
-+      return false;
++      return (false, 'platform');
 +    }
 +  }
 +
@@ -108784,7 +108790,7 @@ index fc641e25..2bba33c9 100644
                      ListPageRow(
 diff --git a/app/lib/ui/phone/phone_skill_editor.dart b/app/lib/ui/phone/phone_skill_editor.dart
 new file mode 100644
-index 00000000..47b45aa4
+index 00000000..c4ecb609
 --- /dev/null
 +++ b/app/lib/ui/phone/phone_skill_editor.dart
 @@ -0,0 +1,93 @@
@@ -108846,10 +108852,10 @@ index 00000000..47b45aa4
 +    final markdown = _controller.text;
 +    if (markdown.trim().isEmpty) return;
 +    final id = widget.skillId ?? _newSkillId();
-+    final ok = await ref.read(phoneChannelProvider).savePhoneSkillManual(id, markdown);
++    final (ok, reason) = await ref.read(phoneChannelProvider).savePhoneSkillManual(id, markdown);
 +    if (!mounted) return;
 +    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-+      content: Text(ok ? l10n.phoneSkillSaved : l10n.phoneSkillSaveFailed),
++      content: Text(ok ? l10n.phoneSkillSaved : '${l10n.phoneSkillSaveFailed}（$reason）'),
 +    ));
 +    if (ok) Navigator.of(context).pop(true);
 +  }
@@ -111704,14 +111710,10 @@ index 6838c632..dcbf2906 100644
      extensions: [colors, surfaces],
      pageTransitionsTheme: transitions,
 diff --git a/app/lib/ui/theme/backdrop.dart b/app/lib/ui/theme/backdrop.dart
-index a3f5f043..e43e661b 100644
+index a3f5f043..007a4647 100644
 --- a/app/lib/ui/theme/backdrop.dart
 +++ b/app/lib/ui/theme/backdrop.dart
-@@ -3,10 +3,13 @@
- // See THIRD_PARTY_NOTICES.md.
- 
- import 'dart:ui' as ui;
-+import 'dart:ui' show ImageFilter;
+@@ -6,7 +6,9 @@ import 'dart:ui' as ui;
  
  import 'package:flutter/foundation.dart';
  import 'package:flutter/material.dart';
@@ -111721,7 +111723,7 @@ index a3f5f043..e43e661b 100644
  import 'backdrop_frame.dart';
  import 'surfaces.dart';
  
-@@ -25,7 +28,7 @@ import 'surfaces.dart';
+@@ -25,7 +27,7 @@ import 'surfaces.dart';
  ///
  /// 给了 [picture](自定义壁纸,lib/ui/wallpaper/wallpaper_backdrop.dart)就画那张
  /// 预先烘好的图,不画渐变;子树里的 [BackdropVeil] 跟着画同一张图。
@@ -111730,29 +111732,29 @@ index a3f5f043..e43e661b 100644
    const AppBackdrop({super.key, required this.child, this.glow = true, this.picture});
  
    final Widget child;
-@@ -36,9 +39,20 @@ class AppBackdrop extends StatelessWidget {
+@@ -36,9 +38,20 @@ class AppBackdrop extends StatelessWidget {
    /// A picture in place of the gradient; null: the gradient.
    final BackdropPicture? picture;
  
-+  /// 【frost】磨砂度到 blur sigma 的换算:0=无磨砂,1=重磨砂。
-+  static const double frostSigma = 18;
-+
-+  /// 【frost】浅色白 tint / 深色黑 tint 在磨砂上的最大 alpha(随磨砂度)。
-+  static const double frostTint = 0.10;
++  /// 【frost】雾罩的最大 alpha（浅色白 / 深色黑），frost=1 时压在壁纸上。
++  /// 纯 alpha 合成，不用 BackdropFilter——整屏实时模糊在手机上卡。
++  static const double frostTint = 0.55;
 +
    @override
 -  Widget build(BuildContext context) {
 +  Widget build(BuildContext context, WidgetRef ref) {
      final s = DshSurfaces.of(context);
-+    // 【frost】背景磨砂:0=玻璃完全透明(现状),越大壁纸越毛、文字对比越好。
-+    // 模糊总开关(减少透明效果/性能档)关闭时退回实色现状。
-+    final frost = s.blurEnabled ? ref.watch(appearanceProvider).frost : 0.0;
-+    final sigma = frost * frostSigma;
++    // 【frost】背景磨砂度：0=无罩层，壁纸清晰直出（三个界面全透明）；
++    // 越大白雾越浓（磨砂观感），文字对比越好。纯 alpha，不采样、不模糊、不卡。
++    final frost = ref.watch(appearanceProvider).frost;
 +    final tintAlpha = frost * frostTint;
++    final tint = (Theme.of(context).brightness == Brightness.dark)
++        ? const Color(0xFF000000)
++        : const Color(0xFFFFFFFF);
      return _BackdropScope(
        picture: picture,
        child: Stack(
-@@ -47,14 +61,31 @@ class AppBackdrop extends StatelessWidget {
+@@ -47,14 +60,21 @@ class AppBackdrop extends StatelessWidget {
            Positioned.fill(
              child: IgnorePointer(
                child: RepaintBoundary(
@@ -111776,23 +111778,13 @@ index a3f5f043..e43e661b 100644
 +                        picture: picture,
 +                      ),
 +                    ),
-+                    // 单层全页磨砂(只采壁纸层,包在同一个 RepaintBoundary 里缓存),
-+                    // 上面滚动的文字与卡片不参与,可读性由磨砂保。
-+                    if (sigma > 0)
-+                      BackdropFilter(
-+                        filter: ImageFilter.blur(sigmaX: sigma, sigmaY: sigma),
-+                        child: ColoredBox(
-+                          color: (Theme.of(context).brightness == Brightness.dark
-+                                  ? const Color(0xFF000000)
-+                                  : const Color(0xFFFFFFFF))
-+                              .withValues(alpha: tintAlpha),
-+                        ),
-+                      ),
++                    if (tintAlpha > 0)
++                      ColoredBox(color: tint.withValues(alpha: tintAlpha)),
 +                  ],
                  ),
                ),
              ),
-@@ -110,7 +141,7 @@ class _BackdropScope extends InheritedWidget {
+@@ -110,7 +130,7 @@ class _BackdropScope extends InheritedWidget {
  /// 这一条,所以和真背景严丝合缝;键盘弹起页面变矮时也对得上。要求铺满
  /// 整页、和页面左上角对齐。分栏布局里的一栏(宽屏的聊天栏、详情栏)由
  /// [BackdropFrame] 告知它在整张背景里的位置,照样对得上。
@@ -111801,7 +111793,7 @@ index a3f5f043..e43e661b 100644
    const BackdropVeil({super.key, required this.solidHeight, this.feather = 14, this.glow = true}) : fromTop = false;
  
    /// 顶部版:从顶边往下 [height] 实心,再往下 [feather] 缓缓淡出(页面顶栏
-@@ -131,9 +162,11 @@ class BackdropVeil extends StatelessWidget {
+@@ -131,9 +151,14 @@ class BackdropVeil extends StatelessWidget {
    final bool fromTop;
  
    @override
@@ -111809,20 +111801,24 @@ index a3f5f043..e43e661b 100644
 +  Widget build(BuildContext context, WidgetRef ref) {
      final s = DshSurfaces.of(context);
      final frame = BackdropFrame.maybeOf(context);
-+    // 【frost】veil 的壁纸副本跟着页面磨砂,不然带内清晰、带外磨砂会割裂。
-+    final frost = s.blurEnabled ? ref.watch(appearanceProvider).frost : 0.0;
++    // 【frost】veil 的壁纸副本跟着页面雾罩,不然带内清晰、带外罩雾会割裂。
++    final frost = ref.watch(appearanceProvider).frost;
++    final tint = (Theme.of(context).brightness == Brightness.dark)
++        ? const Color(0xFF000000)
++        : const Color(0xFFFFFFFF);
      return IgnorePointer(
        child: CustomPaint(
          size: Size.infinite,
-@@ -141,6 +174,7 @@ class BackdropVeil extends StatelessWidget {
+@@ -141,6 +166,8 @@ class BackdropVeil extends StatelessWidget {
            solidHeight: solidHeight,
            feather: feather,
            fromTop: fromTop,
 +          frost: frost,
++          tint: tint,
            backdrop: _BackdropPainter(
              top: s.backdropTop,
              bottom: s.backdropBottom,
-@@ -178,14 +212,22 @@ class _FixedHeight implements ValueListenable<double> {
+@@ -178,14 +205,26 @@ class _FixedHeight implements ValueListenable<double> {
  
  /// [BackdropVeil] 的一条:底部实心,往上缓缓淡出(顶部版反过来)。
  class _VeilPainter extends CustomPainter {
@@ -111834,6 +111830,7 @@ index a3f5f043..e43e661b 100644
 +    required this.backdrop,
 +    this.fromTop = false,
 +    this.frost = 0,
++    this.tint = const Color(0xFFFFFFFF),
 +  }) : super(repaint: backdrop.picture == null ? solidHeight : Listenable.merge([solidHeight, backdrop.picture!.fade]));
  
    final ValueListenable<double> solidHeight;
@@ -111841,37 +111838,43 @@ index a3f5f043..e43e661b 100644
    final _BackdropPainter backdrop;
    final bool fromTop;
  
-+  /// 【frost】页面磨砂度(0–1),带内的壁纸副本按同一 sigma 磨砂。
++  /// 【frost】页面磨砂度(0–1),带内的壁纸副本按同一雾罩叠加。
 +  final double frost;
++
++  /// 【frost】雾罩色(浅色白/深色黑),与 AppBackdrop 的罩层一致。
++  final Color tint;
 +
    @override
    void paint(Canvas canvas, Size size) {
      final band = (solidHeight.value + feather).clamp(0.0, size.height);
-@@ -213,7 +255,13 @@ class _VeilPainter extends CustomPainter {
+@@ -213,10 +252,16 @@ class _VeilPainter extends CustomPainter {
        colors.add(Colors.black);
      }
  
--    canvas.saveLayer(rect, Paint());
-+    // 【frost】带内先按页面磨砂度模糊,再 dstIn 遮罩;0 时 imageFilter 为 null,
-+    // 与磨砂层未开启前的绘制完全一致。
-+    final sigma = frost * AppBackdrop.frostSigma;
-+    canvas.saveLayer(
-+      rect,
-+      Paint()..imageFilter = sigma > 0 ? ui.ImageFilter.blur(sigmaX: sigma, sigmaY: sigma) : null,
-+    );
++    // 【frost】带内先按页面磨砂度叠雾,再 dstIn 遮罩;0 时 tint alpha 为 0,
++    // 与雾罩未开启前的绘制完全一致。
++    final tintAlpha = frost * AppBackdrop.frostTint;
+     canvas.saveLayer(rect, Paint());
      canvas.clipRect(rect);
      // The whole backdrop from the page's top, so the band lines up with it.
      backdrop.paint(canvas, size);
-@@ -236,6 +284,7 @@ class _VeilPainter extends CustomPainter {
++    if (tintAlpha > 0) {
++      canvas.drawRect(rect, Paint()..color = tint.withValues(alpha: tintAlpha));
++    }
+     canvas.drawRect(
+       rect,
+       Paint()
+@@ -236,6 +281,8 @@ class _VeilPainter extends CustomPainter {
        old.solidHeight != solidHeight ||
        old.feather != feather ||
        old.fromTop != fromTop ||
 +      old.frost != frost ||
++      old.tint != tint ||
        backdrop.shouldRepaint(old.backdrop);
  }
  
 diff --git a/app/lib/ui/theme/glass.dart b/app/lib/ui/theme/glass.dart
-index 2ebac55e..4da0dcda 100644
+index 2ebac55e..ea570bce 100644
 --- a/app/lib/ui/theme/glass.dart
 +++ b/app/lib/ui/theme/glass.dart
 @@ -1,7 +1,9 @@
@@ -111893,7 +111896,7 @@ index 2ebac55e..4da0dcda 100644
    const GlassSurface({
      super.key,
      this.tier = GlassTier.card,
-@@ -105,12 +107,16 @@ class GlassSurface extends StatelessWidget {
+@@ -105,18 +107,27 @@ class GlassSurface extends StatelessWidget {
    }
  
    @override
@@ -111908,10 +111911,23 @@ index 2ebac55e..4da0dcda 100644
      final reduce = !surfaces.blurEnabled || highContrast || uiTraceNoBlur;
      final useBlur = !reduce && (blur ?? s.blurs);
 +    final frostSigma = (tier == GlassTier.sheet && useBlur) ? frost * 20 : 0.0;
++    // 【frost】card/sheet 玻璃(抽屉/弹层/菜单/设置卡)底色跟磨砂滑块走:
++    // 0=玻璃无底(壁纸直出),1=现状。chrome/pill 交互件不动,保证按钮可读。
++    final frostFill = (tier == GlassTier.card || tier == GlassTier.sheet)
++        ? s.fill.withValues(alpha: s.fill.a * frost)
++        : s.fill;
      if (uiTraceEnabled) {
        uiTrace('glass', 'build', {'tier': tier.name, 'blur': useBlur, 'grouped': grouped});
      }
-@@ -151,7 +157,7 @@ class GlassSurface extends StatelessWidget {
+     final fill = useBlur
+-        ? Color.lerp(s.fallbackFill, s.fill, settled ?? 1)!
+-        : (reduce || s.blurs ? s.fallbackFill : s.fill);
++        ? Color.lerp(s.fallbackFill, frostFill, settled ?? 1)!
++        : (reduce || s.blurs ? s.fallbackFill : frostFill);
+     final shape = _shape;
+     final textDirection = Directionality.maybeOf(context);
+ 
+@@ -151,7 +162,7 @@ class GlassSurface extends StatelessWidget {
      );
  
      if (useBlur) {
