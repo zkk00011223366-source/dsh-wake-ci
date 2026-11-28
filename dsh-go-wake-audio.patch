@@ -1,10 +1,10 @@
 From: dsh <dsh@local>
-Date: Sat, 28 Nov 2026 11:04:48 +0800
-Subject: [PATCH] 空空 去DSH: 启动页/最近任务名/引擎标签/抽屉词标/guide技能名 全部清零
+Date: Sat, 28 Nov 2026 11:08:05 +0800
+Subject: [PATCH] 空空 去DSH: 启动页只留图标+最近任务/引擎标签/抽屉/guide技能名
 
  dsh-go-wake.patch                                  | 2065 +++++++++++++
  tooling/build-wake-apk.sh                          |   68 +
- 346 files changed, 20266 insertions(+), 1196 deletions(-)
+ 347 files changed, 20267 insertions(+), 1197 deletions(-)
 
 diff --git a/.gitattributes b/.gitattributes
 index 52e3e08a..3e877c7e 100644
@@ -106963,6 +106963,19 @@ index 77c82cf9..b1b65869 100644
            (status.nodeVersion == null ? '—' : 'v${status.nodeVersion}', 'Node.js'),
          ],
        ),
+diff --git a/app/lib/ui/launch/launch_overlay.dart b/app/lib/ui/launch/launch_overlay.dart
+index 35ac9f48..221c4374 100644
+--- a/app/lib/ui/launch/launch_overlay.dart
++++ b/app/lib/ui/launch/launch_overlay.dart
+@@ -363,7 +363,7 @@ class LaunchMark extends StatelessWidget {
+               opacity: frame.wordmarkOpacity,
+               child: Center(
+                 child: Text(
+-                  AppInfo.name,
++                  '',
+                   maxLines: 1,
+                   softWrap: false,
+                   // A logo, not a line of reading: the same size at every text scale.
 diff --git a/app/lib/ui/phone/android_shell_page.dart b/app/lib/ui/phone/android_shell_page.dart
 index 1214058f..167d6461 100644
 --- a/app/lib/ui/phone/android_shell_page.dart
