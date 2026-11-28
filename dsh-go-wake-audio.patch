@@ -1,10 +1,10 @@
 From: dsh <dsh@local>
-Date: Sat, 28 Nov 2026 17:41:39 +0800
-Subject: [PATCH] 用户气泡磨砂+技能原因码+磨砂全链
+Date: Sat, 28 Nov 2026 17:44:52 +0800
+Subject: [PATCH] 技能保存自愈+分步日志+气泡磨砂+磨砂全链
 
  dsh-go-wake.patch                                  | 2065 +++++++++++++
  tooling/build-wake-apk.sh                          |   68 +
- 405 files changed, 20672 insertions(+), 1332 deletions(-)
+ 405 files changed, 20686 insertions(+), 1332 deletions(-)
 
 diff --git a/.gitattributes b/.gitattributes
 index 52e3e08a..3e877c7e 100644
@@ -13645,7 +13645,7 @@ index bb671033..56fd3890 100644
  
          /** Cheap bounded checks on the main thread; UTF-8 encoding happens on the runtime worker. */
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/runtime/PhoneSkillBundleReader.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/runtime/PhoneSkillBundleReader.kt
-index 98fceb58..480c9aa0 100644
+index 98fceb58..e37ebc6c 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/runtime/PhoneSkillBundleReader.kt
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/runtime/PhoneSkillBundleReader.kt
 @@ -13,9 +13,22 @@ import java.nio.charset.CodingErrorAction
@@ -13671,7 +13671,7 @@ index 98fceb58..480c9aa0 100644
  /** Fixed local bundle reader for the existing rootfs worker, not an execution grant.
   * Root generation/worker admission belongs to RuntimeController. Path checks share the installer's
   * boundary: they are not a sandbox against a hostile same-UID process replacing parent paths.
-@@ -62,6 +75,135 @@ internal object PhoneSkillBundleReader {
+@@ -62,6 +75,149 @@ internal object PhoneSkillBundleReader {
          catch (_: SecurityException) { Read.Rejected(Reason.IO) }
      }
  
@@ -13746,6 +13746,7 @@ index 98fceb58..480c9aa0 100644
 +            return PhoneSkillManualSave.TOO_LARGE
 +        }
 +        return try {
++            io.github.ccch1mneyyy.dsh_app.wake.WakeTrace.log("skill-manual: step1 root=$root")
 +            val rootPath = root.canonicalFile.toPath()
 +            val rawHome = rootPath.resolve("root/.dsh")
 +            val home = rawHome.toFile().canonicalFile.toPath()
@@ -13754,10 +13755,22 @@ index 98fceb58..480c9aa0 100644
 +                    "skill-manual: no home (raw=$rawHome canonical=$home root=$rootPath)")
 +                return PhoneSkillManualSave.NO_HOME
 +            }
++            io.github.ccch1mneyyy.dsh_app.wake.WakeTrace.log("skill-manual: step2 home ok")
 +            val skills = home.resolve("skills")
-+            try { Files.createDirectory(skills) } catch (_: FileAlreadyExistsException) {
-+                if (!Files.isDirectory(skills, NOFOLLOW_LINKS)) return PhoneSkillManualSave.NO_HOME
++            try { Files.createDirectory(skills) } catch (failure: FileAlreadyExistsException) {
++                if (!Files.isDirectory(skills, NOFOLLOW_LINKS)) {
++                    // 宿主机侧可能是 tawcroot 留下的坏链接:删掉重建一次(不跟随)。
++                    io.github.ccch1mneyyy.dsh_app.wake.WakeTrace.log(
++                        "skill-manual: skills not a dir (${failure.message}), deleting and recreating")
++                    runCatching { Files.deleteIfExists(skills) }
++                    try { Files.createDirectory(skills) } catch (again: Exception) {
++                        io.github.ccch1mneyyy.dsh_app.wake.WakeTrace.log(
++                            "skill-manual: skills recreate failed (${again.message})")
++                        return PhoneSkillManualSave.NO_HOME
++                    }
++                }
 +            }
++            io.github.ccch1mneyyy.dsh_app.wake.WakeTrace.log("skill-manual: step3 skills ok")
 +            val directory = skills.resolve(name)
 +            try { Files.createDirectory(directory) } catch (_: FileAlreadyExistsException) {
 +                if (!Files.isDirectory(directory, NOFOLLOW_LINKS)) return PhoneSkillManualSave.IO
@@ -13765,6 +13778,7 @@ index 98fceb58..480c9aa0 100644
 +            val target = directory.resolve("SKILL.md")
 +            val stage = directory.resolve(".SKILL.tmp")
 +            Files.write(stage, bytes)
++            io.github.ccch1mneyyy.dsh_app.wake.WakeTrace.log("skill-manual: step4 write ok")
 +            try { Files.move(stage, target, StandardCopyOption.REPLACE_EXISTING) }
 +            finally { runCatching { Files.deleteIfExists(stage) } }
 +            // 编辑 = 移除此数据路线（与任务技能 SKILL.md 的既有语义一致）：
