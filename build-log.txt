@@ -1,7 +1,7 @@
 == resources ==
-/dev/root       145G   55G   90G  38% /
+/dev/root       145G   56G   90G  39% /
                total        used        free      shared  buff/cache   available
-Mem:           15982        7258         315          50        8803        8723
+Mem:           15982        7192         450          50        8734        8789
 == tail ==
 
 ==> 依赖: flutter pub get
@@ -170,3 +170,5 @@ Note: Some input files use or override a deprecated API.
 Note: Recompile with -Xlint:deprecation for details.
 Note: Some input files use unchecked or unsafe operations.
 Note: Recompile with -Xlint:unchecked for details.
+Running Gradle task 'assembleArm64Release'...                     757.6s
+✓ Built build/app/outputs/flutter-apk/app-arm64-release.apk (236.4MB)
