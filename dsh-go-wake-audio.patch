@@ -1,10 +1,10 @@
 From: dsh <dsh@local>
-Date: Sat, 28 Nov 2026 14:10:58 +0800
-Subject: [PATCH] 磨砂三界面+图标切换修复+黑底白空图标+品牌空空+主题图标层+滑块常驻
+Date: Sat, 28 Nov 2026 14:23:41 +0800
+Subject: [PATCH] 磨砂+图标修复+黑底白空+品牌空空+主题图标层+滑块常驻+技能保存与4r4弹窗修复
 
  dsh-go-wake.patch                                  | 2065 +++++++++++++
  tooling/build-wake-apk.sh                          |   68 +
- 401 files changed, 20578 insertions(+), 1320 deletions(-)
+ 401 files changed, 20582 insertions(+), 1320 deletions(-)
 
 diff --git a/.gitattributes b/.gitattributes
 index 52e3e08a..3e877c7e 100644
@@ -9242,20 +9242,22 @@ index 2857ceef..41380764 100644
                  append(instruction(step, n)).append("。\n")
                  append("   核对 {{check_").append(n).append("}}，不能只凭工具返回正常判断业务完成。历史记录仅表明请求已交给驱动/系统并返回接受；")
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/skills/PhoneTaskTrace.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/skills/PhoneTaskTrace.kt
-index 6be40b5d..b2add1ca 100644
+index 6be40b5d..80b16d3d 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/skills/PhoneTaskTrace.kt
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/skills/PhoneTaskTrace.kt
-@@ -24,8 +24,7 @@ class PhoneTaskTrace {
+@@ -24,8 +24,9 @@ class PhoneTaskTrace {
      data class Snapshot internal constructor(
          val owner: OwnerKey, val steps: List<Step>, val ended: Boolean, val eligible: Boolean, val gap: Gap?,
      ) {
 -        val canDraft: Boolean get() = ended && eligible && gap == null && steps.isNotEmpty() &&
 -            steps.all { it.receipt == Receipt.RETURNED_OK }
-+        val canDraft: Boolean get() = ended && eligible && gap == null && steps.isNotEmpty()
++        /** 【4r4】只要任务自然结束（eligible）且非空步骤就可成候选；
++         *  gap 只表示个别步骤结果不确定，渲染本就按「待核对」模板走，不再挡询问。 */
++        val canDraft: Boolean get() = ended && eligible && steps.isNotEmpty()
      }
      class Ticket internal constructor(internal val owner: OwnerKey, internal val serial: Long, internal val index: Int)
      private class Entry(val serial: Long) {
-@@ -73,6 +72,8 @@ class PhoneTaskTrace {
+@@ -73,6 +74,8 @@ class PhoneTaskTrace {
                  PhoneAction.GlobalKey.HOME -> Action.KEY_HOME
                  PhoneAction.GlobalKey.RECENTS -> Action.KEY_RECENTS
                  PhoneAction.GlobalKey.NOTIFICATIONS -> Action.KEY_NOTIFICATIONS
@@ -106167,7 +106169,7 @@ index 49e128b9..f111beb5 100644
  // Markdown link reaches the router through [openReplyPageLink]
  // (ui/chat/render/markdown_body.dart); a link from outside the app arrives
 diff --git a/app/lib/phone/phone_channel.dart b/app/lib/phone/phone_channel.dart
-index 61789e5d..6ea5e544 100644
+index 61789e5d..4ad04164 100644
 --- a/app/lib/phone/phone_channel.dart
 +++ b/app/lib/phone/phone_channel.dart
 @@ -226,7 +226,10 @@ class AdbStatus {
@@ -106399,7 +106401,7 @@ index 61789e5d..6ea5e544 100644
    Future<bool> setSkillSavePrompt(bool enabled) => _bool('setSkillSavePrompt', {'enabled': enabled});
  
    Future<PhoneSkillReply> openSkillDraft(PhoneSkillCandidate candidate, {required bool confirmed}) =>
-@@ -1391,6 +1528,83 @@ class PhoneChannel {
+@@ -1391,6 +1528,85 @@ class PhoneChannel {
      }
    }
  
@@ -106425,7 +106427,8 @@ index 61789e5d..6ea5e544 100644
 +  /// 技能管理页：删除一个已保存技能（引擎监听目录变化，立刻生效）。
 +  Future<bool> removePhoneSkill(String skillId) async {
 +    try {
-+      return await _methods.invokeMethod<bool>('removePhoneSkill', {'skillId': skillId}) ?? false;
++      final raw = await _methods.invokeMapMethod<Object?, Object?>('removePhoneSkill', {'skillId': skillId});
++      return raw?['ok'] == true;
 +    } on MissingPluginException {
 +      return false;
 +    } on PlatformException {
@@ -106455,9 +106458,10 @@ index 61789e5d..6ea5e544 100644
 +  /// 【4qw】设置页：手动新建/编辑技能（用户自己写的 SKILL.md）。
 +  Future<bool> savePhoneSkillManual(String skillId, String markdown) async {
 +    try {
-+      return await _methods.invokeMethod<bool>('savePhoneSkillManual', {
++      final raw = await _methods.invokeMapMethod<Object?, Object?>('savePhoneSkillManual', {
 +        'skillId': skillId, 'markdown': markdown,
-+      }) ?? false;
++      });
++      return raw?['ok'] == true;
 +    } on MissingPluginException {
 +      return false;
 +    } on PlatformException {
