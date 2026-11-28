@@ -1,10 +1,10 @@
 From: dsh <dsh@local>
-Date: Sat, 28 Nov 2026 19:15:08 +0800
-Subject: [PATCH] AI电话拨号链路+shell电话音频+火山实时语音
+Date: Sat, 28 Nov 2026 19:33:27 +0800
+Subject: [PATCH] AI电话拨号+自动接听+shell电话音频+火山实时语音
 
  dsh-go-wake.patch                                  | 2065 +++++++++++++
  tooling/build-wake-apk.sh                          |   68 +
- 419 files changed, 24243 insertions(+), 1338 deletions(-)
+ 419 files changed, 24450 insertions(+), 1338 deletions(-)
 
 diff --git a/.gitattributes b/.gitattributes
 index 52e3e08a..3e877c7e 100644
@@ -3061,7 +3061,7 @@ index 6c701851..b528f7b2 100644
          private val WRITES = setOf(FOCUS_TEXT, PhoneToolCatalog.TAP, PhoneToolCatalog.TYPE, PhoneToolCatalog.TAP_XY, PhoneToolCatalog.OPEN)
          /** An uncertain effect call tightens draft eligibility; it does not prove input was dispatched. */
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhonePlugin.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhonePlugin.kt
-index 4a76535f..3ab7a66e 100644
+index 4a76535f..9c31e471 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhonePlugin.kt
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhonePlugin.kt
 @@ -2,7 +2,14 @@ package io.github.ccch1mneyyy.dsh_app.phone
@@ -3614,13 +3614,18 @@ index 4a76535f..3ab7a66e 100644
      /** Both async control work and the status capture lane finish on the original main handler. */
      private fun complete(result: MethodChannel.Result, value: Result<Any?>) {
          main.post {
-@@ -219,6 +700,24 @@ class PhonePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
+@@ -219,6 +700,29 @@ class PhonePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
                  else async(result) { control.shell.connect(port) }
              }
              "androidShellStop" -> { control.shell.cancelAll(); result.success(true) }
 +            "aiCallStatus" -> result.success(PhoneRegistry.aicall?.status())
 +            "aiCallDial" -> aiCallCall(call, result) { it.dial((call.arguments as? Map<*, *>)?.get("number") as? String ?: "") }
 +            "aiCallHangUp" -> aiCallCall(call, result) { it.hangUp() }
++            "aiCallAnswer" -> aiCallCall(call, result) { it.answer() }
++            "aiCallReject" -> aiCallCall(call, result) { it.reject() }
++            "aiCallSetCompanion" -> aiCallCall(call, result) {
++                it.setCompanion((call.arguments as? Map<*, *>)?.get("enabled") == true)
++            }
 +            "aiCallMute" -> aiCallCall(call, result) { it.setMuted((call.arguments as? Map<*, *>)?.get("muted") == true) }
 +            "aiCallAudioProbe" -> aiCallCall(call, result) {
 +                it.audioProbe(((call.arguments as? Map<*, *>)?.get("mode") as? Number)?.toInt() ?: 1)
@@ -3639,7 +3644,7 @@ index 4a76535f..3ab7a66e 100644
              "acknowledgeTaskInterruption" -> async(result) {
                  (call.argument<Any?>("batchToken") as? String)?.let(control::acknowledgeTaskInterruption) == true
              }
-@@ -240,6 +739,11 @@ class PhonePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
+@@ -240,6 +744,11 @@ class PhonePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
              "skillDraft", "saveSkillDraft", "discardSkillDraft" -> skillCall(call, result)
              "inspectSkillReplay" -> inspectSkillReplay(call, result)
              "prepareSkillReplay" -> prepareSkillReplay(call, result)
@@ -3651,7 +3656,7 @@ index 4a76535f..3ab7a66e 100644
              "discardSkillReplay" -> {
                  val args = call.arguments as? Map<*, *>
                  val id = args?.get("invocation") as? String
-@@ -249,6 +753,103 @@ class PhonePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
+@@ -249,6 +758,103 @@ class PhonePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
                  result.success(if (removed) mapOf("kind" to "discarded") else replayRejected("stale"))
              }
              "setBackgroundPreview" -> result.success(control.preview.setEnabled(call.argument<Boolean>("enabled") == true))
@@ -3755,7 +3760,7 @@ index 4a76535f..3ab7a66e 100644
              "setBackgroundKeep" -> {
                  val selected = call.argument<String>("mode").orEmpty()
                  val enabled = call.argument<Boolean>("enabled") == true
-@@ -388,6 +989,96 @@ class PhonePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
+@@ -388,6 +994,96 @@ class PhonePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
          control.skillDrafts.clientCurrent(value.client) && control.skillDrafts.currentEpoch() == value.epoch &&
          value.origin.runtime.phoneSkillOriginCurrent(value.origin)
  
@@ -4663,10 +4668,10 @@ index 8aa204bc..298fc3a9 100644
          overlay?.onConfigurationChanged()
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/aicall/AiCallTelecom.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/aicall/AiCallTelecom.kt
 new file mode 100644
-index 00000000..3cc98c3f
+index 00000000..5b0600a4
 --- /dev/null
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/aicall/AiCallTelecom.kt
-@@ -0,0 +1,185 @@
+@@ -0,0 +1,214 @@
 +package io.github.ccch1mneyyy.dsh_app.phone.aicall
 +
 +import android.content.Context
@@ -4701,16 +4706,45 @@ index 00000000..3cc98c3f
 +    private val owner = Binder()
 +    private var down: ParcelFileDescriptor? = null
 +    private var up: ParcelFileDescriptor? = null
-+    @Volatile private var companionRegistered = false
++    /** off = 未注册; persistent = 自动接听常驻; temp = 单次拨号临时注册。 */
++    @Volatile private var companionState = "off"
 +
 +    fun status(): Map<String, Any?> = mapOf(
 +        "callPhoneGranted" to (context.checkSelfPermission(android.Manifest.permission.CALL_PHONE) ==
 +            PackageManager.PERMISSION_GRANTED),
 +        "inCallServiceBound" to (inCallService != null),
 +        "audioOpen" to (down != null),
-+        "companion" to companionRegistered,
++        "companion" to (companionState != "off"),
 +        "callState" to inCallService?.callState(),
++        "callNumber" to inCallService?.callNumber(),
++        "callDirection" to inCallService?.callDirection(),
 +    )
++
++    /** 自动接听开/关时维持或撤销电话伴侣注册（常驻，不随单通电话结束而撤销）。 */
++    fun setCompanion(enabled: Boolean): Map<String, Any?> {
++        if (enabled) {
++            if (companionState != "off") return mapOf("ok" to true)
++            val registered = runShell("cmd telecom add-or-remove-call-companion-app ${context.packageName} 1")["ok"] == true
++            if (!registered) return mapOf("ok" to false, "errorCode" to "companionRegistrationFailed")
++            companionState = "persistent"
++            return mapOf("ok" to true)
++        }
++        if (companionState == "off") return mapOf("ok" to true)
++        runCatching { runShell("cmd telecom add-or-remove-call-companion-app ${context.packageName} 0") }
++        companionState = "off"
++        return mapOf("ok" to true)
++    }
++
++    /** 接听当前来电（自动接听链路用）；拒接让系统/用户处理。 */
++    fun answer(): Map<String, Any?> {
++        val service = inCallService ?: return mapOf("ok" to false, "errorCode" to "noInCallService")
++        return if (service.answer()) mapOf("ok" to true) else mapOf("ok" to false, "errorCode" to "answerRejected")
++    }
++
++    fun reject(): Map<String, Any?> {
++        val service = inCallService ?: return mapOf("ok" to false, "errorCode" to "noInCallService")
++        return if (service.reject()) mapOf("ok" to true) else mapOf("ok" to false, "errorCode" to "rejectRejected")
++    }
 +
 +    fun hasCallPhone(): Boolean =
 +        context.checkSelfPermission(android.Manifest.permission.CALL_PHONE) == PackageManager.PERMISSION_GRANTED
@@ -4722,10 +4756,10 @@ index 00000000..3cc98c3f
 +        if (cleaned.isBlank() || cleaned.any { !it.isDigit() && it !in "+*#" } || cleaned.length > 24) {
 +            return mapOf("ok" to false, "errorCode" to "invalidNumber")
 +        }
-+        if (!companionRegistered) {
++        if (companionState == "off") {
 +            val registered = runShell("cmd telecom add-or-remove-call-companion-app ${context.packageName} 1")["ok"] == true
 +            if (!registered) return mapOf("ok" to false, "errorCode" to "companionRegistrationFailed")
-+            companionRegistered = true
++            companionState = "temp"
 +        }
 +        val placed = runCatching {
 +            telecom.placeCall(Uri.fromParts(PhoneAccount.SCHEME_TEL, cleaned, null), Bundle())
@@ -4843,8 +4877,8 @@ index 00000000..3cc98c3f
 +    fun onInCallUnbound() {
 +        inCallService = null
 +        runCatching { closeAudio() }
-+        if (companionRegistered) {
-+            companionRegistered = false
++        if (companionState == "temp") {
++            companionState = "off"
 +            runCatching {
 +                runShell("cmd telecom add-or-remove-call-companion-app ${context.packageName} 0")
 +            }
@@ -4854,22 +4888,22 @@ index 00000000..3cc98c3f
 +}
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/aicall/KongkongInCallService.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/aicall/KongkongInCallService.kt
 new file mode 100644
-index 00000000..b9a60379
+index 00000000..717894e9
 --- /dev/null
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/aicall/KongkongInCallService.kt
-@@ -0,0 +1,75 @@
+@@ -0,0 +1,94 @@
 +package io.github.ccch1mneyyy.dsh_app.phone.aicall
 +
 +import android.content.Intent
-+import android.os.Bundle
 +import android.telecom.Call
 +import android.telecom.InCallService
++import android.telecom.VideoProfile
 +import io.github.ccch1mneyyy.dsh_app.phone.PhoneRegistry
 +
 +/**
 + * Non-UI telecom companion service: the system dialer still owns the call screen and ring tone.
-+ * It reports call state to [AiCallTelecom] and lets it mute/unmute the handset microphone while
-+ * the AI speaks into the cellular uplink.
++ * It reports call state (including incoming numbers) to [AiCallTelecom], answers/rejects calls
++ * for auto-answer, and mutes the handset microphone while the AI speaks into the cellular uplink.
 + */
 +class KongkongInCallService : InCallService() {
 +    private val runtime get() = PhoneRegistry.aicall
@@ -4890,6 +4924,11 @@ index 00000000..b9a60379
 +
 +    fun callState(): Int? = activeCall()?.state
 +
++    /** 来电号码（tel: 去前缀）；拨出的号码同样取得到，但来电方向单独标记。 */
++    fun callNumber(): String? = activeCall()?.details?.handle?.schemeSpecificPart
++
++    fun callDirection(): Int? = activeCall()?.details?.callDirection
++
 +    fun requestMute(muted: Boolean): Boolean {
 +        val call = activeCall() ?: return false
 +        val allowed = call.state == Call.STATE_ACTIVE || (!muted && call.state == Call.STATE_HOLDING)
@@ -4900,6 +4939,20 @@ index 00000000..b9a60379
 +    fun disconnect(): Boolean {
 +        val call = activeCall() ?: return false
 +        return runCatching { call.disconnect() }.isSuccess
++    }
++
++    /** 接听当前来电（电话伴侣身份可用）；只接响铃中的来电。 */
++    fun answer(): Boolean {
++        val call = activeCall() ?: return false
++        if (call.details.callDirection != Call.Details.DIRECTION_INCOMING || call.state != Call.STATE_RINGING) return false
++        return runCatching { call.answer(VideoProfile.STATE_AUDIO_ONLY) }.isSuccess
++    }
++
++    /** 拒接当前来电。 */
++    fun reject(): Boolean {
++        val call = activeCall() ?: return false
++        if (call.details.callDirection != Call.Details.DIRECTION_INCOMING) return false
++        return runCatching { call.reject(false, null) }.isSuccess
 +    }
 +
 +    override fun onCallAdded(call: Call) {
@@ -103273,10 +103326,10 @@ index 00000000..8e1a253a
 +/// 全局导航键：通话悬浮球等"不挂在某个页面下"的入口用它在任何界面 push/pop。
 +final GlobalKey<NavigatorState> appNavigatorKey = GlobalKey<NavigatorState>();
 diff --git a/app/lib/l10n/app_en.arb b/app/lib/l10n/app_en.arb
-index e1de7125..6eeeeed1 100644
+index e1de7125..68183eb0 100644
 --- a/app/lib/l10n/app_en.arb
 +++ b/app/lib/l10n/app_en.arb
-@@ -498,6 +498,76 @@
+@@ -498,6 +498,79 @@
    "activityQuotaUsed": "{value} used",
    "activityQuotaReset": "Resets: {time}",
    "activityToolListSeparator": ", ",
@@ -103350,10 +103403,13 @@ index e1de7125..6eeeeed1 100644
 +  "aiCallErrorPlaceCall": "The system rejected the call",
 +  "aiCallErrorUnavailable": "AI call module not ready",
 +  "aiCallErrorGeneral": "Failed: {reason}",
++  "aiCallIncomingScopeTypesNote": "By type (no caller labels yet; treated as strangers for now)",
++  "aiCallErrorAnswerRejected": "The system rejected answering this call",
++  "aiCallErrorAnswerNoActive": "The call did not activate after answering; giving up",
    "androidShellTitle": "Android Shell",
    "androidShellEntryHint": "Separate system-command channel, off by default",
    "androidShellSubtitle": "Run Android system commands on this phone through Shizuku or self-ADB, not bash inside Ubuntu.",
-@@ -563,6 +633,7 @@
+@@ -563,6 +636,7 @@
    "androidShellErrorStopped": "This round has ended or is paused. Turn it on again and retry.",
    "androidShellErrorStopFailed": "Stopping was not confirmed. Refresh the status and retry stopping.",
    "androidShellErrorUnknown": "The outcome could not be confirmed. Verify it first; never automatically retry a dispatched command.",
@@ -103361,7 +103417,7 @@ index e1de7125..6eeeeed1 100644
    "botsFolderGone": "This folder is gone",
    "botsFolderReadFailed": "Couldn’t read this folder",
    "botsFolderOpenFailed": "Couldn’t open this folder",
-@@ -3648,6 +3719,9 @@
+@@ -3648,6 +3722,9 @@
    "phoneControlReadScreenHint": "See what DSH reads, without sending it to the model",
    "phoneControlEnableAccessibilityFirst": "Turn on the accessibility service first",
    "phoneControlLoading": "Loading",
@@ -103371,7 +103427,7 @@ index e1de7125..6eeeeed1 100644
    "phoneControlRules": "Rules",
    "phoneControlRecentActions": "Recent actions",
    "phoneControlRecentActionsHint": "Every step is logged, without screen contents",
-@@ -3955,6 +4029,10 @@
+@@ -3955,6 +4032,10 @@
    "phoneIosSetupHint": "Keep LocalDevVPN connected. On first use, allow control for 30 minutes.",
    "phoneIosReturnHint": "Return to this conversation when the task finishes, then stop the phone-control service.",
    "phoneIosNeedsSetup": "The runner is not ready. Check the local engine and developer setup.",
@@ -103382,7 +103438,7 @@ index e1de7125..6eeeeed1 100644
    "phoneTaskResultReady": "Task complete · View result",
    "phoneTaskEndedResult": "Task ended · View result",
    "phoneBackgroundGuideTitle": "Confirmations and return",
-@@ -4019,6 +4097,21 @@
+@@ -4019,6 +4100,21 @@
    "phoneSkillInvalid": "The edit or step order exceeds the limits. Shorten the text and keep at least one step.",
    "phoneSkillWriteFailed": "The file could not be written. Check the local runtime and storage; edit and update the preview before confirming another save.",
    "phoneSkillUnavailable": "Skill drafts are unavailable. Check the local engine state and try again.",
@@ -103404,7 +103460,7 @@ index e1de7125..6eeeeed1 100644
    "phoneModeTitle": "How DSH confirms",
    "phoneModeMessage": "You can change this in Settings anytime",
    "phoneModeAsk": "Ask me at key steps",
-@@ -5735,6 +5828,7 @@
+@@ -5735,6 +5831,7 @@
    "speechCallEarpiece": "Earpiece",
    "speechBackdropTitle": "Call background",
    "speechCallSettings": "Call settings",
@@ -103412,7 +103468,7 @@ index e1de7125..6eeeeed1 100644
    "speechCallPause": "Pause before she answers",
    "speechCallPauseQuick": "Short",
    "speechCallPauseNormal": "Medium",
-@@ -5756,7 +5850,25 @@
+@@ -5756,7 +5853,25 @@
    "speechCallVisualRing": "Ring",
    "speechCallVisualMono": "Line",
    "speechCallVisualGlass": "Orb",
@@ -103438,7 +103494,7 @@ index e1de7125..6eeeeed1 100644
    "starPromptTitle": "{hours, plural, =0{I’ve kept you company in DSH Go for half an hour now~} =1{I’ve kept you company in DSH Go for an hour now~} other{I’ve kept you company in DSH Go for {hours} hours now~}}",
    "starPromptBody": "DSH Go is free and open source. If it’s made your phone a little nicer to use, please give it a Star — it means so much to this little whale!",
    "starPromptPlea": "Pretty please~ It really matters!!",
-@@ -7932,6 +8044,7 @@
+@@ -7932,6 +8047,7 @@
    "wallpaperBlur": "Blur",
    "wallpaperLighten": "Lighten",
    "wallpaperDim": "Dim",
@@ -103447,7 +103503,7 @@ index e1de7125..6eeeeed1 100644
    "wallpaperPreview": "Preview",
    "wallpaperFooter": "Shown on home, in chats and in the drawer. Lighten applies in light mode, Dim in dark mode; text always stays clear. PNG, JPEG or WebP, up to 15 MB.",
 diff --git a/app/lib/l10n/app_zh.arb b/app/lib/l10n/app_zh.arb
-index ec1a316d..2b59caba 100644
+index ec1a316d..7f38968c 100644
 --- a/app/lib/l10n/app_zh.arb
 +++ b/app/lib/l10n/app_zh.arb
 @@ -3,8 +3,8 @@
@@ -103479,7 +103535,7 @@ index ec1a316d..2b59caba 100644
    "accessVivoPopupPath": "权限管理 › {app} › 后台弹出界面",
    "@accessVivoPopupPath": {
      "placeholders": {
-@@ -980,6 +980,118 @@
+@@ -980,6 +980,121 @@
      }
    },
    "activityToolListSeparator": "、",
@@ -103595,10 +103651,13 @@ index ec1a316d..2b59caba 100644
 +      }
 +    }
 +  },
++  "aiCallIncomingScopeTypesNote": "按类型（暂无来电标记，先按陌生号码处理）",
++  "aiCallErrorAnswerRejected": "系统拒绝接听这通来电",
++  "aiCallErrorAnswerNoActive": "接听后通话没有激活，已放弃",
    "androidShellTitle": "Android Shell",
    "androidShellEntryHint": "独立的系统命令通道，默认关闭",
    "androidShellSubtitle": "通过 Shizuku 或自连 ADB 在这台手机上执行 Android 系统命令，不是 Ubuntu 里的 bash。",
-@@ -1062,6 +1174,7 @@
+@@ -1062,6 +1177,7 @@
    "androidShellErrorStopped": "本轮已结束或暂停，请重新开启后再试。",
    "androidShellErrorStopFailed": "未确认已停止，请刷新状态并重试停止。",
    "androidShellErrorUnknown": "未能确认操作结果。先核实结果；已派发的命令不要自动重试。",
@@ -103606,7 +103665,7 @@ index ec1a316d..2b59caba 100644
    "botsFolderGone": "这个文件夹已经不在了",
    "botsFolderReadFailed": "没能读取这个文件夹",
    "botsFolderOpenFailed": "打不开这个文件夹",
-@@ -1692,7 +1805,7 @@
+@@ -1692,7 +1808,7 @@
    "botsCommunity": "社区",
    "botsForum": "论坛",
    "botsForumSubtitle": "提问、分享、找同好",
@@ -103615,7 +103674,7 @@ index ec1a316d..2b59caba 100644
    "botsOpenSource": "开源项目",
    "botsPluginCatalogFailed": "插件目录没打开",
    "botsTapRetry": "点一下重试",
-@@ -3586,7 +3699,7 @@
+@@ -3586,7 +3702,7 @@
    "engineAccountPreparingSignIn": "正在准备登录",
    "engineAccountOpenDeepSeekNext": "马上打开 DeepSeek 登录页",
    "engineAccountFinishInBrowser": "在浏览器中完成登录",
@@ -103624,7 +103683,7 @@ index ec1a316d..2b59caba 100644
    "engineAccountFinishingSignIn": "正在完成登录",
    "engineAccountSavingSignIn": "正在保存登录信息",
    "engineAccountAwaitingResult": "还没收到登录结果",
-@@ -5220,7 +5333,7 @@
+@@ -5220,7 +5336,7 @@
    "harmonyLiveUnavailable": "这个版本没有进度通知",
    "harmonySchedulesLocal": "本机的任务只在应用运行时触发：应用被系统挂起时，到点不会运行",
    "harmonyPageUnavailable": "这个版本没有这个页面",
@@ -103633,7 +103692,7 @@ index ec1a316d..2b59caba 100644
    "harmonySearchUnavailable": "这个版本没有这项功能",
    "harmonyCredentialsSection": "密钥",
    "harmonyCredentialsUnreadable": "已保存的密钥无法读取",
-@@ -5264,7 +5377,7 @@
+@@ -5264,7 +5380,7 @@
    "harmonyLiveFooter": "这是普通通知，应用被系统挂起后不再更新。",
    "harmonyLockScreenPrivacy": "锁屏是否显示对话内容由系统决定：设置 › 通知和状态栏 › 锁屏通知",
    "harmonyLiveBlockedTitle": "系统没有允许进度通知",
@@ -103642,7 +103701,7 @@ index ec1a316d..2b59caba 100644
    "harmonyAlertsOffTitle": "提醒通知已关闭",
    "harmonyAlertsOffText": "回复跑完和等你确认都不会提醒",
    "harmonyEnableBanner": "横幅默认关闭，要弹出来请开启「横幅通知」",
-@@ -5356,7 +5469,7 @@
+@@ -5356,7 +5472,7 @@
    "hubSettingsFullAccessBody": "AI 执行命令、改动文件前不再问你。",
    "hubSettingsStorageTitle": "让 AI 访问手机文件？",
    "hubSettingsStorageAllow": "允许读写",
@@ -103651,7 +103710,7 @@ index ec1a316d..2b59caba 100644
    "hubSettingsRestartRequired": "重启引擎后生效",
    "hubSettingsRestartNow": "立即重启",
    "hubSettingsInterface": "界面",
-@@ -5618,8 +5731,8 @@
+@@ -5618,8 +5734,8 @@
    "hubTableTintFillHint": "隔行淡一档，长表格更好扫读",
    "hubTableTintFollowHint": "表头浅底，表身跟随正文",
    "hubTableTintNoneHint": "只剩网格线，最轻",
@@ -103662,7 +103721,7 @@ index ec1a316d..2b59caba 100644
    "hubAboutBilibili": "B站主页",
    "hubAboutX": "X 主页",
    "hubAboutGithub": "GitHub 主页",
-@@ -5658,11 +5771,11 @@
+@@ -5658,11 +5774,11 @@
    "hubQuickPanelItems": "显示的入口",
    "hubQuickPanelItemsNone": "没有选择，左滑不会打开",
    "iosSaveToFiles": "存到「文件」",
@@ -103676,7 +103735,7 @@ index ec1a316d..2b59caba 100644
    "iosVoiceSystemHint": "使用系统的语音识别",
    "iosVoiceAllowSystem": "请在系统设置里允许语音识别",
    "iosPluginsPermissionLocalThirdParty": "插件以 DSH 的权限运行：能读写文件、执行命令、读取 API Key，不受工作区沙箱限制。由第三方提供，DSH 官方未审核。",
-@@ -5838,10 +5951,10 @@
+@@ -5838,10 +5954,10 @@
    "iconShortcutHint": "拖动或双指缩放",
    "iconShortcutName": "名称",
    "iconShortcutAdd": "添加到桌面",
@@ -103689,7 +103748,7 @@ index ec1a316d..2b59caba 100644
    "iconShortcutSettings": "去设置",
    "iconShortcutUnsupported": "这个桌面不支持添加快捷方式",
    "iconShortcutFailed": "没能添加，稍后再试",
-@@ -5942,7 +6055,7 @@
+@@ -5942,7 +6058,7 @@
    "liveSettingsFooter": "Android 16 的实时活动（Live Updates）：小米 HyperOS 3.1+、OPPO / 一加 ColorOS 16、荣耀 MagicOS 10 和 Pixel 会显示；vivo 原子岛和三星 Now Bar 目前只对厂商合作的应用开放。",
    "liveUnsupported": "这台手机的系统还不支持实时活动",
    "liveBlockedTitle": "系统没有允许实时活动",
@@ -103698,7 +103757,7 @@ index ec1a316d..2b59caba 100644
    "localeTitle": "语言",
    "localeSystem": "跟随系统",
    "localeZh": "简体中文",
-@@ -6033,13 +6146,13 @@
+@@ -6033,13 +6149,13 @@
    "localEnvTavernTitle": "和角色聊天",
    "localEnvTavernDetail": "接回 DeepSeek 的对话也在这里 · 不用安装",
    "marketSectionOfficial": "官方",
@@ -103714,7 +103773,7 @@ index ec1a316d..2b59caba 100644
    "marketRiskMedium": "中风险",
    "marketRiskHigh": "高风险",
    "marketFlagInstallScripts": "安装时运行脚本",
-@@ -6054,8 +6167,8 @@
+@@ -6054,8 +6170,8 @@
    "marketFlagFilesystemBody": "会写入工作区以外的路径",
    "marketFlagObfuscated": "代码难以审阅",
    "marketFlagObfuscatedBody": "有压缩或混淆过的大文件，看不出它做什么",
@@ -103725,7 +103784,7 @@ index ec1a316d..2b59caba 100644
    "marketFlagOtherBody": "自动检查报告的其他特征",
    "marketChecksTitle": "自动检查",
    "marketChecksClean": "没有发现风险特征",
-@@ -6086,8 +6199,8 @@
+@@ -6086,8 +6202,8 @@
    },
    "marketRiskConfirmAction": "仍然安装",
    "marketPinnedVersion": "锁定版本",
@@ -103736,7 +103795,7 @@ index ec1a316d..2b59caba 100644
    "@marketNeedsApp": {
      "placeholders": {
        "version": {
-@@ -6642,7 +6755,7 @@
+@@ -6642,7 +6758,7 @@
    "phoneActionFailedLater": "没有成功，稍后再试",
    "phoneDndDisabled": "不打扰模式已关闭",
    "phoneDndEnabled": "不打扰模式已启用",
@@ -103745,7 +103804,7 @@ index ec1a316d..2b59caba 100644
    "phoneDndPairedConnect": "配对成功，点「连接」",
    "phoneDndTitle": "不打扰模式",
    "phoneDndSubtitle": "在看不见的屏幕上操作，不耽误你用手机",
-@@ -6673,21 +6786,21 @@
+@@ -6673,21 +6789,21 @@
    "phoneDndSuiMissing": "没有检测到 Sui。在 Magisk 或 KernelSU 里装好 Sui 模块并重启手机，再回到这里。",
    "phoneDndSuiRunning": "Sui 接口可用",
    "phoneDndSuiStopped": "Sui 接口当前不可用。确认 Sui 模块已启用，重启手机后再试。",
@@ -103774,7 +103833,7 @@ index ec1a316d..2b59caba 100644
    "phoneDndShizukuCompatibility": "这版 Android 与官方版 Shizuku 存在兼容问题。",
    "phoneDndWirelessDebuggingOn": "无线调试已打开",
    "phoneDndPaired": "已配对",
-@@ -6723,7 +6836,7 @@
+@@ -6723,7 +6839,7 @@
    "phoneEnabled": "已开启",
    "phoneDisabled": "已关闭",
    "phoneOpenAccessibilityFailed": "打不开系统设置，请到「设置 → 无障碍」里找到 DSH",
@@ -103783,7 +103842,7 @@ index ec1a316d..2b59caba 100644
    "phoneStopFailed": "没能停止，可以点悬浮条或通知上的「停止」",
    "phoneControlTitle": "手机操控",
    "phoneControlSubtitle": "看屏幕、帮你点按，随时可以停",
-@@ -6764,6 +6877,9 @@
+@@ -6764,6 +6880,9 @@
    "phoneControlReadScreenHint": "看看 DSH 读到了什么，不发给模型",
    "phoneControlEnableAccessibilityFirst": "先打开无障碍服务",
    "phoneControlLoading": "读取中",
@@ -103793,7 +103852,7 @@ index ec1a316d..2b59caba 100644
    "phoneControlRules": "规则",
    "phoneControlRecentActions": "最近操作",
    "phoneControlRecentActionsHint": "每一步都会记下，不含屏幕内容",
-@@ -6806,9 +6922,9 @@
+@@ -6806,9 +6925,9 @@
    "phoneRestrictedOpenInfoStep": "回到这里，点「打开应用信息」。",
    "phoneRestrictedBackAccessibility": "回到「无障碍」，打开 DSH。",
    "phoneRestrictedMenuStep": "点右上角的三个点，选「允许受限制的设置」，按提示验证锁屏密码。",
@@ -103806,7 +103865,7 @@ index ec1a316d..2b59caba 100644
    "phoneRestrictedHuaweiAccessibility": "华为 HarmonyOS 4 及更早的系统大多没有这一步，直接去「无障碍」打开 DSH。",
    "phoneRestrictedVivoNote": "不同 OriginOS 版本位置可能不同。右上角没有三个点时，把应用信息页往下翻到底找一找。",
    "phoneRestrictedAdvancedStep": "在「高级设置」里找到「允许受限制的设置」，打开它。",
-@@ -7159,7 +7275,7 @@
+@@ -7159,7 +7278,7 @@
    "phoneControlEnabledRestarting": "已开启，引擎正在重启",
    "phoneControlDisabledRestarting": "已关闭，引擎正在重启",
    "phoneControlEnabledPending": "已开启，引擎启动后生效",
@@ -103815,7 +103874,7 @@ index ec1a316d..2b59caba 100644
    "phoneReturnAfterDoneHint": "收起悬浮条，回到对话看结果",
    "phoneFloatingBar": "悬浮条",
    "phoneIdleOpacity": "闲置时不透明度",
-@@ -7205,9 +7321,9 @@
+@@ -7205,9 +7324,9 @@
    "phoneDndManualConnect": "按端口连接",
    "phoneDndConnectPortLabel": "连接端口",
    "phoneDndConnectPortHint": "在系统「无线调试」首页查看「IP 地址和端口」，填写冒号后的端口。请不要使用配对码页面的端口。",
@@ -103827,7 +103886,7 @@ index ec1a316d..2b59caba 100644
    "phonePreviewTask": "预览任务 {taskId}",
    "@phonePreviewTask": {
      "placeholders": {
-@@ -7219,9 +7335,9 @@
+@@ -7219,9 +7338,9 @@
    "phonePreviewInUse": "正在预览另一任务",
    "phonePreviewOff": "任务已结束或预览已关闭",
    "phonePreviewUnavailable": "画面暂不可预览，或受到保护",
@@ -103839,7 +103898,7 @@ index ec1a316d..2b59caba 100644
    "phoneViewportPortrait": "竖屏",
    "phoneViewportLandscape": "横屏",
    "phoneResumeTask": "重新允许手机操控",
-@@ -7235,8 +7351,8 @@
+@@ -7235,8 +7354,8 @@
        }
      }
    },
@@ -103850,7 +103909,7 @@ index ec1a316d..2b59caba 100644
    "phoneFinishingTask": "手机任务 {task} 正在收尾",
    "@phoneFinishingTask": {
      "placeholders": {
-@@ -7246,7 +7362,7 @@
+@@ -7246,7 +7365,7 @@
      }
    },
    "phoneCleanupRetry": "重试清理",
@@ -103859,7 +103918,7 @@ index ec1a316d..2b59caba 100644
    "phoneSelfCheckTitle": "检查手机操控",
    "phoneSelfCheckTechnicalDetails": "技术详情",
    "phoneLocalOcrSummary": "本机识别；结果可发给模型，SDK 会收集使用统计。",
-@@ -7277,7 +7393,7 @@
+@@ -7277,7 +7396,7 @@
        }
      }
    },
@@ -103868,7 +103927,7 @@ index ec1a316d..2b59caba 100644
    "@phoneSelfCheckStage": {
      "placeholders": {
        "stage": {
-@@ -7293,7 +7409,7 @@
+@@ -7293,7 +7412,7 @@
        }
      }
    },
@@ -103877,7 +103936,7 @@ index ec1a316d..2b59caba 100644
    "phoneSelfCheckProfileChoice": "选择下次自检（不会改变下方报告）",
    "phoneSelfCheckProfile": "{profile, select, probe_b{输入接收探针（B）} target_c1{固定目标自检（C1）} target_c2{固定输入与画面自检（C2）} other{未知模式}}",
    "@phoneSelfCheckProfile": {
-@@ -7351,7 +7467,7 @@
+@@ -7351,7 +7470,7 @@
      }
    },
    "phoneTaskMainResource": "主屏",
@@ -103886,7 +103945,7 @@ index ec1a316d..2b59caba 100644
    "phoneInterruptionTitle": "上次手机任务未确认结束",
    "phoneInterruptionLoading": "正在读取任务中断记录…",
    "phoneInterruptionStorageError": "无法保存或读取任务结束记录。请重试；这不表示后台资源已清理。",
-@@ -7431,17 +7547,21 @@
+@@ -7431,17 +7550,21 @@
    "phoneIosSetupHint": "保持 LocalDevVPN 已连接，首次使用时允许 30 分钟操控。",
    "phoneIosReturnHint": "任务完成后回到当前对话，并停止手机操控服务。",
    "phoneIosNeedsSetup": "运行器尚未就绪，请确认本机引擎和开发者环境已配置。",
@@ -103912,7 +103971,7 @@ index ec1a316d..2b59caba 100644
    "phonePrivilegedSui": "Sui",
    "phonePrivilegedRoot": "Root",
    "phonePrivilegedSuiDescription": "使用 Sui 模块提供的接口，仅在主动点击时申请授权。",
-@@ -7452,8 +7572,8 @@
+@@ -7452,8 +7575,8 @@
    "phonePrivilegedGrantSui": "通过 Sui 授予",
    "phonePrivilegedGrantSuiPermission": "先授权 Sui，再授予权限",
    "phonePrivilegedSuggested": "建议",
@@ -103923,7 +103982,7 @@ index ec1a316d..2b59caba 100644
    "phoneKeepTitle": "{mode, select, shizuku{保持 Shizuku 通道} sui{保持 Sui 通道} root{保持 root 通道} adb{保持自连 ADB 通道} other{保持这个通道}}",
    "@phoneKeepTitle": {
      "placeholders": {
-@@ -7462,9 +7582,9 @@
+@@ -7462,9 +7585,9 @@
        }
      }
    },
@@ -103936,7 +103995,7 @@ index ec1a316d..2b59caba 100644
    "phoneKeepRestoring": "正在重新连接",
    "phoneKeepWaiting": "等通道可用后再连",
    "phoneKeepWaitingService": "等所选服务运行后再连",
-@@ -7519,6 +7639,21 @@
+@@ -7519,6 +7642,21 @@
    "phoneSkillInvalid": "编辑内容或步骤顺序不符合限制。请减少文字，至少保留一个步骤。",
    "phoneSkillWriteFailed": "未能写入。请核对本机运行环境和存储；修改并更新预览后才能再次确认保存。",
    "phoneSkillUnavailable": "当前无法处理技能草稿。请检查本机引擎状态后重试。",
@@ -103958,7 +104017,7 @@ index ec1a316d..2b59caba 100644
    "phoneModeTitle": "选择确认方式",
    "phoneModeMessage": "随时可在设置里更改",
    "phoneModeAsk": "关键步骤先问我",
-@@ -7526,13 +7661,13 @@
+@@ -7526,13 +7664,13 @@
    "phoneModeAuto": "全程自动",
    "phoneModeAutoHint": "不再询问，全程免打扰",
    "phoneModeAutoNoteTitle": "这些仍由你来操作",
@@ -103974,7 +104033,7 @@ index ec1a316d..2b59caba 100644
    "phoneYoursDenyList": "应用名单里「不碰」的 App，默认含银行、支付类",
    "phoneUnlockTitle": "解除限制",
    "phoneUnlockSubtitle": "让 AI 去做默认由你来做的事",
-@@ -7540,8 +7675,8 @@
+@@ -7540,8 +7678,8 @@
    "phoneUnlockSystemHint": "含权限页、安装器、安全中心、通知栏",
    "phoneUnlockSecrets": "密码和验证码",
    "phoneUnlockSecretsHint": "填写密码、验证码和支付密码",
@@ -103985,7 +104044,7 @@ index ec1a316d..2b59caba 100644
    "phoneUnlockBusy": "任务进行中，结束后才能开启",
    "phoneUnlockFootnote": "开启后的后果由你承担。建议只在需要时开启，用完关闭。",
    "phoneUnlockBanks": "银行、支付类 App",
-@@ -7558,7 +7693,7 @@
+@@ -7558,7 +7696,7 @@
    "phoneUnlockedBadge": "已解除限制",
    "phoneUnlockConfirmSystemTitle": "允许 AI 操作系统设置？",
    "phoneUnlockConfirmSecretsTitle": "允许 AI 填写密码和验证码？",
@@ -103994,7 +104053,7 @@ index ec1a316d..2b59caba 100644
    "phoneUnlockCanTitle": "开启后，AI 可以",
    "phoneUnlockRiskTitle": "可能出什么事",
    "phoneUnlockDisclaimerTitle": "免责声明",
-@@ -7572,13 +7707,13 @@
+@@ -7572,13 +7710,13 @@
    "phoneUnlockSecretsCan3": "操作记录里只显示 ••••，不记下填写的内容",
    "phoneUnlockSecretsRisk1": "恶意指令可能诱导 AI 把验证码填到别处，让他人登录你的账号",
    "phoneUnlockSecretsRisk2": "可能完成你并不想要的付款或转账",
@@ -104011,7 +104070,7 @@ index ec1a316d..2b59caba 100644
    "phoneUnlockDisclaimer4": "建议只在需要时临时开启，用完关闭。",
    "phoneUnlockDisclaimer5": "不建议在存有支付或银行信息的设备上开启。",
    "phoneUnlockHold": "我了解风险，开启",
-@@ -7848,7 +7983,7 @@
+@@ -7848,7 +7986,7 @@
    "pluginsWriteFailed": "没能写入",
    "pluginsHostUnreachable": "没能连上主机",
    "pluginsFileWriteFailed": "没能写入文件",
@@ -104020,7 +104079,7 @@ index ec1a316d..2b59caba 100644
    "pluginsGistTokenInvalid": "GitHub 令牌无效或没有 Gist 权限",
    "pluginsGistCreateHttpFailed": "没能创建 Gist（HTTP {status}）",
    "@pluginsGistCreateHttpFailed": {
-@@ -8286,7 +8421,7 @@
+@@ -8286,7 +8424,7 @@
    "pluginsNotificationsBlocked": "系统已关闭",
    "pluginsTurnedOn": "已开启",
    "pluginsNotifications": "通知",
@@ -104029,7 +104088,7 @@ index ec1a316d..2b59caba 100644
    "pluginsSystemNotificationsOff": "系统通知已关闭",
    "pluginsBackgroundNoAlerts": "App 在后台时收不到任何提醒",
    "pluginsApprovalNotificationsOff": "「等你确认」通知已关闭",
-@@ -8434,7 +8569,7 @@
+@@ -8434,7 +8572,7 @@
    "pluginsShareDamaged": "这个分享码不完整或已损坏",
    "pluginsShareFileReadFailed": "没能读取这个文件",
    "pluginsShareOpenFailed": "没能打开这个分享码",
@@ -104038,7 +104097,7 @@ index ec1a316d..2b59caba 100644
    "pluginsShareSheetOpenFailed": "没能打开分享",
    "pluginsSavePermissionDenied": "没有存储权限，没能保存",
    "pluginsQrCode": "二维码",
-@@ -8690,7 +8825,7 @@
+@@ -8690,7 +8828,7 @@
        }
      }
    },
@@ -104047,7 +104106,7 @@ index ec1a316d..2b59caba 100644
    "@plugslotsIssueNeedsApp": {
      "placeholders": {
        "version": {
-@@ -9053,7 +9188,7 @@
+@@ -9053,7 +9191,7 @@
    "remoteErrConnectionReplaced": "远程连接已被替换",
    "remoteErrHostRejected": "主机拒绝了连接",
    "remoteErrHostNotOwned": "主机不在你的 DSH Remote 账号下",
@@ -104056,7 +104115,7 @@ index ec1a316d..2b59caba 100644
    "remoteErrVersionIncompatible": "主机上的 DSH 或远程插件需要更新",
    "remoteErrSignInTimeout": "登录超时",
    "remoteSignInCancelled": "已取消登录",
-@@ -10076,7 +10211,7 @@
+@@ -10076,7 +10214,7 @@
    "remotePairTitle": "扫码配对电脑",
    "remotePairSubtitle": "不用注册 Remote 账号，也不会传 DeepSeek 密码或登录凭据",
    "remotePairNeedsDeepSeek": "先登录 DeepSeek 账号",
@@ -104065,7 +104124,7 @@ index ec1a316d..2b59caba 100644
    "remotePairScanHint": "对准电脑上 Remote 插件显示的配对二维码",
    "remotePairPasteLink": "粘贴配对链接",
    "remotePairPasteEmpty": "剪贴板里没有配对链接",
-@@ -10126,7 +10261,7 @@
+@@ -10126,7 +10264,7 @@
      }
    },
    "remotePairFailedTitle": "没能配对",
@@ -104074,7 +104133,7 @@ index ec1a316d..2b59caba 100644
    "@remotePairOtherServerBody": {
      "placeholders": {
        "server": {
-@@ -10136,7 +10271,7 @@
+@@ -10136,7 +10274,7 @@
    },
    "remotePairSwitchServer": "切换服务器并继续",
    "remotePairScanAgain": "重新扫码",
@@ -104083,7 +104142,7 @@ index ec1a316d..2b59caba 100644
    "remotePairErrOtherServer": "这个二维码来自另一个 Remote 服务器",
    "remotePairErrUnsupported": "这个 Remote 服务器还不支持扫码配对",
    "remotePairErrExpired": "二维码已过期或已经用过了。请在电脑上重新生成二维码",
-@@ -10174,12 +10309,12 @@
+@@ -10174,12 +10312,12 @@
    "riskAllowForChatBody": "这个对话之后的命令和改动都直接放行，可在输入框上方随时关闭。",
    "riskAllowForChatAction": "全部允许",
    "riskPetOverlayTitle": "显示在其他应用上层？",
@@ -104098,7 +104157,7 @@ index ec1a316d..2b59caba 100644
    "@askAiAboutApp": {
      "placeholders": {
        "question": {
-@@ -10187,7 +10322,7 @@
+@@ -10187,7 +10325,7 @@
        }
      }
    },
@@ -104107,7 +104166,7 @@ index ec1a316d..2b59caba 100644
    "@askAiWithGuide": {
      "placeholders": {
        "question": {
-@@ -10195,8 +10330,8 @@
+@@ -10195,8 +10333,8 @@
        }
      }
    },
@@ -104118,7 +104177,7 @@ index ec1a316d..2b59caba 100644
    "askAiQuestionPhoneControl": "手机操控是怎么工作的？有什么风险？",
    "askAiQuestionPhoneAlways": "手机操控选「始终免确认」会怎样？和「每次都询问」比风险在哪？",
    "askAiQuestionAppRules": "手机操控的应用名单有什么用？放开银行、支付类 App 有什么风险？",
-@@ -10980,7 +11115,7 @@
+@@ -10980,7 +11118,7 @@
    "shellJsonStringNewline": "字符串里不能直接换行",
    "shellJsonControlCharacter": "字符串里有控制字符",
    "shellJsonBadNumber": "数字格式不对",
@@ -104127,7 +104186,7 @@ index ec1a316d..2b59caba 100644
    "@shellSkillInstallPrompt": {
      "placeholders": {
        "skill": {
-@@ -11200,6 +11335,7 @@
+@@ -11200,6 +11338,7 @@
    "speechCallEarpiece": "听筒",
    "speechBackdropTitle": "通话背景",
    "speechCallSettings": "通话设置",
@@ -104135,7 +104194,7 @@ index ec1a316d..2b59caba 100644
    "speechCallPause": "停顿多久算说完",
    "speechCallPauseQuick": "快",
    "speechCallPauseNormal": "适中",
-@@ -11221,8 +11357,26 @@
+@@ -11221,8 +11360,26 @@
    "speechCallVisualRing": "光环",
    "speechCallVisualMono": "细线",
    "speechCallVisualGlass": "光球",
@@ -104163,7 +104222,7 @@ index ec1a316d..2b59caba 100644
    "@starPromptTitle": {
      "description": "The star prompt's first line. hours is the whole hours of use so far, rounded down; 0 is half an hour (the first ask comes after 30 minutes). The word joiner keeps the ~ on the line of the word before it.",
      "placeholders": {
-@@ -11236,7 +11390,7 @@
+@@ -11236,7 +11393,7 @@
    "starPromptStar": "去 GitHub 点 Star",
    "starPromptDone": "已经点过啦",
    "starPromptLater": "下次再说",
@@ -104172,7 +104231,7 @@ index ec1a316d..2b59caba 100644
    "hubStartPage": "起始页",
    "hubChatSuggestions": "聊天建议",
    "hubChatSuggestionsHint": "显示起始页的聊天建议",
-@@ -11252,7 +11406,7 @@
+@@ -11252,7 +11409,7 @@
    },
    "phoneStartupTokenTimeout": "启动等待已超时（180 秒内未收到启动标记），请查看日志",
    "phoneStartupPortNotReady": "已收到启动标记，但本机服务端口尚未就绪，请查看日志",
@@ -104181,7 +104240,7 @@ index ec1a316d..2b59caba 100644
    "stateStoragePermission": "没有存储权限，存不进「下载」",
    "stateDiagnosticsStorageFull": "存储空间不足，没能生成诊断包",
    "stateDiagnosticsExportFailed": "没能导出诊断包",
-@@ -12047,15 +12201,15 @@
+@@ -12047,15 +12204,15 @@
    "systemActionsSubtitle": "让 AI 帮你打开应用和系统页面，随时可以关",
    "systemActionsReady": "已开启",
    "systemActionsWaitingEngine": "已开启，等本机引擎启动",
@@ -104200,7 +104259,7 @@ index ec1a316d..2b59caba 100644
    "systemActionsCanTitle": "能做的",
    "systemActionsCanOpen": "打开应用或链接",
    "systemActionsCanOpenHint": "应用要写包名，不能按名字找",
-@@ -12089,7 +12243,7 @@
+@@ -12089,7 +12246,7 @@
    "systemActionsDisclosureWhatTitle": "能做什么",
    "systemActionsDisclosureWhatBody": "打开应用或链接，打开日历、拨号、分享、导航界面，发通知，写剪贴板，把步骤交还给你。这个版本开通了系统提醒时，还能设闹钟和计时器。",
    "systemActionsDisclosureWhenTitle": "什么时候做",
@@ -104209,7 +104268,7 @@ index ec1a316d..2b59caba 100644
    "systemActionsDisclosureWhoTitle": "发给谁",
    "systemActionsDisclosureWhoBody": "动作的结果会回到对话，发给你选的模型。",
    "systemActionsDisclosureNeverTitle": "不会做什么",
-@@ -12097,7 +12251,7 @@
+@@ -12097,7 +12254,7 @@
    "systemActionsDisclosureStopTitle": "怎么停",
    "systemActionsDisclosureStopBody": "随时在这里关掉。交还提示可以点停止。",
    "systemActionsHandoffTitle": "轮到你来操作",
@@ -104218,7 +104277,7 @@ index ec1a316d..2b59caba 100644
    "systemActionsHandoffFailed": "这次没算上，提示如果还在可以再点一次",
    "systemActionsResultOpened": "已打开界面，还没确认里面的事办完。",
    "systemActionsResultContinued": "你点了继续。这只说明你确认了，不代表其他应用里的操作完成了。",
-@@ -12106,7 +12260,7 @@
+@@ -12106,7 +12263,7 @@
    "systemActionsResultClipboard": "文字已写入剪贴板。",
    "systemActionsResultUnknownDetail": "系统调用可能已经发出，结果未知。不会自动重试，请自己看一下实际状态。",
    "systemActionsResultUnsupported": "鸿蒙版不支持这个动作，没有执行。",
@@ -104227,7 +104286,7 @@ index ec1a316d..2b59caba 100644
    "systemActionsResultUnavailable": "系统操作没开或暂时连不上，没有执行。到「设置 → 系统操作」看看。",
    "systemActionsResultStopped": "已停止。",
    "systemActionsResultTimeout": "等待超时，没有结果。",
-@@ -12789,7 +12943,7 @@
+@@ -12789,7 +12946,7 @@
        }
      }
    },
@@ -104236,7 +104295,7 @@ index ec1a316d..2b59caba 100644
    "tavernStorybookContents": "目录",
    "tavernStorybookChapter": "第 {n} 章",
    "@tavernStorybookChapter": {
-@@ -14579,13 +14733,13 @@
+@@ -14579,13 +14736,13 @@
      }
    },
    "updateSettingsOpenFailed": "没能打开系统设置",
@@ -104252,7 +104311,7 @@ index ec1a316d..2b59caba 100644
    "updateWrongPackage": "不是 DSH 的安装包",
    "updateWrongPackageMessage": "下载到的文件不对，已删除，请稍后重试。",
    "updateDowngradeBlocked": "不能降级安装",
-@@ -14628,7 +14782,7 @@
+@@ -14628,7 +14785,7 @@
    "updateNewVersionFound": "发现新版本",
    "updateReleaseNotes": "更新内容",
    "updateNoReleaseNotes": "这个版本没有写更新说明。",
@@ -104261,7 +104320,7 @@ index ec1a316d..2b59caba 100644
    "updateNoCompatiblePackage": "没有适合本机的安装包",
    "updateDownloading": "正在下载",
    "updateDownloadSource": "经由 {source}",
-@@ -14646,7 +14800,7 @@
+@@ -14646,7 +14803,7 @@
    "updateConfirmInstallNote": "在系统弹窗里确认安装",
    "updatePackageDownloaded": "安装包已下载",
    "updateReadyToInstall": "校验通过，可以安装了。",
@@ -104270,7 +104329,7 @@ index ec1a316d..2b59caba 100644
    "updateAllowInstallMessage": "在系统设置里打开「安装未知应用」，回来后自动继续。",
    "updateOpenReleasePage": "打开发布页",
    "updateUpdateNow": "立即更新",
-@@ -14689,10 +14843,10 @@
+@@ -14689,10 +14846,10 @@
      }
    },
    "usageStatsTitle": "发送匿名使用统计",
@@ -104283,7 +104342,7 @@ index ec1a316d..2b59caba 100644
    "usageUpgradeLearn": "了解",
    "usageUpgradeOff": "关闭",
    "viewArtifactSaved": "已存到 {value}",
-@@ -15401,7 +15555,7 @@
+@@ -15401,7 +15558,7 @@
    "viewTipImageZoom": "看图时双击放大、双指缩放，长按可以保存",
    "viewTipQueuedRecall": "排队中的消息可以撤回到输入框再改",
    "viewTipKeyboard": "接了键盘：Ctrl+Enter 发送，连按两次 Esc 停止",
@@ -104292,7 +104351,7 @@ index ec1a316d..2b59caba 100644
    "viewTipShareSelect": "分享对话时长按再滑动，可以一次选中多条消息",
    "viewTipChartDrag": "回复里的图表可以左右拖动，看每个点的数值",
    "viewTipCopyPath": "改动卡里长按某个文件，可以复制它的路径",
-@@ -15571,7 +15725,7 @@
+@@ -15571,7 +15728,7 @@
        }
      }
    },
@@ -104301,7 +104360,7 @@ index ec1a316d..2b59caba 100644
    "@viewContinueHeader": {
      "placeholders": {
        "value": {
-@@ -15608,7 +15762,7 @@
+@@ -15608,7 +15765,7 @@
    "viewShareNoPermission": "没有存储权限，没能保存",
    "viewShareOpenFailed": "没能打开分享",
    "viewShareLinkFailed": "没能生成链接，稍后再试",
@@ -104310,7 +104369,7 @@ index ec1a316d..2b59caba 100644
    "@viewShareLinkText": {
      "placeholders": {
        "first": {
-@@ -15636,7 +15790,7 @@
+@@ -15636,7 +15793,7 @@
        }
      }
    },
@@ -104319,7 +104378,7 @@ index ec1a316d..2b59caba 100644
    "viewShareWebHint": "任何浏览器都能打开，不用联网",
    "viewShareMarkdownHint": "纯文本，随处可读",
    "viewShareLinkHint": "端到端加密，服务器看不到内容",
-@@ -16257,6 +16411,7 @@
+@@ -16257,6 +16414,7 @@
    "wallpaperBlur": "模糊",
    "wallpaperLighten": "提亮",
    "wallpaperDim": "压暗",
@@ -104327,7 +104386,7 @@ index ec1a316d..2b59caba 100644
    "wallpaperReplace": "更换图片",
    "wallpaperPreview": "预览",
    "wallpaperFooter": "用于首页、对话和抽屉。提亮在浅色模式、压暗在深色模式下各自生效，文字始终清晰。PNG、JPEG、WebP，15 MB 以内",
-@@ -16364,7 +16519,7 @@
+@@ -16364,7 +16522,7 @@
    "workshopAbout": "简介",
    "workshopNoDescription": "作者没有写简介。",
    "workshopSource": "来源",
@@ -104337,7 +104396,7 @@ index ec1a316d..2b59caba 100644
      "placeholders": {
        "version": {
 diff --git a/app/lib/l10n/gen/app_localizations.dart b/app/lib/l10n/gen/app_localizations.dart
-index 05ad2de7..41e586ab 100644
+index 05ad2de7..974299fb 100644
 --- a/app/lib/l10n/gen/app_localizations.dart
 +++ b/app/lib/l10n/gen/app_localizations.dart
 @@ -113,13 +113,13 @@ abstract class L10n {
@@ -104374,7 +104433,7 @@ index 05ad2de7..41e586ab 100644
    String get accessPopupWhy;
  
    /// No description provided for @accessVivoPopupPath.
-@@ -3080,6 +3080,426 @@ abstract class L10n {
+@@ -3080,6 +3080,444 @@ abstract class L10n {
    /// **'、'**
    String get activityToolListSeparator;
  
@@ -104798,10 +104857,28 @@ index 05ad2de7..41e586ab 100644
 +  /// **'失败：{reason}'**
 +  String aiCallErrorGeneral(String reason);
 +
++  /// No description provided for @aiCallIncomingScopeTypesNote.
++  ///
++  /// In zh, this message translates to:
++  /// **'按类型（暂无来电标记，先按陌生号码处理）'**
++  String get aiCallIncomingScopeTypesNote;
++
++  /// No description provided for @aiCallErrorAnswerRejected.
++  ///
++  /// In zh, this message translates to:
++  /// **'系统拒绝接听这通来电'**
++  String get aiCallErrorAnswerRejected;
++
++  /// No description provided for @aiCallErrorAnswerNoActive.
++  ///
++  /// In zh, this message translates to:
++  /// **'接听后通话没有激活，已放弃'**
++  String get aiCallErrorAnswerNoActive;
++
    /// No description provided for @androidShellTitle.
    ///
    /// In zh, this message translates to:
-@@ -3470,6 +3890,12 @@ abstract class L10n {
+@@ -3470,6 +3908,12 @@ abstract class L10n {
    /// **'未能确认操作结果。先核实结果；已派发的命令不要自动重试。'**
    String get androidShellErrorUnknown;
  
@@ -104814,7 +104891,7 @@ index 05ad2de7..41e586ab 100644
    /// No description provided for @botsFolderGone.
    ///
    /// In zh, this message translates to:
-@@ -4997,7 +5423,7 @@ abstract class L10n {
+@@ -4997,7 +5441,7 @@ abstract class L10n {
    /// No description provided for @botsProjectHome.
    ///
    /// In zh, this message translates to:
@@ -104823,7 +104900,7 @@ index 05ad2de7..41e586ab 100644
    String get botsProjectHome;
  
    /// No description provided for @botsOpenSource.
-@@ -11315,7 +11741,7 @@ abstract class L10n {
+@@ -11315,7 +11759,7 @@ abstract class L10n {
    /// No description provided for @engineAccountReturnToDsh.
    ///
    /// In zh, this message translates to:
@@ -104832,7 +104909,7 @@ index 05ad2de7..41e586ab 100644
    String get engineAccountReturnToDsh;
  
    /// No description provided for @engineAccountFinishingSignIn.
-@@ -15689,7 +16115,7 @@ abstract class L10n {
+@@ -15689,7 +16133,7 @@ abstract class L10n {
    /// No description provided for @harmonyNotificationSettingsFailed.
    ///
    /// In zh, this message translates to:
@@ -104841,7 +104918,7 @@ index 05ad2de7..41e586ab 100644
    String get harmonyNotificationSettingsFailed;
  
    /// No description provided for @harmonySearchUnavailable.
-@@ -15953,7 +16379,7 @@ abstract class L10n {
+@@ -15953,7 +16397,7 @@ abstract class L10n {
    /// No description provided for @harmonyLiveBlockedText.
    ///
    /// In zh, this message translates to:
@@ -104850,7 +104927,7 @@ index 05ad2de7..41e586ab 100644
    String get harmonyLiveBlockedText;
  
    /// No description provided for @harmonyAlertsOffTitle.
-@@ -16463,7 +16889,7 @@ abstract class L10n {
+@@ -16463,7 +16907,7 @@ abstract class L10n {
    /// No description provided for @hubSettingsStorageDenied.
    ///
    /// In zh, this message translates to:
@@ -104859,7 +104936,7 @@ index 05ad2de7..41e586ab 100644
    String get hubSettingsStorageDenied;
  
    /// No description provided for @hubSettingsRestartRequired.
-@@ -17105,13 +17531,13 @@ abstract class L10n {
+@@ -17105,13 +17549,13 @@ abstract class L10n {
    /// No description provided for @hubAbout.
    ///
    /// In zh, this message translates to:
@@ -104875,7 +104952,7 @@ index 05ad2de7..41e586ab 100644
    String get hubAboutAuthor;
  
    /// No description provided for @hubAboutBilibili.
-@@ -17261,7 +17687,7 @@ abstract class L10n {
+@@ -17261,7 +17705,7 @@ abstract class L10n {
    /// No description provided for @iosFilesFolderHint.
    ///
    /// In zh, this message translates to:
@@ -104884,7 +104961,7 @@ index 05ad2de7..41e586ab 100644
    String get iosFilesFolderHint;
  
    /// No description provided for @iosSavingToFiles.
-@@ -17285,7 +17711,7 @@ abstract class L10n {
+@@ -17285,7 +17729,7 @@ abstract class L10n {
    /// No description provided for @iosNotificationSettingsFailed.
    ///
    /// In zh, this message translates to:
@@ -104893,7 +104970,7 @@ index 05ad2de7..41e586ab 100644
    String get iosNotificationSettingsFailed;
  
    /// No description provided for @iosVoiceSystemHint.
-@@ -18155,7 +18581,7 @@ abstract class L10n {
+@@ -18155,7 +18599,7 @@ abstract class L10n {
    /// No description provided for @iconShortcutNote.
    ///
    /// In zh, this message translates to:
@@ -104902,7 +104979,7 @@ index 05ad2de7..41e586ab 100644
    String get iconShortcutNote;
  
    /// No description provided for @iconShortcutAdded.
-@@ -18173,7 +18599,7 @@ abstract class L10n {
+@@ -18173,7 +18617,7 @@ abstract class L10n {
    /// No description provided for @iconShortcutNoDialog.
    ///
    /// In zh, this message translates to:
@@ -104911,7 +104988,7 @@ index 05ad2de7..41e586ab 100644
    String get iconShortcutNoDialog;
  
    /// No description provided for @iconShortcutSettings.
-@@ -18611,7 +19037,7 @@ abstract class L10n {
+@@ -18611,7 +19055,7 @@ abstract class L10n {
    /// No description provided for @liveBlockedText.
    ///
    /// In zh, this message translates to:
@@ -104920,7 +104997,7 @@ index 05ad2de7..41e586ab 100644
    String get liveBlockedText;
  
    /// No description provided for @localeTitle.
-@@ -18887,7 +19313,7 @@ abstract class L10n {
+@@ -18887,7 +19331,7 @@ abstract class L10n {
    /// No description provided for @marketSectionAdapted.
    ///
    /// In zh, this message translates to:
@@ -104929,7 +105006,7 @@ index 05ad2de7..41e586ab 100644
    String get marketSectionAdapted;
  
    /// No description provided for @marketSectionAll.
-@@ -18923,7 +19349,7 @@ abstract class L10n {
+@@ -18923,7 +19367,7 @@ abstract class L10n {
    /// No description provided for @marketTierAdapted.
    ///
    /// In zh, this message translates to:
@@ -104938,7 +105015,7 @@ index 05ad2de7..41e586ab 100644
    String get marketTierAdapted;
  
    /// No description provided for @marketRiskMedium.
-@@ -19013,13 +19439,13 @@ abstract class L10n {
+@@ -19013,13 +19457,13 @@ abstract class L10n {
    /// No description provided for @marketFlagNotAdapted.
    ///
    /// In zh, this message translates to:
@@ -104954,7 +105031,7 @@ index 05ad2de7..41e586ab 100644
    String get marketFlagNotAdaptedBody;
  
    /// No description provided for @marketFlagOtherBody.
-@@ -19079,13 +19505,13 @@ abstract class L10n {
+@@ -19079,13 +19523,13 @@ abstract class L10n {
    /// No description provided for @marketRequiresApp.
    ///
    /// In zh, this message translates to:
@@ -104970,7 +105047,7 @@ index 05ad2de7..41e586ab 100644
    String marketNeedsApp(String version);
  
    /// No description provided for @marketUpdateAvailable.
-@@ -21251,7 +21677,7 @@ abstract class L10n {
+@@ -21251,7 +21695,7 @@ abstract class L10n {
    /// No description provided for @phoneDndShizukuPermissionFailed.
    ///
    /// In zh, this message translates to:
@@ -104979,7 +105056,7 @@ index 05ad2de7..41e586ab 100644
    String get phoneDndShizukuPermissionFailed;
  
    /// No description provided for @phoneDndPairedConnect.
-@@ -21437,7 +21863,7 @@ abstract class L10n {
+@@ -21437,7 +21881,7 @@ abstract class L10n {
    /// No description provided for @phoneDndSuiAllSet.
    ///
    /// In zh, this message translates to:
@@ -104988,7 +105065,7 @@ index 05ad2de7..41e586ab 100644
    String get phoneDndSuiAllSet;
  
    /// No description provided for @phoneDndSuiPermissionFailed.
-@@ -21455,13 +21881,13 @@ abstract class L10n {
+@@ -21455,13 +21899,13 @@ abstract class L10n {
    /// No description provided for @phoneDndRootConnected.
    ///
    /// In zh, this message translates to:
@@ -105004,7 +105081,7 @@ index 05ad2de7..41e586ab 100644
    String get phoneDndRootConnectedKept;
  
    /// No description provided for @phoneDndRootRetry.
-@@ -21491,19 +21917,19 @@ abstract class L10n {
+@@ -21491,19 +21935,19 @@ abstract class L10n {
    /// No description provided for @phoneDndGrantShizukuHint.
    ///
    /// In zh, this message translates to:
@@ -105027,7 +105104,7 @@ index 05ad2de7..41e586ab 100644
    String get phoneDndShizukuAllSet;
  
    /// No description provided for @phoneDndShizukuInstalled.
-@@ -21521,7 +21947,7 @@ abstract class L10n {
+@@ -21521,7 +21965,7 @@ abstract class L10n {
    /// No description provided for @phoneDndShizukuGranted.
    ///
    /// In zh, this message translates to:
@@ -105036,7 +105113,7 @@ index 05ad2de7..41e586ab 100644
    String get phoneDndShizukuGranted;
  
    /// No description provided for @phoneDndShizukuCompatibility.
-@@ -21737,7 +22163,7 @@ abstract class L10n {
+@@ -21737,7 +22181,7 @@ abstract class L10n {
    /// No description provided for @phoneOpenAppInfoFailed.
    ///
    /// In zh, this message translates to:
@@ -105045,7 +105122,7 @@ index 05ad2de7..41e586ab 100644
    String get phoneOpenAppInfoFailed;
  
    /// No description provided for @phoneStopFailed.
-@@ -21980,6 +22406,24 @@ abstract class L10n {
+@@ -21980,6 +22424,24 @@ abstract class L10n {
    /// **'读取中'**
    String get phoneControlLoading;
  
@@ -105070,7 +105147,7 @@ index 05ad2de7..41e586ab 100644
    /// No description provided for @phoneControlRules.
    ///
    /// In zh, this message translates to:
-@@ -22235,19 +22679,19 @@ abstract class L10n {
+@@ -22235,19 +22697,19 @@ abstract class L10n {
    /// No description provided for @phoneRestrictedTryOverlay.
    ///
    /// In zh, this message translates to:
@@ -105093,7 +105170,7 @@ index 05ad2de7..41e586ab 100644
    String get phoneRestrictedHuaweiOverlay;
  
    /// No description provided for @phoneRestrictedHuaweiAccessibility.
-@@ -23063,7 +23507,7 @@ abstract class L10n {
+@@ -23063,7 +23525,7 @@ abstract class L10n {
    /// No description provided for @phoneReturnAfterDone.
    ///
    /// In zh, this message translates to:
@@ -105102,7 +105179,7 @@ index 05ad2de7..41e586ab 100644
    String get phoneReturnAfterDone;
  
    /// No description provided for @phoneReturnAfterDoneHint.
-@@ -23297,7 +23741,7 @@ abstract class L10n {
+@@ -23297,7 +23759,7 @@ abstract class L10n {
    /// No description provided for @phonePreviewTitle.
    ///
    /// In zh, this message translates to:
@@ -105111,7 +105188,7 @@ index 05ad2de7..41e586ab 100644
    String get phonePreviewTitle;
  
    /// No description provided for @phonePreviewDescription.
-@@ -23309,7 +23753,7 @@ abstract class L10n {
+@@ -23309,7 +23771,7 @@ abstract class L10n {
    /// No description provided for @phonePreviewOpen.
    ///
    /// In zh, this message translates to:
@@ -105120,7 +105197,7 @@ index 05ad2de7..41e586ab 100644
    String get phonePreviewOpen;
  
    /// No description provided for @phonePreviewTask.
-@@ -23339,7 +23783,7 @@ abstract class L10n {
+@@ -23339,7 +23801,7 @@ abstract class L10n {
    /// No description provided for @phonePreviewWaiting.
    ///
    /// In zh, this message translates to:
@@ -105129,7 +105206,7 @@ index 05ad2de7..41e586ab 100644
    String get phonePreviewWaiting;
  
    /// No description provided for @phoneViewportTitle.
-@@ -23351,7 +23795,7 @@ abstract class L10n {
+@@ -23351,7 +23813,7 @@ abstract class L10n {
    /// No description provided for @phoneViewportDescription.
    ///
    /// In zh, this message translates to:
@@ -105138,7 +105215,7 @@ index 05ad2de7..41e586ab 100644
    String get phoneViewportDescription;
  
    /// No description provided for @phoneViewportPortrait.
-@@ -23393,13 +23837,13 @@ abstract class L10n {
+@@ -23393,13 +23855,13 @@ abstract class L10n {
    /// No description provided for @phoneTaskDrainingHint.
    ///
    /// In zh, this message translates to:
@@ -105154,7 +105231,7 @@ index 05ad2de7..41e586ab 100644
    String get phoneTaskCleanupFailedHint;
  
    /// No description provided for @phoneFinishingTask.
-@@ -23417,7 +23861,7 @@ abstract class L10n {
+@@ -23417,7 +23879,7 @@ abstract class L10n {
    /// No description provided for @phoneCleanupRetryFailed.
    ///
    /// In zh, this message translates to:
@@ -105163,7 +105240,7 @@ index 05ad2de7..41e586ab 100644
    String get phoneCleanupRetryFailed;
  
    /// No description provided for @phoneSelfCheckTitle.
-@@ -23519,7 +23963,7 @@ abstract class L10n {
+@@ -23519,7 +23981,7 @@ abstract class L10n {
    /// No description provided for @phoneSelfCheckStage.
    ///
    /// In zh, this message translates to:
@@ -105172,7 +105249,7 @@ index 05ad2de7..41e586ab 100644
    String phoneSelfCheckStage(String stage);
  
    /// No description provided for @phoneSelfCheckReason.
-@@ -23531,7 +23975,7 @@ abstract class L10n {
+@@ -23531,7 +23993,7 @@ abstract class L10n {
    /// No description provided for @phoneSelfCheckTargetScope.
    ///
    /// In zh, this message translates to:
@@ -105181,7 +105258,7 @@ index 05ad2de7..41e586ab 100644
    String get phoneSelfCheckTargetScope;
  
    /// No description provided for @phoneSelfCheckProfileChoice.
-@@ -23591,7 +24035,7 @@ abstract class L10n {
+@@ -23591,7 +24053,7 @@ abstract class L10n {
    /// No description provided for @phoneTaskBackgroundResource.
    ///
    /// In zh, this message translates to:
@@ -105190,7 +105267,7 @@ index 05ad2de7..41e586ab 100644
    String get phoneTaskBackgroundResource;
  
    /// No description provided for @phoneInterruptionTitle.
-@@ -23822,6 +24266,30 @@ abstract class L10n {
+@@ -23822,6 +24284,30 @@ abstract class L10n {
    /// **'运行器尚未就绪，请确认本机引擎和开发者环境已配置。'**
    String get phoneIosNeedsSetup;
  
@@ -105221,7 +105298,7 @@ index 05ad2de7..41e586ab 100644
    /// No description provided for @phoneTaskResultReady.
    ///
    /// In zh, this message translates to:
-@@ -23849,19 +24317,19 @@ abstract class L10n {
+@@ -23849,19 +24335,19 @@ abstract class L10n {
    /// No description provided for @phoneBackgroundGuideBody.
    ///
    /// In zh, this message translates to:
@@ -105244,7 +105321,7 @@ index 05ad2de7..41e586ab 100644
    String get phoneBackgroundReturnHint;
  
    /// No description provided for @phoneBackgroundGotIt.
-@@ -23885,7 +24353,7 @@ abstract class L10n {
+@@ -23885,7 +24371,7 @@ abstract class L10n {
    /// No description provided for @phonePrivilegedUpgrade.
    ///
    /// In zh, this message translates to:
@@ -105253,7 +105330,7 @@ index 05ad2de7..41e586ab 100644
    String get phonePrivilegedUpgrade;
  
    /// No description provided for @phonePrivilegedSui.
-@@ -23951,13 +24419,13 @@ abstract class L10n {
+@@ -23951,13 +24437,13 @@ abstract class L10n {
    /// No description provided for @phonePrivilegedRootRiskTitle.
    ///
    /// In zh, this message translates to:
@@ -105269,7 +105346,7 @@ index 05ad2de7..41e586ab 100644
    String get phonePrivilegedRootRiskBody;
  
    /// No description provided for @phoneKeepTitle.
-@@ -23969,19 +24437,19 @@ abstract class L10n {
+@@ -23969,19 +24455,19 @@ abstract class L10n {
    /// No description provided for @phoneKeepRootDescription.
    ///
    /// In zh, this message translates to:
@@ -105292,7 +105369,7 @@ index 05ad2de7..41e586ab 100644
    String get phoneKeepAdbDescription;
  
    /// No description provided for @phoneKeepRestoring.
-@@ -24206,6 +24674,96 @@ abstract class L10n {
+@@ -24206,6 +24692,96 @@ abstract class L10n {
    /// **'当前无法处理技能草稿。请检查本机引擎状态后重试。'**
    String get phoneSkillUnavailable;
  
@@ -105389,7 +105466,7 @@ index 05ad2de7..41e586ab 100644
    /// No description provided for @phoneModeTitle.
    ///
    /// In zh, this message translates to:
-@@ -24251,7 +24809,7 @@ abstract class L10n {
+@@ -24251,7 +24827,7 @@ abstract class L10n {
    /// No description provided for @phoneModeAutoNote.
    ///
    /// In zh, this message translates to:
@@ -105398,7 +105475,7 @@ index 05ad2de7..41e586ab 100644
    String get phoneModeAutoNote;
  
    /// No description provided for @phoneModeAutoUnlockNote.
-@@ -24287,7 +24845,7 @@ abstract class L10n {
+@@ -24287,7 +24863,7 @@ abstract class L10n {
    /// No description provided for @phoneYoursOwnApp.
    ///
    /// In zh, this message translates to:
@@ -105407,7 +105484,7 @@ index 05ad2de7..41e586ab 100644
    String get phoneYoursOwnApp;
  
    /// No description provided for @phoneYoursDenyList.
-@@ -24335,13 +24893,13 @@ abstract class L10n {
+@@ -24335,13 +24911,13 @@ abstract class L10n {
    /// No description provided for @phoneUnlockOwnApp.
    ///
    /// In zh, this message translates to:
@@ -105423,7 +105500,7 @@ index 05ad2de7..41e586ab 100644
    String get phoneUnlockOwnAppHint;
  
    /// No description provided for @phoneUnlockBusy.
-@@ -24401,7 +24959,7 @@ abstract class L10n {
+@@ -24401,7 +24977,7 @@ abstract class L10n {
    /// No description provided for @phoneUnlockConfirmOwnAppTitle.
    ///
    /// In zh, this message translates to:
@@ -105432,7 +105509,7 @@ index 05ad2de7..41e586ab 100644
    String get phoneUnlockConfirmOwnAppTitle;
  
    /// No description provided for @phoneUnlockCanTitle.
-@@ -24485,13 +25043,13 @@ abstract class L10n {
+@@ -24485,13 +25061,13 @@ abstract class L10n {
    /// No description provided for @phoneUnlockOwnAppCan1.
    ///
    /// In zh, this message translates to:
@@ -105448,7 +105525,7 @@ index 05ad2de7..41e586ab 100644
    String get phoneUnlockOwnAppCan2;
  
    /// No description provided for @phoneUnlockOwnAppRisk1.
-@@ -24521,7 +25079,7 @@ abstract class L10n {
+@@ -24521,7 +25097,7 @@ abstract class L10n {
    /// No description provided for @phoneUnlockDisclaimer3.
    ///
    /// In zh, this message translates to:
@@ -105457,7 +105534,7 @@ index 05ad2de7..41e586ab 100644
    String get phoneUnlockDisclaimer3;
  
    /// No description provided for @phoneUnlockDisclaimer4.
-@@ -25463,7 +26021,7 @@ abstract class L10n {
+@@ -25463,7 +26039,7 @@ abstract class L10n {
    /// No description provided for @pluginsProfileTitle.
    ///
    /// In zh, this message translates to:
@@ -105466,7 +105543,7 @@ index 05ad2de7..41e586ab 100644
    String get pluginsProfileTitle;
  
    /// No description provided for @pluginsGistTokenInvalid.
-@@ -26483,7 +27041,7 @@ abstract class L10n {
+@@ -26483,7 +27059,7 @@ abstract class L10n {
    /// No description provided for @pluginsNotificationSettingsFailed.
    ///
    /// In zh, this message translates to:
@@ -105475,7 +105552,7 @@ index 05ad2de7..41e586ab 100644
    String get pluginsNotificationSettingsFailed;
  
    /// No description provided for @pluginsSystemNotificationsOff.
-@@ -26951,7 +27509,7 @@ abstract class L10n {
+@@ -26951,7 +27527,7 @@ abstract class L10n {
    /// No description provided for @pluginsPluginShareTitle.
    ///
    /// In zh, this message translates to:
@@ -105484,7 +105561,7 @@ index 05ad2de7..41e586ab 100644
    String get pluginsPluginShareTitle;
  
    /// No description provided for @pluginsShareSheetOpenFailed.
-@@ -27371,7 +27929,7 @@ abstract class L10n {
+@@ -27371,7 +27947,7 @@ abstract class L10n {
    /// No description provided for @plugslotsIssueNeedsApp.
    ///
    /// In zh, this message translates to:
@@ -105493,7 +105570,7 @@ index 05ad2de7..41e586ab 100644
    String plugslotsIssueNeedsApp(String version);
  
    /// No description provided for @plugslotsIssueNewerProtocol.
-@@ -28217,7 +28775,7 @@ abstract class L10n {
+@@ -28217,7 +28793,7 @@ abstract class L10n {
    /// No description provided for @remoteErrUpdateNeeded.
    ///
    /// In zh, this message translates to:
@@ -105502,7 +105579,7 @@ index 05ad2de7..41e586ab 100644
    String get remoteErrUpdateNeeded;
  
    /// No description provided for @remoteErrVersionIncompatible.
-@@ -30773,7 +31331,7 @@ abstract class L10n {
+@@ -30773,7 +31349,7 @@ abstract class L10n {
    /// No description provided for @remotePairNeedsDeepSeekBody.
    ///
    /// In zh, this message translates to:
@@ -105511,7 +105588,7 @@ index 05ad2de7..41e586ab 100644
    String get remotePairNeedsDeepSeekBody;
  
    /// No description provided for @remotePairScanHint.
-@@ -30947,7 +31505,7 @@ abstract class L10n {
+@@ -30947,7 +31523,7 @@ abstract class L10n {
    /// No description provided for @remotePairOtherServerBody.
    ///
    /// In zh, this message translates to:
@@ -105520,7 +105597,7 @@ index 05ad2de7..41e586ab 100644
    String remotePairOtherServerBody(String server);
  
    /// No description provided for @remotePairSwitchServer.
-@@ -30965,7 +31523,7 @@ abstract class L10n {
+@@ -30965,7 +31541,7 @@ abstract class L10n {
    /// No description provided for @remotePairErrInvalidCode.
    ///
    /// In zh, this message translates to:
@@ -105529,7 +105606,7 @@ index 05ad2de7..41e586ab 100644
    String get remotePairErrInvalidCode;
  
    /// No description provided for @remotePairErrOtherServer.
-@@ -31151,7 +31709,7 @@ abstract class L10n {
+@@ -31151,7 +31727,7 @@ abstract class L10n {
    /// No description provided for @riskPetOverlayBody.
    ///
    /// In zh, this message translates to:
@@ -105538,7 +105615,7 @@ index 05ad2de7..41e586ab 100644
    String get riskPetOverlayBody;
  
    /// No description provided for @riskPetOverlayAction.
-@@ -31181,25 +31739,25 @@ abstract class L10n {
+@@ -31181,25 +31757,25 @@ abstract class L10n {
    /// No description provided for @askAiAboutApp.
    ///
    /// In zh, this message translates to:
@@ -105568,7 +105645,7 @@ index 05ad2de7..41e586ab 100644
    String get askAiQuestionOverview;
  
    /// No description provided for @askAiQuestionPhoneControl.
-@@ -33785,7 +34343,7 @@ abstract class L10n {
+@@ -33785,7 +34361,7 @@ abstract class L10n {
    /// No description provided for @shellSkillInstallPrompt.
    ///
    /// In zh, this message translates to:
@@ -105577,7 +105654,7 @@ index 05ad2de7..41e586ab 100644
    String shellSkillInstallPrompt(String skill);
  
    /// No description provided for @shellSkillInstallDirectory.
-@@ -34502,6 +35060,12 @@ abstract class L10n {
+@@ -34502,6 +35078,12 @@ abstract class L10n {
    /// **'通话设置'**
    String get speechCallSettings;
  
@@ -105590,7 +105667,7 @@ index 05ad2de7..41e586ab 100644
    /// No description provided for @speechCallPause.
    ///
    /// In zh, this message translates to:
-@@ -34628,16 +35192,124 @@ abstract class L10n {
+@@ -34628,16 +35210,124 @@ abstract class L10n {
    /// **'光球'**
    String get speechCallVisualGlass;
  
@@ -105716,7 +105793,7 @@ index 05ad2de7..41e586ab 100644
    String starPromptTitle(int hours);
  
    /// No description provided for @starPromptBody.
-@@ -34673,7 +35345,7 @@ abstract class L10n {
+@@ -34673,7 +35363,7 @@ abstract class L10n {
    /// No description provided for @starSettingsTitle.
    ///
    /// In zh, this message translates to:
@@ -105725,7 +105802,7 @@ index 05ad2de7..41e586ab 100644
    String get starSettingsTitle;
  
    /// No description provided for @hubStartPage.
-@@ -34727,7 +35399,7 @@ abstract class L10n {
+@@ -34727,7 +35417,7 @@ abstract class L10n {
    /// No description provided for @stateDiagnosticsSubject.
    ///
    /// In zh, this message translates to:
@@ -105734,7 +105811,7 @@ index 05ad2de7..41e586ab 100644
    String get stateDiagnosticsSubject;
  
    /// No description provided for @stateStoragePermission.
-@@ -37037,7 +37709,7 @@ abstract class L10n {
+@@ -37037,7 +37727,7 @@ abstract class L10n {
    /// No description provided for @systemActionsOffScreen.
    ///
    /// In zh, this message translates to:
@@ -105743,7 +105820,7 @@ index 05ad2de7..41e586ab 100644
    String get systemActionsOffScreen;
  
    /// No description provided for @systemActionsConnecting.
-@@ -37079,13 +37751,13 @@ abstract class L10n {
+@@ -37079,13 +37769,13 @@ abstract class L10n {
    /// No description provided for @systemActionsOnScreenTitle.
    ///
    /// In zh, this message translates to:
@@ -105759,7 +105836,7 @@ index 05ad2de7..41e586ab 100644
    String get systemActionsOnScreenBody;
  
    /// No description provided for @systemActionsCanTitle.
-@@ -37289,7 +37961,7 @@ abstract class L10n {
+@@ -37289,7 +37979,7 @@ abstract class L10n {
    /// No description provided for @systemActionsDisclosureWhenBody.
    ///
    /// In zh, this message translates to:
@@ -105768,7 +105845,7 @@ index 05ad2de7..41e586ab 100644
    String get systemActionsDisclosureWhenBody;
  
    /// No description provided for @systemActionsDisclosureWhoTitle.
-@@ -37337,7 +38009,7 @@ abstract class L10n {
+@@ -37337,7 +38027,7 @@ abstract class L10n {
    /// No description provided for @systemActionsHandoffNote.
    ///
    /// In zh, this message translates to:
@@ -105777,7 +105854,7 @@ index 05ad2de7..41e586ab 100644
    String get systemActionsHandoffNote;
  
    /// No description provided for @systemActionsHandoffFailed.
-@@ -37391,7 +38063,7 @@ abstract class L10n {
+@@ -37391,7 +38081,7 @@ abstract class L10n {
    /// No description provided for @systemActionsResultOffScreen.
    ///
    /// In zh, this message translates to:
@@ -105786,7 +105863,7 @@ index 05ad2de7..41e586ab 100644
    String get systemActionsResultOffScreen;
  
    /// No description provided for @systemActionsResultUnavailable.
-@@ -39413,7 +40085,7 @@ abstract class L10n {
+@@ -39413,7 +40103,7 @@ abstract class L10n {
    /// No description provided for @tavernStorybookMadeWith.
    ///
    /// In zh, this message translates to:
@@ -105795,7 +105872,7 @@ index 05ad2de7..41e586ab 100644
    String get tavernStorybookMadeWith;
  
    /// No description provided for @tavernStorybookContents.
-@@ -44387,7 +45059,7 @@ abstract class L10n {
+@@ -44387,7 +45077,7 @@ abstract class L10n {
    /// No description provided for @updateSettingsOpenFailedMessage.
    ///
    /// In zh, this message translates to:
@@ -105804,7 +105881,7 @@ index 05ad2de7..41e586ab 100644
    String get updateSettingsOpenFailedMessage;
  
    /// No description provided for @updateInstallCancelled.
-@@ -44423,7 +45095,7 @@ abstract class L10n {
+@@ -44423,7 +45113,7 @@ abstract class L10n {
    /// No description provided for @updateSignatureMismatchMessage.
    ///
    /// In zh, this message translates to:
@@ -105813,7 +105890,7 @@ index 05ad2de7..41e586ab 100644
    String get updateSignatureMismatchMessage;
  
    /// No description provided for @updateWrongPackage.
-@@ -44537,7 +45209,7 @@ abstract class L10n {
+@@ -44537,7 +45227,7 @@ abstract class L10n {
    /// No description provided for @updateInstallKeepsData.
    ///
    /// In zh, this message translates to:
@@ -105822,7 +105899,7 @@ index 05ad2de7..41e586ab 100644
    String get updateInstallKeepsData;
  
    /// No description provided for @updateNoCompatiblePackage.
-@@ -44603,7 +45275,7 @@ abstract class L10n {
+@@ -44603,7 +45293,7 @@ abstract class L10n {
    /// No description provided for @updateAllowInstall.
    ///
    /// In zh, this message translates to:
@@ -105831,7 +105908,7 @@ index 05ad2de7..41e586ab 100644
    String get updateAllowInstall;
  
    /// No description provided for @updateAllowInstallMessage.
-@@ -44735,7 +45407,7 @@ abstract class L10n {
+@@ -44735,7 +45425,7 @@ abstract class L10n {
    /// No description provided for @usageStatsSection.
    ///
    /// In zh, this message translates to:
@@ -105840,7 +105917,7 @@ index 05ad2de7..41e586ab 100644
    String get usageStatsSection;
  
    /// No description provided for @usageStatsFooter.
-@@ -44753,7 +45425,7 @@ abstract class L10n {
+@@ -44753,7 +45443,7 @@ abstract class L10n {
    /// No description provided for @usageUpgradeNotice.
    ///
    /// In zh, this message translates to:
@@ -105849,7 +105926,7 @@ index 05ad2de7..41e586ab 100644
    String get usageUpgradeNotice;
  
    /// No description provided for @usageUpgradeLearn.
-@@ -45845,7 +46517,7 @@ abstract class L10n {
+@@ -45845,7 +46535,7 @@ abstract class L10n {
    /// No description provided for @viewTipShareIn.
    ///
    /// In zh, this message translates to:
@@ -105858,7 +105935,7 @@ index 05ad2de7..41e586ab 100644
    String get viewTipShareIn;
  
    /// No description provided for @viewTipShareSelect.
-@@ -46265,7 +46937,7 @@ abstract class L10n {
+@@ -46265,7 +46955,7 @@ abstract class L10n {
    /// No description provided for @viewContinueHeader.
    ///
    /// In zh, this message translates to:
@@ -105867,7 +105944,7 @@ index 05ad2de7..41e586ab 100644
    String viewContinueHeader(String value);
  
    /// No description provided for @viewContinueUser.
-@@ -46361,7 +47033,7 @@ abstract class L10n {
+@@ -46361,7 +47051,7 @@ abstract class L10n {
    /// No description provided for @viewShareLinkText.
    ///
    /// In zh, this message translates to:
@@ -105876,7 +105953,7 @@ index 05ad2de7..41e586ab 100644
    String viewShareLinkText(String first, String second);
  
    /// No description provided for @viewShareEmpty.
-@@ -46385,7 +47057,7 @@ abstract class L10n {
+@@ -46385,7 +47075,7 @@ abstract class L10n {
    /// No description provided for @viewShareFileHint.
    ///
    /// In zh, this message translates to:
@@ -105885,7 +105962,7 @@ index 05ad2de7..41e586ab 100644
    String get viewShareFileHint;
  
    /// No description provided for @viewShareWebHint.
-@@ -47684,6 +48356,12 @@ abstract class L10n {
+@@ -47684,6 +48374,12 @@ abstract class L10n {
    /// **'压暗'**
    String get wallpaperDim;
  
@@ -105898,7 +105975,7 @@ index 05ad2de7..41e586ab 100644
    /// No description provided for @wallpaperReplace.
    ///
    /// In zh, this message translates to:
-@@ -48203,7 +48881,7 @@ abstract class L10n {
+@@ -48203,7 +48899,7 @@ abstract class L10n {
    /// No description provided for @workshopMinApp.
    ///
    /// In zh, this message translates to:
@@ -105908,10 +105985,10 @@ index 05ad2de7..41e586ab 100644
  
    /// No description provided for @workshopInstalledVersion.
 diff --git a/app/lib/l10n/gen/app_localizations_en.dart b/app/lib/l10n/gen/app_localizations_en.dart
-index 546fef86..55a877c8 100644
+index 546fef86..6b379e4f 100644
 --- a/app/lib/l10n/gen/app_localizations_en.dart
 +++ b/app/lib/l10n/gen/app_localizations_en.dart
-@@ -1707,6 +1707,229 @@ class L10nEn extends L10n {
+@@ -1707,6 +1707,238 @@ class L10nEn extends L10n {
    @override
    String get activityToolListSeparator => ', ';
  
@@ -106138,10 +106215,19 @@ index 546fef86..55a877c8 100644
 +    return 'Failed: $reason';
 +  }
 +
++  @override
++  String get aiCallIncomingScopeTypesNote => 'By type (no caller labels yet; treated as strangers for now)';
++
++  @override
++  String get aiCallErrorAnswerRejected => 'The system rejected answering this call';
++
++  @override
++  String get aiCallErrorAnswerNoActive => 'The call did not activate after answering; giving up';
++
    @override
    String get androidShellTitle => 'Android Shell';
  
-@@ -1925,6 +2148,9 @@ class L10nEn extends L10n {
+@@ -1925,6 +2157,9 @@ class L10nEn extends L10n {
    String get androidShellErrorUnknown =>
        'The outcome could not be confirmed. Verify it first; never automatically retry a dispatched command.';
  
@@ -106151,7 +106237,7 @@ index 546fef86..55a877c8 100644
    @override
    String get botsFolderGone => 'This folder is gone';
  
-@@ -12382,6 +12608,15 @@ class L10nEn extends L10n {
+@@ -12382,6 +12617,15 @@ class L10nEn extends L10n {
    @override
    String get phoneControlLoading => 'Loading';
  
@@ -106167,7 +106253,7 @@ index 546fef86..55a877c8 100644
    @override
    String get phoneControlRules => 'Rules';
  
-@@ -13575,6 +13810,19 @@ class L10nEn extends L10n {
+@@ -13575,6 +13819,19 @@ class L10nEn extends L10n {
    @override
    String get phoneIosNeedsSetup => 'The runner is not ready. Check the local engine and developer setup.';
  
@@ -106187,7 +106273,7 @@ index 546fef86..55a877c8 100644
    @override
    String get phoneTaskResultReady => 'Task complete · View result';
  
-@@ -13800,6 +14048,52 @@ class L10nEn extends L10n {
+@@ -13800,6 +14057,52 @@ class L10nEn extends L10n {
    @override
    String get phoneSkillUnavailable => 'Skill drafts are unavailable. Check the local engine state and try again.';
  
@@ -106240,7 +106326,7 @@ index 546fef86..55a877c8 100644
    @override
    String get phoneModeTitle => 'How DSH confirms';
  
-@@ -19818,6 +20112,9 @@ class L10nEn extends L10n {
+@@ -19818,6 +20121,9 @@ class L10nEn extends L10n {
    @override
    String get speechCallSettings => 'Call settings';
  
@@ -106250,7 +106336,7 @@ index 546fef86..55a877c8 100644
    @override
    String get speechCallPause => 'Pause before she answers';
  
-@@ -19883,9 +20180,65 @@ class L10nEn extends L10n {
+@@ -19883,9 +20189,65 @@ class L10nEn extends L10n {
    @override
    String get speechCallVisualGlass => 'Orb';
  
@@ -106316,7 +106402,7 @@ index 546fef86..55a877c8 100644
    @override
    String starPromptTitle(int hours) {
      String _temp0 = intl.Intl.pluralLogic(
-@@ -27559,6 +27912,9 @@ class L10nEn extends L10n {
+@@ -27559,6 +27921,9 @@ class L10nEn extends L10n {
    @override
    String get wallpaperDim => 'Dim';
  
@@ -106327,7 +106413,7 @@ index 546fef86..55a877c8 100644
    String get wallpaperReplace => 'Replace picture';
  
 diff --git a/app/lib/l10n/gen/app_localizations_zh.dart b/app/lib/l10n/gen/app_localizations_zh.dart
-index c66b20de..bac0bb10 100644
+index c66b20de..b213cc75 100644
 --- a/app/lib/l10n/gen/app_localizations_zh.dart
 +++ b/app/lib/l10n/gen/app_localizations_zh.dart
 @@ -19,10 +19,10 @@ class L10nZh extends L10n {
@@ -106361,7 +106447,7 @@ index c66b20de..bac0bb10 100644
  
    @override
    String accessVivoPopupPath(String app) {
-@@ -1627,6 +1627,228 @@ class L10nZh extends L10n {
+@@ -1627,6 +1627,237 @@ class L10nZh extends L10n {
    @override
    String get activityToolListSeparator => '、';
  
@@ -106587,10 +106673,19 @@ index c66b20de..bac0bb10 100644
 +    return '失败：$reason';
 +  }
 +
++  @override
++  String get aiCallIncomingScopeTypesNote => '按类型（暂无来电标记，先按陌生号码处理）';
++
++  @override
++  String get aiCallErrorAnswerRejected => '系统拒绝接听这通来电';
++
++  @override
++  String get aiCallErrorAnswerNoActive => '接听后通话没有激活，已放弃';
++
    @override
    String get androidShellTitle => 'Android Shell';
  
-@@ -1827,6 +2049,9 @@ class L10nZh extends L10n {
+@@ -1827,6 +2058,9 @@ class L10nZh extends L10n {
    @override
    String get androidShellErrorUnknown => '未能确认操作结果。先核实结果；已派发的命令不要自动重试。';
  
@@ -106600,7 +106695,7 @@ index c66b20de..bac0bb10 100644
    @override
    String get botsFolderGone => '这个文件夹已经不在了';
  
-@@ -2694,7 +2919,7 @@ class L10nZh extends L10n {
+@@ -2694,7 +2928,7 @@ class L10nZh extends L10n {
    String get botsForumSubtitle => '提问、分享、找同好';
  
    @override
@@ -106609,7 +106704,7 @@ index c66b20de..bac0bb10 100644
  
    @override
    String get botsOpenSource => '开源项目';
-@@ -6075,7 +6300,7 @@ class L10nZh extends L10n {
+@@ -6075,7 +6309,7 @@ class L10nZh extends L10n {
    String get engineAccountFinishInBrowser => '在浏览器中完成登录';
  
    @override
@@ -106618,7 +106713,7 @@ index c66b20de..bac0bb10 100644
  
    @override
    String get engineAccountFinishingSignIn => '正在完成登录';
-@@ -8494,7 +8719,7 @@ class L10nZh extends L10n {
+@@ -8494,7 +8728,7 @@ class L10nZh extends L10n {
    String get harmonyPageUnavailable => '这个版本没有这个页面';
  
    @override
@@ -106627,7 +106722,7 @@ index c66b20de..bac0bb10 100644
  
    @override
    String get harmonySearchUnavailable => '这个版本没有这项功能';
-@@ -8627,7 +8852,7 @@ class L10nZh extends L10n {
+@@ -8627,7 +8861,7 @@ class L10nZh extends L10n {
    String get harmonyLiveBlockedTitle => '系统没有允许进度通知';
  
    @override
@@ -106636,7 +106731,7 @@ index c66b20de..bac0bb10 100644
  
    @override
    String get harmonyAlertsOffTitle => '提醒通知已关闭';
-@@ -8884,7 +9109,7 @@ class L10nZh extends L10n {
+@@ -8884,7 +9118,7 @@ class L10nZh extends L10n {
    String get hubSettingsStorageAllow => '允许读写';
  
    @override
@@ -106645,7 +106740,7 @@ index c66b20de..bac0bb10 100644
  
    @override
    String get hubSettingsRestartRequired => '重启引擎后生效';
-@@ -9245,10 +9470,10 @@ class L10nZh extends L10n {
+@@ -9245,10 +9479,10 @@ class L10nZh extends L10n {
    String get hubTableTintNoneHint => '只剩网格线，最轻';
  
    @override
@@ -106658,7 +106753,7 @@ index c66b20de..bac0bb10 100644
  
    @override
    String get hubAboutBilibili => 'B站主页';
-@@ -9327,7 +9552,7 @@ class L10nZh extends L10n {
+@@ -9327,7 +9561,7 @@ class L10nZh extends L10n {
    String get iosSaveToFiles => '存到「文件」';
  
    @override
@@ -106667,7 +106762,7 @@ index c66b20de..bac0bb10 100644
  
    @override
    String get iosSavingToFiles => '正在存到「文件」…';
-@@ -9339,7 +9564,7 @@ class L10nZh extends L10n {
+@@ -9339,7 +9573,7 @@ class L10nZh extends L10n {
    String get iosEnableBanners => '横幅不弹时，到系统设置打开「横幅」';
  
    @override
@@ -106676,7 +106771,7 @@ index c66b20de..bac0bb10 100644
  
    @override
    String get iosVoiceSystemHint => '使用系统的语音识别';
-@@ -9785,7 +10010,7 @@ class L10nZh extends L10n {
+@@ -9785,7 +10019,7 @@ class L10nZh extends L10n {
    String get iconShortcutAdd => '添加到桌面';
  
    @override
@@ -106685,7 +106780,7 @@ index c66b20de..bac0bb10 100644
  
    @override
    String get iconShortcutAdded => '已添加到桌面';
-@@ -9794,7 +10019,7 @@ class L10nZh extends L10n {
+@@ -9794,7 +10028,7 @@ class L10nZh extends L10n {
    String get iconShortcutConfirm => '在弹出的窗口里确认';
  
    @override
@@ -106694,7 +106789,7 @@ index c66b20de..bac0bb10 100644
  
    @override
    String get iconShortcutSettings => '去设置';
-@@ -10023,7 +10248,7 @@ class L10nZh extends L10n {
+@@ -10023,7 +10257,7 @@ class L10nZh extends L10n {
    String get liveBlockedTitle => '系统没有允许实时活动';
  
    @override
@@ -106703,7 +106798,7 @@ index c66b20de..bac0bb10 100644
  
    @override
    String get localeTitle => '语言';
-@@ -10173,7 +10398,7 @@ class L10nZh extends L10n {
+@@ -10173,7 +10407,7 @@ class L10nZh extends L10n {
    String get marketSectionOfficial => '官方';
  
    @override
@@ -106712,7 +106807,7 @@ index c66b20de..bac0bb10 100644
  
    @override
    String get marketSectionAll => '全部';
-@@ -10191,7 +10416,7 @@ class L10nZh extends L10n {
+@@ -10191,7 +10425,7 @@ class L10nZh extends L10n {
    String get marketTierOfficial => '官方';
  
    @override
@@ -106721,7 +106816,7 @@ index c66b20de..bac0bb10 100644
  
    @override
    String get marketRiskMedium => '中风险';
-@@ -10236,10 +10461,10 @@ class L10nZh extends L10n {
+@@ -10236,10 +10470,10 @@ class L10nZh extends L10n {
    String get marketFlagObfuscatedBody => '有压缩或混淆过的大文件，看不出它做什么';
  
    @override
@@ -106734,7 +106829,7 @@ index c66b20de..bac0bb10 100644
  
    @override
    String get marketFlagOtherBody => '自动检查报告的其他特征';
-@@ -10275,11 +10500,11 @@ class L10nZh extends L10n {
+@@ -10275,11 +10509,11 @@ class L10nZh extends L10n {
    String get marketPinnedVersion => '锁定版本';
  
    @override
@@ -106748,7 +106843,7 @@ index c66b20de..bac0bb10 100644
    }
  
    @override
-@@ -11413,7 +11638,7 @@ class L10nZh extends L10n {
+@@ -11413,7 +11647,7 @@ class L10nZh extends L10n {
    String get phoneDndEnabled => '不打扰模式已启用';
  
    @override
@@ -106757,7 +106852,7 @@ index c66b20de..bac0bb10 100644
  
    @override
    String get phoneDndPairedConnect => '配对成功，点「连接」';
-@@ -11506,7 +11731,7 @@ class L10nZh extends L10n {
+@@ -11506,7 +11740,7 @@ class L10nZh extends L10n {
    String get phoneDndSuiStopped => 'Sui 接口当前不可用。确认 Sui 模块已启用，重启手机后再试。';
  
    @override
@@ -106766,7 +106861,7 @@ index c66b20de..bac0bb10 100644
  
    @override
    String get phoneDndSuiPermissionFailed => '没能请求 Sui 授权。确认 Sui 模块已启用后再试。';
-@@ -11515,10 +11740,10 @@ class L10nZh extends L10n {
+@@ -11515,10 +11749,10 @@ class L10nZh extends L10n {
    String get phoneDndRootWaiting => '正在等待 root 授权，请在 root 管理器的弹窗里选择。';
  
    @override
@@ -106779,7 +106874,7 @@ index c66b20de..bac0bb10 100644
  
    @override
    String get phoneDndRootRetry => '重新申请 root 授权';
-@@ -11533,13 +11758,13 @@ class L10nZh extends L10n {
+@@ -11533,13 +11767,13 @@ class L10nZh extends L10n {
    String get phoneDndStartShizuku => '打开 Shizuku，按里面「通过无线调试启动」的说明做一遍（要连 Wi‑Fi）。回到这里会自动刷新。';
  
    @override
@@ -106796,7 +106891,7 @@ index c66b20de..bac0bb10 100644
  
    @override
    String get phoneDndShizukuInstalled => '已安装 Shizuku';
-@@ -11548,7 +11773,7 @@ class L10nZh extends L10n {
+@@ -11548,7 +11782,7 @@ class L10nZh extends L10n {
    String get phoneDndShizukuRunning => 'Shizuku 正在运行';
  
    @override
@@ -106805,7 +106900,7 @@ index c66b20de..bac0bb10 100644
  
    @override
    String get phoneDndShizukuCompatibility => '这版 Android 与官方版 Shizuku 存在兼容问题。';
-@@ -11656,7 +11881,7 @@ class L10nZh extends L10n {
+@@ -11656,7 +11890,7 @@ class L10nZh extends L10n {
    String get phoneOpenAccessibilityFailed => '打不开系统设置，请到「设置 → 无障碍」里找到 DSH';
  
    @override
@@ -106814,7 +106909,7 @@ index c66b20de..bac0bb10 100644
  
    @override
    String get phoneStopFailed => '没能停止，可以点悬浮条或通知上的「停止」';
-@@ -11778,6 +12003,15 @@ class L10nZh extends L10n {
+@@ -11778,6 +12012,15 @@ class L10nZh extends L10n {
    @override
    String get phoneControlLoading => '读取中';
  
@@ -106830,7 +106925,7 @@ index c66b20de..bac0bb10 100644
    @override
    String get phoneControlRules => '规则';
  
-@@ -11905,13 +12139,13 @@ class L10nZh extends L10n {
+@@ -11905,13 +12148,13 @@ class L10nZh extends L10n {
    String get phoneRestrictedMenuStep => '点右上角的三个点，选「允许受限制的设置」，按提示验证锁屏密码。';
  
    @override
@@ -106847,7 +106942,7 @@ index c66b20de..bac0bb10 100644
  
    @override
    String get phoneRestrictedHuaweiAccessibility => '华为 HarmonyOS 4 及更早的系统大多没有这一步，直接去「无障碍」打开 DSH。';
-@@ -12391,7 +12625,7 @@ class L10nZh extends L10n {
+@@ -12391,7 +12634,7 @@ class L10nZh extends L10n {
    String get phoneControlEnabledPending => '已开启，引擎启动后生效';
  
    @override
@@ -106856,7 +106951,7 @@ index c66b20de..bac0bb10 100644
  
    @override
    String get phoneReturnAfterDoneHint => '收起悬浮条，回到对话看结果';
-@@ -12511,13 +12745,13 @@ class L10nZh extends L10n {
+@@ -12511,13 +12754,13 @@ class L10nZh extends L10n {
    String get phoneDndConnectPortHint => '在系统「无线调试」首页查看「IP 地址和端口」，填写冒号后的端口。请不要使用配对码页面的端口。';
  
    @override
@@ -106872,7 +106967,7 @@ index c66b20de..bac0bb10 100644
  
    @override
    String phonePreviewTask(String taskId) {
-@@ -12534,13 +12768,13 @@ class L10nZh extends L10n {
+@@ -12534,13 +12777,13 @@ class L10nZh extends L10n {
    String get phonePreviewUnavailable => '画面暂不可预览，或受到保护';
  
    @override
@@ -106888,7 +106983,7 @@ index c66b20de..bac0bb10 100644
  
    @override
    String get phoneViewportPortrait => '竖屏';
-@@ -12563,10 +12797,10 @@ class L10nZh extends L10n {
+@@ -12563,10 +12806,10 @@ class L10nZh extends L10n {
    }
  
    @override
@@ -106901,7 +106996,7 @@ index c66b20de..bac0bb10 100644
  
    @override
    String phoneFinishingTask(int task) {
-@@ -12577,7 +12811,7 @@ class L10nZh extends L10n {
+@@ -12577,7 +12820,7 @@ class L10nZh extends L10n {
    String get phoneCleanupRetry => '重试清理';
  
    @override
@@ -106910,7 +107005,7 @@ index c66b20de..bac0bb10 100644
  
    @override
    String get phoneSelfCheckTitle => '检查手机操控';
-@@ -12654,7 +12888,7 @@ class L10nZh extends L10n {
+@@ -12654,7 +12897,7 @@ class L10nZh extends L10n {
      String _temp0 = intl.Intl.selectLogic(stage, {
        'device': '设备前置条件',
        'channel': '已选通道',
@@ -106919,7 +107014,7 @@ index c66b20de..bac0bb10 100644
        'input_probe': '触摸接收核验',
        'launch': '应用启动',
        'tree': '控件树',
-@@ -12710,7 +12944,7 @@ class L10nZh extends L10n {
+@@ -12710,7 +12953,7 @@ class L10nZh extends L10n {
  
    @override
    String get phoneSelfCheckTargetScope =>
@@ -106928,7 +107023,7 @@ index c66b20de..bac0bb10 100644
  
    @override
    String get phoneSelfCheckProfileChoice => '选择下次自检（不会改变下方报告）';
-@@ -12765,7 +12999,7 @@ class L10nZh extends L10n {
+@@ -12765,7 +13008,7 @@ class L10nZh extends L10n {
    String get phoneTaskMainResource => '主屏';
  
    @override
@@ -106937,7 +107032,7 @@ index c66b20de..bac0bb10 100644
  
    @override
    String get phoneInterruptionTitle => '上次手机任务未确认结束';
-@@ -12892,6 +13126,18 @@ class L10nZh extends L10n {
+@@ -12892,6 +13135,18 @@ class L10nZh extends L10n {
    @override
    String get phoneIosNeedsSetup => '运行器尚未就绪，请确认本机引擎和开发者环境已配置。';
  
@@ -106956,7 +107051,7 @@ index c66b20de..bac0bb10 100644
    @override
    String get phoneTaskResultReady => '任务完成 · 查看结果';
  
-@@ -12905,13 +13151,13 @@ class L10nZh extends L10n {
+@@ -12905,13 +13160,13 @@ class L10nZh extends L10n {
    String get phoneBackgroundGuideSubtitle => '让确认卡和任务结果及时出现';
  
    @override
@@ -106973,7 +107068,7 @@ index c66b20de..bac0bb10 100644
  
    @override
    String get phoneBackgroundGotIt => '知道了';
-@@ -12923,7 +13169,7 @@ class L10nZh extends L10n {
+@@ -12923,7 +13178,7 @@ class L10nZh extends L10n {
    String get phoneBackgroundNotificationBlocked => '请允许手机操控通知的弹出提醒';
  
    @override
@@ -106982,7 +107077,7 @@ index c66b20de..bac0bb10 100644
  
    @override
    String get phonePrivilegedSui => 'Sui';
-@@ -12956,11 +13202,11 @@ class L10nZh extends L10n {
+@@ -12956,11 +13211,11 @@ class L10nZh extends L10n {
    String get phonePrivilegedSuggested => '建议';
  
    @override
@@ -106996,7 +107091,7 @@ index c66b20de..bac0bb10 100644
  
    @override
    String phoneKeepTitle(String mode) {
-@@ -12975,13 +13221,13 @@ class L10nZh extends L10n {
+@@ -12975,13 +13230,13 @@ class L10nZh extends L10n {
    }
  
    @override
@@ -107013,7 +107108,7 @@ index c66b20de..bac0bb10 100644
  
    @override
    String get phoneKeepRestoring => '正在重新连接';
-@@ -13098,6 +13344,51 @@ class L10nZh extends L10n {
+@@ -13098,6 +13353,51 @@ class L10nZh extends L10n {
    @override
    String get phoneSkillUnavailable => '当前无法处理技能草稿。请检查本机引擎状态后重试。';
  
@@ -107065,7 +107160,7 @@ index c66b20de..bac0bb10 100644
    @override
    String get phoneModeTitle => '选择确认方式';
  
-@@ -13120,7 +13411,7 @@ class L10nZh extends L10n {
+@@ -13120,7 +13420,7 @@ class L10nZh extends L10n {
    String get phoneModeAutoNoteTitle => '这些仍由你来操作';
  
    @override
@@ -107074,7 +107169,7 @@ index c66b20de..bac0bb10 100644
  
    @override
    String get phoneModeAutoUnlockNote => '如需让 AI 操作系统设置、密码等，可在 设置 › 手机操控 › 解除限制 中开启。';
-@@ -13138,7 +13429,7 @@ class L10nZh extends L10n {
+@@ -13138,7 +13438,7 @@ class L10nZh extends L10n {
    String get phoneYoursSecrets => '密码和验证码';
  
    @override
@@ -107083,7 +107178,7 @@ index c66b20de..bac0bb10 100644
  
    @override
    String get phoneYoursDenyList => '应用名单里「不碰」的 App，默认含银行、支付类';
-@@ -13162,10 +13453,10 @@ class L10nZh extends L10n {
+@@ -13162,10 +13462,10 @@ class L10nZh extends L10n {
    String get phoneUnlockSecretsHint => '填写密码、验证码和支付密码';
  
    @override
@@ -107096,7 +107191,7 @@ index c66b20de..bac0bb10 100644
  
    @override
    String get phoneUnlockBusy => '任务进行中，结束后才能开启';
-@@ -13198,7 +13489,7 @@ class L10nZh extends L10n {
+@@ -13198,7 +13498,7 @@ class L10nZh extends L10n {
    String get phoneUnlockConfirmSecretsTitle => '允许 AI 填写密码和验证码？';
  
    @override
@@ -107105,7 +107200,7 @@ index c66b20de..bac0bb10 100644
  
    @override
    String get phoneUnlockCanTitle => '开启后，AI 可以';
-@@ -13240,10 +13531,10 @@ class L10nZh extends L10n {
+@@ -13240,10 +13540,10 @@ class L10nZh extends L10n {
    String get phoneUnlockSecretsRisk2 => '可能完成你并不想要的付款或转账';
  
    @override
@@ -107118,7 +107213,7 @@ index c66b20de..bac0bb10 100644
  
    @override
    String get phoneUnlockOwnAppRisk1 => '恶意指令可能诱导 AI 批准它自己发起的操作，或关掉确认';
-@@ -13258,7 +13549,7 @@ class L10nZh extends L10n {
+@@ -13258,7 +13558,7 @@ class L10nZh extends L10n {
    String get phoneUnlockDisclaimer2 => 'AI 可能被网页、消息或文件中的内容误导。';
  
    @override
@@ -107127,7 +107222,7 @@ index c66b20de..bac0bb10 100644
  
    @override
    String get phoneUnlockDisclaimer4 => '建议只在需要时临时开启，用完关闭。';
-@@ -13757,7 +14048,7 @@ class L10nZh extends L10n {
+@@ -13757,7 +14057,7 @@ class L10nZh extends L10n {
    String get pluginsFileWriteFailed => '没能写入文件';
  
    @override
@@ -107136,7 +107231,7 @@ index c66b20de..bac0bb10 100644
  
    @override
    String get pluginsGistTokenInvalid => 'GitHub 令牌无效或没有 Gist 权限';
-@@ -14341,7 +14632,7 @@ class L10nZh extends L10n {
+@@ -14341,7 +14641,7 @@ class L10nZh extends L10n {
    String get pluginsNotifications => '通知';
  
    @override
@@ -107145,7 +107240,7 @@ index c66b20de..bac0bb10 100644
  
    @override
    String get pluginsSystemNotificationsOff => '系统通知已关闭';
-@@ -14595,7 +14886,7 @@ class L10nZh extends L10n {
+@@ -14595,7 +14895,7 @@ class L10nZh extends L10n {
    String get pluginsShareOpenFailed => '没能打开这个分享码';
  
    @override
@@ -107154,7 +107249,7 @@ index c66b20de..bac0bb10 100644
  
    @override
    String get pluginsShareSheetOpenFailed => '没能打开分享';
-@@ -14855,7 +15146,7 @@ class L10nZh extends L10n {
+@@ -14855,7 +15155,7 @@ class L10nZh extends L10n {
  
    @override
    String plugslotsIssueNeedsApp(String version) {
@@ -107163,7 +107258,7 @@ index c66b20de..bac0bb10 100644
    }
  
    @override
-@@ -15338,7 +15629,7 @@ class L10nZh extends L10n {
+@@ -15338,7 +15638,7 @@ class L10nZh extends L10n {
    String get remoteErrHostNotOwned => '主机不在你的 DSH Remote 账号下';
  
    @override
@@ -107172,7 +107267,7 @@ index c66b20de..bac0bb10 100644
  
    @override
    String get remoteErrVersionIncompatible => '主机上的 DSH 或远程插件需要更新';
-@@ -16772,7 +17063,7 @@ class L10nZh extends L10n {
+@@ -16772,7 +17072,7 @@ class L10nZh extends L10n {
    String get remotePairNeedsDeepSeek => '先登录 DeepSeek 账号';
  
    @override
@@ -107181,7 +107276,7 @@ index c66b20de..bac0bb10 100644
  
    @override
    String get remotePairScanHint => '对准电脑上 Remote 插件显示的配对二维码';
-@@ -16866,7 +17157,7 @@ class L10nZh extends L10n {
+@@ -16866,7 +17166,7 @@ class L10nZh extends L10n {
  
    @override
    String remotePairOtherServerBody(String server) {
@@ -107190,7 +107285,7 @@ index c66b20de..bac0bb10 100644
    }
  
    @override
-@@ -16876,7 +17167,7 @@ class L10nZh extends L10n {
+@@ -16876,7 +17176,7 @@ class L10nZh extends L10n {
    String get remotePairScanAgain => '重新扫码';
  
    @override
@@ -107199,7 +107294,7 @@ index c66b20de..bac0bb10 100644
  
    @override
    String get remotePairErrOtherServer => '这个二维码来自另一个 Remote 服务器';
-@@ -16971,7 +17262,7 @@ class L10nZh extends L10n {
+@@ -16971,7 +17271,7 @@ class L10nZh extends L10n {
    String get riskPetOverlayTitle => '显示在其他应用上层？';
  
    @override
@@ -107208,7 +107303,7 @@ index c66b20de..bac0bb10 100644
  
    @override
    String get riskPetOverlayAction => '去设置';
-@@ -16987,19 +17278,19 @@ class L10nZh extends L10n {
+@@ -16987,19 +17287,19 @@ class L10nZh extends L10n {
  
    @override
    String askAiAboutApp(String question) {
@@ -107232,7 +107327,7 @@ index c66b20de..bac0bb10 100644
  
    @override
    String get askAiQuestionPhoneControl => '手机操控是怎么工作的？有什么风险？';
-@@ -18389,7 +18680,7 @@ class L10nZh extends L10n {
+@@ -18389,7 +18689,7 @@ class L10nZh extends L10n {
  
    @override
    String shellSkillInstallPrompt(String skill) {
@@ -107241,7 +107336,7 @@ index c66b20de..bac0bb10 100644
    }
  
    @override
-@@ -18775,6 +19066,9 @@ class L10nZh extends L10n {
+@@ -18775,6 +19075,9 @@ class L10nZh extends L10n {
    @override
    String get speechCallSettings => '通话设置';
  
@@ -107251,7 +107346,7 @@ index c66b20de..bac0bb10 100644
    @override
    String get speechCallPause => '停顿多久算说完';
  
-@@ -18838,17 +19132,71 @@ class L10nZh extends L10n {
+@@ -18838,17 +19141,71 @@ class L10nZh extends L10n {
    @override
    String get speechCallVisualGlass => '光球';
  
@@ -107326,7 +107421,7 @@ index c66b20de..bac0bb10 100644
      );
      return '$_temp0';
    }
-@@ -18869,7 +19217,7 @@ class L10nZh extends L10n {
+@@ -18869,7 +19226,7 @@ class L10nZh extends L10n {
    String get starPromptLater => '下次再说';
  
    @override
@@ -107335,7 +107430,7 @@ index c66b20de..bac0bb10 100644
  
    @override
    String get hubStartPage => '起始页';
-@@ -18898,7 +19246,7 @@ class L10nZh extends L10n {
+@@ -18898,7 +19255,7 @@ class L10nZh extends L10n {
    String get phoneStartupPortNotReady => '已收到启动标记，但本机服务端口尚未就绪，请查看日志';
  
    @override
@@ -107344,7 +107439,7 @@ index c66b20de..bac0bb10 100644
  
    @override
    String get stateStoragePermission => '没有存储权限，存不进「下载」';
-@@ -20159,7 +20507,7 @@ class L10nZh extends L10n {
+@@ -20159,7 +20516,7 @@ class L10nZh extends L10n {
    String get systemActionsWaitingEngine => '已开启，等本机引擎启动';
  
    @override
@@ -107353,7 +107448,7 @@ index c66b20de..bac0bb10 100644
  
    @override
    String get systemActionsConnecting => '正在连接';
-@@ -20180,10 +20528,10 @@ class L10nZh extends L10n {
+@@ -20180,10 +20537,10 @@ class L10nZh extends L10n {
    String get systemActionsRemoteHint => '系统操作只在本机引擎的对话里有效';
  
    @override
@@ -107366,7 +107461,7 @@ index c66b20de..bac0bb10 100644
  
    @override
    String get systemActionsCanTitle => '能做的';
-@@ -20285,7 +20633,7 @@ class L10nZh extends L10n {
+@@ -20285,7 +20642,7 @@ class L10nZh extends L10n {
    String get systemActionsDisclosureWhenTitle => '什么时候做';
  
    @override
@@ -107375,7 +107470,7 @@ index c66b20de..bac0bb10 100644
  
    @override
    String get systemActionsDisclosureWhoTitle => '发给谁';
-@@ -20309,7 +20657,7 @@ class L10nZh extends L10n {
+@@ -20309,7 +20666,7 @@ class L10nZh extends L10n {
    String get systemActionsHandoffTitle => '轮到你来操作';
  
    @override
@@ -107384,7 +107479,7 @@ index c66b20de..bac0bb10 100644
  
    @override
    String get systemActionsHandoffFailed => '这次没算上，提示如果还在可以再点一次';
-@@ -20336,7 +20684,7 @@ class L10nZh extends L10n {
+@@ -20336,7 +20693,7 @@ class L10nZh extends L10n {
    String get systemActionsResultUnsupported => '鸿蒙版不支持这个动作，没有执行。';
  
    @override
@@ -107393,7 +107488,7 @@ index c66b20de..bac0bb10 100644
  
    @override
    String get systemActionsResultUnavailable => '系统操作没开或暂时连不上，没有执行。到「设置 → 系统操作」看看。';
-@@ -21440,7 +21788,7 @@ class L10nZh extends L10n {
+@@ -21440,7 +21797,7 @@ class L10nZh extends L10n {
    }
  
    @override
@@ -107402,7 +107497,7 @@ index c66b20de..bac0bb10 100644
  
    @override
    String get tavernStorybookContents => '目录';
-@@ -24200,7 +24548,7 @@ class L10nZh extends L10n {
+@@ -24200,7 +24557,7 @@ class L10nZh extends L10n {
    String get updateSettingsOpenFailed => '没能打开系统设置';
  
    @override
@@ -107411,7 +107506,7 @@ index c66b20de..bac0bb10 100644
  
    @override
    String get updateInstallCancelled => '已取消安装';
-@@ -24218,7 +24566,7 @@ class L10nZh extends L10n {
+@@ -24218,7 +24575,7 @@ class L10nZh extends L10n {
    String get updateSignatureMismatch => '签名不一致，不能直接覆盖';
  
    @override
@@ -107420,7 +107515,7 @@ index c66b20de..bac0bb10 100644
  
    @override
    String get updateWrongPackage => '不是 DSH 的安装包';
-@@ -24281,7 +24629,7 @@ class L10nZh extends L10n {
+@@ -24281,7 +24638,7 @@ class L10nZh extends L10n {
    String get updateNoReleaseNotes => '这个版本没有写更新说明。';
  
    @override
@@ -107429,7 +107524,7 @@ index c66b20de..bac0bb10 100644
  
    @override
    String get updateNoCompatiblePackage => '没有适合本机的安装包';
-@@ -24316,7 +24664,7 @@ class L10nZh extends L10n {
+@@ -24316,7 +24673,7 @@ class L10nZh extends L10n {
    String get updateReadyToInstall => '校验通过，可以安装了。';
  
    @override
@@ -107438,7 +107533,7 @@ index c66b20de..bac0bb10 100644
  
    @override
    String get updateAllowInstallMessage => '在系统设置里打开「安装未知应用」，回来后自动继续。';
-@@ -24389,7 +24737,7 @@ class L10nZh extends L10n {
+@@ -24389,7 +24746,7 @@ class L10nZh extends L10n {
    String get usageStatsTitle => '发送匿名使用统计';
  
    @override
@@ -107447,7 +107542,7 @@ index c66b20de..bac0bb10 100644
  
    @override
    String get usageStatsFooter =>
-@@ -24399,7 +24747,7 @@ class L10nZh extends L10n {
+@@ -24399,7 +24756,7 @@ class L10nZh extends L10n {
    String get usageNoticeBody => '不含对话和个人信息，可随时关闭';
  
    @override
@@ -107456,7 +107551,7 @@ index c66b20de..bac0bb10 100644
  
    @override
    String get usageUpgradeLearn => '了解';
-@@ -25081,7 +25429,7 @@ class L10nZh extends L10n {
+@@ -25081,7 +25438,7 @@ class L10nZh extends L10n {
    String get viewTipKeyboard => '接了键盘：Ctrl+Enter 发送，连按两次 Esc 停止';
  
    @override
@@ -107465,7 +107560,7 @@ index c66b20de..bac0bb10 100644
  
    @override
    String get viewTipShareSelect => '分享对话时长按再滑动，可以一次选中多条消息';
-@@ -25318,7 +25666,7 @@ class L10nZh extends L10n {
+@@ -25318,7 +25675,7 @@ class L10nZh extends L10n {
  
    @override
    String viewContinueHeader(String value) {
@@ -107474,7 +107569,7 @@ index c66b20de..bac0bb10 100644
    }
  
    @override
-@@ -25372,7 +25720,7 @@ class L10nZh extends L10n {
+@@ -25372,7 +25729,7 @@ class L10nZh extends L10n {
  
    @override
    String viewShareLinkText(String first, String second) {
@@ -107483,7 +107578,7 @@ index c66b20de..bac0bb10 100644
    }
  
    @override
-@@ -25389,7 +25737,7 @@ class L10nZh extends L10n {
+@@ -25389,7 +25746,7 @@ class L10nZh extends L10n {
    }
  
    @override
@@ -107492,7 +107587,7 @@ index c66b20de..bac0bb10 100644
  
    @override
    String get viewShareWebHint => '任何浏览器都能打开，不用联网';
-@@ -26148,6 +26496,9 @@ class L10nZh extends L10n {
+@@ -26148,6 +26505,9 @@ class L10nZh extends L10n {
    @override
    String get wallpaperDim => '压暗';
  
@@ -107502,7 +107597,7 @@ index c66b20de..bac0bb10 100644
    @override
    String get wallpaperReplace => '更换图片';
  
-@@ -26414,7 +26765,7 @@ class L10nZh extends L10n {
+@@ -26414,7 +26774,7 @@ class L10nZh extends L10n {
  
    @override
    String workshopMinApp(String version) {
@@ -107549,10 +107644,10 @@ index 25719993..bcc85437 100644
      "placeholders": {
 diff --git a/app/lib/l10n/parts/ai_call_en.arb b/app/lib/l10n/parts/ai_call_en.arb
 new file mode 100644
-index 00000000..0dea46d0
+index 00000000..148b5ed5
 --- /dev/null
 +++ b/app/lib/l10n/parts/ai_call_en.arb
-@@ -0,0 +1,114 @@
+@@ -0,0 +1,117 @@
 +{
 +  "aiCallSettingsTitle": "AI calls",
 +  "aiCallDevNote": "Dialing and live voice takeover are in development. Finish the setup below first.",
@@ -107665,15 +107760,18 @@ index 00000000..0dea46d0
 +        "type": "String"
 +      }
 +    }
-+  }
++  },
++  "aiCallIncomingScopeTypesNote": "By type (no caller labels yet; treated as strangers for now)",
++  "aiCallErrorAnswerRejected": "The system rejected answering this call",
++  "aiCallErrorAnswerNoActive": "The call did not activate after answering; giving up"
 +}
 \ No newline at end of file
 diff --git a/app/lib/l10n/parts/ai_call_zh.arb b/app/lib/l10n/parts/ai_call_zh.arb
 new file mode 100644
-index 00000000..1e0a50f4
+index 00000000..0cd9136d
 --- /dev/null
 +++ b/app/lib/l10n/parts/ai_call_zh.arb
-@@ -0,0 +1,114 @@
+@@ -0,0 +1,117 @@
 +{
 +  "aiCallSettingsTitle": "AI 电话",
 +  "aiCallDevNote": "拨号与实时语音接管正在开发中，先完成下方配置",
@@ -107786,7 +107884,10 @@ index 00000000..1e0a50f4
 +        "type": "String"
 +      }
 +    }
-+  }
++  },
++  "aiCallIncomingScopeTypesNote": "按类型（暂无来电标记，先按陌生号码处理）",
++  "aiCallErrorAnswerRejected": "系统拒绝接听这通来电",
++  "aiCallErrorAnswerNoActive": "接听后通话没有激活，已放弃"
 +}
 \ No newline at end of file
 diff --git a/app/lib/l10n/parts/android_shell_en.arb b/app/lib/l10n/parts/android_shell_en.arb
@@ -108793,10 +108894,10 @@ index 49e128b9..f111beb5 100644
  // (ui/chat/render/markdown_body.dart); a link from outside the app arrives
 diff --git a/app/lib/phone/ai_call_channel.dart b/app/lib/phone/ai_call_channel.dart
 new file mode 100644
-index 00000000..849d88cc
+index 00000000..7a0f2263
 --- /dev/null
 +++ b/app/lib/phone/ai_call_channel.dart
-@@ -0,0 +1,154 @@
+@@ -0,0 +1,172 @@
 +// AI 电话（运营商通话的 AI 接管）的 `dsh/phone` 方法通道客户端与事件流。
 +// 原生侧是 PhonePlugin.kt 的 aiCall* 方法与 KongkongInCallService；引擎侧配套
 +// 见 ai_call_runtime.dart。原生模块不在时所有调用返回错误码而不是抛异常。
@@ -108829,6 +108930,8 @@ index 00000000..849d88cc
 +    this.audioOpen = false,
 +    this.companion = false,
 +    this.callState,
++    this.callNumber,
++    this.callDirection,
 +  });
 +
 +  final bool callPhoneGranted;
@@ -108838,10 +108941,16 @@ index 00000000..849d88cc
 +
 +  /// android.telecom.Call 的状态值；null = 没有通话。
 +  final int? callState;
++  final String? callNumber;
++
++  /// 1 = 来电, 2 = 拨出；null = 没有通话。
++  final int? callDirection;
 +
 +  bool get inCall => callState != null && callState != 7; // 7 = DISCONNECTED
 +
 +  bool get active => callState == 4; // 4 = ACTIVE
++
++  bool get ringingIncoming => callState == 2 && callDirection == 1; // RINGING + INCOMING
 +
 +  factory AiCallStatus.from(Object? v) {
 +    final map = v is Map ? v.cast<Object?, Object?>() : const <Object?, Object?>{};
@@ -108851,6 +108960,8 @@ index 00000000..849d88cc
 +      audioOpen: map['audioOpen'] == true,
 +      companion: map['companion'] == true,
 +      callState: map['callState'] is num ? (map['callState']! as num).toInt() : null,
++      callNumber: map['callNumber'] is String ? map['callNumber']! as String : null,
++      callDirection: map['callDirection'] is num ? (map['callDirection']! as num).toInt() : null,
 +    );
 +  }
 +
@@ -108926,6 +109037,14 @@ index 00000000..849d88cc
 +
 +  Future<Map<Object?, Object?>> hangUp() => _invoke('aiCallHangUp');
 +
++  Future<Map<Object?, Object?>> answer() => _invoke('aiCallAnswer');
++
++  Future<Map<Object?, Object?>> reject() => _invoke('aiCallReject');
++
++  /// 自动接听开关同步：true 常驻注册电话伴侣，false 撤销。
++  Future<Map<Object?, Object?>> setCompanion(bool enabled) =>
++      _invoke('aiCallSetCompanion', <String, Object?>{'enabled': enabled});
++
 +  Future<Map<Object?, Object?>> setMuted(bool muted) =>
 +      _invoke('aiCallMute', <String, Object?>{'muted': muted});
 +
@@ -108953,10 +109072,10 @@ index 00000000..849d88cc
 +}
 diff --git a/app/lib/phone/ai_call_runtime.dart b/app/lib/phone/ai_call_runtime.dart
 new file mode 100644
-index 00000000..2c492929
+index 00000000..9fa03f25
 --- /dev/null
 +++ b/app/lib/phone/ai_call_runtime.dart
-@@ -0,0 +1,342 @@
+@@ -0,0 +1,424 @@
 +// AI 电话（运营商通话的 AI 接管）运行引擎：
 +//
 +//   拨号(Telecom) → 通话 ACTIVE → 话筒静音 → shell 打开电话音频双管
@@ -109006,6 +109125,9 @@ index 00000000..2c492929
 +  final String callerText;
 +  final String assistantText;
 +  final bool audioReady;
++
++  /// 自动接听：true 表示当前是一通被 AI 接起的来电。
++  bool get autoAnswered => false;
 +}
 +
 +/// 火山实时语音凭据：只用 API Key（X-Api-Key 头）一种形态。
@@ -109037,9 +109159,12 @@ index 00000000..2c492929
 +  StreamSubscription<Map<Object?, Object?>>? _events;
 +  AiCallCredentials? _credentials;
 +  AiCallSettings? _settings;
++  AiCallSettings? _lastSettings;
 +  Future<void> _writeQueue = Future<void>.value();
 +  bool _stopping = false;
 +  int _eventId = 0;
++  bool _autoAnswerBusy = false;
++  Timer? _autoAnswerTimer;
 +  final _assistantText = StringBuffer();
 +
 +  String _nextId() => 'evt${++_eventId}';
@@ -109120,6 +109245,77 @@ index 00000000..2c492929
 +      await _teardown();
 +      return;
 +    }
++    _updateFields(phase: AiCallPhase.connecting, detail: 'audio');
++    await _connectAudio(settings);
++  }
++
++  /// 名单策略：这通来电要不要自动接（v1 无来电标记数据源，types 等同 strangers）。
++  bool shouldAutoAnswer(AiCallSettings settings, String number) {
++    if (!settings.enabled || !settings.autoAnswer) return false;
++    if (settings.bypassNumbers.contains(number)) return false;
++    switch (settings.incomingScope) {
++      case AiCallIncomingScope.list:
++        return settings.allowedNumbers.contains(number);
++      case AiCallIncomingScope.all:
++        return true;
++      case AiCallIncomingScope.strangers:
++      case AiCallIncomingScope.types:
++        return !settings.allowedNumbers.contains(number);
++    }
++  }
++
++  /// 设置页在设置变化时同步一份：来电时按最新配置判断是否自动接听。
++  void syncSettings(AiCallSettings settings) => _lastSettings = settings;
++
++  /// 自动接听入口：来电响铃时按策略延时接听，接起后走同一套音频 + 实时语音。
++  Future<void> _maybeAutoAnswer(AiCallStatus status) async {
++    final settings = _lastSettings;
++    if (settings == null || _autoAnswerBusy || !status.ringingIncoming) return;
++    final number = status.callNumber ?? '';
++    if (number.isEmpty || !shouldAutoAnswer(settings, number)) return;
++    _autoAnswerBusy = true;
++    _update(AiCallSnapshot(
++      phase: AiCallPhase.ringing,
++      number: number,
++      detail: 'autoAnswer',
++    ));
++    _autoAnswerTimer = Timer(
++      Duration(seconds: settings.autoAnswerDelaySeconds),
++      () => _answerIncoming(settings, number),
++    );
++  }
++
++  Future<void> _answerIncoming(AiCallSettings settings, String number) async {
++    if (_snapshot.phase != AiCallPhase.ringing) {
++      _autoAnswerBusy = false;
++      return;
++    }
++    final status = await channel.status();
++    if (!status.ringingIncoming) {
++      _autoAnswerBusy = false;
++      _updateFields(phase: AiCallPhase.idle, detail: null, clearError: true);
++      return;
++    }
++    final answered = await channel.answer();
++    if (answered['ok'] != true) {
++      _autoAnswerBusy = false;
++      _updateFields(phase: AiCallPhase.idle, error: 'answerRejected', clearError: false);
++      return;
++    }
++    // 等 ACTIVE 后再进音频链路。
++    final deadline = DateTime.now().add(const Duration(seconds: 10));
++    while (DateTime.now().isBefore(deadline)) {
++      final now = await channel.status();
++      if (now.active) break;
++      await Future<void>.delayed(const Duration(milliseconds: 200));
++    }
++    final current = await channel.status();
++    if (!current.active) {
++      _autoAnswerBusy = false;
++      _updateFields(phase: AiCallPhase.idle, error: 'answerNoActive', clearError: false);
++      return;
++    }
++    _autoAnswerBusy = false;
 +    _updateFields(phase: AiCallPhase.connecting, detail: 'audio');
 +    await _connectAudio(settings);
 +  }
@@ -109237,6 +109433,10 @@ index 00000000..2c492929
 +
 +  void _onEvent(Map<Object?, Object?> event) {
 +    final state = AiCallStatus.from(event['state']);
++    if (state.ringingIncoming && _snapshot.phase == AiCallPhase.idle) {
++      unawaited(_maybeAutoAnswer(state));
++      return;
++    }
 +    if (state.callState == 7 && inCall) {
 +      // 通话断开了（对方挂断等）。
 +      _updateFields(detail: 'callEnded');
@@ -109290,6 +109490,7 @@ index 00000000..2c492929
 +  @override
 +  void dispose() {
 +    _pump?.cancel();
++    _autoAnswerTimer?.cancel();
 +    _events?.cancel();
 +    final socket = _socket;
 +    _socket = null;
@@ -111510,10 +111711,10 @@ index 35ac9f48..221c4374 100644
                    // A logo, not a line of reading: the same size at every text scale.
 diff --git a/app/lib/ui/phone/ai_call_settings_page.dart b/app/lib/ui/phone/ai_call_settings_page.dart
 new file mode 100644
-index 00000000..b854e02f
+index 00000000..fcf39790
 --- /dev/null
 +++ b/app/lib/ui/phone/ai_call_settings_page.dart
-@@ -0,0 +1,498 @@
+@@ -0,0 +1,504 @@
 +// 设置 › 手机操控 › AI 电话:运营商通话的 AI 接管配置页。
 +// 字段对齐 mika 的 CallConfig;当前只做配置与存储,拨号/实时语音链路后续接入。
 +
@@ -111557,6 +111758,8 @@ index 00000000..b854e02f
 +      'companionRegistrationFailed' => l10n.aiCallErrorCompanion,
 +      'noAnswer' => l10n.aiCallErrorNoAnswer,
 +      'muteFailed' => l10n.aiCallErrorMuteFailed,
++      'answerRejected' => l10n.aiCallErrorAnswerRejected,
++      'answerNoActive' => l10n.aiCallErrorAnswerNoActive,
 +      'audioOpenFailed' => l10n.aiCallErrorAudioOpenFailed,
 +      'wsConnectFailed' => l10n.aiCallErrorWsConnectFailed,
 +      'wsError' => l10n.aiCallErrorWs,
@@ -111740,6 +111943,7 @@ index 00000000..b854e02f
 +      ));
 +    }
 +
++    runtime.syncSettings(s);
 +    final snap = runtime.snapshot;
 +    final inCall = snap.phase != AiCallPhase.idle;
 +    final dialController = TextEditingController();
@@ -111833,7 +112037,10 @@ index 00000000..b854e02f
 +              icon: AppIcons.call,
 +              title: l10n.aiCallEnable,
 +              subtitle: l10n.aiCallEntrySub,
-+              trailing: Switch(value: s.enabled, onChanged: (v) => save(s.copyWith(enabled: v))),
++              trailing: Switch(value: s.enabled, onChanged: (v) {
++                save(s.copyWith(enabled: v));
++                runtime.channel.setCompanion(v);
++              }),
 +              chevron: false,
 +            ),
 +            ListPageRow(
@@ -111867,7 +112074,7 @@ index 00000000..b854e02f
 +              subtitle: switch (s.incomingScope) {
 +                AiCallIncomingScope.list => l10n.aiCallIncomingScopeList,
 +                AiCallIncomingScope.all => l10n.aiCallIncomingScopeAll,
-+                AiCallIncomingScope.types => l10n.aiCallIncomingScopeTypes,
++                AiCallIncomingScope.types => l10n.aiCallIncomingScopeTypesNote,
 +                AiCallIncomingScope.strangers => l10n.aiCallIncomingScopeStrangers,
 +              },
 +              onTap: () => pick(
