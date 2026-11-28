@@ -1,10 +1,10 @@
 From: dsh <dsh@local>
-Date: Sat, 28 Nov 2026 10:13:13 +0800
-Subject: [PATCH] 改包名 io.github.ccch1mneyyy.kongkong(自己的包)+工具说明/技能开放编辑+open说明+四刀
+Date: Sat, 28 Nov 2026 10:17:03 +0800
+Subject: [PATCH] kongkong 自己的包: 改包名+去应用内LOGO+工具说明/技能开放编辑+open说明+四刀
 
  dsh-go-wake.patch                                  | 2065 +++++++++++++
  tooling/build-wake-apk.sh                          |   68 +
- 274 files changed, 20212 insertions(+), 1114 deletions(-)
+ 275 files changed, 20239 insertions(+), 1169 deletions(-)
 
 diff --git a/.gitattributes b/.gitattributes
 index 52e3e08a..3e877c7e 100644
@@ -109186,6 +109186,107 @@ index 38418e6a..997bcccd 100644
        ],
      );
    }
+diff --git a/app/lib/ui/shell/brand_mark.dart b/app/lib/ui/shell/brand_mark.dart
+index c782196c..0b00be16 100644
+--- a/app/lib/ui/shell/brand_mark.dart
++++ b/app/lib/ui/shell/brand_mark.dart
+@@ -48,69 +48,41 @@ class BrandMark extends StatelessWidget {
+ 
+   @override
+   Widget build(BuildContext context) {
+-    final style = tile
+-        ? _Style.tile
+-        : color != null
+-        ? _Style.mono
+-        : Theme.of(context).brightness == Brightness.dark
+-        ? _Style.dark
+-        : _Style.light;
++    final theme = Theme.of(context);
++    final tint = tile
++        ? Colors.white
++        : color ?? (theme.brightness == Brightness.dark ? theme.colorScheme.onSurface : theme.colorScheme.primary);
+     return Semantics(
+       label: AppInfo.wordmark,
+       image: true,
+-      child: CustomPaint(
+-        size: tile ? Size.square(size) : Size(size * aspect, size),
+-        painter: _BrandPainter(style, color),
++      child: Container(
++        width: tile ? size : size * BrandGlyph.aspect,
++        height: size,
++        decoration: tile
++            ? BoxDecoration(
++                borderRadius: BorderRadius.circular(size * 0.28),
++                gradient: const LinearGradient(
++                  begin: Alignment.topLeft,
++                  end: Alignment.bottomRight,
++                  colors: [Color(0xFF4B67B4), Color(0xFF9A7BD0)],
++                ),
++              )
++            : null,
++        alignment: Alignment.center,
++        child: Text(
++          '空',
++          style: TextStyle(
++            fontSize: size * (tile ? 0.5 : 0.78),
++            fontWeight: FontWeight.w800,
++            color: tint,
++            height: 1,
++          ),
++        ),
+       ),
+     );
+   }
+ }
+ 
+-enum _Style { light, dark, mono, tile }
+-
+-class _BrandPainter extends CustomPainter {
+-  const _BrandPainter(this.style, this.color);
+-
+-  final _Style style;
+-  final Color? color;
+-
+-  @override
+-  void paint(Canvas canvas, Size size) {
+-    canvas.save();
+-    if (style == _Style.tile) {
+-      const box = BrandGlyph.tileBox;
+-      canvas.scale(size.width / box.width, size.height / box.height);
+-      canvas.translate(-box.left, -box.top);
+-      canvas.drawPath(BrandGlyph.tile, Paint()..shader = BrandGlyph.tileFill);
+-      _glass(canvas, dark: true);
+-    } else {
+-      const box = BrandGlyph.box;
+-      canvas.scale(size.height / box.height);
+-      canvas.translate(-box.left, -box.top);
+-      if (style == _Style.mono) {
+-        final paint = Paint()..color = color!;
+-        canvas.drawPath(BrandGlyph.body, paint);
+-        canvas.drawPath(BrandGlyph.bubble, paint);
+-      } else {
+-        _glass(canvas, dark: style == _Style.dark);
+-      }
+-    }
+-    canvas.restore();
+-  }
+-
+-  /// The colour glyph: the tail's gradient over the whole silhouette, the fin (behind
+-  /// the stem) and the belly (in front of it) over that, then the bubble.
+-  static void _glass(Canvas canvas, {required bool dark}) {
+-    canvas
+-      ..drawPath(BrandGlyph.body, Paint()..shader = dark ? BrandGlyph.tailDark : BrandGlyph.tailLight)
+-      ..drawPath(BrandGlyph.fin, Paint()..shader = dark ? BrandGlyph.finDark : BrandGlyph.finLight)
+-      ..drawPath(BrandGlyph.belly, Paint()..shader = dark ? BrandGlyph.bellyDark : BrandGlyph.bellyLight)
+-      ..drawPath(BrandGlyph.bubble, Paint()..shader = dark ? BrandGlyph.bubbleDark : BrandGlyph.bubbleLight);
+-  }
+-
+-  @override
+-  bool shouldRepaint(_BrandPainter old) => old.style != style || old.color != color;
+-}
+ 
+ /// The glyph and a wordmark on one line.
+ ///
 diff --git a/app/lib/ui/shell/call_overlay_host.dart b/app/lib/ui/shell/call_overlay_host.dart
 new file mode 100644
 index 00000000..a7cb0466
