@@ -1,10 +1,10 @@
 From: dsh <dsh@local>
-Date: Sat, 28 Nov 2026 15:38:30 +0800
-Subject: [PATCH] frost=0纯透明补齐+设置页恢复原样
+Date: Sat, 28 Nov 2026 16:29:33 +0800
+Subject: [PATCH] 设置页接壁纸+全玻璃磨砂分配+白纱清零+抽屉即时磨砂
 
  dsh-go-wake.patch                                  | 2065 +++++++++++++
  tooling/build-wake-apk.sh                          |   68 +
- 401 files changed, 20601 insertions(+), 1322 deletions(-)
+ 404 files changed, 20624 insertions(+), 1329 deletions(-)
 
 diff --git a/.gitattributes b/.gitattributes
 index 52e3e08a..3e877c7e 100644
@@ -107872,6 +107872,33 @@ index 00000000..86d8ed29
 +  );
 +  return all.isEmpty ? null : all.first.id;
 +}
+diff --git a/app/lib/state/wallpaper_state.dart b/app/lib/state/wallpaper_state.dart
+index b7377825..4125b0e9 100644
+--- a/app/lib/state/wallpaper_state.dart
++++ b/app/lib/state/wallpaper_state.dart
+@@ -7,6 +7,7 @@ import 'dart:ui' show Brightness;
+ import 'package:flutter_riverpod/flutter_riverpod.dart';
+ 
+ import '../performance/performance_state.dart';
++import 'appearance_state.dart';
+ import '../wallpaper/custom_wallpaper.dart';
+ import '../wallpaper/wallpaper_import.dart';
+ import '../wallpaper/wallpaper_render.dart';
+@@ -103,7 +104,13 @@ final wallpaperImageProvider = FutureProvider.autoDispose.family<ui.Image?, Wall
+   }
+   if (wallpaper == null || !wallpaper.on) return null;
+   final lightweight = ref.watch(performanceDefaultsProvider.select((p) => p.lightweight));
+-  final image = await ref.read(wallpaperRendererProvider).bake(wallpaper, frame.copyWith(lightweight: lightweight));
++  // 【frost】磨砂滑块也压壁纸烘培的纱与提亮:0=原图直出。变化时本 provider 重烘。
++  final frost = ref.watch(appearanceProvider).frost;
++  final image = await ref.read(wallpaperRendererProvider).bake(
++    wallpaper,
++    frame.copyWith(lightweight: lightweight),
++    frost: frost,
++  );
+   if (!ref.mounted) {
+     image?.dispose();
+     return null;
 diff --git a/app/lib/ui/chat/chat_rows.dart b/app/lib/ui/chat/chat_rows.dart
 index 0702d0ae..d5e89519 100644
 --- a/app/lib/ui/chat/chat_rows.dart
@@ -111117,6 +111144,28 @@ index 9a236c71..ece36539 100644
                  ),
                ),
              ),
+diff --git a/app/lib/ui/shell/page_frame.dart b/app/lib/ui/shell/page_frame.dart
+index 08e7db05..b4c280fd 100644
+--- a/app/lib/ui/shell/page_frame.dart
++++ b/app/lib/ui/shell/page_frame.dart
+@@ -10,6 +10,7 @@ import '../common/side_insets.dart';
+ import '../settings/index/spot_anchor.dart' show seekSpot;
+ import '../theme/app_icons.dart';
+ import '../theme/theme.dart';
++import '../wallpaper/wallpaper_backdrop.dart';
+ 
+ /// Frame for every secondary page (settings, engine, remote, diagnostics…).
+ ///
+@@ -176,7 +177,8 @@ class _AppPageState extends State<AppPage> {
+     }
+     final page = AnnotatedRegion<SystemUiOverlayStyle>(
+       value: dshSystemOverlay(theme.brightness),
+-      child: AppBackdrop(
++      // 【frost】设置主页与所有子页面接壁纸(不再是纯白/纯黑渐变),磨砂滑块一并生效。
++      child: WallpaperBackdrop(
+         child: Scaffold(
+           backgroundColor: Colors.transparent,
+           body: Stack(
 diff --git a/app/lib/ui/shell/root_gate.dart b/app/lib/ui/shell/root_gate.dart
 index d55e314f..e39f3a3a 100644
 --- a/app/lib/ui/shell/root_gate.dart
@@ -111913,7 +111962,7 @@ index a3f5f043..a663d2c6 100644
  }
  
 diff --git a/app/lib/ui/theme/glass.dart b/app/lib/ui/theme/glass.dart
-index 2ebac55e..e1733e4e 100644
+index 2ebac55e..54839bf2 100644
 --- a/app/lib/ui/theme/glass.dart
 +++ b/app/lib/ui/theme/glass.dart
 @@ -1,7 +1,9 @@
@@ -111935,7 +111984,7 @@ index 2ebac55e..e1733e4e 100644
    const GlassSurface({
      super.key,
      this.tier = GlassTier.card,
-@@ -105,18 +107,29 @@ class GlassSurface extends StatelessWidget {
+@@ -105,18 +107,27 @@ class GlassSurface extends StatelessWidget {
    }
  
    @override
@@ -111950,30 +111999,31 @@ index 2ebac55e..e1733e4e 100644
      final reduce = !surfaces.blurEnabled || highContrast || uiTraceNoBlur;
      final useBlur = !reduce && (blur ?? s.blurs);
 +    final frostSigma = (tier == GlassTier.sheet && useBlur) ? frost * 20 : 0.0;
-+    // 【frost】sheet 玻璃(抽屉/弹层/菜单)底色跟磨砂滑块走:0=玻璃无底(壁纸直出),
-+    // 1=现状。card 不挂(用户拍板设置页恢复原样);chrome/pill 交互件不动。
-+    final frostFill = (tier == GlassTier.sheet) ? s.fill.withValues(alpha: s.fill.a * frost) : s.fill;
-+    // 滑动中的不透明兜底也按 frost 透:不然"一滑动就恢复原样"。
-+    final frostFallback = (tier == GlassTier.sheet)
-+        ? s.fallbackFill.withValues(alpha: s.fallbackFill.a * frost)
-+        : s.fallbackFill;
++    // 【frost】一次性分配好:全部玻璃层级(输入条/顶栏/胶囊/抽屉/设置页与子页面卡片)
++    // 保底磨砂,0 时仍留 60% 原 alpha(半透明、透壁纸,同时文字有底可分辨),1=原样。
++    // 背景纱层(壁纸烘培/雾罩/光晕/暗化)另走全透明。
++    final glassKeep = 0.60 + 0.40 * frost;
++    final frostFill = s.fill.withValues(alpha: s.fill.a * glassKeep);
      if (uiTraceEnabled) {
        uiTrace('glass', 'build', {'tier': tier.name, 'blur': useBlur, 'grouped': grouped});
      }
-     final fill = useBlur
+-    final fill = useBlur
 -        ? Color.lerp(s.fallbackFill, s.fill, settled ?? 1)!
 -        : (reduce || s.blurs ? s.fallbackFill : s.fill);
-+        ? Color.lerp(frostFallback, frostFill, settled ?? 1)!
-+        : (reduce || s.blurs ? s.fallbackFill : frostFill);
++    // 【frost】开模糊时滑动期(settled=0)也直接用 frostFill:抽屉一打开就是磨砂态,
++    // 而不是停稳后才变。无模糊模式(减少透明/低端机)仍用不透明兜底保可读。
++    final fill = useBlur ? frostFill : (reduce || s.blurs ? s.fallbackFill : frostFill);
      final shape = _shape;
      final textDirection = Directionality.maybeOf(context);
  
-@@ -151,7 +164,7 @@ class GlassSurface extends StatelessWidget {
+@@ -151,7 +162,9 @@ class GlassSurface extends StatelessWidget {
      );
  
      if (useBlur) {
 -      final config = _filterFor(s.blurs ? s.blurSigma : 14, s.saturation);
 +      final config = _filterFor((s.blurs ? s.blurSigma : 14) + frostSigma, s.saturation);
++      // 【frost】滑动期不采样模糊(用户不要实时模糊,省掉每帧重采样);
++      // 磨砂感由恒定 frostFill + 背景雾罩提供,一滑开就是磨砂态。
        final sampling = settled != 0;
        content = grouped
            ? BackdropFilter.grouped(filterConfig: config, enabled: sampling, child: content)
@@ -113214,6 +113264,72 @@ index 00000000..4013a748
 +    state = state + 1;
 +  }
 +}
+diff --git a/app/lib/wallpaper/wallpaper_render.dart b/app/lib/wallpaper/wallpaper_render.dart
+index bd68e4ea..9f684ab6 100644
+--- a/app/lib/wallpaper/wallpaper_render.dart
++++ b/app/lib/wallpaper/wallpaper_render.dart
+@@ -116,13 +116,14 @@ class WallpaperRenderer {
+   int bakes = 0;
+ 
+   /// [wallpaper] baked for [frame] ([density] pixels per dp, else [WallpaperBake.densityFor]);
++  /// [frost] the 背景磨砂 slider (0=no veil or tone at all, the raw picture; 1=as before);
+   /// null when the picture can't be read. The caller owns the image.
+-  Future<ui.Image?> bake(CustomWallpaper wallpaper, WallpaperFrame frame, {double? density}) {
++  Future<ui.Image?> bake(CustomWallpaper wallpaper, WallpaperFrame frame, {double? density, double frost = 1.0}) {
+     bakes++;
+     final done = Completer<ui.Image?>();
+     _queue = _queue.then((_) async {
+       try {
+-        done.complete(await _bake(wallpaper, frame, density));
++        done.complete(await _bake(wallpaper, frame, density, frost));
+       } catch (error) {
+         debugPrint('wallpaper: bake failed: $error');
+         done.complete(null);
+@@ -137,7 +138,7 @@ class WallpaperRenderer {
+     _source = null;
+   }
+ 
+-  Future<ui.Image?> _bake(CustomWallpaper w, WallpaperFrame frame, double? density) async {
++  Future<ui.Image?> _bake(CustomWallpaper w, WallpaperFrame frame, double? density, double frost) async {
+     if (frame.size.isEmpty) return null;
+     final sigma = WallpaperBake.sigmaFor(w.blur, lightweight: frame.lightweight);
+     final k = density ?? WallpaperBake.densityFor(frame, sigma);
+@@ -164,6 +165,7 @@ class WallpaperRenderer {
+         veilBottom: _rgb(look.veilBottom),
+         lift: look.lift,
+         user: w.toneFor(look.brightness).clamp(0.0, 1.0) * WallpaperBake.maxTone,
++        frost: frost.clamp(0.0, 1.0),
+       );
+       // Large bakes measure off the UI thread.
+       final alpha = outW * outH > 1 << 17 ? await compute(veilAlpha, request) : veilAlpha(request);
+@@ -335,6 +337,7 @@ class VeilRequest {
+     required this.veilTop,
+     required this.veilBottom,
+     required this.user,
++    this.frost = 1.0,
+     this.lift = 0,
+     this.spread = WallpaperBake.spread,
+   });
+@@ -357,6 +360,9 @@ class VeilRequest {
+   /// The tone slider's own amount, 0–1.
+   final double user;
+ 
++  /// 【frost】背景磨砂度:纱与提亮的整体倍数,0=原图直出。
++  final double frost;
++
+   /// White laid over the result by the lightest surface text sits on ([WallpaperLook.lift]).
+   final double lift;
+   final int spread;
+@@ -436,7 +442,8 @@ Uint8List veilAlpha(VeilRequest r) {
+ 
+   final out = Uint8List(n);
+   for (var i = 0; i < n; i++) {
+-    out[i] = (math.max(need[i], r.user) * 255).ceil().clamp(0, 255);
++    // 【frost】纱与提亮整体乘磨砂度:0=壁纸原图直出(无白沙),1=原样。
++    out[i] = (math.max(need[i], r.user) * r.frost * 255).ceil().clamp(0, 255);
+   }
+   return out;
+ }
 diff --git a/app/pubspec.lock b/app/pubspec.lock
 index d2ab1143..5ad801da 100644
 --- a/app/pubspec.lock
