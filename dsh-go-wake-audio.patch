@@ -1,10 +1,10 @@
 From: dsh <dsh@local>
-Date: Sun, 29 Nov 2026 00:23:11 +0800
-Subject: [PATCH] 全量v7
+Date: Sun, 29 Nov 2026 00:38:04 +0800
+Subject: [PATCH] 全量v9
 
  dsh-go-wake.patch                                  | 2065 +++++++++++++
  tooling/build-wake-apk.sh                          |   68 +
- 439 files changed, 29718 insertions(+), 1423 deletions(-)
+ 441 files changed, 30205 insertions(+), 1423 deletions(-)
 
 diff --git a/.gitattributes b/.gitattributes
 index 52e3e08a..3e877c7e 100644
@@ -249,7 +249,7 @@ index f2d6b7e7..640fafa4 100644
      }
  
 diff --git a/app/android/app/src/main/AndroidManifest.xml b/app/android/app/src/main/AndroidManifest.xml
-index 1473ba24..366678be 100644
+index 1473ba24..6029d848 100644
 --- a/app/android/app/src/main/AndroidManifest.xml
 +++ b/app/android/app/src/main/AndroidManifest.xml
 @@ -6,6 +6,8 @@
@@ -261,12 +261,18 @@ index 1473ba24..366678be 100644
      <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
      <!-- The live activity (notify/LiveActivity.kt): Android 16 QPR1+ promotes it to a Live Update.
           Normal, granted at install; older systems skip a permission they don't define. -->
-@@ -43,6 +45,13 @@
+@@ -43,6 +45,19 @@
      <!-- libadb-android declares no targetSdk, so the merger implies READ_PHONE_STATE ("读取手机状态");
           nothing here reads it. -->
      <uses-permission android:name="android.permission.READ_PHONE_STATE" tools:node="remove" />
 +    <!-- AI 电话 (phone/aicall): placing the carrier call through Telecom. Asked for on first dial. -->
 +    <uses-permission android:name="android.permission.CALL_PHONE" />
++    <!-- 主动规则感官: 日历与通话记录（运行时申请，用户授权后可用）。 -->
++    <uses-permission android:name="android.permission.READ_CALENDAR" />
++    <uses-permission android:name="android.permission.READ_CALL_LOG" />
++    <!-- 主动规则感官: 位置（运行时申请）。 -->
++    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
++    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
 +    <!-- 主动陪伴: 读系统前台使用时长(需用户在系统设置开「使用情况访问」)。 -->
 +    <uses-permission
 +        android:name="android.permission.PACKAGE_USAGE_STATS"
@@ -275,7 +281,7 @@ index 1473ba24..366678be 100644
      <!-- flutter_webrtc's AudioSwitch asks for these; DSH Remote is data only and must not
           manage system audio routing. Its native audio module uses media attributes (webrtc_peer.dart). -->
      <uses-permission android:name="android.permission.BLUETOOTH" tools:node="remove" />
-@@ -52,7 +61,7 @@
+@@ -52,7 +67,7 @@
           TODO(targetSdk >= 31): also configure dataExtractionRules. -->
      <application
          android:allowBackup="false"
@@ -284,7 +290,7 @@ index 1473ba24..366678be 100644
          android:name="${applicationName}"
          android:icon="@mipmap/ic_launcher"
          android:roundIcon="@mipmap/ic_launcher_round"
-@@ -256,6 +265,24 @@
+@@ -256,6 +271,24 @@
                  android:value="Runs the user's local DeepSeek Harness agent server" />
          </service>
  
@@ -309,7 +315,7 @@ index 1473ba24..366678be 100644
          <!-- Keeps the floating pet's process up when only remote hosts are used (pet/PetOverlayService.kt). -->
          <service
              android:name=".pet.PetOverlayService"
-@@ -294,7 +321,7 @@
+@@ -294,7 +327,7 @@
              android:name=".phone.background.AdbPairingNotification$Receiver"
              android:exported="false">
              <intent-filter>
@@ -318,7 +324,7 @@ index 1473ba24..366678be 100644
              </intent-filter>
          </receiver>
  
-@@ -327,6 +354,14 @@
+@@ -327,6 +360,14 @@
          </receiver>
          <service android:name=".phone.background.PrivilegedKeepJob" android:permission="android.permission.BIND_JOB_SERVICE" android:exported="false" />
  
@@ -333,7 +339,7 @@ index 1473ba24..366678be 100644
          <!-- Chat artifacts: hands one file at a time to the app that opens it (files/FilesPlugin.kt). -->
          <provider
              android:name="androidx.core.content.FileProvider"
-@@ -348,6 +383,33 @@
+@@ -348,6 +389,44 @@
              android:name="com.google.mlkit.common.internal.MlKitInitProvider"
              android:authorities="${applicationId}.mlkitinitprovider"
              tools:node="remove" />
@@ -350,6 +356,17 @@ index 1473ba24..366678be 100644
 +                <action android:name="io.github.ccch1mneyyy.kongkong.DEBUG_VS" />
 +            </intent-filter>
 +        </receiver>
++
++        <!-- 主动规则感官：通知历史监听（需用户开「通知使用权」）。 -->
++        <service
++            android:name=".notify.NotificationHistory"
++            android:exported="true"
++            android:label="空空的主动感官"
++            android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
++            <intent-filter>
++                <action android:name="android.service.notification.NotificationListenerService" />
++            </intent-filter>
++        </service>
 +
 +        <!-- AI 电话：非界面的电话伴侣服务。系统拨号器仍然拥有通话界面和铃声；
 +             本服务只观察通话状态并控制话筒静音（手机话筒静音后 AI 的声音才不会被回采）。 -->
@@ -1073,10 +1090,10 @@ index 00000000..0a7a277b
 +}
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/companion/ProactiveCare.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/companion/ProactiveCare.kt
 new file mode 100644
-index 00000000..6a1b8dc6
+index 00000000..5b880885
 --- /dev/null
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/companion/ProactiveCare.kt
-@@ -0,0 +1,298 @@
+@@ -0,0 +1,300 @@
 +package io.github.ccch1mneyyy.dsh_app.companion
 +
 +import android.app.AppOpsManager
@@ -1192,6 +1209,8 @@ index 00000000..6a1b8dc6
 +    fun status(): Map<String, Any?> = mapOf(
 +        "rules" to rules().map(::ruleToJson),
 +        "usageAccess" to usageAccess(),
++        "screenMinutes" to screenMinutes(),
++        "idleHours" to idleHours(),
 +    )
 +
 +    /** 系统「使用情况访问」是否已开（读手机使用时长需要）。 */
@@ -1478,6 +1497,75 @@ index e6ccb72d..8821f7ee 100644
          private const val EXTRA_TOKEN = "dsh.notify.token"
          private const val EXTRA_SESSION = "dsh.notify.session"
          private const val EXTRA_HOST = "dsh.notify.host"
+diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/notify/NotificationHistory.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/notify/NotificationHistory.kt
+new file mode 100644
+index 00000000..528a66f4
+--- /dev/null
++++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/notify/NotificationHistory.kt
+@@ -0,0 +1,63 @@
++package io.github.ccch1mneyyy.dsh_app.notify
++
++import android.service.notification.NotificationListenerService
++import android.service.notification.StatusBarNotification
++
++/**
++ * 通知历史监听（主动规则的感官之一）：记录最近的通知（谁发的、标题、内容摘要、时间）。
++ * 只在内存保留最近 [MAX_ITEMS] 条；需要用户在系统设置授予「通知使用权」后才收得到。
++ * 敏感形态内容（验证码/密码提示）不存原文。
++ */
++class NotificationHistory : NotificationListenerService() {
++    companion object {
++        const val MAX_ITEMS = 200
++        @Volatile var enabled = false
++            private set
++        private val items = ArrayDeque<Item>()
++        private val lock = Any()
++        @Volatile var lastPostedAt = 0L
++            private set
++
++        data class Item(val atMs: Long, val packageName: String, val app: String?, val title: String, val text: String)
++
++        fun snapshot(limit: Int): List<Item> = synchronized(lock) {
++            items.takeLast(limit.coerceIn(1, 50))
++        }
++
++        fun clear() = synchronized(lock) { items.clear() }
++    }
++
++    override fun onListenerConnected() {
++        enabled = true
++    }
++
++    override fun onListenerDisconnected() {
++        enabled = false
++    }
++
++    override fun onNotificationPosted(sbn: StatusBarNotification?) {
++        if (sbn == null) return
++        val extras = sbn.notification.extras
++        val title = extras.getCharSequence(android.app.Notification.EXTRA_TITLE)?.toString()?.trim()?.take(80)
++            ?: sbn.packageName
++        val rawText = extras.getCharSequence(android.app.Notification.EXTRA_TEXT)?.toString()?.trim()?.take(200) ?: ""
++        val text = if (looksSecret(rawText)) "(含敏感内容，不记录)" else rawText
++        val app = runCatching {
++            packageManager.getApplicationLabel(packageManager.getApplicationInfo(sbn.packageName, 0)).toString()
++        }.getOrNull()
++        synchronized(lock) {
++            items.addLast(Item(System.currentTimeMillis(), sbn.packageName, app, title, text))
++            while (items.size > MAX_ITEMS) items.removeFirst()
++        }
++        lastPostedAt = System.currentTimeMillis()
++    }
++
++    private fun looksSecret(text: String): Boolean =
++        SECRET_HINTS.any { it.containsMatchIn(text) }
++
++    private val SECRET_HINTS = listOf(
++        Regex("""验证码|校验码|动态码|密码|口令|passcode|password""", RegexOption.IGNORE_CASE),
++        Regex("""银行卡|信用卡"""),
++        Regex("""\b\d{6}\b"""),
++    )
++}
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/notify/NotifyPlugin.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/notify/NotifyPlugin.kt
 index 12b600d4..63d16e02 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/notify/NotifyPlugin.kt
@@ -2270,7 +2358,7 @@ index 612f94d1..c965e71e 100644
  }
  
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneControl.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneControl.kt
-index 2fc7cd59..760b03ad 100644
+index 2fc7cd59..a7617597 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneControl.kt
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneControl.kt
 @@ -159,7 +159,7 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
@@ -2436,7 +2524,7 @@ index 2fc7cd59..760b03ad 100644
  
      override fun onAccessibilityChanged(connected: Boolean) = emitStatus()
  
-@@ -953,6 +987,65 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
+@@ -953,6 +987,267 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
  
      override fun enabled(): Boolean = isEnabled()
  
@@ -2488,6 +2576,208 @@ index 2fc7cd59..760b03ad 100644
 +        runtime.readPhoneMemory(origin, id) { done(it) }
 +    }
 +
++    override fun readCalendar(days: Int, done: (String?) -> Unit) {
++        done(runCatching {
++            if (app.checkSelfPermission(android.Manifest.permission.READ_CALENDAR) !=
++                android.content.pm.PackageManager.PERMISSION_GRANTED) return@runCatching null
++            val now = System.currentTimeMillis()
++            val end = now + days * 24 * 60 * 60_000L
++            val cursor = app.contentResolver.query(
++                android.provider.CalendarContract.Events.CONTENT_URI,
++                arrayOf(
++                    android.provider.CalendarContract.Events.TITLE,
++                    android.provider.CalendarContract.Events.DTSTART,
++                    android.provider.CalendarContract.Events.DTEND,
++                    android.provider.CalendarContract.Events.EVENT_LOCATION,
++                ),
++                "${android.provider.CalendarContract.Events.DTSTART} >= ? AND ${android.provider.CalendarContract.Events.DTSTART} <= ?",
++                arrayOf(now.toString(), end.toString()),
++                "${android.provider.CalendarContract.Events.DTSTART} ASC",
++            )
++            cursor?.use { c ->
++                val fmt = java.text.SimpleDateFormat("M月d日 HH:mm", java.util.Locale.CHINA)
++                val rows = ArrayList<String>()
++                val colTitle = c.getColumnIndex(android.provider.CalendarContract.Events.TITLE)
++                val colStart = c.getColumnIndex(android.provider.CalendarContract.Events.DTSTART)
++                val colEnd = c.getColumnIndex(android.provider.CalendarContract.Events.DTEND)
++                val colLoc = c.getColumnIndex(android.provider.CalendarContract.Events.EVENT_LOCATION)
++                while (c.moveToNext() && rows.size < 20) {
++                    val title = c.getString(colTitle) ?: "(无标题)"
++                    val start = fmt.format(java.util.Date(c.getLong(colStart)))
++                    val endT = fmt.format(java.util.Date(c.getLong(colEnd)))
++                    val loc = c.getString(colLoc)?.takeIf { it.isNotBlank() }?.let { " @$it" } ?: ""
++                    rows.add("- $start 至 $endT：$title$loc")
++                }
++                if (rows.isEmpty()) "未来 $days 天没有日程。" else rows.joinToString("\n")
++            }
++        }.getOrNull())
++    }
++
++    override fun readAppUsage(hours: Int, packageName: String?, done: (String?) -> Unit) {
++        done(runCatching {
++            val appOps = app.getSystemService(android.app.AppOpsManager::class.java)
++            val has = appOps.checkOpNoThrow(android.app.AppOpsManager.OPSTR_GET_USAGE_STATS,
++                android.os.Process.myUid(), app.packageName) == android.app.AppOpsManager.MODE_ALLOWED
++            if (!has) return@runCatching null
++            val u = app.getSystemService(android.app.usage.UsageStatsManager::class.java)
++            val end = System.currentTimeMillis()
++            val start = end - hours * 60 * 60_000L
++            val own = app.packageName
++            val stats = u.queryUsageStats(android.app.usage.UsageStatsManager.INTERVAL_DAILY, start, end)
++                .filter { it.totalTimeInForeground > 0 && it.packageName != own }
++            val pm = app.packageManager
++            val rows = if (packageName != null) {
++                stats.filter { it.packageName == packageName }
++            } else {
++                stats.sortedByDescending { it.totalTimeInForeground }.take(5)
++            }
++            if (rows.isEmpty()) "这段时间没有前台使用记录。"
++            else rows.joinToString("\n") { s ->
++                val label = runCatching { pm.getApplicationLabel(pm.getApplicationInfo(s.packageName, 0)).toString() }
++                    .getOrDefault(s.packageName)
++                "- $label：${s.totalTimeInForeground / 60_000L} 分钟"
++            }
++        }.getOrNull())
++    }
++
++    /** 静默拍照：后摄 JPEG，无预览、不打扰机主；同步等待到拍完或超时。 */
++    override fun captureCamera(done: (ByteArray?) -> Unit) {
++        if (app.checkSelfPermission(android.Manifest.permission.CAMERA) !=
++            android.content.pm.PackageManager.PERMISSION_GRANTED) { done(null); return }
++        val worker = android.os.HandlerThread("kongkong-camera").apply { start() }
++        val handler = android.os.Handler(worker.looper)
++        val finished = java.util.concurrent.atomic.AtomicBoolean(false)
++        handler.post {
++            runCatching {
++                val manager = app.getSystemService(android.hardware.camera2.CameraManager::class.java)
++                val back = manager.cameraIdList.firstOrNull { id ->
++                    manager.getCameraCharacteristics(id)
++                        .get(android.hardware.camera2.CameraCharacteristics.LENS_FACING) ==
++                        android.hardware.camera2.CameraCharacteristics.LENS_FACING_BACK
++                } ?: manager.cameraIdList.first()
++                val characteristics = manager.getCameraCharacteristics(back)
++                val config = characteristics.get(android.hardware.camera2.CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP)!!
++                val size = config.getOutputSizes(android.graphics.ImageFormat.JPEG).maxByOrNull { it.width * it.height }
++                    ?: android.util.Size(1280, 720)
++                val reader = android.media.ImageReader.newInstance(size.width, size.height, android.graphics.ImageFormat.JPEG, 1)
++                var device: android.hardware.camera2.CameraDevice? = null
++                val latch = java.util.concurrent.CountDownLatch(1)
++                val result = java.util.concurrent.atomic.AtomicReference<ByteArray?>()
++                reader.setOnImageAvailableListener({ r ->
++                    runCatching {
++                        val image = r.acquireLatestImage() ?: return@runCatching
++                        val buffer = image.planes[0].buffer
++                        val bytes = ByteArray(buffer.remaining())
++                        buffer.get(bytes)
++                        image.close()
++                        result.set(bytes)
++                    }
++                    latch.countDown()
++                }, handler)
++                manager.openCamera(back, object : android.hardware.camera2.CameraDevice.StateCallback() {
++                    override fun onOpened(camera: android.hardware.camera2.CameraDevice) {
++                        device = camera
++                        runCatching {
++                            camera.createCaptureSession(listOf(reader.surface),
++                                object : android.hardware.camera2.CameraCaptureSession.StateCallback() {
++                                    override fun onConfigured(session: android.hardware.camera2.CameraCaptureSession) {
++                                        runCatching {
++                                            val request = camera.createCaptureRequest(android.hardware.camera2.CameraDevice.TEMPLATE_STILL_CAPTURE)
++                                                .apply { addTarget(reader.surface) }
++                                            session.capture(request.build(), null, handler)
++                                        }.onFailure { latch.countDown() }
++                                    }
++                                    override fun onConfigureFailed(session: android.hardware.camera2.CameraCaptureSession) { latch.countDown() }
++                                }, handler)
++                        }.onFailure { latch.countDown() }
++                    }
++                    override fun onDisconnected(camera: android.hardware.camera2.CameraDevice) { latch.countDown() }
++                    override fun onError(camera: android.hardware.camera2.CameraDevice, error: Int) { latch.countDown() }
++                }, handler)
++                val ok = latch.await(12, java.util.concurrent.TimeUnit.SECONDS)
++                runCatching { device?.close() }
++                runCatching { reader.close() }
++                if (finished.compareAndSet(false, true)) done(if (ok) result.get() else null)
++            }.onFailure { if (finished.compareAndSet(false, true)) done(null) }
++        }
++        handler.postDelayed({
++            if (finished.compareAndSet(false, true)) { done(null); worker.quitSafely() }
++        }, 15_000L)
++    }
++
++    override fun readNotifications(limit: Int, done: (String?) -> Unit) {
++        done(runCatching {
++            val fmt = java.text.SimpleDateFormat("M月d日 HH:mm", java.util.Locale.CHINA)
++            io.github.ccch1mneyyy.dsh_app.notify.NotificationHistory.snapshot(limit).reversed().joinToString("\n") { item ->
++                "- ${fmt.format(java.util.Date(item.atMs))} ${item.app ?: item.packageName}：${item.title} ${item.text}".trim()
++            }.ifBlank { "还没有通知记录（刚授权的话，等有新通知进来才有）。" }
++        }.getOrNull())
++    }
++
++    override fun notificationAccess(): Boolean =
++        io.github.ccch1mneyyy.dsh_app.notify.NotificationHistory.enabled
++
++    override fun readLocation(done: (String?) -> Unit) {
++        done(runCatching {
++            val lm = app.getSystemService(android.location.LocationManager::class.java)
++            val hasCoarse = app.checkSelfPermission(android.Manifest.permission.ACCESS_COARSE_LOCATION) ==
++                android.content.pm.PackageManager.PERMISSION_GRANTED
++            val hasFine = app.checkSelfPermission(android.Manifest.permission.ACCESS_FINE_LOCATION) ==
++                android.content.pm.PackageManager.PERMISSION_GRANTED
++            if (!hasCoarse && !hasFine) return@runCatching null
++            @Suppress("MissingPermission")
++            val last = lm.getLastKnownLocation(android.location.LocationManager.NETWORK_PROVIDER)
++                ?: lm.getLastKnownLocation(android.location.LocationManager.GPS_PROVIDER)
++            if (last != null) {
++                val lat = "%.4f".format(last.latitude)
++                val lng = "%.4f".format(last.longitude)
++                "纬度 $lat，经度 $lng（精度约 ${last.accuracy.toInt()} 米，${last.time.let { java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.CHINA).format(java.util.Date(it)) }} 定位）"
++            } else {
++                "已拿到定位权限，但当前没有缓存位置（可能刚从室内出来，稍后再试）。"
++            }
++        }.getOrNull())
++    }
++
++    override fun readCallLog(limit: Int, done: (String?) -> Unit) {
++        done(runCatching {
++            if (app.checkSelfPermission(android.Manifest.permission.READ_CALL_LOG) !=
++                android.content.pm.PackageManager.PERMISSION_GRANTED) return@runCatching null
++            val cursor = app.contentResolver.query(
++                android.provider.CallLog.Calls.CONTENT_URI,
++                arrayOf(
++                    android.provider.CallLog.Calls.NUMBER, android.provider.CallLog.Calls.TYPE,
++                    android.provider.CallLog.Calls.DATE, android.provider.CallLog.Calls.DURATION,
++                    android.provider.CallLog.Calls.CACHED_NAME,
++                ),
++                null, null, "${android.provider.CallLog.Calls.DATE} DESC",
++            )
++            cursor?.use { c ->
++                val fmt = java.text.SimpleDateFormat("M月d日 HH:mm", java.util.Locale.CHINA)
++                val rows = ArrayList<String>()
++                val colNum = c.getColumnIndex(android.provider.CallLog.Calls.NUMBER)
++                val colType = c.getColumnIndex(android.provider.CallLog.Calls.TYPE)
++                val colDate = c.getColumnIndex(android.provider.CallLog.Calls.DATE)
++                val colDur = c.getColumnIndex(android.provider.CallLog.Calls.DURATION)
++                val colName = c.getColumnIndex(android.provider.CallLog.Calls.CACHED_NAME)
++                while (c.moveToNext() && rows.size < limit) {
++                    val name = c.getString(colName)?.takeIf { it.isNotBlank() }
++                    val number = c.getString(colNum)
++                    val who = name ?: number
++                    val type = when (c.getInt(colType)) {
++                        android.provider.CallLog.Calls.INCOMING_TYPE -> "打来"
++                        android.provider.CallLog.Calls.OUTGOING_TYPE -> "打给"
++                        android.provider.CallLog.Calls.MISSED_TYPE -> "未接"
++                        else -> "其他"
++                    }
++                    val dur = c.getLong(colDur)
++                    val whenStr = fmt.format(java.util.Date(c.getLong(colDate)))
++                    rows.add("- $whenStr $type $who${if (dur > 0) "，通话${dur / 60}分钟" else ""}")
++                }
++                if (rows.isEmpty()) "没有通话记录。" else rows.joinToString("\n")
++            }
++        }.getOrNull())
++    }
++
 +    override fun proactiveVoiceCall(text: String, done: (Boolean) -> Unit) {
 +        done(runCatching {
 +            val intent = android.content.Intent(app, io.github.ccch1mneyyy.dsh_app.MainActivity::class.java)
@@ -2502,7 +2792,7 @@ index 2fc7cd59..760b03ad 100644
      override fun isLocked(): Boolean {
          val km = app.getSystemService(Context.KEYGUARD_SERVICE) as KeyguardManager
          val power = app.getSystemService(Context.POWER_SERVICE) as PowerManager
-@@ -990,7 +1083,7 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
+@@ -990,7 +1285,7 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
          if (screen != PhoneScreen.BACKGROUND) return null
          background.endTask(owner.taskId)
          // l10n:keep agent stop reason
@@ -2511,7 +2801,7 @@ index 2fc7cd59..760b03ad 100644
      }
  
      override fun a11yState(): A11yState = when {
-@@ -999,18 +1092,121 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
+@@ -999,18 +1294,121 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
          else -> A11yState.DISABLED
      }
  
@@ -2567,13 +2857,13 @@ index 2fc7cd59..760b03ad 100644
          // l10n:keep agent stop reason
 -        return "不打扰模式（后台屏）用不了$reason。只能在主屏操作；要用后台屏请用户到 设置 → 手机操控 → 不打扰模式 开通。"
 +        return "虚拟屏用不了$reason。这轮请在主屏操作（background:false），或请用户到 设置 → 手机操控 → 不打扰模式 授权 Shizuku / ADB 后再用虚拟屏。"
-     }
- 
++    }
++
 +    /** 【4ou】通用自愈：open 失败后的全量重置（新身份+清账+断旧通道）。 */
 +    override fun resetVscreenForReopen() {
 +        runCatching { background.resetForReopen() }
-+    }
-+
+     }
+ 
 +    /** 【4oy】上一任务"停止"的中断收尾是否还在进行：进行中新任务 open 应等它走完，不硬拒。 */
 +    override fun vscreenInterruptInProgress(): Boolean = background.interruptInProgress()
 +
@@ -2635,7 +2925,7 @@ index 2fc7cd59..760b03ad 100644
  
      override fun notifyFix(kind: String) = notifyFixFor(tasks, kind)
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneCore.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneCore.kt
-index 6c701851..2ea379ba 100644
+index 6c701851..eb444f21 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneCore.kt
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneCore.kt
 @@ -1,9 +1,12 @@
@@ -2651,12 +2941,22 @@ index 6c701851..2ea379ba 100644
  import java.time.ZoneId
  import java.util.concurrent.atomic.AtomicReference
  
-@@ -13,8 +16,21 @@ enum class A11yState { CONNECTED, ENABLED_NOT_CONNECTED, DISABLED }
+@@ -13,8 +16,31 @@ enum class A11yState { CONNECTED, ENABLED_NOT_CONNECTED, DISABLED }
  interface PhoneEnv {
      /** The master switch. */
      fun enabled(): Boolean
 +    /** 主动陪伴：发起语音来电（开场白即文案）；done 收 true/false。 */
 +    fun proactiveVoiceCall(text: String, done: (Boolean) -> Unit) {}
++
++    /** 感官：日历/应用时长/通话记录（模型判断主动规则的依据）。 */
++    fun readCalendar(days: Int, done: (String?) -> Unit) {}
++    fun readAppUsage(hours: Int, packageName: String?, done: (String?) -> Unit) {}
++    fun readCallLog(limit: Int, done: (String?) -> Unit) {}
++    fun readLocation(done: (String?) -> Unit) {}
++    /** 静默拍照看环境：后摄拍一张 JPEG 回传给模型（无预览、不打扰机主）。 */
++    fun captureCamera(done: (ByteArray?) -> Unit) {}
++    fun readNotifications(limit: Int, done: (String?) -> Unit) {}
++    fun notificationAccess(): Boolean = false
 +
 +    /** 主屏是否锁着或熄屏（用来触发自动解锁，不再用来拒绝操作）。 */
 +    fun isLocked(): Boolean = false
@@ -2674,7 +2974,7 @@ index 6c701851..2ea379ba 100644
      fun gate(): UserGate?
      fun driver(screen: PhoneScreen): PhoneDriver?
      fun driver(screen: PhoneScreen, owner: PhoneTasks.Owner): PhoneDriver? = driver(screen)
-@@ -23,6 +39,20 @@ interface PhoneEnv {
+@@ -23,6 +49,20 @@ interface PhoneEnv {
      fun a11yState(): A11yState
      /** Why the background display can't be used, as a sentence for the model. */
      fun backgroundUnavailable(): String
@@ -2695,7 +2995,7 @@ index 6c701851..2ea379ba 100644
      fun system(): SystemApi
      fun androidShell(): PhoneShellExecutor? = null
      fun uiText(): PhoneUiText = PhoneUiText.DEFAULT
-@@ -55,7 +85,7 @@ class PhoneCore(
+@@ -55,7 +95,7 @@ class PhoneCore(
      },
  ) {
      private val ui: PhoneUiText get() = env.uiText()
@@ -2704,7 +3004,7 @@ index 6c701851..2ea379ba 100644
  
      // An abandoned body may overlap a later execution of the same Owner. Keep its display
      // serial with that body, not a mutable Core-wide field or a fresh lookup when say runs.
-@@ -64,12 +94,26 @@ class PhoneCore(
+@@ -64,12 +104,26 @@ class PhoneCore(
      /** The overlay's status line; 免确认 stays visible the whole time nothing is asked. */
      private fun say(owner: PhoneTasks.Owner, text: String) {
          if (!current(owner)) return
@@ -2732,7 +3032,7 @@ index 6c701851..2ea379ba 100644
  
      /**
       * The task's last hard refusal (密码框, 系统设置, 不碰名单), for the `handoff` that usually
-@@ -97,15 +141,30 @@ class PhoneCore(
+@@ -97,15 +151,30 @@ class PhoneCore(
          internal val replayOutcomes: PhoneSkillOutcomes? = null,
          internal val replayDriver: PhoneDriver? = null,
          private val replayApp: PhoneAppIdentity? = null,
@@ -2764,7 +3064,7 @@ index 6c701851..2ea379ba 100644
      }
  
      /** Only a first claimed native Selection reaches this path; public args never construct it. */
-@@ -119,28 +178,29 @@ class PhoneCore(
+@@ -119,28 +188,29 @@ class PhoneCore(
          val app = PhoneAppIdentity(selection.app.packageName, selection.app.uid)
          val originalDriver = if (screen == PhoneScreen.BACKGROUND) {
              env.existingReplayDriver(owner, app)?.takeIf { it.screen == PhoneScreen.BACKGROUND }
@@ -2798,7 +3098,7 @@ index 6c701851..2ea379ba 100644
          } else when (val result = driverFor(screen, owner)) {
              is Either.Left -> return stop(result.value)
              is Either.Right -> result.value
-@@ -255,7 +315,9 @@ class PhoneCore(
+@@ -255,7 +325,9 @@ class PhoneCore(
              // l10n:keep agent tool result
              return ToolOutput("没有这个手机工具：$name。可用：${PhoneToolCatalog.names.joinToString("、")}", isError = true)
          }
@@ -2809,7 +3109,7 @@ index 6c701851..2ea379ba 100644
              // l10n:keep agent tool result
              return ToolOutput("手机操控已在 DSH 设置里关闭。请用户在 设置 → 手机操控 里打开后重启引擎。", isError = true)
          }
-@@ -361,7 +423,7 @@ class PhoneCore(
+@@ -361,7 +433,7 @@ class PhoneCore(
              // MAIN already excludes other app holders. Resolve again after waiting for it,
              // keeping the originally selected package if its label or launcher has changed.
              val refreshMain = name == PhoneToolCatalog.INTENT ||
@@ -2818,7 +3118,7 @@ index 6c701851..2ea379ba 100644
              val call = if (prepared != null && !refreshMain) prepared else when (
                  val result = prepare(name, a, owner, prepared?.requestedApp)
              ) {
-@@ -383,6 +445,11 @@ class PhoneCore(
+@@ -383,6 +455,17 @@ class PhoneCore(
                  PhoneToolCatalog.TAP, PhoneToolCatalog.TYPE, PhoneToolCatalog.SCROLL, PhoneToolCatalog.TAP_XY -> act(name, a, scope, owner)
                  PhoneToolCatalog.KEY -> key(a, owner)
                  PhoneToolCatalog.HANDOFF -> handoff(a, scope, owner)
@@ -2827,10 +3127,16 @@ index 6c701851..2ea379ba 100644
 +                PhoneToolCatalog.MEMORY -> memoryCall(a, scope, owner)
 +                PhoneToolCatalog.SKILL -> skillCall(a, scope, owner)
 +                PhoneToolCatalog.VOICE_CALL -> voiceCallTool(a, scope, owner)
++                PhoneToolCatalog.CALENDAR_READ -> calendarReadCall(a, owner)
++                PhoneToolCatalog.APP_USAGE -> appUsageCall(a, owner)
++                PhoneToolCatalog.CALL_LOG -> callLogCall(a, owner)
++                PhoneToolCatalog.LOCATION -> locationCall(a, owner)
++                PhoneToolCatalog.CAMERA_SNAPSHOT -> cameraSnapshotCall(a, owner)
++                PhoneToolCatalog.NOTIFICATIONS_READ -> notificationsReadCall(a, owner)
                  // l10n:keep agent tool result
                  else -> Out("没有这个手机工具：$name", error = true)
              }
-@@ -391,6 +458,96 @@ class PhoneCore(
+@@ -391,6 +474,170 @@ class PhoneCore(
          }
      }
  
@@ -2913,6 +3219,80 @@ index 6c701851..2ea379ba 100644
 +            else Out("语音来电没能拨出。", error = true)
 +    }
 +
++    private fun senseCall(days: Int = 0, hours: Int = 3, pkg: String? = null, limit: Int = 5,
++                           which: String = "calendar"): Out {
++        val gate = java.util.concurrent.CountDownLatch(1)
++        val result = AtomicReference<String?>()
++        when (which) {
++            "calendar" -> env.readCalendar(days) { result.set(it); gate.countDown() }
++            "usage" -> env.readAppUsage(hours, pkg) { result.set(it); gate.countDown() }
++            else -> env.readCallLog(limit) { result.set(it); gate.countDown() }
++        }
++        val waited = runCatching { gate.await(10, java.util.concurrent.TimeUnit.SECONDS) }.getOrDefault(false)
++        val value = result.get()
++        if (!waited) return Out("读取超时。", error = true)
++        return if (value != null) Out(value) else Out("读不到（可能没授权），如实告诉机主。", error = true)
++    }
++
++    private fun calendarReadCall(a: Args, owner: PhoneTasks.Owner): Out {
++        if (!a.onlyKeys("days")) return Out("参数不对：只用 days。", error = true)
++        val days = (a.str("days")?.toIntOrNull() ?: 1).coerceIn(1, 7)
++        return senseCall(days = days, which = "calendar")
++    }
++
++    private fun appUsageCall(a: Args, owner: PhoneTasks.Owner): Out {
++        if (!a.onlyKeys("package", "hours")) return Out("参数不对：只用 package/hours。", error = true)
++        val hours = (a.str("hours")?.toIntOrNull() ?: 3).coerceIn(1, 24)
++        val pkg = a.str("package")
++        return senseCall(hours = hours, pkg = pkg, which = "usage")
++    }
++
++    private fun locationCall(a: Args, owner: PhoneTasks.Owner): Out {
++        val gate = java.util.concurrent.CountDownLatch(1)
++        val result = AtomicReference<String?>()
++        env.readLocation { result.set(it); gate.countDown() }
++        val waited = runCatching { gate.await(20, java.util.concurrent.TimeUnit.SECONDS) }.getOrDefault(false)
++        val value = result.get()
++        if (!waited) return Out("定位超时。", error = true)
++        return if (value != null) Out(value) else Out("定位不到（可能没授权），如实告诉机主。", error = true)
++    }
++
++    private fun cameraSnapshotCall(a: Args, owner: PhoneTasks.Owner): Out {
++        if (!a.onlyKeys()) return Out("拍照工具不带参数。", error = true)
++        val gate = java.util.concurrent.CountDownLatch(1)
++        val result = AtomicReference<ByteArray?>()
++        env.captureCamera { bytes -> result.set(bytes); gate.countDown() }
++        val waited = runCatching { gate.await(15, java.util.concurrent.TimeUnit.SECONDS) }.getOrDefault(false)
++        val bytes = result.get()
++        if (!waited || bytes == null) return Out("拍照失败（可能没相机权限），如实告诉机主。", error = true)
++        // l10n:keep agent tool result
++        return Out("拍了一张当前环境的照片。", screen = ScreenSnapshot(
++            id = "cam1", text = "摄像头照片", appLabel = null, packageName = null,
++            image = bytes, imageMime = "image/jpeg",
++        ))
++    }
++
++    private fun notificationsReadCall(a: Args, owner: PhoneTasks.Owner): Out {
++        if (!a.onlyKeys("limit")) return Out("参数不对：只用 limit。", error = true)
++        val limit = (a.str("limit")?.toIntOrNull() ?: 10).coerceIn(1, 50)
++        if (!env.notificationAccess()) {
++            return Out("没有「通知使用权」：请机主去 系统设置 → 通知使用权 里给空空打开，之后才能读通知。", error = true)
++        }
++        val gate = java.util.concurrent.CountDownLatch(1)
++        val result = AtomicReference<String?>()
++        env.readNotifications(limit) { result.set(it); gate.countDown() }
++        val waited = runCatching { gate.await(10, java.util.concurrent.TimeUnit.SECONDS) }.getOrDefault(false)
++        val value = result.get()
++        if (!waited || value == null) return Out("没有通知记录。", error = true)
++        return Out(value)
++    }
++
++    private fun callLogCall(a: Args, owner: PhoneTasks.Owner): Out {
++        if (!a.onlyKeys("limit")) return Out("参数不对：只用 limit。", error = true)
++        val limit = (a.str("limit")?.toIntOrNull() ?: 5).coerceIn(1, 20)
++        return senseCall(limit = limit, which = "calls")
++    }
++
 +    private fun hangUpCall(a: Args): Out {
 +        val reason = a.str("reason").orEmpty().trim()
 +        val action = io.github.ccch1mneyyy.dsh_app.call.CallOverlay.onAction
@@ -2927,7 +3307,7 @@ index 6c701851..2ea379ba 100644
      private fun current(owner: PhoneTasks.Owner): Boolean =
          tasks.isCurrent(owner) && !Thread.currentThread().isInterrupted
  
-@@ -400,7 +557,7 @@ class PhoneCore(
+@@ -400,7 +647,7 @@ class PhoneCore(
          // Arbitrary system effects cannot become an implicitly verified UI replay route.
          skillTrace.markIncomplete(owner, PhoneTaskTrace.Gap.UNCERTAIN_RESULT)
          val result = PhoneAndroidShell.run(request, owner, tasks, scope, env.androidShell(),
@@ -2936,7 +3316,7 @@ index 6c701851..2ea379ba 100644
          val successfulExit = when (val code = result["exitCode"]) {
              is Int -> code == 0
              is Long -> code == 0L
-@@ -457,18 +614,15 @@ class PhoneCore(
+@@ -457,18 +704,15 @@ class PhoneCore(
              PhoneToolCatalog.ANDROID_SHELL -> {
                  if (PhoneAndroidShell.parse(a) == null) return Either.Left(Out(
                      Json.write(PhoneAndroidShell.failure("invalidArguments")), error = true))
@@ -2956,7 +3336,7 @@ index 6c701851..2ea379ba 100644
                      UrlPolicy.check(url)?.let {
                          return Either.Left(Out(it, error = true, summary = ui.get("phone_log_open_url", "打开链接"), decision = "refused:url")) // l10n:keep test default
                      }
-@@ -496,7 +650,6 @@ class PhoneCore(
+@@ -496,7 +740,6 @@ class PhoneCore(
                      is Either.Right -> parsed.value
                  }
                  val kind = a.str("kind") ?: ""
@@ -2964,7 +3344,7 @@ index 6c701851..2ea379ba 100644
                  val appQuery = when (spec) {
                      is IntentSpec.Share -> spec.app
                      is IntentSpec.Settings -> spec.app
-@@ -516,15 +669,23 @@ class PhoneCore(
+@@ -516,15 +759,23 @@ class PhoneCore(
              }
          }
          if (!current(owner)) return Either.Left(stoppedOut(name))
@@ -2991,7 +3371,7 @@ index 6c701851..2ea379ba 100644
          val plan = checkNotNull(call.launch)
          if (url != null) {
              val summary = ui.get("phone_log_open_url_scheme", "打开链接 %1\$s:", url.substringBefore(':')) // l10n:keep test default
-@@ -543,12 +704,15 @@ class PhoneCore(
+@@ -543,12 +794,15 @@ class PhoneCore(
          // An explicit package is still subject to app rules even when its handler UID is unknown.
          val app = (plan.target as? SystemTarget.Known)?.app
              ?: checkNotNull(call.requestedApp)
@@ -3007,7 +3387,7 @@ index 6c701851..2ea379ba 100644
              confirmSystem(plan, scope, owner, summary)?.let { return it }
              val ticket = skillTrace.beginOpen(owner, PhoneScreen.MAIN)
              val result = try {
-@@ -556,50 +720,324 @@ class PhoneCore(
+@@ -556,50 +810,324 @@ class PhoneCore(
                      skillTrace.finish(ticket, it.ok, false, false)
                  }
              } catch (e: Throwable) { skillTrace.fail(ticket); throw e }
@@ -3343,7 +3723,7 @@ index 6c701851..2ea379ba 100644
      }
  
      /** The handler is a dispatch fact. Only the following read describes the actual foreground UI. */
-@@ -690,7 +1128,6 @@ class PhoneCore(
+@@ -690,7 +1218,6 @@ class PhoneCore(
      private fun intent(call: PreparedCall, scope: SerialWorker.Scope, owner: PhoneTasks.Owner): Out {
          if (!current(owner)) return stoppedOut("intent")
          val kind = call.args.str("kind") ?: ""
@@ -3351,7 +3731,7 @@ index 6c701851..2ea379ba 100644
          val subject = call.requestedApp.takeIf { kind == "share" }
          subject?.let { subject ->
              safety.checkOpen(subject.packageName, subject.label)?.let {
-@@ -728,7 +1165,7 @@ class PhoneCore(
+@@ -728,7 +1255,7 @@ class PhoneCore(
              is SafetyGate.Result.Go -> Unit
          }
          if (!current(owner)) return stoppedOut(summary)
@@ -3360,7 +3740,7 @@ index 6c701851..2ea379ba 100644
      }
  
      /** Consent may wait; recheck the fixed request's app rules at start admission. */
-@@ -803,6 +1240,10 @@ class PhoneCore(
+@@ -803,6 +1330,10 @@ class PhoneCore(
  
      /** The driver for [screen], or the sentence explaining why there is none. */
      private fun driverFor(screen: PhoneScreen, owner: PhoneTasks.Owner): Either<String, PhoneDriver> {
@@ -3371,7 +3751,7 @@ index 6c701851..2ea379ba 100644
          val d = env.driver(screen, owner) ?: return Either.Left(unavailable(screen))
          val av = try {
              d.availability()
-@@ -816,8 +1257,210 @@ class PhoneCore(
+@@ -816,8 +1347,210 @@ class PhoneCore(
          return Either.Right(d)
      }
  
@@ -3582,7 +3962,7 @@ index 6c701851..2ea379ba 100644
      /** Admission uses the same argument coercion and routing as the actual tool body. */
      fun requiredScreens(name: String, args: Map<String, Any?>): Either<String, List<PhoneScreen>> {
          return requiredScreens(name, Args(args))
-@@ -825,10 +1468,11 @@ class PhoneCore(
+@@ -825,10 +1558,11 @@ class PhoneCore(
  
      private fun requiredScreens(name: String, a: Args): Either<String, List<PhoneScreen>> {
          return when (name) {
@@ -3597,7 +3977,7 @@ index 6c701851..2ea379ba 100644
              // Arbitrary system commands take the main/global unknown-app lease, without reading a screen.
              PhoneToolCatalog.INTENT, PhoneToolCatalog.ANDROID_SHELL -> Either.Right(listOf(PhoneScreen.MAIN))
              PhoneToolCatalog.HANDOFF -> Either.Right(if (lastScreen == PhoneScreen.BACKGROUND)
-@@ -852,13 +1496,9 @@ class PhoneCore(
+@@ -852,13 +1586,9 @@ class PhoneCore(
          if (id == null) return Either.Left("缺少 $parameterName（屏幕号，如 s7）。先调用 screen 拿到屏幕号。")
          return PhoneScreen.ofScreenId(id)?.let { Either.Right(it) }
              // l10n:keep agent tool result
@@ -3612,7 +3992,7 @@ index 6c701851..2ea379ba 100644
      /** Every returned observation passes the final read policy before a driver candidate is
       * committed. This also covers post-action and stale-refresh frames, not just screen(). */
      private fun returnedScreen(driver: PhoneDriver, snapshot: ScreenSnapshot, owner: PhoneTasks.Owner,
-@@ -871,21 +1511,55 @@ class PhoneCore(
+@@ -871,21 +1601,55 @@ class PhoneCore(
  
      private fun screen(a: Args, owner: PhoneTasks.Owner): Out {
          if (!current(owner)) return stoppedOut("screen")
@@ -3677,7 +4057,7 @@ index 6c701851..2ea379ba 100644
          return Out(
              // l10n:keep agent tool result
              if (refused) "没有读取这个屏幕的内容。" else "",
-@@ -897,6 +1571,40 @@ class PhoneCore(
+@@ -897,6 +1661,40 @@ class PhoneCore(
          )
      }
  
@@ -3718,7 +4098,7 @@ index 6c701851..2ea379ba 100644
      private fun collect(a: Args, owner: PhoneTasks.Owner): Out {
          if (!current(owner)) return stoppedOut("collect")
          val sid = a.str("screen")
-@@ -912,7 +1620,6 @@ class PhoneCore(
+@@ -912,7 +1710,6 @@ class PhoneCore(
              is Either.Left -> return Out(d.value, error = true, summary = summary, decision = "unavailable")
              is Either.Right -> d.value
          }
@@ -3726,7 +4106,7 @@ index 6c701851..2ea379ba 100644
          lastScreen = which
          val pkg = driver.foregroundPackage()
          safety.checkRead(pkg, null)?.let { return Out(it.message, error = true, app = pkg, summary = summary, decision = "refused:${it.rule}") }
-@@ -993,7 +1700,6 @@ class PhoneCore(
+@@ -993,7 +1790,6 @@ class PhoneCore(
              is Either.Right -> route.value
          }
          if (!current(owner)) return stoppedOut(summary)
@@ -3734,7 +4114,7 @@ index 6c701851..2ea379ba 100644
          val driver = when (val d = driverFor(which, owner)) {
              is Either.Left -> return Out(d.value, error = true, summary = summary, decision = "unavailable")
              is Either.Right -> d.value
-@@ -1027,7 +1733,7 @@ class PhoneCore(
+@@ -1027,7 +1823,7 @@ class PhoneCore(
              }
              val failure = AtomicReference<SafetyGate.Verdict.Refuse?>(null)
              fun allowed(): Boolean {
@@ -3743,7 +4123,7 @@ index 6c701851..2ea379ba 100644
                  if (failure.get() != null) return false
                  (verdict() as? SafetyGate.Verdict.Refuse)?.let { failure.compareAndSet(null, it) }
                  return failure.get() == null
-@@ -1129,7 +1835,6 @@ class PhoneCore(
+@@ -1129,7 +1925,6 @@ class PhoneCore(
              is Either.Left -> return Out(d.value, error = true, summary = summary, decision = "unavailable")
              is Either.Right -> d.value
          }
@@ -3751,7 +4131,7 @@ index 6c701851..2ea379ba 100644
          lastScreen = which
          val visual = (action as? PhoneAction.TapXY)?.let { driver.coordinateTarget(it) }
          val target: TargetInfo? = if (id != null && kind != WriteKind.TAP_XY) {
-@@ -1235,14 +1940,14 @@ class PhoneCore(
+@@ -1235,14 +2030,14 @@ class PhoneCore(
      /** The element no longer matches its snapshot: refuse and show the screen as it is now. */
      private fun stale(driver: PhoneDriver, sid: String, summary: String, owner: PhoneTasks.Owner, refusal: String? = null): Out {
          val now = try {
@@ -3769,7 +4149,7 @@ index 6c701851..2ea379ba 100644
                      else returnedScreen(driver, observed, owner)
                  }
              }
-@@ -1270,8 +1975,13 @@ class PhoneCore(
+@@ -1270,8 +2065,13 @@ class PhoneCore(
              "home" -> PhoneAction.GlobalKey.HOME
              "recents" -> PhoneAction.GlobalKey.RECENTS
              "notifications" -> PhoneAction.GlobalKey.NOTIFICATIONS
@@ -3784,7 +4164,7 @@ index 6c701851..2ea379ba 100644
          }
          val sid = a.str("screen")
          val which = if (sid == null) {
-@@ -1287,13 +1997,22 @@ class PhoneCore(
+@@ -1287,13 +2087,22 @@ class PhoneCore(
              is Either.Left -> return Out(d.value, error = true, summary = summary, decision = "unavailable")
              is Either.Right -> d.value
          }
@@ -3808,7 +4188,7 @@ index 6c701851..2ea379ba 100644
          }))
          if (!current(owner)) return stoppedOut(summary)
          val action = PhoneAction.Key(sid ?: "${which.prefix}0", key)
-@@ -1314,6 +2033,22 @@ class PhoneCore(
+@@ -1314,6 +2123,22 @@ class PhoneCore(
          } catch (e: Throwable) { skillTrace.fail(ticket); throw e }
      }
  
@@ -3831,7 +4211,7 @@ index 6c701851..2ea379ba 100644
      private fun handoff(a: Args, scope: SerialWorker.Scope, owner: PhoneTasks.Owner): Out {
          if (!current(owner)) return stoppedOut("handoff")
          // l10n:keep agent tool result
-@@ -1362,6 +2097,7 @@ class PhoneCore(
+@@ -1362,6 +2187,7 @@ class PhoneCore(
          summary = summary, decision = "stopped")
  
      companion object {
@@ -3839,7 +4219,7 @@ index 6c701851..2ea379ba 100644
          internal const val REPLAY = "replay"
          internal const val FOCUS_TEXT = "focus_text"
  
-@@ -1370,6 +2106,9 @@ class PhoneCore(
+@@ -1370,6 +2196,9 @@ class PhoneCore(
          const val PAUSE_WAIT_MS = 600_000L
          const val HANDOFF_MS = 600_000L
  
@@ -5177,10 +5557,10 @@ index a09015e7..f099f843 100644
          /** No confirmation surface is reachable, so this one action did not run. */
          // l10n:keep agent no-gate protocol
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneToolCatalog.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneToolCatalog.kt
-index cbfb0de3..2a9ac989 100644
+index cbfb0de3..07621863 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneToolCatalog.kt
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneToolCatalog.kt
-@@ -22,8 +22,13 @@ object PhoneToolCatalog {
+@@ -22,8 +22,19 @@ object PhoneToolCatalog {
      const val KEY = "key"
      const val TAP_XY = "tap_xy"
      const val HANDOFF = "handoff"
@@ -5191,10 +5571,16 @@ index cbfb0de3..2a9ac989 100644
 +    const val MEMORY = "memory"
 +    const val SKILL = "skill"
 +    const val VOICE_CALL = "voice_call"
++    const val CALENDAR_READ = "calendar_read"
++    const val APP_USAGE = "app_usage"
++    const val CALL_LOG = "call_log"
++    const val LOCATION = "location"
++    const val CAMERA_SNAPSHOT = "camera_snapshot"
++    const val NOTIFICATIONS_READ = "notifications_read"
  
      class Tool(val name: String, val description: String, val properties: Map<String, Any?>, val required: List<String>) {
          fun toJson(): Map<String, Any?> = linkedMapOf(
-@@ -41,7 +46,7 @@ object PhoneToolCatalog {
+@@ -41,7 +52,7 @@ object PhoneToolCatalog {
          "home", "wifi", "bluetooth", "mobile_network", "airplane", "display", "sound", "battery",
          "location", "date", "language", "storage", "nfc", "app_notifications",
      )
@@ -5203,7 +5589,7 @@ index cbfb0de3..2a9ac989 100644
      val DIRECTIONS = listOf("up", "down", "left", "right")
      val NAV_MODES = listOf("drive", "transit", "walk", "ride")
  
-@@ -53,13 +58,31 @@ object PhoneToolCatalog {
+@@ -53,13 +64,31 @@ object PhoneToolCatalog {
          linkedMapOf<String, Any?>("type" to "string", "enum" to values, "description" to description)
  
      // l10n:keep agent tool catalog
@@ -5237,7 +5623,7 @@ index cbfb0de3..2a9ac989 100644
              linkedMapOf(
                  // l10n:keep agent tool catalog
                  "command" to str("完整 Android sh 命令，UTF-8 最多 2048 字节；不带 adb shell 前缀，不继承 Ubuntu 路径、环境或工作目录"),
-@@ -79,14 +102,22 @@ object PhoneToolCatalog {
+@@ -79,14 +108,22 @@ object PhoneToolCatalog {
          Tool(
              OPEN,
              // l10n:keep agent tool catalog
@@ -5262,7 +5648,7 @@ index cbfb0de3..2a9ac989 100644
              ),
              emptyList(),
          ),
-@@ -159,7 +190,7 @@ object PhoneToolCatalog {
+@@ -159,7 +196,7 @@ object PhoneToolCatalog {
          Tool(
              CLIPBOARD,
              // l10n:keep agent tool catalog
@@ -5271,7 +5657,7 @@ index cbfb0de3..2a9ac989 100644
              // l10n:keep agent tool catalog
              linkedMapOf("set" to str("要写入的文字"), "get" to bool("读取剪贴板")),
              emptyList(),
-@@ -167,14 +198,17 @@ object PhoneToolCatalog {
+@@ -167,14 +204,17 @@ object PhoneToolCatalog {
          Tool(
              SCREEN,
              // l10n:keep agent tool catalog
@@ -5291,7 +5677,7 @@ index cbfb0de3..2a9ac989 100644
              ),
              emptyList(),
          ),
-@@ -204,7 +238,10 @@ object PhoneToolCatalog {
+@@ -204,7 +244,10 @@ object PhoneToolCatalog {
          Tool(
              TYPE,
              // l10n:keep agent tool catalog
@@ -5303,7 +5689,7 @@ index cbfb0de3..2a9ac989 100644
              linkedMapOf(
                  "screen" to SCREEN_ID,
                  // l10n:keep agent tool catalog
-@@ -232,7 +269,7 @@ object PhoneToolCatalog {
+@@ -232,7 +275,7 @@ object PhoneToolCatalog {
          Tool(
              KEY,
              // l10n:keep agent tool catalog
@@ -5312,7 +5698,7 @@ index cbfb0de3..2a9ac989 100644
              // l10n:keep agent tool catalog
              linkedMapOf("key" to enum(KEYS, "按键"), "screen" to str("屏幕号；省略时作用于主屏")),
              listOf("key"),
-@@ -240,10 +277,10 @@ object PhoneToolCatalog {
+@@ -240,10 +283,10 @@ object PhoneToolCatalog {
          Tool(
              TAP_XY,
              // l10n:keep agent tool catalog
@@ -5325,7 +5711,7 @@ index cbfb0de3..2a9ac989 100644
                  // l10n:keep agent tool catalog
                  "x" to int("横坐标（像素，从 0 开始）"),
                  // l10n:keep agent tool catalog
-@@ -262,11 +299,61 @@ object PhoneToolCatalog {
+@@ -262,11 +305,112 @@ object PhoneToolCatalog {
          Tool(
              HANDOFF,
              // l10n:keep agent tool catalog
@@ -5342,6 +5728,57 @@ index cbfb0de3..2a9ac989 100644
 +                + "只在用户明确要求关闭虚拟屏时调用。关闭后一切打开动作按新会话正常走，不要向用户复述内部状态。"
 +                + "**禁止用 android_shell 代替本工具操作虚拟屏。**",
 +            emptyMap(),
++            emptyList(),
++        ),
++        Tool(
++            CALENDAR_READ,
++            // l10n:keep agent tool catalog
++            "读系统日历：查今天和未来几天的日程（标题、时间、地点）。主动关怀时用——比如规则里写「明天有日程就提前提醒我」。没有日历权限时如实说，不要编造。",
++            mapOf(
++                "days" to int("查未来几天，1-7；省略=1"),
++            ),
++            emptyList(),
++        ),
++        Tool(
++            APP_USAGE,
++            // l10n:keep agent tool catalog
++            "查应用前台使用时长：近几小时里某个应用刷了多久。主动关怀时用——比如规则里写「我刷抖音超过一小时就提醒我」。package 省略时返回用时最长的几个应用。需要系统「使用情况访问」权限。",
++            mapOf(
++                "package" to str("应用包名，省略=返回用时最长的几个"),
++                "hours" to int("回看几小时，1-24；省略=3"),
++            ),
++            emptyList(),
++        ),
++        Tool(
++            NOTIFICATIONS_READ,
++            // l10n:keep agent tool catalog
++            "读最近的通知记录（哪个应用、标题、内容摘要、时间）——「给谁发过消息」这类规则的感官。需要机主在系统设置授予「通知使用权」。敏感内容不会被记录。",
++            mapOf(
++                "limit" to int("最近几条，1-50；省略=10"),
++            ),
++            emptyList(),
++        ),
++        Tool(
++            CAMERA_SNAPSHOT,
++            // l10n:keep agent tool catalog
++            "静默拍一张当前环境的照片（用后摄像头，不弹预览、不打扰机主），可以看到周围环境。主动关怀时用——比如规则里写「感觉我很久没出门就拍张照片看看我在哪」。没有相机权限时如实说。",
++            emptyMap(),
++            emptyList(),
++        ),
++        Tool(
++            LOCATION,
++            // l10n:keep agent tool catalog
++            "读当前所在位置（经纬度与大致地址）。主动关怀时用——比如规则里写「到晚上还没回家就问问」。没有定位权限时如实说。",
++            emptyMap(),
++            emptyList(),
++        ),
++        Tool(
++            CALL_LOG,
++            // l10n:keep agent tool catalog
++            "读最近通话记录（谁、什么时候、打来还是打去、时长）。主动关怀时用——比如规则里写「有未接电话就提醒我」。没有通话记录权限时如实说。",
++            mapOf(
++                "limit" to int("最近几条，1-20；省略=5"),
++            ),
 +            emptyList(),
 +        ),
 +        Tool(
@@ -5388,7 +5825,7 @@ index cbfb0de3..2a9ac989 100644
          Tool(
              DIAGNOSTICS,
              // l10n:keep agent tool catalog
-@@ -283,7 +370,7 @@ object PhoneToolCatalog {
+@@ -283,7 +427,7 @@ object PhoneToolCatalog {
  
      val names: List<String> = tools.map { it.name }
  
@@ -105605,7 +106042,7 @@ index 00000000..8e1a253a
 +/// 全局导航键：通话悬浮球等"不挂在某个页面下"的入口用它在任何界面 push/pop。
 +final GlobalKey<NavigatorState> appNavigatorKey = GlobalKey<NavigatorState>();
 diff --git a/app/lib/l10n/app_en.arb b/app/lib/l10n/app_en.arb
-index e1de7125..386f5b2a 100644
+index e1de7125..c517bb04 100644
 --- a/app/lib/l10n/app_en.arb
 +++ b/app/lib/l10n/app_en.arb
 @@ -498,6 +498,105 @@
@@ -105785,10 +106222,10 @@ index e1de7125..386f5b2a 100644
 +  "teachAiQueued": "Kongkong is organizing the steps into a skill; check the chat for the result",
 +  "teachAiSendFailed": "Not sent; go back to the chat and retry",
 +  "teachNoSession": "No open chat; open one first",
-+  "proactiveTitle": "Proactive companion",
-+  "proactiveNote": "Add rules one by one; Kongkong comes to you: popup, notification or a voice call when triggered.",
++  "proactiveTitle": "Proactive rules",
++  "proactiveNote": "Kongkong's rule book: instructions (tasks) you write yourself. It checks them on a timer and acts on its own — reminders, calls, checking in. It does what it has the ability to do.",
 +  "proactiveAddTitle": "Add rule",
-+  "proactiveEmpty": "No rules yet; add one",
++  "proactiveEmpty": "No rules yet; write one",
 +  "proactiveConditionScreen": "Phone used over {n} minutes",
 +  "proactiveConditionIdle": "No chat with Kongkong for {n} hours",
 +  "proactiveConditionDaily": "Every day at {n}",
@@ -105867,7 +106304,7 @@ index e1de7125..386f5b2a 100644
    "wallpaperPreview": "Preview",
    "wallpaperFooter": "Shown on home, in chats and in the drawer. Lighten applies in light mode, Dim in dark mode; text always stays clear. PNG, JPEG or WebP, up to 15 MB.",
 diff --git a/app/lib/l10n/app_zh.arb b/app/lib/l10n/app_zh.arb
-index ec1a316d..b8232af0 100644
+index ec1a316d..1b903b57 100644
 --- a/app/lib/l10n/app_zh.arb
 +++ b/app/lib/l10n/app_zh.arb
 @@ -3,8 +3,8 @@
@@ -106433,10 +106870,10 @@ index ec1a316d..b8232af0 100644
 +  "teachAiQueued": "已交给空空整理，整理好的技能会存进技能库，去对话里看结果",
 +  "teachAiSendFailed": "没发出去，请回到对话再试",
 +  "teachNoSession": "当前没有打开的对话，先开一个对话再试",
-+  "proactiveTitle": "主动陪伴",
-+  "proactiveNote": "加一条条规则，空空会自己来找你：条件触发后弹窗、通知或语音叫你。",
++  "proactiveTitle": "主动规则",
++  "proactiveNote": "这是空空的规则库：你写的一条条指令（任务）。它定时检查，按你的指令主动行动——比如提醒、打电话、关心你。前提是它具备相应的能力。",
 +  "proactiveAddTitle": "添加规则",
-+  "proactiveEmpty": "还没有规则，加一条试试",
++  "proactiveEmpty": "还没有规则，加一条指令试试",
 +  "proactiveConditionScreen": "玩手机超过 {n} 分钟",
 +  "@proactiveConditionScreen": {
 +    "placeholders": {
@@ -106911,7 +107348,7 @@ index ec1a316d..b8232af0 100644
      "placeholders": {
        "version": {
 diff --git a/app/lib/l10n/gen/app_localizations.dart b/app/lib/l10n/gen/app_localizations.dart
-index 05ad2de7..a80c158e 100644
+index 05ad2de7..cd016f2e 100644
 --- a/app/lib/l10n/gen/app_localizations.dart
 +++ b/app/lib/l10n/gen/app_localizations.dart
 @@ -113,13 +113,13 @@ abstract class L10n {
@@ -108239,13 +108676,13 @@ index 05ad2de7..a80c158e 100644
 +  /// No description provided for @proactiveTitle.
 +  ///
 +  /// In zh, this message translates to:
-+  /// **'主动陪伴'**
++  /// **'主动规则'**
 +  String get proactiveTitle;
 +
 +  /// No description provided for @proactiveNote.
 +  ///
 +  /// In zh, this message translates to:
-+  /// **'加一条条规则，空空会自己来找你：条件触发后弹窗、通知或语音叫你。'**
++  /// **'这是空空的规则库：你写的一条条指令（任务）。它定时检查，按你的指令主动行动——比如提醒、打电话、关心你。前提是它具备相应的能力。'**
 +  String get proactiveNote;
 +
 +  /// No description provided for @proactiveAddTitle.
@@ -108257,7 +108694,7 @@ index 05ad2de7..a80c158e 100644
 +  /// No description provided for @proactiveEmpty.
 +  ///
 +  /// In zh, this message translates to:
-+  /// **'还没有规则，加一条试试'**
++  /// **'还没有规则，加一条指令试试'**
 +  String get proactiveEmpty;
 +
 +  /// No description provided for @proactiveConditionScreen.
@@ -109010,7 +109447,7 @@ index 05ad2de7..a80c158e 100644
  
    /// No description provided for @workshopInstalledVersion.
 diff --git a/app/lib/l10n/gen/app_localizations_en.dart b/app/lib/l10n/gen/app_localizations_en.dart
-index 546fef86..c06420e4 100644
+index 546fef86..4621297f 100644
 --- a/app/lib/l10n/gen/app_localizations_en.dart
 +++ b/app/lib/l10n/gen/app_localizations_en.dart
 @@ -1707,6 +1707,321 @@ class L10nEn extends L10n {
@@ -109530,17 +109967,17 @@ index 546fef86..c06420e4 100644
 +  String get teachNoSession => 'No open chat; open one first';
 +
 +  @override
-+  String get proactiveTitle => 'Proactive companion';
++  String get proactiveTitle => 'Proactive rules';
 +
 +  @override
 +  String get proactiveNote =>
-+      'Add rules one by one; Kongkong comes to you: popup, notification or a voice call when triggered.';
++      'Kongkong\'s rule book: instructions (tasks) you write yourself. It checks them on a timer and acts on its own — reminders, calls, checking in. It does what it has the ability to do.';
 +
 +  @override
 +  String get proactiveAddTitle => 'Add rule';
 +
 +  @override
-+  String get proactiveEmpty => 'No rules yet; add one';
++  String get proactiveEmpty => 'No rules yet; write one';
 +
 +  @override
 +  String proactiveConditionScreen(int n) {
@@ -109722,7 +110159,7 @@ index 546fef86..c06420e4 100644
    String get wallpaperReplace => 'Replace picture';
  
 diff --git a/app/lib/l10n/gen/app_localizations_zh.dart b/app/lib/l10n/gen/app_localizations_zh.dart
-index c66b20de..f37330e8 100644
+index c66b20de..e0fe97bf 100644
 --- a/app/lib/l10n/gen/app_localizations_zh.dart
 +++ b/app/lib/l10n/gen/app_localizations_zh.dart
 @@ -19,10 +19,10 @@ class L10nZh extends L10n {
@@ -110583,16 +111020,16 @@ index c66b20de..f37330e8 100644
 +  String get teachNoSession => '当前没有打开的对话，先开一个对话再试';
 +
 +  @override
-+  String get proactiveTitle => '主动陪伴';
++  String get proactiveTitle => '主动规则';
 +
 +  @override
-+  String get proactiveNote => '加一条条规则，空空会自己来找你：条件触发后弹窗、通知或语音叫你。';
++  String get proactiveNote => '这是空空的规则库：你写的一条条指令（任务）。它定时检查，按你的指令主动行动——比如提醒、打电话、关心你。前提是它具备相应的能力。';
 +
 +  @override
 +  String get proactiveAddTitle => '添加规则';
 +
 +  @override
-+  String get proactiveEmpty => '还没有规则，加一条试试';
++  String get proactiveEmpty => '还没有规则，加一条指令试试';
 +
 +  @override
 +  String proactiveConditionScreen(int n) {
@@ -111739,7 +112176,7 @@ index b1175369..0c5f743b 100644
 +  "phonePrivilegedRootRiskBody": "root 管理器（Magisk、KernelSU 或 APatch）会弹窗问你。允许后，空空 以 root 运行自己的后台服务；只有打开「保持 root 通道」，断开或重启后才会自己再去申请。"
  }
 diff --git a/app/lib/l10n/parts/phone_en.arb b/app/lib/l10n/parts/phone_en.arb
-index 47d0cdf6..9b63c839 100644
+index 47d0cdf6..3978c329 100644
 --- a/app/lib/l10n/parts/phone_en.arb
 +++ b/app/lib/l10n/parts/phone_en.arb
 @@ -253,6 +253,9 @@
@@ -111853,10 +112290,10 @@ index 47d0cdf6..9b63c839 100644
 +  "teachAiQueued": "Kongkong is organizing the steps into a skill; check the chat for the result",
 +  "teachAiSendFailed": "Not sent; go back to the chat and retry",
 +  "teachNoSession": "No open chat; open one first",
-+  "proactiveTitle": "Proactive companion",
-+  "proactiveNote": "Add rules one by one; Kongkong comes to you: popup, notification or a voice call when triggered.",
++  "proactiveTitle": "Proactive rules",
++  "proactiveNote": "Kongkong's rule book: instructions (tasks) you write yourself. It checks them on a timer and acts on its own — reminders, calls, checking in. It does what it has the ability to do.",
 +  "proactiveAddTitle": "Add rule",
-+  "proactiveEmpty": "No rules yet; add one",
++  "proactiveEmpty": "No rules yet; write one",
 +  "proactiveConditionScreen": "Phone used over {n} minutes",
 +  "proactiveConditionIdle": "No chat with Kongkong for {n} hours",
 +  "proactiveConditionDaily": "Every day at {n}",
@@ -111960,7 +112397,7 @@ index 40aa7258..9d400d53 100644
 +  "phoneSkillSaveFailed": "保存失败，请重试"
  }
 diff --git a/app/lib/l10n/parts/phone_zh.arb b/app/lib/l10n/parts/phone_zh.arb
-index 4d61a2d3..00ef3fa0 100644
+index 4d61a2d3..fb29f970 100644
 --- a/app/lib/l10n/parts/phone_zh.arb
 +++ b/app/lib/l10n/parts/phone_zh.arb
 @@ -131,7 +131,7 @@
@@ -112213,10 +112650,10 @@ index 4d61a2d3..00ef3fa0 100644
 +  "teachAiQueued": "已交给空空整理，整理好的技能会存进技能库，去对话里看结果",
 +  "teachAiSendFailed": "没发出去，请回到对话再试",
 +  "teachNoSession": "当前没有打开的对话，先开一个对话再试",
-+  "proactiveTitle": "主动陪伴",
-+  "proactiveNote": "加一条条规则，空空会自己来找你：条件触发后弹窗、通知或语音叫你。",
++  "proactiveTitle": "主动规则",
++  "proactiveNote": "这是空空的规则库：你写的一条条指令（任务）。它定时检查，按你的指令主动行动——比如提醒、打电话、关心你。前提是它具备相应的能力。",
 +  "proactiveAddTitle": "添加规则",
-+  "proactiveEmpty": "还没有规则，加一条试试",
++  "proactiveEmpty": "还没有规则，加一条指令试试",
 +  "proactiveConditionScreen": "玩手机超过 {n} 分钟",
 +  "proactiveConditionIdle": "超过 {n} 小时没跟空空说话",
 +  "proactiveConditionDaily": "每天 {n} 点",
@@ -114100,6 +114537,65 @@ index 00000000..59b0a9be
 +  Future<void> removeRule(String id) => _invoke('proactiveRemoveRule', <String, Object?>{'id': id});
 +
 +  Future<void> touchInteraction() => _invoke('touchInteraction');
++}
+diff --git a/app/lib/phone/proactive_scheduler.dart b/app/lib/phone/proactive_scheduler.dart
+new file mode 100644
+index 00000000..213d9ea1
+--- /dev/null
++++ b/app/lib/phone/proactive_scheduler.dart
+@@ -0,0 +1,53 @@
++// 主动规则的定时评估循环：每隔一段时间把「规则清单 + 当前状况」发给空空（模型），
++// 由它自己逐条判断该不该行动、并调用工具执行。判断与动作完全交给模型，
++// 原生只提供事实数据（时间、屏幕使用、最后互动）与工具。
++// 消息以排队方式发出（不打断正在进行的回合）。
++
++import 'dart:async';
++
++import 'package:flutter_riverpod/flutter_riverpod.dart';
++
++import '../state/chat_state.dart';
++import '../state/sessions_state.dart';
++import 'proactive_channel.dart';
++
++final proactiveSchedulerProvider =
++    NotifierProvider<ProactiveScheduler, bool>(ProactiveScheduler.new);
++
++class ProactiveScheduler extends Notifier<bool> {
++  static const interval = Duration(minutes: 10);
++  static final _channel = ProactiveChannel();
++
++  Timer? _timer;
++
++  @override
++  bool build() {
++    // 只要被观察就确保在跑；不随观察结束而停（进程常驻）。
++    _timer ??= Timer.periodic(interval, (_) => unawaited(_evaluate()));
++    return true;
++  }
++
++  Future<void> _evaluate() async {
++    final sessionId = ref.read(currentSessionProvider);
++    if (sessionId == null) return; // 没有会话可投递，下轮再说。
++    final rules = await _channel.rules();
++    if (rules.isEmpty) return;
++    final status = await _channel.status();
++    final now = DateTime.now();
++    final lines = [
++      '【主动规则后台检查，不要当成用户消息回复】',
++      '现在时间：${now.hour} 点 ${now.minute} 分（周${now.weekday}）。',
++      '机主最近互动：${status['idleHours'] ?? '未知'} 小时前。',
++      '屏幕近 3 小时使用：${status['screenMinutes'] ?? '未知'} 分钟。',
++      '你的主动规则清单：',
++      for (var i = 0; i < rules.length; i++)
++        '${i + 1}. ${rules[i].text}',
++      '逐条判断：条件满足的规则，立刻执行它要求的动作（可用的工具：语音来电 voice_call、通知 notify、打开应用 open、发消息、设闹钟 intent 等）；',
++      '条件不满足就跳过。全部不满足时只回复「无」。执行了就回复「已执行：第X条」。',
++    ];
++    await ref.read(chatProvider(sessionId).notifier).send(
++          lines.join('\n'),
++          mode: SendMode.queue,
++        );
++  }
 +}
 diff --git a/app/lib/phone/teach_channel.dart b/app/lib/phone/teach_channel.dart
 new file mode 100644
@@ -120583,7 +121079,7 @@ index 98a8185e..75d4900c 100644
            key: const ValueKey('wallpaper-preview'),
            title: l10n.wallpaperPreview,
 diff --git a/app/lib/ui/settings/settings_screen.dart b/app/lib/ui/settings/settings_screen.dart
-index f48b78e3..cc222043 100644
+index f48b78e3..a30f3692 100644
 --- a/app/lib/ui/settings/settings_screen.dart
 +++ b/app/lib/ui/settings/settings_screen.dart
 @@ -7,6 +7,7 @@ import '../../l10n/l10n.dart';
@@ -120594,7 +121090,7 @@ index f48b78e3..cc222043 100644
  import '../../state/android_features.dart';
  import '../../state/ask_ai.dart' show askAiAvailableProvider;
  import '../../state/balance_state.dart';
-@@ -33,12 +34,18 @@ import '../engine/engine_status.dart';
+@@ -33,12 +34,19 @@ import '../engine/engine_status.dart';
  import '../engine_settings/engine_settings_hub.dart';
  import '../engine_settings/web_search_page.dart';
  import 'media_settings_page.dart';
@@ -120609,12 +121105,22 @@ index f48b78e3..cc222043 100644
 +import '../phone/cloud_dial_page.dart';
 +import '../phone/memory_page.dart';
 +import '../phone/proactive_page.dart';
++import '../../phone/proactive_scheduler.dart';
 +import '../../state/ai_call_settings.dart';
 +import '../../state/cloud_dial_settings.dart';
  import '../phone/system_actions_page.dart';
  import '../plugins/plugins_screen.dart';
  import '../plugins/seats/plugin_settings_tiles.dart';
-@@ -190,6 +197,32 @@ class SettingsScreen extends ConsumerWidget {
+@@ -108,6 +116,8 @@ class SettingsScreen extends ConsumerWidget {
+     final prefs = canEditReplyPrefs(ref)
+         ? (replyPrefsSummary(ref) == null ? l10n.commonNotSet : l10n.hubValueSet)
+         : null;
++    // 主动规则的定时评估循环：只要打开过设置页就持续跑。
++    ref.watch(proactiveSchedulerProvider);
+     // 能力.
+     final phone = android || ios ? ref.watch(phoneProvider) : null;
+     final phoneValue = phone == null || !phone.loaded || !phone.status.ready
+@@ -190,6 +200,32 @@ class SettingsScreen extends ConsumerWidget {
                  ),
                  onTap: () => _push(context, const SystemActionsPage()),
                ),
@@ -120647,7 +121153,7 @@ index f48b78e3..cc222043 100644
              SettingsTile(
                icon: AppIcons.webSearch,
                tint: SettingsHues.abilities,
-@@ -318,27 +351,24 @@ class SettingsScreen extends ConsumerWidget {
+@@ -318,27 +354,24 @@ class SettingsScreen extends ConsumerWidget {
                  value: Text(l10n.askAiTooltip),
                  onTap: () => unawaited(askAi(context, AskAiTopic.overview)),
                ),
