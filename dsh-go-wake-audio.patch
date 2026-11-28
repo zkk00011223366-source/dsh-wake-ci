@@ -1,10 +1,10 @@
 From: dsh <dsh@local>
-Date: Sat, 28 Nov 2026 15:05:49 +0800
-Subject: [PATCH] 磨砂纯雾罩不卡+技能reason+快捷方式修复
+Date: Sat, 28 Nov 2026 15:38:30 +0800
+Subject: [PATCH] frost=0纯透明补齐+设置页恢复原样
 
  dsh-go-wake.patch                                  | 2065 +++++++++++++
  tooling/build-wake-apk.sh                          |   68 +
- 401 files changed, 20590 insertions(+), 1319 deletions(-)
+ 401 files changed, 20601 insertions(+), 1322 deletions(-)
 
 diff --git a/.gitattributes b/.gitattributes
 index 52e3e08a..3e877c7e 100644
@@ -111055,10 +111055,18 @@ index 00000000..a7cb0466
 +  Widget build(BuildContext context) => const SizedBox.shrink();
 +}
 diff --git a/app/lib/ui/shell/home_shell.dart b/app/lib/ui/shell/home_shell.dart
-index 9a236c71..005e9e7e 100644
+index 9a236c71..ece36539 100644
 --- a/app/lib/ui/shell/home_shell.dart
 +++ b/app/lib/ui/shell/home_shell.dart
-@@ -34,6 +34,8 @@ import '../plugins/plugins_screen.dart';
+@@ -16,6 +16,7 @@ import '../../pets/overlay_channel.dart' show petOverlayChannelProvider;
+ import '../../pets/pet_overlay_bridge.dart';
+ import '../../state/adaptive_layout_state.dart';
+ import '../../state/android_features.dart';
++import '../../state/appearance_state.dart';
+ import '../../state/drawer_view_state.dart' show drawerSelectionProvider;
+ import '../../state/quick_panel_state.dart';
+ import '../../state/sessions_state.dart' show currentSessionProvider;
+@@ -34,6 +35,8 @@ import '../plugins/plugins_screen.dart';
  import '../pets/pet_settings_page.dart';
  import '../phone/phone_stop_watcher.dart';
  import '../phone/system_actions_host.dart';
@@ -111067,7 +111075,7 @@ index 9a236c71..005e9e7e 100644
  import '../remote/host_switcher.dart' show showHostSheet;
  import '../remote/remote_screen.dart';
  import '../safe_mode/safe_mode_notice_listener.dart';
-@@ -370,6 +372,11 @@ class _HomeShellState extends ConsumerState<HomeShell> with TickerProviderStateM
+@@ -370,6 +373,11 @@ class _HomeShellState extends ConsumerState<HomeShell> with TickerProviderStateM
                        const TavernIntakeHost(),
                        // Share sheet, launcher shortcuts, the tile: into the chat (draws nothing).
                        SystemEntryHost(onReveal: _revealChat),
@@ -111079,6 +111087,36 @@ index 9a236c71..005e9e7e 100644
                        // Forum links (sign-in return, topics): registers them with the router.
                        const ForumLinkHost(),
                        // DS Bot: keeps its feed and notifications alive with the shell.
+@@ -545,7 +553,7 @@ class _SideParallax extends StatelessWidget {
+   }
+ }
+ 
+-class _DrawerOverlay extends StatelessWidget {
++class _DrawerOverlay extends ConsumerWidget {
+   const _DrawerOverlay({
+     required this.animation,
+     required this.width,
+@@ -561,8 +569,10 @@ class _DrawerOverlay extends StatelessWidget {
+   final bool fromRight;
+ 
+   @override
+-  Widget build(BuildContext context) {
++  Widget build(BuildContext context, WidgetRef ref) {
+     final scrim = DshSurfaces.of(context).scrim;
++    // 【frost】抽屉的暗化层也跟磨砂滑块:0=不压暗(纯透明看壁纸),1=原样。
++    final frost = ref.watch(appearanceProvider).frost;
+     return AnimatedBuilder(
+       animation: animation,
+       child: RepaintBoundary(child: drawer),
+@@ -576,7 +586,7 @@ class _DrawerOverlay extends StatelessWidget {
+                 ignoring: progress == 0,
+                 child: GestureDetector(
+                   onTap: onClose,
+-                  child: ColoredBox(color: scrim.withValues(alpha: scrim.a * progress)),
++                  child: ColoredBox(color: scrim.withValues(alpha: scrim.a * progress * frost)),
+                 ),
+               ),
+             ),
 diff --git a/app/lib/ui/shell/root_gate.dart b/app/lib/ui/shell/root_gate.dart
 index d55e314f..e39f3a3a 100644
 --- a/app/lib/ui/shell/root_gate.dart
@@ -111708,7 +111746,7 @@ index 6838c632..dcbf2906 100644
      extensions: [colors, surfaces],
      pageTransitionsTheme: transitions,
 diff --git a/app/lib/ui/theme/backdrop.dart b/app/lib/ui/theme/backdrop.dart
-index a3f5f043..007a4647 100644
+index a3f5f043..a663d2c6 100644
 --- a/app/lib/ui/theme/backdrop.dart
 +++ b/app/lib/ui/theme/backdrop.dart
 @@ -6,7 +6,9 @@ import 'dart:ui' as ui;
@@ -111730,7 +111768,7 @@ index a3f5f043..007a4647 100644
    const AppBackdrop({super.key, required this.child, this.glow = true, this.picture});
  
    final Widget child;
-@@ -36,9 +38,20 @@ class AppBackdrop extends StatelessWidget {
+@@ -36,9 +38,23 @@ class AppBackdrop extends StatelessWidget {
    /// A picture in place of the gradient; null: the gradient.
    final BackdropPicture? picture;
  
@@ -111742,17 +111780,20 @@ index a3f5f043..007a4647 100644
 -  Widget build(BuildContext context) {
 +  Widget build(BuildContext context, WidgetRef ref) {
      final s = DshSurfaces.of(context);
-+    // 【frost】背景磨砂度：0=无罩层，壁纸清晰直出（三个界面全透明）；
++    // 【frost】背景磨砂度：0=无罩层，壁纸清晰直出（三界面全透明）；
 +    // 越大白雾越浓（磨砂观感），文字对比越好。纯 alpha，不采样、不模糊、不卡。
++    // 光晕也随 frost：0=关掉光晕（壁纸上那层雾蓝光纱没了），1=原样。
 +    final frost = ref.watch(appearanceProvider).frost;
 +    final tintAlpha = frost * frostTint;
 +    final tint = (Theme.of(context).brightness == Brightness.dark)
 +        ? const Color(0xFF000000)
 +        : const Color(0xFFFFFFFF);
++    final glowPrimary = s.glowPrimary.withValues(alpha: s.glowPrimary.a * frost);
++    final glowSecondary = s.glowSecondary.withValues(alpha: s.glowSecondary.a * frost);
      return _BackdropScope(
        picture: picture,
        child: Stack(
-@@ -47,14 +60,21 @@ class AppBackdrop extends StatelessWidget {
+@@ -47,14 +63,21 @@ class AppBackdrop extends StatelessWidget {
            Positioned.fill(
              child: IgnorePointer(
                child: RepaintBoundary(
@@ -111771,8 +111812,8 @@ index a3f5f043..007a4647 100644
 +                      painter: _BackdropPainter(
 +                        top: s.backdropTop,
 +                        bottom: s.backdropBottom,
-+                        glowPrimary: glow ? s.glowPrimary : null,
-+                        glowSecondary: glow ? s.glowSecondary : null,
++                        glowPrimary: glow ? glowPrimary : null,
++                        glowSecondary: glow ? glowSecondary : null,
 +                        picture: picture,
 +                      ),
 +                    ),
@@ -111782,7 +111823,7 @@ index a3f5f043..007a4647 100644
                  ),
                ),
              ),
-@@ -110,7 +130,7 @@ class _BackdropScope extends InheritedWidget {
+@@ -110,7 +133,7 @@ class _BackdropScope extends InheritedWidget {
  /// 这一条,所以和真背景严丝合缝;键盘弹起页面变矮时也对得上。要求铺满
  /// 整页、和页面左上角对齐。分栏布局里的一栏(宽屏的聊天栏、详情栏)由
  /// [BackdropFrame] 告知它在整张背景里的位置,照样对得上。
@@ -111791,7 +111832,7 @@ index a3f5f043..007a4647 100644
    const BackdropVeil({super.key, required this.solidHeight, this.feather = 14, this.glow = true}) : fromTop = false;
  
    /// 顶部版:从顶边往下 [height] 实心,再往下 [feather] 缓缓淡出(页面顶栏
-@@ -131,9 +151,14 @@ class BackdropVeil extends StatelessWidget {
+@@ -131,9 +154,14 @@ class BackdropVeil extends StatelessWidget {
    final bool fromTop;
  
    @override
@@ -111807,7 +111848,7 @@ index a3f5f043..007a4647 100644
      return IgnorePointer(
        child: CustomPaint(
          size: Size.infinite,
-@@ -141,6 +166,8 @@ class BackdropVeil extends StatelessWidget {
+@@ -141,6 +169,8 @@ class BackdropVeil extends StatelessWidget {
            solidHeight: solidHeight,
            feather: feather,
            fromTop: fromTop,
@@ -111816,7 +111857,7 @@ index a3f5f043..007a4647 100644
            backdrop: _BackdropPainter(
              top: s.backdropTop,
              bottom: s.backdropBottom,
-@@ -178,14 +205,26 @@ class _FixedHeight implements ValueListenable<double> {
+@@ -178,14 +208,26 @@ class _FixedHeight implements ValueListenable<double> {
  
  /// [BackdropVeil] 的一条:底部实心,往上缓缓淡出(顶部版反过来)。
  class _VeilPainter extends CustomPainter {
@@ -111845,7 +111886,7 @@ index a3f5f043..007a4647 100644
    @override
    void paint(Canvas canvas, Size size) {
      final band = (solidHeight.value + feather).clamp(0.0, size.height);
-@@ -213,10 +252,16 @@ class _VeilPainter extends CustomPainter {
+@@ -213,10 +255,16 @@ class _VeilPainter extends CustomPainter {
        colors.add(Colors.black);
      }
  
@@ -111862,7 +111903,7 @@ index a3f5f043..007a4647 100644
      canvas.drawRect(
        rect,
        Paint()
-@@ -236,6 +281,8 @@ class _VeilPainter extends CustomPainter {
+@@ -236,6 +284,8 @@ class _VeilPainter extends CustomPainter {
        old.solidHeight != solidHeight ||
        old.feather != feather ||
        old.fromTop != fromTop ||
@@ -111872,7 +111913,7 @@ index a3f5f043..007a4647 100644
  }
  
 diff --git a/app/lib/ui/theme/glass.dart b/app/lib/ui/theme/glass.dart
-index 2ebac55e..ea570bce 100644
+index 2ebac55e..e1733e4e 100644
 --- a/app/lib/ui/theme/glass.dart
 +++ b/app/lib/ui/theme/glass.dart
 @@ -1,7 +1,9 @@
@@ -111894,7 +111935,7 @@ index 2ebac55e..ea570bce 100644
    const GlassSurface({
      super.key,
      this.tier = GlassTier.card,
-@@ -105,18 +107,27 @@ class GlassSurface extends StatelessWidget {
+@@ -105,18 +107,29 @@ class GlassSurface extends StatelessWidget {
    }
  
    @override
@@ -111909,23 +111950,25 @@ index 2ebac55e..ea570bce 100644
      final reduce = !surfaces.blurEnabled || highContrast || uiTraceNoBlur;
      final useBlur = !reduce && (blur ?? s.blurs);
 +    final frostSigma = (tier == GlassTier.sheet && useBlur) ? frost * 20 : 0.0;
-+    // 【frost】card/sheet 玻璃(抽屉/弹层/菜单/设置卡)底色跟磨砂滑块走:
-+    // 0=玻璃无底(壁纸直出),1=现状。chrome/pill 交互件不动,保证按钮可读。
-+    final frostFill = (tier == GlassTier.card || tier == GlassTier.sheet)
-+        ? s.fill.withValues(alpha: s.fill.a * frost)
-+        : s.fill;
++    // 【frost】sheet 玻璃(抽屉/弹层/菜单)底色跟磨砂滑块走:0=玻璃无底(壁纸直出),
++    // 1=现状。card 不挂(用户拍板设置页恢复原样);chrome/pill 交互件不动。
++    final frostFill = (tier == GlassTier.sheet) ? s.fill.withValues(alpha: s.fill.a * frost) : s.fill;
++    // 滑动中的不透明兜底也按 frost 透:不然"一滑动就恢复原样"。
++    final frostFallback = (tier == GlassTier.sheet)
++        ? s.fallbackFill.withValues(alpha: s.fallbackFill.a * frost)
++        : s.fallbackFill;
      if (uiTraceEnabled) {
        uiTrace('glass', 'build', {'tier': tier.name, 'blur': useBlur, 'grouped': grouped});
      }
      final fill = useBlur
 -        ? Color.lerp(s.fallbackFill, s.fill, settled ?? 1)!
 -        : (reduce || s.blurs ? s.fallbackFill : s.fill);
-+        ? Color.lerp(s.fallbackFill, frostFill, settled ?? 1)!
++        ? Color.lerp(frostFallback, frostFill, settled ?? 1)!
 +        : (reduce || s.blurs ? s.fallbackFill : frostFill);
      final shape = _shape;
      final textDirection = Directionality.maybeOf(context);
  
-@@ -151,7 +162,7 @@ class GlassSurface extends StatelessWidget {
+@@ -151,7 +164,7 @@ class GlassSurface extends StatelessWidget {
      );
  
      if (useBlur) {
