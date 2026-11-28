@@ -1,10 +1,10 @@
 From: dsh <dsh@local>
-Date: Sun, 29 Nov 2026 00:38:04 +0800
-Subject: [PATCH] 全量v9
+Date: Sun, 29 Nov 2026 01:15:00 +0800
+Subject: [PATCH] 全量: AI电话+锁屏+教空空+记忆+云端外呼+主动陪伴(复核收尾)
 
  dsh-go-wake.patch                                  | 2065 +++++++++++++
  tooling/build-wake-apk.sh                          |   68 +
- 441 files changed, 30205 insertions(+), 1423 deletions(-)
+ 444 files changed, 30596 insertions(+), 1423 deletions(-)
 
 diff --git a/.gitattributes b/.gitattributes
 index 52e3e08a..3e877c7e 100644
@@ -1090,10 +1090,10 @@ index 00000000..0a7a277b
 +}
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/companion/ProactiveCare.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/companion/ProactiveCare.kt
 new file mode 100644
-index 00000000..5b880885
+index 00000000..81df392c
 --- /dev/null
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/companion/ProactiveCare.kt
-@@ -0,0 +1,300 @@
+@@ -0,0 +1,319 @@
 +package io.github.ccch1mneyyy.dsh_app.companion
 +
 +import android.app.AppOpsManager
@@ -1111,6 +1111,7 @@ index 00000000..5b880885
 +import android.os.SystemClock
 +import io.github.ccch1mneyyy.dsh_app.MainActivity
 +import io.github.ccch1mneyyy.dsh_app.phone.PhoneRegistry
++import io.github.ccch1mneyyy.dsh_app.phone.ScreenTime
 +import java.util.Calendar
 +import java.util.UUID
 +import kotlin.random.Random
@@ -1136,17 +1137,13 @@ index 00000000..5b880885
 +        val param: Long,       // 分钟 / 小时 / HHmm
 +        val action: String,    // popup / notify / voiceCall
 +        val text: String,
-+        val retryMinutes: Long = 0, // 未接/未回复后过 N 分钟重拨（0=不重试）
-+        val maxRetries: Int = 0,    // 最多重拨几次
 +    )
 +
-+    /** 一次主动呼叫的生命周期：触发后跟踪接通/回复，按规则安排重拨。 */
++    /** 一次主动呼叫的跟踪：接通/回复状态暴露给模型，由模型按规则文字决定是否重拨。 */
 +    private class CallTask(
 +        val rule: Rule,
-+        var retries: Int = 0,
 +        var active: Boolean = false,
 +        var replied: Boolean = false,
-+        var retryAt: Long = 0L,
 +    )
 +
 +    private val prefs: SharedPreferences = context.getSharedPreferences("proactive-v2", Context.MODE_PRIVATE)
@@ -1176,34 +1173,50 @@ index 00000000..5b880885
 +        decode(prefs.getString(K_RULES, "[]").orEmpty())
 +    }.getOrDefault(emptyList())
 +
-+    fun addRule(condition: String, param: Long, action: String, text: String,
-+                retryMinutes: Long, maxRetries: Int): Map<String, Any?> {
++    fun addRule(condition: String, param: Long, action: String, text: String): Map<String, Any?> {
 +        if (condition !in CONDITIONS || action !in ACTIONS) return mapOf("ok" to false, "reason" to "invalid")
 +        val t = text.trim()
-+        if (t.isEmpty() || t.length > 200) return mapOf("ok" to false, "reason" to "invalidText")
-+        if (retryMinutes !in 0..1440 || maxRetries !in 0..9) return mapOf("ok" to false, "reason" to "invalidRetry")
-+        val rule = Rule(UUID.randomUUID().toString().replace("-", ""), condition, param, action, t, retryMinutes, maxRetries)
++        if (t.isEmpty() || t.length > 500) return mapOf("ok" to false, "reason" to "invalidText")
++        val rule = Rule(UUID.randomUUID().toString().replace("-", "", ), condition, param, action, t)
 +        val next = rules() + rule
-+        if (next.size > 20) return mapOf("ok" to false, "reason" to "tooMany")
++        if (next.size > 50) return mapOf("ok" to false, "reason" to "tooMany")
 +        prefs.edit().putString(K_RULES, encode(next)).apply()
 +        return mapOf("ok" to true, "rule" to ruleToJson(rule))
 +    }
 +
-+    fun updateRule(id: String, condition: String, param: Long, action: String, text: String,
-+                   retryMinutes: Long, maxRetries: Int): Map<String, Any?> {
-+        if (condition !in CONDITIONS || action !in ACTIONS) return mapOf("ok" to false, "reason" to "invalid")
++    /** 大白话规则：整段文本就是规则（条件/动作/时机都在话里），模型评估时自己理解。 */
++    fun addFreeRule(text: String): Map<String, Any?> {
 +        val t = text.trim()
-+        if (t.isEmpty() || t.length > 200) return mapOf("ok" to false, "reason" to "invalidText")
-+        if (retryMinutes !in 0..1440 || maxRetries !in 0..9) return mapOf("ok" to false, "reason" to "invalidRetry")
++        if (t.isEmpty() || t.length > 500) return mapOf("ok" to false, "reason" to "invalidText")
++        val rule = Rule(UUID.randomUUID().toString().replace("-", ""), "free", 0, "free", t)
++        val next = rules() + rule
++        if (next.size > 50) return mapOf("ok" to false, "reason" to "tooMany")
++        prefs.edit().putString(K_RULES, encode(next)).apply()
++        return mapOf("ok" to true, "rule" to ruleToJson(rule))
++    }
++
++    fun updateFreeRule(id: String, text: String): Map<String, Any?> {
++        val t = text.trim()
++        if (t.isEmpty() || t.length > 500) return mapOf("ok" to false, "reason" to "invalidText")
 +        val all = rules()
 +        if (all.none { it.id == id }) return mapOf("ok" to false, "reason" to "missing")
-+        val next = all.map { if (it.id == id) Rule(id, condition, param, action, t, retryMinutes, maxRetries) else it }
++        val next = all.map { if (it.id == id) it.copy(text = t) else it }
 +        prefs.edit().putString(K_RULES, encode(next)).apply()
 +        return mapOf("ok" to true)
 +    }
 +
 +    fun removeRule(id: String) {
 +        prefs.edit().putString(K_RULES, encode(rules().filterNot { it.id == id })).apply()
++        callTasks.remove(id)
++    }
++
++    /** 检查频率（分钟），机主直接填数字。 */
++    fun intervalMinutes(): Long = prefs.getLong(K_INTERVAL, 10L).coerceIn(1, 1440)
++
++    fun setIntervalMinutes(minutes: Long): Map<String, Any?> {
++        if (minutes !in 1..1440) return mapOf("ok" to false, "reason" to "invalid")
++        prefs.edit().putLong(K_INTERVAL, minutes).apply()
++        return mapOf("ok" to true)
 +    }
 +
 +    fun status(): Map<String, Any?> = mapOf(
@@ -1211,6 +1224,8 @@ index 00000000..5b880885
 +        "usageAccess" to usageAccess(),
 +        "screenMinutes" to screenMinutes(),
 +        "idleHours" to idleHours(),
++        "unrepliedCalls" to callTasks.values.filter { !it.active }.map { it.rule.text },
++        "intervalMinutes" to intervalMinutes(),
 +    )
 +
 +    /** 系统「使用情况访问」是否已开（读手机使用时长需要）。 */
@@ -1222,6 +1237,7 @@ index 00000000..5b880885
 +
 +    private fun evaluate() {
 +        for (rule in rules()) {
++            if (rule.condition == "free") continue // 大白话规则交给模型的评估循环判断。
 +            val matched = when (rule.condition) {
 +                "screenMinutes" -> screenMinutes() >= rule.param
 +                "idleHours" -> idleHours() >= rule.param
@@ -1232,16 +1248,13 @@ index 00000000..5b880885
 +        }
 +    }
 +
++    /** 近 [WINDOW_MS] 的真实前台时长（UsageEvents 逐事件，不含空空自己）。 */
 +    private fun screenMinutes(): Long {
 +        if (!usageAccess()) return 0L
-+        return runCatching {
-+            val u = context.getSystemService(UsageStatsManager::class.java)
-+            val end = System.currentTimeMillis()
-+            val own = context.packageName
-+            u.queryUsageStats(UsageStatsManager.INTERVAL_DAILY, end - WINDOW_MS, end)
-+                .filter { it.totalTimeInForeground > 0 && it.packageName != own }
-+                .sumOf { it.totalTimeInForeground } / 60_000L
-+        }.getOrDefault(0L)
++        val end = System.currentTimeMillis()
++        val own = context.packageName
++        return ScreenTime.foregroundMinutes(context, end - WINDOW_MS, end)
++            .filterKeys { it != own }.values.sum() / 60_000L
 +    }
 +
 +    private fun idleHours(): Long {
@@ -1273,15 +1286,18 @@ index 00000000..5b880885
 +        for ((_, task) in callTasks) {
 +            when (event) {
 +                "started" -> { task.active = true; task.replied = false }
-+                "uttered" -> { if (task.active) task.replied = true }
++                "uttered" -> {
++                    if (task.active) task.replied = true
++                    PhoneRegistry.lastInteractionAt = System.currentTimeMillis()
++                }
 +                "ended" -> {
 +                    if (task.active) {
 +                        val unreplied = !task.replied
 +                        task.active = false
-+                        if (unreplied && task.rule.retryMinutes > 0 && task.retries < task.rule.maxRetries) {
-+                            task.retries++
-+                            task.retryAt = System.currentTimeMillis() + task.rule.retryMinutes * 60_000L
-+                            scheduleRetry(task)
++                        if (unreplied) {
++                            // 不自动定时重拨：把「未回复」记下来，评估循环会把状态带给模型，
++                            // 由模型按规则文字里的时机决定重拨（可调 schedule 工具）。
++                            task.active = false
 +                        } else {
 +                            callTasks.remove(task.rule.id)
 +                        }
@@ -1291,14 +1307,22 @@ index 00000000..5b880885
 +        }
 +    }
 +
-+    private fun scheduleRetry(task: CallTask) {
++    /** 模型安排的延时动作：delayMinutes 分钟后执行 action（notify/voiceCall），文案用 text。 */
++    fun scheduleAction(delayMinutes: Long, action: String, text: String): Map<String, Any?> {
++        if (delayMinutes !in 1..1440 || action !in ACTIONS || text.trim().isEmpty() || text.length > 200) {
++            return mapOf("ok" to false, "reason" to "invalid")
++        }
++        val id = UUID.randomUUID().toString()
 +        main.postDelayed({
-+            if (!ticking) return@postDelayed
-+            val now = System.currentTimeMillis()
-+            if (now < task.retryAt) { scheduleRetry(task); return@postDelayed }
-+            callTasks.remove(task.rule.id)
-+            voiceCall(task.rule, retry = task.retries)
-+        }, (task.retryAt - System.currentTimeMillis()).coerceAtLeast(1_000L))
++            runCatching {
++                when (action) {
++                    "voiceCall" -> voiceCall(Rule(id, "dailyAt", 0, "voiceCall", text))
++                    "popup" -> popup(Rule(id, "dailyAt", 0, "popup", text))
++                    else -> notify(Rule(id, "dailyAt", 0, "notify", text))
++                }
++            }
++        }, delayMinutes * 60_000L)
++        return mapOf("ok" to true)
 +    }
 +
 +    private fun popup(rule: Rule) {
@@ -1307,12 +1331,9 @@ index 00000000..5b880885
 +        if (!asked) notify(rule)
 +    }
 +
-+    private fun voiceCall(rule: Rule, retry: Int = 0) {
-+        // 记呼叫任务：跟踪这通的结果，未回复按规则重拨。
-+        if (rule.retryMinutes > 0 && rule.maxRetries > 0) {
-+            val task = callTasks.getOrPut(rule.id) { CallTask(rule) }
-+            task.retries = retry
-+        }
++    private fun voiceCall(rule: Rule) {
++        // 记呼叫任务：跟踪这通的结果，未回复状态会随评估消息带给模型。
++        callTasks.getOrPut(rule.id) { CallTask(rule) }
 +        // 主动语音通话：以「语音通话」入口拉起空空（响铃式全屏通话页）；拉起失败退回通知。
 +        val launched = runCatching {
 +            val intent = Intent(context, MainActivity::class.java)
@@ -1361,7 +1382,6 @@ index 00000000..5b880885
 +            append(org.json.JSONObject().apply {
 +                put("id", r.id); put("condition", r.condition); put("param", r.param)
 +                put("action", r.action); put("text", r.text)
-+                put("retryMinutes", r.retryMinutes); put("maxRetries", r.maxRetries)
 +            })
 +        }
 +        append(']')
@@ -1374,14 +1394,12 @@ index 00000000..5b880885
 +            val condition = o.getString("condition")
 +            val action = o.getString("action")
 +            if (condition !in CONDITIONS || action !in ACTIONS) return@mapNotNull null
-+            Rule(o.getString("id"), condition, o.getLong("param"), action, o.getString("text"),
-+                o.optLong("retryMinutes", 0), o.optInt("maxRetries", 0))
++            Rule(o.getString("id"), condition, o.getLong("param"), action, o.getString("text"))
 +        }
 +    }.getOrDefault(emptyList())
 +
 +    private fun ruleToJson(r: Rule): Map<String, Any?> = mapOf(
 +        "id" to r.id, "condition" to r.condition, "param" to r.param, "action" to r.action, "text" to r.text,
-+        "retryMinutes" to r.retryMinutes, "maxRetries" to r.maxRetries,
 +    )
 +
 +    private companion object {
@@ -1390,8 +1408,9 @@ index 00000000..5b880885
 +        const val TICK_MS = 2 * 60_000L
 +        const val WINDOW_MS = 3 * 60 * 60_000L
 +        const val K_RULES = "rules"
-+        val CONDITIONS = setOf("screenMinutes", "idleHours", "dailyAt")
-+        val ACTIONS = setOf("popup", "notify", "voiceCall")
++        const val K_INTERVAL = "interval_minutes"
++        val CONDITIONS = setOf("screenMinutes", "idleHours", "dailyAt", "free")
++        val ACTIONS = setOf("popup", "notify", "voiceCall", "free")
 +    }
 +}
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/diagnostics/SystemImeEvidence.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/diagnostics/SystemImeEvidence.kt
@@ -2358,7 +2377,7 @@ index 612f94d1..c965e71e 100644
  }
  
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneControl.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneControl.kt
-index 2fc7cd59..a7617597 100644
+index 2fc7cd59..fc121649 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneControl.kt
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneControl.kt
 @@ -159,7 +159,7 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
@@ -2524,7 +2543,7 @@ index 2fc7cd59..a7617597 100644
  
      override fun onAccessibilityChanged(connected: Boolean) = emitStatus()
  
-@@ -953,6 +987,267 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
+@@ -953,6 +987,275 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
  
      override fun enabled(): Boolean = isEnabled()
  
@@ -2619,23 +2638,22 @@ index 2fc7cd59..a7617597 100644
 +            val has = appOps.checkOpNoThrow(android.app.AppOpsManager.OPSTR_GET_USAGE_STATS,
 +                android.os.Process.myUid(), app.packageName) == android.app.AppOpsManager.MODE_ALLOWED
 +            if (!has) return@runCatching null
-+            val u = app.getSystemService(android.app.usage.UsageStatsManager::class.java)
 +            val end = System.currentTimeMillis()
 +            val start = end - hours * 60 * 60_000L
 +            val own = app.packageName
-+            val stats = u.queryUsageStats(android.app.usage.UsageStatsManager.INTERVAL_DAILY, start, end)
-+                .filter { it.totalTimeInForeground > 0 && it.packageName != own }
++            // UsageEvents 逐事件统计：真实窗口内前台时长，不用按天对齐的 INTERVAL_DAILY 桶。
++            val perPkg = ScreenTime.foregroundMinutes(app, start, end).filterKeys { it != own }
 +            val pm = app.packageManager
 +            val rows = if (packageName != null) {
-+                stats.filter { it.packageName == packageName }
++                perPkg.filterKeys { it == packageName }.toList()
 +            } else {
-+                stats.sortedByDescending { it.totalTimeInForeground }.take(5)
++                perPkg.toList().sortedByDescending { it.second }.take(5)
 +            }
 +            if (rows.isEmpty()) "这段时间没有前台使用记录。"
-+            else rows.joinToString("\n") { s ->
-+                val label = runCatching { pm.getApplicationLabel(pm.getApplicationInfo(s.packageName, 0)).toString() }
-+                    .getOrDefault(s.packageName)
-+                "- $label：${s.totalTimeInForeground / 60_000L} 分钟"
++            else rows.joinToString("\n") { (pkg, ms) ->
++                val label = runCatching { pm.getApplicationLabel(pm.getApplicationInfo(pkg, 0)).toString() }
++                    .getOrDefault(pkg)
++                "- $label：${ms / 60_000L} 分钟"
 +            }
 +        }.getOrNull())
 +    }
@@ -2697,8 +2715,12 @@ index 2fc7cd59..a7617597 100644
 +                val ok = latch.await(12, java.util.concurrent.TimeUnit.SECONDS)
 +                runCatching { device?.close() }
 +                runCatching { reader.close() }
++                worker.quitSafely()
 +                if (finished.compareAndSet(false, true)) done(if (ok) result.get() else null)
-+            }.onFailure { if (finished.compareAndSet(false, true)) done(null) }
++            }.onFailure {
++                worker.quitSafely()
++                if (finished.compareAndSet(false, true)) done(null)
++            }
 +        }
 +        handler.postDelayed({
 +            if (finished.compareAndSet(false, true)) { done(null); worker.quitSafely() }
@@ -2712,6 +2734,11 @@ index 2fc7cd59..a7617597 100644
 +                "- ${fmt.format(java.util.Date(item.atMs))} ${item.app ?: item.packageName}：${item.title} ${item.text}".trim()
 +            }.ifBlank { "还没有通知记录（刚授权的话，等有新通知进来才有）。" }
 +        }.getOrNull())
++    }
++
++    override fun scheduleAction(delayMinutes: Long, action: String, text: String, done: (Map<String, Any?>) -> Unit) {
++        done(PhoneRegistry.proactive?.scheduleAction(delayMinutes, action, text)
++            ?: mapOf("ok" to false, "reason" to "unavailable"))
 +    }
 +
 +    override fun notificationAccess(): Boolean =
@@ -2792,7 +2819,7 @@ index 2fc7cd59..a7617597 100644
      override fun isLocked(): Boolean {
          val km = app.getSystemService(Context.KEYGUARD_SERVICE) as KeyguardManager
          val power = app.getSystemService(Context.POWER_SERVICE) as PowerManager
-@@ -990,7 +1285,7 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
+@@ -990,7 +1293,7 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
          if (screen != PhoneScreen.BACKGROUND) return null
          background.endTask(owner.taskId)
          // l10n:keep agent stop reason
@@ -2801,7 +2828,7 @@ index 2fc7cd59..a7617597 100644
      }
  
      override fun a11yState(): A11yState = when {
-@@ -999,18 +1294,121 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
+@@ -999,18 +1302,121 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
          else -> A11yState.DISABLED
      }
  
@@ -2925,7 +2952,7 @@ index 2fc7cd59..a7617597 100644
  
      override fun notifyFix(kind: String) = notifyFixFor(tasks, kind)
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneCore.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneCore.kt
-index 6c701851..eb444f21 100644
+index 6c701851..443fa7ae 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneCore.kt
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneCore.kt
 @@ -1,9 +1,12 @@
@@ -2941,7 +2968,7 @@ index 6c701851..eb444f21 100644
  import java.time.ZoneId
  import java.util.concurrent.atomic.AtomicReference
  
-@@ -13,8 +16,31 @@ enum class A11yState { CONNECTED, ENABLED_NOT_CONNECTED, DISABLED }
+@@ -13,8 +16,32 @@ enum class A11yState { CONNECTED, ENABLED_NOT_CONNECTED, DISABLED }
  interface PhoneEnv {
      /** The master switch. */
      fun enabled(): Boolean
@@ -2957,6 +2984,7 @@ index 6c701851..eb444f21 100644
 +    fun captureCamera(done: (ByteArray?) -> Unit) {}
 +    fun readNotifications(limit: Int, done: (String?) -> Unit) {}
 +    fun notificationAccess(): Boolean = false
++    fun scheduleAction(delayMinutes: Long, action: String, text: String, done: (Map<String, Any?>) -> Unit) {}
 +
 +    /** 主屏是否锁着或熄屏（用来触发自动解锁，不再用来拒绝操作）。 */
 +    fun isLocked(): Boolean = false
@@ -2974,7 +3002,7 @@ index 6c701851..eb444f21 100644
      fun gate(): UserGate?
      fun driver(screen: PhoneScreen): PhoneDriver?
      fun driver(screen: PhoneScreen, owner: PhoneTasks.Owner): PhoneDriver? = driver(screen)
-@@ -23,6 +49,20 @@ interface PhoneEnv {
+@@ -23,6 +50,20 @@ interface PhoneEnv {
      fun a11yState(): A11yState
      /** Why the background display can't be used, as a sentence for the model. */
      fun backgroundUnavailable(): String
@@ -2995,7 +3023,7 @@ index 6c701851..eb444f21 100644
      fun system(): SystemApi
      fun androidShell(): PhoneShellExecutor? = null
      fun uiText(): PhoneUiText = PhoneUiText.DEFAULT
-@@ -55,7 +95,7 @@ class PhoneCore(
+@@ -55,7 +96,7 @@ class PhoneCore(
      },
  ) {
      private val ui: PhoneUiText get() = env.uiText()
@@ -3004,7 +3032,7 @@ index 6c701851..eb444f21 100644
  
      // An abandoned body may overlap a later execution of the same Owner. Keep its display
      // serial with that body, not a mutable Core-wide field or a fresh lookup when say runs.
-@@ -64,12 +104,26 @@ class PhoneCore(
+@@ -64,12 +105,26 @@ class PhoneCore(
      /** The overlay's status line; 免确认 stays visible the whole time nothing is asked. */
      private fun say(owner: PhoneTasks.Owner, text: String) {
          if (!current(owner)) return
@@ -3032,7 +3060,7 @@ index 6c701851..eb444f21 100644
  
      /**
       * The task's last hard refusal (密码框, 系统设置, 不碰名单), for the `handoff` that usually
-@@ -97,15 +151,30 @@ class PhoneCore(
+@@ -97,15 +152,30 @@ class PhoneCore(
          internal val replayOutcomes: PhoneSkillOutcomes? = null,
          internal val replayDriver: PhoneDriver? = null,
          private val replayApp: PhoneAppIdentity? = null,
@@ -3064,7 +3092,7 @@ index 6c701851..eb444f21 100644
      }
  
      /** Only a first claimed native Selection reaches this path; public args never construct it. */
-@@ -119,28 +188,29 @@ class PhoneCore(
+@@ -119,28 +189,29 @@ class PhoneCore(
          val app = PhoneAppIdentity(selection.app.packageName, selection.app.uid)
          val originalDriver = if (screen == PhoneScreen.BACKGROUND) {
              env.existingReplayDriver(owner, app)?.takeIf { it.screen == PhoneScreen.BACKGROUND }
@@ -3098,7 +3126,7 @@ index 6c701851..eb444f21 100644
          } else when (val result = driverFor(screen, owner)) {
              is Either.Left -> return stop(result.value)
              is Either.Right -> result.value
-@@ -255,7 +325,9 @@ class PhoneCore(
+@@ -255,7 +326,9 @@ class PhoneCore(
              // l10n:keep agent tool result
              return ToolOutput("没有这个手机工具：$name。可用：${PhoneToolCatalog.names.joinToString("、")}", isError = true)
          }
@@ -3109,7 +3137,7 @@ index 6c701851..eb444f21 100644
              // l10n:keep agent tool result
              return ToolOutput("手机操控已在 DSH 设置里关闭。请用户在 设置 → 手机操控 里打开后重启引擎。", isError = true)
          }
-@@ -361,7 +433,7 @@ class PhoneCore(
+@@ -361,7 +434,7 @@ class PhoneCore(
              // MAIN already excludes other app holders. Resolve again after waiting for it,
              // keeping the originally selected package if its label or launcher has changed.
              val refreshMain = name == PhoneToolCatalog.INTENT ||
@@ -3118,7 +3146,7 @@ index 6c701851..eb444f21 100644
              val call = if (prepared != null && !refreshMain) prepared else when (
                  val result = prepare(name, a, owner, prepared?.requestedApp)
              ) {
-@@ -383,6 +455,17 @@ class PhoneCore(
+@@ -383,6 +456,18 @@ class PhoneCore(
                  PhoneToolCatalog.TAP, PhoneToolCatalog.TYPE, PhoneToolCatalog.SCROLL, PhoneToolCatalog.TAP_XY -> act(name, a, scope, owner)
                  PhoneToolCatalog.KEY -> key(a, owner)
                  PhoneToolCatalog.HANDOFF -> handoff(a, scope, owner)
@@ -3133,10 +3161,11 @@ index 6c701851..eb444f21 100644
 +                PhoneToolCatalog.LOCATION -> locationCall(a, owner)
 +                PhoneToolCatalog.CAMERA_SNAPSHOT -> cameraSnapshotCall(a, owner)
 +                PhoneToolCatalog.NOTIFICATIONS_READ -> notificationsReadCall(a, owner)
++                PhoneToolCatalog.SCHEDULE_ACTION -> scheduleActionCall(a, owner)
                  // l10n:keep agent tool result
                  else -> Out("没有这个手机工具：$name", error = true)
              }
-@@ -391,6 +474,170 @@ class PhoneCore(
+@@ -391,6 +476,187 @@ class PhoneCore(
          }
      }
  
@@ -3287,6 +3316,23 @@ index 6c701851..eb444f21 100644
 +        return Out(value)
 +    }
 +
++    private fun scheduleActionCall(a: Args, owner: PhoneTasks.Owner): Out {
++        if (!a.onlyKeys("delayMinutes", "action", "text")) return Out("参数不对：只用 delayMinutes/action/text。", error = true)
++        val minutes = (a.str("delayMinutes")?.toLongOrNull() ?: 0L)
++        val action = a.str("action") ?: ""
++        val text = a.str("text")?.trim() ?: ""
++        if (minutes !in 1..1440 || action !in setOf("voiceCall", "notify", "popup") || text.isEmpty()) {
++            return Out("参数不对：delayMinutes 1-1440，action 用 voiceCall/notify/popup，text 非空。", error = true)
++        }
++        val gate = java.util.concurrent.CountDownLatch(1)
++        val result = AtomicReference<Map<String, Any?>>()
++        env.scheduleAction(minutes, action, text) { result.set(it); gate.countDown() }
++        val waited = runCatching { gate.await(10, java.util.concurrent.TimeUnit.SECONDS) }.getOrDefault(false)
++        val value = result.get()
++        if (!waited || value == null) return Out("安排失败。", error = true)
++        return if (value["ok"] == true) Out("已安排：$minutes 分钟后执行。") else Out("安排失败：${value["reason"]}", error = true)
++    }
++
 +    private fun callLogCall(a: Args, owner: PhoneTasks.Owner): Out {
 +        if (!a.onlyKeys("limit")) return Out("参数不对：只用 limit。", error = true)
 +        val limit = (a.str("limit")?.toIntOrNull() ?: 5).coerceIn(1, 20)
@@ -3307,7 +3353,7 @@ index 6c701851..eb444f21 100644
      private fun current(owner: PhoneTasks.Owner): Boolean =
          tasks.isCurrent(owner) && !Thread.currentThread().isInterrupted
  
-@@ -400,7 +647,7 @@ class PhoneCore(
+@@ -400,7 +666,7 @@ class PhoneCore(
          // Arbitrary system effects cannot become an implicitly verified UI replay route.
          skillTrace.markIncomplete(owner, PhoneTaskTrace.Gap.UNCERTAIN_RESULT)
          val result = PhoneAndroidShell.run(request, owner, tasks, scope, env.androidShell(),
@@ -3316,7 +3362,7 @@ index 6c701851..eb444f21 100644
          val successfulExit = when (val code = result["exitCode"]) {
              is Int -> code == 0
              is Long -> code == 0L
-@@ -457,18 +704,15 @@ class PhoneCore(
+@@ -457,18 +723,15 @@ class PhoneCore(
              PhoneToolCatalog.ANDROID_SHELL -> {
                  if (PhoneAndroidShell.parse(a) == null) return Either.Left(Out(
                      Json.write(PhoneAndroidShell.failure("invalidArguments")), error = true))
@@ -3336,7 +3382,7 @@ index 6c701851..eb444f21 100644
                      UrlPolicy.check(url)?.let {
                          return Either.Left(Out(it, error = true, summary = ui.get("phone_log_open_url", "打开链接"), decision = "refused:url")) // l10n:keep test default
                      }
-@@ -496,7 +740,6 @@ class PhoneCore(
+@@ -496,7 +759,6 @@ class PhoneCore(
                      is Either.Right -> parsed.value
                  }
                  val kind = a.str("kind") ?: ""
@@ -3344,7 +3390,7 @@ index 6c701851..eb444f21 100644
                  val appQuery = when (spec) {
                      is IntentSpec.Share -> spec.app
                      is IntentSpec.Settings -> spec.app
-@@ -516,15 +759,23 @@ class PhoneCore(
+@@ -516,15 +778,23 @@ class PhoneCore(
              }
          }
          if (!current(owner)) return Either.Left(stoppedOut(name))
@@ -3371,7 +3417,7 @@ index 6c701851..eb444f21 100644
          val plan = checkNotNull(call.launch)
          if (url != null) {
              val summary = ui.get("phone_log_open_url_scheme", "打开链接 %1\$s:", url.substringBefore(':')) // l10n:keep test default
-@@ -543,12 +794,15 @@ class PhoneCore(
+@@ -543,12 +813,15 @@ class PhoneCore(
          // An explicit package is still subject to app rules even when its handler UID is unknown.
          val app = (plan.target as? SystemTarget.Known)?.app
              ?: checkNotNull(call.requestedApp)
@@ -3387,7 +3433,7 @@ index 6c701851..eb444f21 100644
              confirmSystem(plan, scope, owner, summary)?.let { return it }
              val ticket = skillTrace.beginOpen(owner, PhoneScreen.MAIN)
              val result = try {
-@@ -556,50 +810,324 @@ class PhoneCore(
+@@ -556,50 +829,324 @@ class PhoneCore(
                      skillTrace.finish(ticket, it.ok, false, false)
                  }
              } catch (e: Throwable) { skillTrace.fail(ticket); throw e }
@@ -3723,7 +3769,7 @@ index 6c701851..eb444f21 100644
      }
  
      /** The handler is a dispatch fact. Only the following read describes the actual foreground UI. */
-@@ -690,7 +1218,6 @@ class PhoneCore(
+@@ -690,7 +1237,6 @@ class PhoneCore(
      private fun intent(call: PreparedCall, scope: SerialWorker.Scope, owner: PhoneTasks.Owner): Out {
          if (!current(owner)) return stoppedOut("intent")
          val kind = call.args.str("kind") ?: ""
@@ -3731,7 +3777,7 @@ index 6c701851..eb444f21 100644
          val subject = call.requestedApp.takeIf { kind == "share" }
          subject?.let { subject ->
              safety.checkOpen(subject.packageName, subject.label)?.let {
-@@ -728,7 +1255,7 @@ class PhoneCore(
+@@ -728,7 +1274,7 @@ class PhoneCore(
              is SafetyGate.Result.Go -> Unit
          }
          if (!current(owner)) return stoppedOut(summary)
@@ -3740,7 +3786,7 @@ index 6c701851..eb444f21 100644
      }
  
      /** Consent may wait; recheck the fixed request's app rules at start admission. */
-@@ -803,6 +1330,10 @@ class PhoneCore(
+@@ -803,6 +1349,10 @@ class PhoneCore(
  
      /** The driver for [screen], or the sentence explaining why there is none. */
      private fun driverFor(screen: PhoneScreen, owner: PhoneTasks.Owner): Either<String, PhoneDriver> {
@@ -3751,7 +3797,7 @@ index 6c701851..eb444f21 100644
          val d = env.driver(screen, owner) ?: return Either.Left(unavailable(screen))
          val av = try {
              d.availability()
-@@ -816,8 +1347,210 @@ class PhoneCore(
+@@ -816,8 +1366,210 @@ class PhoneCore(
          return Either.Right(d)
      }
  
@@ -3962,7 +4008,7 @@ index 6c701851..eb444f21 100644
      /** Admission uses the same argument coercion and routing as the actual tool body. */
      fun requiredScreens(name: String, args: Map<String, Any?>): Either<String, List<PhoneScreen>> {
          return requiredScreens(name, Args(args))
-@@ -825,10 +1558,11 @@ class PhoneCore(
+@@ -825,10 +1577,11 @@ class PhoneCore(
  
      private fun requiredScreens(name: String, a: Args): Either<String, List<PhoneScreen>> {
          return when (name) {
@@ -3977,7 +4023,7 @@ index 6c701851..eb444f21 100644
              // Arbitrary system commands take the main/global unknown-app lease, without reading a screen.
              PhoneToolCatalog.INTENT, PhoneToolCatalog.ANDROID_SHELL -> Either.Right(listOf(PhoneScreen.MAIN))
              PhoneToolCatalog.HANDOFF -> Either.Right(if (lastScreen == PhoneScreen.BACKGROUND)
-@@ -852,13 +1586,9 @@ class PhoneCore(
+@@ -852,13 +1605,9 @@ class PhoneCore(
          if (id == null) return Either.Left("缺少 $parameterName（屏幕号，如 s7）。先调用 screen 拿到屏幕号。")
          return PhoneScreen.ofScreenId(id)?.let { Either.Right(it) }
              // l10n:keep agent tool result
@@ -3992,7 +4038,7 @@ index 6c701851..eb444f21 100644
      /** Every returned observation passes the final read policy before a driver candidate is
       * committed. This also covers post-action and stale-refresh frames, not just screen(). */
      private fun returnedScreen(driver: PhoneDriver, snapshot: ScreenSnapshot, owner: PhoneTasks.Owner,
-@@ -871,21 +1601,55 @@ class PhoneCore(
+@@ -871,21 +1620,55 @@ class PhoneCore(
  
      private fun screen(a: Args, owner: PhoneTasks.Owner): Out {
          if (!current(owner)) return stoppedOut("screen")
@@ -4057,7 +4103,7 @@ index 6c701851..eb444f21 100644
          return Out(
              // l10n:keep agent tool result
              if (refused) "没有读取这个屏幕的内容。" else "",
-@@ -897,6 +1661,40 @@ class PhoneCore(
+@@ -897,6 +1680,40 @@ class PhoneCore(
          )
      }
  
@@ -4098,7 +4144,7 @@ index 6c701851..eb444f21 100644
      private fun collect(a: Args, owner: PhoneTasks.Owner): Out {
          if (!current(owner)) return stoppedOut("collect")
          val sid = a.str("screen")
-@@ -912,7 +1710,6 @@ class PhoneCore(
+@@ -912,7 +1729,6 @@ class PhoneCore(
              is Either.Left -> return Out(d.value, error = true, summary = summary, decision = "unavailable")
              is Either.Right -> d.value
          }
@@ -4106,7 +4152,7 @@ index 6c701851..eb444f21 100644
          lastScreen = which
          val pkg = driver.foregroundPackage()
          safety.checkRead(pkg, null)?.let { return Out(it.message, error = true, app = pkg, summary = summary, decision = "refused:${it.rule}") }
-@@ -993,7 +1790,6 @@ class PhoneCore(
+@@ -993,7 +1809,6 @@ class PhoneCore(
              is Either.Right -> route.value
          }
          if (!current(owner)) return stoppedOut(summary)
@@ -4114,7 +4160,7 @@ index 6c701851..eb444f21 100644
          val driver = when (val d = driverFor(which, owner)) {
              is Either.Left -> return Out(d.value, error = true, summary = summary, decision = "unavailable")
              is Either.Right -> d.value
-@@ -1027,7 +1823,7 @@ class PhoneCore(
+@@ -1027,7 +1842,7 @@ class PhoneCore(
              }
              val failure = AtomicReference<SafetyGate.Verdict.Refuse?>(null)
              fun allowed(): Boolean {
@@ -4123,7 +4169,7 @@ index 6c701851..eb444f21 100644
                  if (failure.get() != null) return false
                  (verdict() as? SafetyGate.Verdict.Refuse)?.let { failure.compareAndSet(null, it) }
                  return failure.get() == null
-@@ -1129,7 +1925,6 @@ class PhoneCore(
+@@ -1129,7 +1944,6 @@ class PhoneCore(
              is Either.Left -> return Out(d.value, error = true, summary = summary, decision = "unavailable")
              is Either.Right -> d.value
          }
@@ -4131,7 +4177,7 @@ index 6c701851..eb444f21 100644
          lastScreen = which
          val visual = (action as? PhoneAction.TapXY)?.let { driver.coordinateTarget(it) }
          val target: TargetInfo? = if (id != null && kind != WriteKind.TAP_XY) {
-@@ -1235,14 +2030,14 @@ class PhoneCore(
+@@ -1235,14 +2049,14 @@ class PhoneCore(
      /** The element no longer matches its snapshot: refuse and show the screen as it is now. */
      private fun stale(driver: PhoneDriver, sid: String, summary: String, owner: PhoneTasks.Owner, refusal: String? = null): Out {
          val now = try {
@@ -4149,7 +4195,7 @@ index 6c701851..eb444f21 100644
                      else returnedScreen(driver, observed, owner)
                  }
              }
-@@ -1270,8 +2065,13 @@ class PhoneCore(
+@@ -1270,8 +2084,13 @@ class PhoneCore(
              "home" -> PhoneAction.GlobalKey.HOME
              "recents" -> PhoneAction.GlobalKey.RECENTS
              "notifications" -> PhoneAction.GlobalKey.NOTIFICATIONS
@@ -4164,7 +4210,7 @@ index 6c701851..eb444f21 100644
          }
          val sid = a.str("screen")
          val which = if (sid == null) {
-@@ -1287,13 +2087,22 @@ class PhoneCore(
+@@ -1287,13 +2106,22 @@ class PhoneCore(
              is Either.Left -> return Out(d.value, error = true, summary = summary, decision = "unavailable")
              is Either.Right -> d.value
          }
@@ -4188,7 +4234,7 @@ index 6c701851..eb444f21 100644
          }))
          if (!current(owner)) return stoppedOut(summary)
          val action = PhoneAction.Key(sid ?: "${which.prefix}0", key)
-@@ -1314,6 +2123,22 @@ class PhoneCore(
+@@ -1314,6 +2142,22 @@ class PhoneCore(
          } catch (e: Throwable) { skillTrace.fail(ticket); throw e }
      }
  
@@ -4211,7 +4257,7 @@ index 6c701851..eb444f21 100644
      private fun handoff(a: Args, scope: SerialWorker.Scope, owner: PhoneTasks.Owner): Out {
          if (!current(owner)) return stoppedOut("handoff")
          // l10n:keep agent tool result
-@@ -1362,6 +2187,7 @@ class PhoneCore(
+@@ -1362,6 +2206,7 @@ class PhoneCore(
          summary = summary, decision = "stopped")
  
      companion object {
@@ -4219,7 +4265,7 @@ index 6c701851..eb444f21 100644
          internal const val REPLAY = "replay"
          internal const val FOCUS_TEXT = "focus_text"
  
-@@ -1370,6 +2196,9 @@ class PhoneCore(
+@@ -1370,6 +2215,9 @@ class PhoneCore(
          const val PAUSE_WAIT_MS = 600_000L
          const val HANDOFF_MS = 600_000L
  
@@ -4230,7 +4276,7 @@ index 6c701851..eb444f21 100644
          private val WRITES = setOf(FOCUS_TEXT, PhoneToolCatalog.TAP, PhoneToolCatalog.TYPE, PhoneToolCatalog.TAP_XY, PhoneToolCatalog.OPEN)
          /** An uncertain effect call tightens draft eligibility; it does not prove input was dispatched. */
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhonePlugin.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhonePlugin.kt
-index 4a76535f..555f1a6d 100644
+index 4a76535f..85c2a63d 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhonePlugin.kt
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhonePlugin.kt
 @@ -2,7 +2,17 @@ package io.github.ccch1mneyyy.dsh_app.phone
@@ -4808,7 +4854,7 @@ index 4a76535f..555f1a6d 100644
      /** Both async control work and the status capture lane finish on the original main handler. */
      private fun complete(result: MethodChannel.Result, value: Result<Any?>) {
          main.post {
-@@ -219,6 +725,101 @@ class PhonePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
+@@ -219,6 +725,120 @@ class PhonePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
                  else async(result) { control.shell.connect(port) }
              }
              "androidShellStop" -> { control.shell.cancelAll(); result.success(true) }
@@ -4816,7 +4862,27 @@ index 4a76535f..555f1a6d 100644
 +            "deviceUnlockStatus" -> result.success(PhoneRegistry.deviceUnlock?.status())
 +            "teachSnapshot" -> result.success(teachSnapshot())
 +            "proactiveStatus" -> result.success(PhoneRegistry.proactive?.status())
++            "proactiveSetInterval" -> {
++                val minutes = ((call.arguments as? Map<*, *>)?.get("minutes") as? Number)?.toLong()
++                if (minutes == null) { result.success(mapOf("ok" to false, "reason" to "invalid")); return }
++                result.success(PhoneRegistry.proactive?.setIntervalMinutes(minutes)
++                    ?: mapOf("ok" to false, "reason" to "unavailable"))
++            }
 +            "proactiveRules" -> result.success(PhoneRegistry.proactive?.status()?.get("rules") ?: emptyList<Map<String, Any?>>())
++            "proactiveAddFreeRule" -> {
++                val text = (call.arguments as? Map<*, *>)?.get("text") as? String
++                if (text == null) { result.success(mapOf("ok" to false, "reason" to "invalid")); return }
++                result.success(PhoneRegistry.proactive?.addFreeRule(text)
++                    ?: mapOf("ok" to false, "reason" to "unavailable"))
++            }
++            "proactiveUpdateFreeRule" -> {
++                val args = call.arguments as? Map<*, *>
++                val id = args?.get("id") as? String
++                val text = args?.get("text") as? String
++                if (id == null || text == null) { result.success(mapOf("ok" to false, "reason" to "invalid")); return }
++                result.success(PhoneRegistry.proactive?.updateFreeRule(id, text)
++                    ?: mapOf("ok" to false, "reason" to "unavailable"))
++            }
 +            "proactiveAddRule" -> {
 +                val args = call.arguments as? Map<*, *>
 +                val condition = args?.get("condition") as? String
@@ -4827,8 +4893,7 @@ index 4a76535f..555f1a6d 100644
 +                    condition == null || param == null || action == null || text == null) {
 +                    result.success(mapOf("ok" to false, "reason" to "invalid")); return
 +                }
-+                // 重试策略内置：语音来电未回复默认 30 分钟后重拨、最多 3 次（设置页不展示）。
-+                result.success(PhoneRegistry.proactive?.addRule(condition, param, action, text, 30, 3)
++                result.success(PhoneRegistry.proactive?.addRule(condition, param, action, text)
 +                    ?: mapOf("ok" to false, "reason" to "unavailable"))
 +            }
 +            "proactiveUpdateRule" -> {
@@ -4842,7 +4907,7 @@ index 4a76535f..555f1a6d 100644
 +                    id == null || condition == null || param == null || action == null || text == null) {
 +                    result.success(mapOf("ok" to false, "reason" to "invalid")); return
 +                }
-+                result.success(PhoneRegistry.proactive?.updateRule(id, condition, param, action, text, 30, 3)
++                result.success(PhoneRegistry.proactive?.updateFreeRule(id, text)
 +                    ?: mapOf("ok" to false, "reason" to "unavailable"))
 +            }
 +            "proactiveRemoveRule" -> {
@@ -4910,7 +4975,7 @@ index 4a76535f..555f1a6d 100644
              "acknowledgeTaskInterruption" -> async(result) {
                  (call.argument<Any?>("batchToken") as? String)?.let(control::acknowledgeTaskInterruption) == true
              }
-@@ -240,6 +841,15 @@ class PhonePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
+@@ -240,6 +860,15 @@ class PhonePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
              "skillDraft", "saveSkillDraft", "discardSkillDraft" -> skillCall(call, result)
              "inspectSkillReplay" -> inspectSkillReplay(call, result)
              "prepareSkillReplay" -> prepareSkillReplay(call, result)
@@ -4926,7 +4991,7 @@ index 4a76535f..555f1a6d 100644
              "discardSkillReplay" -> {
                  val args = call.arguments as? Map<*, *>
                  val id = args?.get("invocation") as? String
-@@ -249,6 +859,103 @@ class PhonePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
+@@ -249,6 +878,103 @@ class PhonePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
                  result.success(if (removed) mapOf("kind" to "discarded") else replayRejected("stale"))
              }
              "setBackgroundPreview" -> result.success(control.preview.setEnabled(call.argument<Boolean>("enabled") == true))
@@ -5030,7 +5095,7 @@ index 4a76535f..555f1a6d 100644
              "setBackgroundKeep" -> {
                  val selected = call.argument<String>("mode").orEmpty()
                  val enabled = call.argument<Boolean>("enabled") == true
-@@ -388,6 +1095,161 @@ class PhonePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
+@@ -388,6 +1114,161 @@ class PhonePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
          control.skillDrafts.clientCurrent(value.client) && control.skillDrafts.currentEpoch() == value.epoch &&
          value.origin.runtime.phoneSkillOriginCurrent(value.origin)
  
@@ -5557,10 +5622,10 @@ index a09015e7..f099f843 100644
          /** No confirmation surface is reachable, so this one action did not run. */
          // l10n:keep agent no-gate protocol
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneToolCatalog.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneToolCatalog.kt
-index cbfb0de3..07621863 100644
+index cbfb0de3..7f1a51a0 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneToolCatalog.kt
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneToolCatalog.kt
-@@ -22,8 +22,19 @@ object PhoneToolCatalog {
+@@ -22,8 +22,20 @@ object PhoneToolCatalog {
      const val KEY = "key"
      const val TAP_XY = "tap_xy"
      const val HANDOFF = "handoff"
@@ -5577,10 +5642,11 @@ index cbfb0de3..07621863 100644
 +    const val LOCATION = "location"
 +    const val CAMERA_SNAPSHOT = "camera_snapshot"
 +    const val NOTIFICATIONS_READ = "notifications_read"
++    const val SCHEDULE_ACTION = "schedule_action"
  
      class Tool(val name: String, val description: String, val properties: Map<String, Any?>, val required: List<String>) {
          fun toJson(): Map<String, Any?> = linkedMapOf(
-@@ -41,7 +52,7 @@ object PhoneToolCatalog {
+@@ -41,7 +53,7 @@ object PhoneToolCatalog {
          "home", "wifi", "bluetooth", "mobile_network", "airplane", "display", "sound", "battery",
          "location", "date", "language", "storage", "nfc", "app_notifications",
      )
@@ -5589,7 +5655,7 @@ index cbfb0de3..07621863 100644
      val DIRECTIONS = listOf("up", "down", "left", "right")
      val NAV_MODES = listOf("drive", "transit", "walk", "ride")
  
-@@ -53,13 +64,31 @@ object PhoneToolCatalog {
+@@ -53,13 +65,31 @@ object PhoneToolCatalog {
          linkedMapOf<String, Any?>("type" to "string", "enum" to values, "description" to description)
  
      // l10n:keep agent tool catalog
@@ -5623,7 +5689,7 @@ index cbfb0de3..07621863 100644
              linkedMapOf(
                  // l10n:keep agent tool catalog
                  "command" to str("完整 Android sh 命令，UTF-8 最多 2048 字节；不带 adb shell 前缀，不继承 Ubuntu 路径、环境或工作目录"),
-@@ -79,14 +108,22 @@ object PhoneToolCatalog {
+@@ -79,14 +109,22 @@ object PhoneToolCatalog {
          Tool(
              OPEN,
              // l10n:keep agent tool catalog
@@ -5648,7 +5714,7 @@ index cbfb0de3..07621863 100644
              ),
              emptyList(),
          ),
-@@ -159,7 +196,7 @@ object PhoneToolCatalog {
+@@ -159,7 +197,7 @@ object PhoneToolCatalog {
          Tool(
              CLIPBOARD,
              // l10n:keep agent tool catalog
@@ -5657,7 +5723,7 @@ index cbfb0de3..07621863 100644
              // l10n:keep agent tool catalog
              linkedMapOf("set" to str("要写入的文字"), "get" to bool("读取剪贴板")),
              emptyList(),
-@@ -167,14 +204,17 @@ object PhoneToolCatalog {
+@@ -167,14 +205,17 @@ object PhoneToolCatalog {
          Tool(
              SCREEN,
              // l10n:keep agent tool catalog
@@ -5677,7 +5743,7 @@ index cbfb0de3..07621863 100644
              ),
              emptyList(),
          ),
-@@ -204,7 +244,10 @@ object PhoneToolCatalog {
+@@ -204,7 +245,10 @@ object PhoneToolCatalog {
          Tool(
              TYPE,
              // l10n:keep agent tool catalog
@@ -5689,7 +5755,7 @@ index cbfb0de3..07621863 100644
              linkedMapOf(
                  "screen" to SCREEN_ID,
                  // l10n:keep agent tool catalog
-@@ -232,7 +275,7 @@ object PhoneToolCatalog {
+@@ -232,7 +276,7 @@ object PhoneToolCatalog {
          Tool(
              KEY,
              // l10n:keep agent tool catalog
@@ -5698,7 +5764,7 @@ index cbfb0de3..07621863 100644
              // l10n:keep agent tool catalog
              linkedMapOf("key" to enum(KEYS, "按键"), "screen" to str("屏幕号；省略时作用于主屏")),
              listOf("key"),
-@@ -240,10 +283,10 @@ object PhoneToolCatalog {
+@@ -240,10 +284,10 @@ object PhoneToolCatalog {
          Tool(
              TAP_XY,
              // l10n:keep agent tool catalog
@@ -5711,7 +5777,7 @@ index cbfb0de3..07621863 100644
                  // l10n:keep agent tool catalog
                  "x" to int("横坐标（像素，从 0 开始）"),
                  // l10n:keep agent tool catalog
-@@ -262,11 +305,112 @@ object PhoneToolCatalog {
+@@ -262,11 +306,123 @@ object PhoneToolCatalog {
          Tool(
              HANDOFF,
              // l10n:keep agent tool catalog
@@ -5748,6 +5814,17 @@ index cbfb0de3..07621863 100644
 +                "hours" to int("回看几小时，1-24；省略=3"),
 +            ),
 +            emptyList(),
++        ),
++        Tool(
++            SCHEDULE_ACTION,
++            // l10n:keep agent tool catalog
++            "安排一个延时动作：过 delayMinutes 分钟后执行（语音来电/通知/弹窗）。主动规则里写了「多久之后重拨/提醒」这类时机时用它。",
++            mapOf(
++                "delayMinutes" to int("多少分钟后执行，1-1440"),
++                "action" to enum(listOf("voiceCall", "notify", "popup"), "到点做什么"),
++                "text" to str("执行时说/显示的内容"),
++            ),
++            listOf("delayMinutes", "action", "text"),
 +        ),
 +        Tool(
 +            NOTIFICATIONS_READ,
@@ -5825,7 +5902,7 @@ index cbfb0de3..07621863 100644
          Tool(
              DIAGNOSTICS,
              // l10n:keep agent tool catalog
-@@ -283,7 +427,7 @@ object PhoneToolCatalog {
+@@ -283,7 +439,7 @@ object PhoneToolCatalog {
  
      val names: List<String> = tools.map { it.name }
  
@@ -5943,6 +6020,54 @@ index e50373c8..f10e837b 100644
  
      /** Resolves a verdict, asking the person if needed. InterruptedException means stop. */
      fun resolve(verdict: Verdict, scope: SerialWorker.Scope, owner: PhoneTasks.Owner? = null): Result = when (verdict) {
+diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/ScreenTime.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/ScreenTime.kt
+new file mode 100644
+index 00000000..1a0e97a7
+--- /dev/null
++++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/ScreenTime.kt
+@@ -0,0 +1,42 @@
++package io.github.ccch1mneyyy.dsh_app.phone
++
++import android.app.usage.UsageEvents
++import android.app.usage.UsageStatsManager
++import android.content.Context
++
++/**
++ * 按 UsageEvents 精确统计窗口内各应用的前台时长（毫秒）。
++ * INTERVAL_DAILY 的桶按天对齐，窗口查询拿到的永远是整天的累计——口径不对；
++ * 这里逐事件累加，窗口前就在前台的从窗口起点起算，窗口结束仍在前台的算到窗口终点。
++ */
++internal object ScreenTime {
++    fun foregroundMinutes(context: Context, startMs: Long, endMs: Long): Map<String, Long> {
++        if (endMs <= startMs) return emptyMap()
++        return runCatching {
++            val u = context.getSystemService(UsageStatsManager::class.java)
++            val events = u.queryEvents(startMs, endMs) ?: return emptyMap()
++            val out = HashMap<String, Long>()
++            val active = HashMap<String, Long>()
++            val ev = UsageEvents.Event()
++            while (events.hasNextEvent()) {
++                events.getNextEvent(ev)
++                val pkg = ev.packageName ?: continue
++                when (ev.eventType) {
++                    UsageEvents.Event.ACTIVITY_RESUMED,
++                    UsageEvents.Event.MOVE_TO_FOREGROUND -> active[pkg] = maxOf(ev.timeStamp, startMs)
++                    UsageEvents.Event.ACTIVITY_PAUSED,
++                    UsageEvents.Event.MOVE_TO_BACKGROUND -> {
++                        val since = active.remove(pkg) ?: startMs
++                        val dur = ev.timeStamp - since
++                        if (dur > 0) out[pkg] = (out[pkg] ?: 0L) + dur
++                    }
++                }
++            }
++            for ((pkg, since) in active) {
++                val dur = endMs - since
++                if (dur > 0) out[pkg] = (out[pkg] ?: 0L) + dur
++            }
++            out
++        }.getOrDefault(emptyMap())
++    }
++}
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/SingleInstanceApps.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/SingleInstanceApps.kt
 new file mode 100644
 index 00000000..c5fe7218
@@ -6182,6 +6307,164 @@ index 8aa204bc..944812b1 100644
      override fun onConfigurationChanged(newConfig: Configuration) {
          super.onConfigurationChanged(newConfig)
          overlay?.onConfigurationChanged()
+diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/aicall/AiCallSpeakerLoop.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/aicall/AiCallSpeakerLoop.kt
+new file mode 100644
+index 00000000..5a1f7e8b
+--- /dev/null
++++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/aicall/AiCallSpeakerLoop.kt
+@@ -0,0 +1,152 @@
++package io.github.ccch1mneyyy.dsh_app.phone.aicall
++
++import android.annotation.SuppressLint
++import android.content.Context
++import android.media.AudioAttributes
++import android.media.AudioFormat
++import android.media.AudioManager
++import android.media.AudioRecord
++import android.media.AudioTrack
++import android.media.MediaRecorder
++import android.media.audiofx.AcousticEchoCanceler
++import android.media.audiofx.AudioEffect
++import android.media.audiofx.NoiseSuppressor
++import android.os.Process
++
++/**
++ * 免提声学回路（路 B，兜底）:不碰系统通话音频路由。
++ *
++ *  - AI 的声音用 AudioTrack(USAGE_VOICE_COMMUNICATION) 从扬声器播出,经空气进入通话麦克风,
++ *    再由系统免提通话的 modem 回声消除送到对方。
++ *  - 对方的声音从扬声器出来,被 AudioRecord(VOICE_COMMUNICATION) 采回;录音流挂 AEC 消掉
++ *    我们自己播放的 AI 声音,避免 AI 听到自己。
++ *
++ * 用于荣耀等厂商机上 shell 直连/重定向都过不了「上行路由确认」的场合。
++ */
++@SuppressLint("MissingPermission")
++internal class AiCallSpeakerLoop(private val context: Context) {
++    private val manager get() = context.getSystemService(AudioManager::class.java)
++    private var track: AudioTrack? = null
++    private var record: AudioRecord? = null
++    private val effects = mutableListOf<AudioEffect>()
++    private var speakerWasOn = false
++
++    /** 16 kHz 采集 / 24 kHz 播放,PCM16 单声道。 */
++    val captureRate = 16_000
++    val playRate = 24_000
++
++    fun open(): Map<String, Any?> {
++        if (track != null || record != null) return mapOf("ok" to false, "errorCode" to "alreadyOpen")
++        val minTrack = AudioTrack.getMinBufferSize(playRate, AudioFormat.CHANNEL_OUT_MONO, AudioFormat.ENCODING_PCM_16BIT)
++        val minRecord = AudioRecord.getMinBufferSize(captureRate, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT)
++        if (minTrack <= 0 || minRecord <= 0) return mapOf("ok" to false, "errorCode" to "audioFormatUnavailable")
++        val t = runCatching {
++            AudioTrack.Builder()
++                .setAudioAttributes(AudioAttributes.Builder()
++                    .setUsage(AudioAttributes.USAGE_VOICE_COMMUNICATION)
++                    .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH).build())
++                .setAudioFormat(AudioFormat.Builder().setEncoding(AudioFormat.ENCODING_PCM_16BIT)
++                    .setSampleRate(playRate).setChannelMask(AudioFormat.CHANNEL_OUT_MONO).build())
++                .setTransferMode(AudioTrack.MODE_STREAM)
++                .setBufferSizeInBytes(maxOf(minTrack, playRate / 20 * 2))
++                .build()
++        }.getOrNull()
++        if (t == null || t.state != AudioTrack.STATE_INITIALIZED) {
++            runCatching { t?.release() }
++            return mapOf("ok" to false, "errorCode" to "trackInitFailed")
++        }
++        val r = runCatching {
++            AudioRecord.Builder()
++                .setAudioFormat(AudioFormat.Builder().setEncoding(AudioFormat.ENCODING_PCM_16BIT)
++                    .setSampleRate(captureRate).setChannelMask(AudioFormat.CHANNEL_IN_MONO).build())
++                .setAudioSource(MediaRecorder.AudioSource.VOICE_COMMUNICATION)
++                .setBufferSizeInBytes(maxOf(minRecord, captureRate / 10 * 2))
++                .build()
++        }.getOrNull()
++        if (r == null || r.state != AudioRecord.STATE_INITIALIZED) {
++            runCatching { t.release() }
++            runCatching { r?.release() }
++            return mapOf("ok" to false, "errorCode" to "recordInitFailed")
++        }
++        if (runCatching { AcousticEchoCanceler.isAvailable() }.getOrDefault(false)) {
++            runCatching { AcousticEchoCanceler.create(r.audioSessionId) }.getOrNull()?.let { effect ->
++                effects += effect
++                runCatching { effect.setEnabled(true) == AudioEffect.SUCCESS && effect.enabled }
++            }
++        }
++        if (runCatching { NoiseSuppressor.isAvailable() }.getOrDefault(false)) {
++            runCatching { NoiseSuppressor.create(r.audioSessionId) }.getOrNull()?.let { effect ->
++                effects += effect
++                runCatching { effect.setEnabled(true) }
++            }
++        }
++        // 免提:AI 声音才能经空气回到通话麦克风;对方声音也才能被扬声器放出来采回。
++        speakerWasOn = manager.isSpeakerphoneOn
++        runCatching { manager.mode = AudioManager.MODE_IN_COMMUNICATION }
++        if (!speakerWasOn) runCatching { manager.isSpeakerphoneOn = true }
++        runCatching { t.play() }
++        if (t.playState != AudioTrack.PLAYSTATE_PLAYING) {
++            runCatching { t.release() }
++            runCatching { r.release() }
++            restoreSpeaker()
++            releaseEffects()
++            return mapOf("ok" to false, "errorCode" to "trackStartFailed")
++        }
++        runCatching { r.startRecording() }
++        if (r.recordingState != AudioRecord.RECORDSTATE_RECORDING) {
++            runCatching { t.release() }
++            runCatching { r.release() }
++            restoreSpeaker()
++            releaseEffects()
++            return mapOf("ok" to false, "errorCode" to "recordStartFailed")
++        }
++        track = t
++        record = r
++        Thread({ runCatching { Process.setThreadPriority(Process.THREAD_PRIORITY_AUDIO) } }, "kongkong-speaker-loop").apply { isDaemon = true }
++        return mapOf("ok" to true, "captureRate" to captureRate, "playRate" to playRate)
++    }
++
++    fun readAudio(maxBytes: Int): Map<String, Any?> {
++        val r = record ?: return mapOf("ok" to false, "errorCode" to "noAudio")
++        val buffer = ByteArray(maxBytes.coerceIn(0, 16 * 1024))
++        val count = runCatching { r.read(buffer, 0, buffer.size, AudioRecord.READ_NON_BLOCKING) }.getOrElse { -1 }
++        if (count < 0) return mapOf("ok" to false, "errorCode" to "audioEnded")
++        return mapOf("ok" to true, "pcm" to buffer.copyOf(count))
++    }
++
++    fun writeAudio(bytes: ByteArray): Map<String, Any?> {
++        val t = track ?: return mapOf("ok" to false, "errorCode" to "noAudio")
++        if (bytes.isEmpty()) return mapOf("ok" to true)
++        var offset = 0
++        while (offset < bytes.size) {
++            val count = runCatching {
++                t.write(bytes, offset, bytes.size - offset, AudioTrack.WRITE_BLOCKING)
++            }.getOrElse { -1 }
++            if (count < 0) return mapOf("ok" to false, "errorCode" to "audioEnded")
++            offset += count
++        }
++        return mapOf("ok" to true)
++    }
++
++    fun close() {
++        runCatching { record?.stop() }
++        runCatching { record?.release() }
++        runCatching { track?.pause() }
++        runCatching { track?.flush() }
++        runCatching { track?.release() }
++        record = null
++        track = null
++        releaseEffects()
++        restoreSpeaker()
++    }
++
++    private fun restoreSpeaker() {
++        if (!speakerWasOn) runCatching { manager.isSpeakerphoneOn = false }
++        runCatching { manager.mode = AudioManager.MODE_NORMAL }
++    }
++
++    private fun releaseEffects() {
++        effects.forEach { runCatching { it.release() } }
++        effects.clear()
++    }
++}
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/aicall/AiCallTelecom.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/aicall/AiCallTelecom.kt
 new file mode 100644
 index 00000000..5b0600a4
@@ -106042,7 +106325,7 @@ index 00000000..8e1a253a
 +/// 全局导航键：通话悬浮球等"不挂在某个页面下"的入口用它在任何界面 push/pop。
 +final GlobalKey<NavigatorState> appNavigatorKey = GlobalKey<NavigatorState>();
 diff --git a/app/lib/l10n/app_en.arb b/app/lib/l10n/app_en.arb
-index e1de7125..c517bb04 100644
+index e1de7125..0ca8810d 100644
 --- a/app/lib/l10n/app_en.arb
 +++ b/app/lib/l10n/app_en.arb
 @@ -498,6 +498,105 @@
@@ -106169,7 +106452,7 @@ index e1de7125..c517bb04 100644
    "phoneControlRules": "Rules",
    "phoneControlRecentActions": "Recent actions",
    "phoneControlRecentActionsHint": "Every step is logged, without screen contents",
-@@ -3955,6 +4058,69 @@
+@@ -3955,6 +4058,72 @@
    "phoneIosSetupHint": "Keep LocalDevVPN connected. On first use, allow control for 30 minutes.",
    "phoneIosReturnHint": "Return to this conversation when the task finishes, then stop the phone-control service.",
    "phoneIosNeedsSetup": "The runner is not ready. Check the local engine and developer setup.",
@@ -106223,7 +106506,7 @@ index e1de7125..c517bb04 100644
 +  "teachAiSendFailed": "Not sent; go back to the chat and retry",
 +  "teachNoSession": "No open chat; open one first",
 +  "proactiveTitle": "Proactive rules",
-+  "proactiveNote": "Kongkong's rule book: instructions (tasks) you write yourself. It checks them on a timer and acts on its own — reminders, calls, checking in. It does what it has the ability to do.",
++  "proactiveNote": "Kongkong's rule book: instructions you write in plain words. It checks on a timer and acts on its own once it understands them.",
 +  "proactiveAddTitle": "Add rule",
 +  "proactiveEmpty": "No rules yet; write one",
 +  "proactiveConditionScreen": "Phone used over {n} minutes",
@@ -106233,13 +106516,16 @@ index e1de7125..c517bb04 100644
 +  "proactiveActionNotify": "Send notification",
 +  "proactiveActionVoiceCall": "Start a voice call",
 +  "proactiveTextLabel": "What to say",
-+  "proactiveTextHint": "e.g. Give your eyes a rest",
++  "proactiveTextHint": "Write the whole rule in plain words, e.g. \"If I haven't talked to you for a day, call me\"; \"If I use Douyin over an hour, remind me to rest\".",
 +  "proactiveUsageAccessTitle": "Enable usage access",
 +  "proactiveUsageAccessSub": "Screen-time detection needs this permission; enable it in system settings and come back",
++  "proactiveIntervalTitle": "Check interval",
++  "proactiveIntervalLabel": "Check rules every N minutes (1-1440)",
++  "proactiveIntervalSub": "Checks rules every {n} minutes",
    "phoneTaskResultReady": "Task complete · View result",
    "phoneTaskEndedResult": "Task ended · View result",
    "phoneBackgroundGuideTitle": "Confirmations and return",
-@@ -4019,6 +4185,21 @@
+@@ -4019,6 +4188,21 @@
    "phoneSkillInvalid": "The edit or step order exceeds the limits. Shorten the text and keep at least one step.",
    "phoneSkillWriteFailed": "The file could not be written. Check the local runtime and storage; edit and update the preview before confirming another save.",
    "phoneSkillUnavailable": "Skill drafts are unavailable. Check the local engine state and try again.",
@@ -106261,7 +106547,7 @@ index e1de7125..c517bb04 100644
    "phoneModeTitle": "How DSH confirms",
    "phoneModeMessage": "You can change this in Settings anytime",
    "phoneModeAsk": "Ask me at key steps",
-@@ -5735,6 +5916,7 @@
+@@ -5735,6 +5919,7 @@
    "speechCallEarpiece": "Earpiece",
    "speechBackdropTitle": "Call background",
    "speechCallSettings": "Call settings",
@@ -106269,7 +106555,7 @@ index e1de7125..c517bb04 100644
    "speechCallPause": "Pause before she answers",
    "speechCallPauseQuick": "Short",
    "speechCallPauseNormal": "Medium",
-@@ -5756,7 +5938,25 @@
+@@ -5756,7 +5941,25 @@
    "speechCallVisualRing": "Ring",
    "speechCallVisualMono": "Line",
    "speechCallVisualGlass": "Orb",
@@ -106295,7 +106581,7 @@ index e1de7125..c517bb04 100644
    "starPromptTitle": "{hours, plural, =0{I’ve kept you company in DSH Go for half an hour now~} =1{I’ve kept you company in DSH Go for an hour now~} other{I’ve kept you company in DSH Go for {hours} hours now~}}",
    "starPromptBody": "DSH Go is free and open source. If it’s made your phone a little nicer to use, please give it a Star — it means so much to this little whale!",
    "starPromptPlea": "Pretty please~ It really matters!!",
-@@ -7932,6 +8132,7 @@
+@@ -7932,6 +8135,7 @@
    "wallpaperBlur": "Blur",
    "wallpaperLighten": "Lighten",
    "wallpaperDim": "Dim",
@@ -106304,7 +106590,7 @@ index e1de7125..c517bb04 100644
    "wallpaperPreview": "Preview",
    "wallpaperFooter": "Shown on home, in chats and in the drawer. Lighten applies in light mode, Dim in dark mode; text always stays clear. PNG, JPEG or WebP, up to 15 MB.",
 diff --git a/app/lib/l10n/app_zh.arb b/app/lib/l10n/app_zh.arb
-index ec1a316d..1b903b57 100644
+index ec1a316d..281bb399 100644
 --- a/app/lib/l10n/app_zh.arb
 +++ b/app/lib/l10n/app_zh.arb
 @@ -3,8 +3,8 @@
@@ -106772,7 +107058,7 @@ index ec1a316d..1b903b57 100644
    "phoneInterruptionTitle": "上次手机任务未确认结束",
    "phoneInterruptionLoading": "正在读取任务中断记录…",
    "phoneInterruptionStorageError": "无法保存或读取任务结束记录。请重试；这不表示后台资源已清理。",
-@@ -7431,17 +7576,146 @@
+@@ -7431,17 +7576,156 @@
    "phoneIosSetupHint": "保持 LocalDevVPN 已连接，首次使用时允许 30 分钟操控。",
    "phoneIosReturnHint": "任务完成后回到当前对话，并停止手机操控服务。",
    "phoneIosNeedsSetup": "运行器尚未就绪，请确认本机引擎和开发者环境已配置。",
@@ -106871,7 +107157,7 @@ index ec1a316d..1b903b57 100644
 +  "teachAiSendFailed": "没发出去，请回到对话再试",
 +  "teachNoSession": "当前没有打开的对话，先开一个对话再试",
 +  "proactiveTitle": "主动规则",
-+  "proactiveNote": "这是空空的规则库：你写的一条条指令（任务）。它定时检查，按你的指令主动行动——比如提醒、打电话、关心你。前提是它具备相应的能力。",
++  "proactiveNote": "这是空空的规则库：你用大白话写的一条条指令。它定时检查，读懂了就自己动手——提醒、打电话、关心你。",
 +  "proactiveAddTitle": "添加规则",
 +  "proactiveEmpty": "还没有规则，加一条指令试试",
 +  "proactiveConditionScreen": "玩手机超过 {n} 分钟",
@@ -106902,9 +107188,19 @@ index ec1a316d..1b903b57 100644
 +  "proactiveActionNotify": "发通知",
 +  "proactiveActionVoiceCall": "打语音通话",
 +  "proactiveTextLabel": "对你说的话",
-+  "proactiveTextHint": "比如：歇会儿眼睛吧",
++  "proactiveTextHint": "用大白话写整条规则，比如：如果一天没理我，就给我打个语音问问；刷抖音超过一小时就提醒我休息。",
 +  "proactiveUsageAccessTitle": "打开「使用情况访问」",
 +  "proactiveUsageAccessSub": "检测玩手机时长需要这个权限，去系统设置开启后回来刷新",
++  "proactiveIntervalTitle": "检查频率",
++  "proactiveIntervalLabel": "每多少分钟检查一次规则（1-1440）",
++  "proactiveIntervalSub": "每 {n} 分钟检查一次规则",
++  "@proactiveIntervalSub": {
++    "placeholders": {
++      "n": {
++        "type": "int"
++      }
++    }
++  },
    "phoneTaskResultReady": "任务完成 · 查看结果",
    "phoneTaskEndedResult": "任务已结束 · 查看结果",
    "phoneBackgroundGuideTitle": "后台确认与返回",
@@ -106923,7 +107219,7 @@ index ec1a316d..1b903b57 100644
    "phonePrivilegedSui": "Sui",
    "phonePrivilegedRoot": "Root",
    "phonePrivilegedSuiDescription": "使用 Sui 模块提供的接口，仅在主动点击时申请授权。",
-@@ -7452,8 +7726,8 @@
+@@ -7452,8 +7736,8 @@
    "phonePrivilegedGrantSui": "通过 Sui 授予",
    "phonePrivilegedGrantSuiPermission": "先授权 Sui，再授予权限",
    "phonePrivilegedSuggested": "建议",
@@ -106934,7 +107230,7 @@ index ec1a316d..1b903b57 100644
    "phoneKeepTitle": "{mode, select, shizuku{保持 Shizuku 通道} sui{保持 Sui 通道} root{保持 root 通道} adb{保持自连 ADB 通道} other{保持这个通道}}",
    "@phoneKeepTitle": {
      "placeholders": {
-@@ -7462,9 +7736,9 @@
+@@ -7462,9 +7746,9 @@
        }
      }
    },
@@ -106947,7 +107243,7 @@ index ec1a316d..1b903b57 100644
    "phoneKeepRestoring": "正在重新连接",
    "phoneKeepWaiting": "等通道可用后再连",
    "phoneKeepWaitingService": "等所选服务运行后再连",
-@@ -7519,6 +7793,21 @@
+@@ -7519,6 +7803,21 @@
    "phoneSkillInvalid": "编辑内容或步骤顺序不符合限制。请减少文字，至少保留一个步骤。",
    "phoneSkillWriteFailed": "未能写入。请核对本机运行环境和存储；修改并更新预览后才能再次确认保存。",
    "phoneSkillUnavailable": "当前无法处理技能草稿。请检查本机引擎状态后重试。",
@@ -106969,7 +107265,7 @@ index ec1a316d..1b903b57 100644
    "phoneModeTitle": "选择确认方式",
    "phoneModeMessage": "随时可在设置里更改",
    "phoneModeAsk": "关键步骤先问我",
-@@ -7526,13 +7815,13 @@
+@@ -7526,13 +7825,13 @@
    "phoneModeAuto": "全程自动",
    "phoneModeAutoHint": "不再询问，全程免打扰",
    "phoneModeAutoNoteTitle": "这些仍由你来操作",
@@ -106985,7 +107281,7 @@ index ec1a316d..1b903b57 100644
    "phoneYoursDenyList": "应用名单里「不碰」的 App，默认含银行、支付类",
    "phoneUnlockTitle": "解除限制",
    "phoneUnlockSubtitle": "让 AI 去做默认由你来做的事",
-@@ -7540,8 +7829,8 @@
+@@ -7540,8 +7839,8 @@
    "phoneUnlockSystemHint": "含权限页、安装器、安全中心、通知栏",
    "phoneUnlockSecrets": "密码和验证码",
    "phoneUnlockSecretsHint": "填写密码、验证码和支付密码",
@@ -106996,7 +107292,7 @@ index ec1a316d..1b903b57 100644
    "phoneUnlockBusy": "任务进行中，结束后才能开启",
    "phoneUnlockFootnote": "开启后的后果由你承担。建议只在需要时开启，用完关闭。",
    "phoneUnlockBanks": "银行、支付类 App",
-@@ -7558,7 +7847,7 @@
+@@ -7558,7 +7857,7 @@
    "phoneUnlockedBadge": "已解除限制",
    "phoneUnlockConfirmSystemTitle": "允许 AI 操作系统设置？",
    "phoneUnlockConfirmSecretsTitle": "允许 AI 填写密码和验证码？",
@@ -107005,7 +107301,7 @@ index ec1a316d..1b903b57 100644
    "phoneUnlockCanTitle": "开启后，AI 可以",
    "phoneUnlockRiskTitle": "可能出什么事",
    "phoneUnlockDisclaimerTitle": "免责声明",
-@@ -7572,13 +7861,13 @@
+@@ -7572,13 +7871,13 @@
    "phoneUnlockSecretsCan3": "操作记录里只显示 ••••，不记下填写的内容",
    "phoneUnlockSecretsRisk1": "恶意指令可能诱导 AI 把验证码填到别处，让他人登录你的账号",
    "phoneUnlockSecretsRisk2": "可能完成你并不想要的付款或转账",
@@ -107022,7 +107318,7 @@ index ec1a316d..1b903b57 100644
    "phoneUnlockDisclaimer4": "建议只在需要时临时开启，用完关闭。",
    "phoneUnlockDisclaimer5": "不建议在存有支付或银行信息的设备上开启。",
    "phoneUnlockHold": "我了解风险，开启",
-@@ -7848,7 +8137,7 @@
+@@ -7848,7 +8147,7 @@
    "pluginsWriteFailed": "没能写入",
    "pluginsHostUnreachable": "没能连上主机",
    "pluginsFileWriteFailed": "没能写入文件",
@@ -107031,7 +107327,7 @@ index ec1a316d..1b903b57 100644
    "pluginsGistTokenInvalid": "GitHub 令牌无效或没有 Gist 权限",
    "pluginsGistCreateHttpFailed": "没能创建 Gist（HTTP {status}）",
    "@pluginsGistCreateHttpFailed": {
-@@ -8286,7 +8575,7 @@
+@@ -8286,7 +8585,7 @@
    "pluginsNotificationsBlocked": "系统已关闭",
    "pluginsTurnedOn": "已开启",
    "pluginsNotifications": "通知",
@@ -107040,7 +107336,7 @@ index ec1a316d..1b903b57 100644
    "pluginsSystemNotificationsOff": "系统通知已关闭",
    "pluginsBackgroundNoAlerts": "App 在后台时收不到任何提醒",
    "pluginsApprovalNotificationsOff": "「等你确认」通知已关闭",
-@@ -8434,7 +8723,7 @@
+@@ -8434,7 +8733,7 @@
    "pluginsShareDamaged": "这个分享码不完整或已损坏",
    "pluginsShareFileReadFailed": "没能读取这个文件",
    "pluginsShareOpenFailed": "没能打开这个分享码",
@@ -107049,7 +107345,7 @@ index ec1a316d..1b903b57 100644
    "pluginsShareSheetOpenFailed": "没能打开分享",
    "pluginsSavePermissionDenied": "没有存储权限，没能保存",
    "pluginsQrCode": "二维码",
-@@ -8690,7 +8979,7 @@
+@@ -8690,7 +8989,7 @@
        }
      }
    },
@@ -107058,7 +107354,7 @@ index ec1a316d..1b903b57 100644
    "@plugslotsIssueNeedsApp": {
      "placeholders": {
        "version": {
-@@ -9053,7 +9342,7 @@
+@@ -9053,7 +9352,7 @@
    "remoteErrConnectionReplaced": "远程连接已被替换",
    "remoteErrHostRejected": "主机拒绝了连接",
    "remoteErrHostNotOwned": "主机不在你的 DSH Remote 账号下",
@@ -107067,7 +107363,7 @@ index ec1a316d..1b903b57 100644
    "remoteErrVersionIncompatible": "主机上的 DSH 或远程插件需要更新",
    "remoteErrSignInTimeout": "登录超时",
    "remoteSignInCancelled": "已取消登录",
-@@ -10076,7 +10365,7 @@
+@@ -10076,7 +10375,7 @@
    "remotePairTitle": "扫码配对电脑",
    "remotePairSubtitle": "不用注册 Remote 账号，也不会传 DeepSeek 密码或登录凭据",
    "remotePairNeedsDeepSeek": "先登录 DeepSeek 账号",
@@ -107076,7 +107372,7 @@ index ec1a316d..1b903b57 100644
    "remotePairScanHint": "对准电脑上 Remote 插件显示的配对二维码",
    "remotePairPasteLink": "粘贴配对链接",
    "remotePairPasteEmpty": "剪贴板里没有配对链接",
-@@ -10126,7 +10415,7 @@
+@@ -10126,7 +10425,7 @@
      }
    },
    "remotePairFailedTitle": "没能配对",
@@ -107085,7 +107381,7 @@ index ec1a316d..1b903b57 100644
    "@remotePairOtherServerBody": {
      "placeholders": {
        "server": {
-@@ -10136,7 +10425,7 @@
+@@ -10136,7 +10435,7 @@
    },
    "remotePairSwitchServer": "切换服务器并继续",
    "remotePairScanAgain": "重新扫码",
@@ -107094,7 +107390,7 @@ index ec1a316d..1b903b57 100644
    "remotePairErrOtherServer": "这个二维码来自另一个 Remote 服务器",
    "remotePairErrUnsupported": "这个 Remote 服务器还不支持扫码配对",
    "remotePairErrExpired": "二维码已过期或已经用过了。请在电脑上重新生成二维码",
-@@ -10174,12 +10463,12 @@
+@@ -10174,12 +10473,12 @@
    "riskAllowForChatBody": "这个对话之后的命令和改动都直接放行，可在输入框上方随时关闭。",
    "riskAllowForChatAction": "全部允许",
    "riskPetOverlayTitle": "显示在其他应用上层？",
@@ -107109,7 +107405,7 @@ index ec1a316d..1b903b57 100644
    "@askAiAboutApp": {
      "placeholders": {
        "question": {
-@@ -10187,7 +10476,7 @@
+@@ -10187,7 +10486,7 @@
        }
      }
    },
@@ -107118,7 +107414,7 @@ index ec1a316d..1b903b57 100644
    "@askAiWithGuide": {
      "placeholders": {
        "question": {
-@@ -10195,8 +10484,8 @@
+@@ -10195,8 +10494,8 @@
        }
      }
    },
@@ -107129,7 +107425,7 @@ index ec1a316d..1b903b57 100644
    "askAiQuestionPhoneControl": "手机操控是怎么工作的？有什么风险？",
    "askAiQuestionPhoneAlways": "手机操控选「始终免确认」会怎样？和「每次都询问」比风险在哪？",
    "askAiQuestionAppRules": "手机操控的应用名单有什么用？放开银行、支付类 App 有什么风险？",
-@@ -10980,7 +11269,7 @@
+@@ -10980,7 +11279,7 @@
    "shellJsonStringNewline": "字符串里不能直接换行",
    "shellJsonControlCharacter": "字符串里有控制字符",
    "shellJsonBadNumber": "数字格式不对",
@@ -107138,7 +107434,7 @@ index ec1a316d..1b903b57 100644
    "@shellSkillInstallPrompt": {
      "placeholders": {
        "skill": {
-@@ -11200,6 +11489,7 @@
+@@ -11200,6 +11499,7 @@
    "speechCallEarpiece": "听筒",
    "speechBackdropTitle": "通话背景",
    "speechCallSettings": "通话设置",
@@ -107146,7 +107442,7 @@ index ec1a316d..1b903b57 100644
    "speechCallPause": "停顿多久算说完",
    "speechCallPauseQuick": "快",
    "speechCallPauseNormal": "适中",
-@@ -11221,8 +11511,26 @@
+@@ -11221,8 +11521,26 @@
    "speechCallVisualRing": "光环",
    "speechCallVisualMono": "细线",
    "speechCallVisualGlass": "光球",
@@ -107174,7 +107470,7 @@ index ec1a316d..1b903b57 100644
    "@starPromptTitle": {
      "description": "The star prompt's first line. hours is the whole hours of use so far, rounded down; 0 is half an hour (the first ask comes after 30 minutes). The word joiner keeps the ~ on the line of the word before it.",
      "placeholders": {
-@@ -11236,7 +11544,7 @@
+@@ -11236,7 +11554,7 @@
    "starPromptStar": "去 GitHub 点 Star",
    "starPromptDone": "已经点过啦",
    "starPromptLater": "下次再说",
@@ -107183,7 +107479,7 @@ index ec1a316d..1b903b57 100644
    "hubStartPage": "起始页",
    "hubChatSuggestions": "聊天建议",
    "hubChatSuggestionsHint": "显示起始页的聊天建议",
-@@ -11252,7 +11560,7 @@
+@@ -11252,7 +11570,7 @@
    },
    "phoneStartupTokenTimeout": "启动等待已超时（180 秒内未收到启动标记），请查看日志",
    "phoneStartupPortNotReady": "已收到启动标记，但本机服务端口尚未就绪，请查看日志",
@@ -107192,7 +107488,7 @@ index ec1a316d..1b903b57 100644
    "stateStoragePermission": "没有存储权限，存不进「下载」",
    "stateDiagnosticsStorageFull": "存储空间不足，没能生成诊断包",
    "stateDiagnosticsExportFailed": "没能导出诊断包",
-@@ -12047,15 +12355,15 @@
+@@ -12047,15 +12365,15 @@
    "systemActionsSubtitle": "让 AI 帮你打开应用和系统页面，随时可以关",
    "systemActionsReady": "已开启",
    "systemActionsWaitingEngine": "已开启，等本机引擎启动",
@@ -107211,7 +107507,7 @@ index ec1a316d..1b903b57 100644
    "systemActionsCanTitle": "能做的",
    "systemActionsCanOpen": "打开应用或链接",
    "systemActionsCanOpenHint": "应用要写包名，不能按名字找",
-@@ -12089,7 +12397,7 @@
+@@ -12089,7 +12407,7 @@
    "systemActionsDisclosureWhatTitle": "能做什么",
    "systemActionsDisclosureWhatBody": "打开应用或链接，打开日历、拨号、分享、导航界面，发通知，写剪贴板，把步骤交还给你。这个版本开通了系统提醒时，还能设闹钟和计时器。",
    "systemActionsDisclosureWhenTitle": "什么时候做",
@@ -107220,7 +107516,7 @@ index ec1a316d..1b903b57 100644
    "systemActionsDisclosureWhoTitle": "发给谁",
    "systemActionsDisclosureWhoBody": "动作的结果会回到对话，发给你选的模型。",
    "systemActionsDisclosureNeverTitle": "不会做什么",
-@@ -12097,7 +12405,7 @@
+@@ -12097,7 +12415,7 @@
    "systemActionsDisclosureStopTitle": "怎么停",
    "systemActionsDisclosureStopBody": "随时在这里关掉。交还提示可以点停止。",
    "systemActionsHandoffTitle": "轮到你来操作",
@@ -107229,7 +107525,7 @@ index ec1a316d..1b903b57 100644
    "systemActionsHandoffFailed": "这次没算上，提示如果还在可以再点一次",
    "systemActionsResultOpened": "已打开界面，还没确认里面的事办完。",
    "systemActionsResultContinued": "你点了继续。这只说明你确认了，不代表其他应用里的操作完成了。",
-@@ -12106,7 +12414,7 @@
+@@ -12106,7 +12424,7 @@
    "systemActionsResultClipboard": "文字已写入剪贴板。",
    "systemActionsResultUnknownDetail": "系统调用可能已经发出，结果未知。不会自动重试，请自己看一下实际状态。",
    "systemActionsResultUnsupported": "鸿蒙版不支持这个动作，没有执行。",
@@ -107238,7 +107534,7 @@ index ec1a316d..1b903b57 100644
    "systemActionsResultUnavailable": "系统操作没开或暂时连不上，没有执行。到「设置 → 系统操作」看看。",
    "systemActionsResultStopped": "已停止。",
    "systemActionsResultTimeout": "等待超时，没有结果。",
-@@ -12789,7 +13097,7 @@
+@@ -12789,7 +13107,7 @@
        }
      }
    },
@@ -107247,7 +107543,7 @@ index ec1a316d..1b903b57 100644
    "tavernStorybookContents": "目录",
    "tavernStorybookChapter": "第 {n} 章",
    "@tavernStorybookChapter": {
-@@ -14579,13 +14887,13 @@
+@@ -14579,13 +14897,13 @@
      }
    },
    "updateSettingsOpenFailed": "没能打开系统设置",
@@ -107263,7 +107559,7 @@ index ec1a316d..1b903b57 100644
    "updateWrongPackage": "不是 DSH 的安装包",
    "updateWrongPackageMessage": "下载到的文件不对，已删除，请稍后重试。",
    "updateDowngradeBlocked": "不能降级安装",
-@@ -14628,7 +14936,7 @@
+@@ -14628,7 +14946,7 @@
    "updateNewVersionFound": "发现新版本",
    "updateReleaseNotes": "更新内容",
    "updateNoReleaseNotes": "这个版本没有写更新说明。",
@@ -107272,7 +107568,7 @@ index ec1a316d..1b903b57 100644
    "updateNoCompatiblePackage": "没有适合本机的安装包",
    "updateDownloading": "正在下载",
    "updateDownloadSource": "经由 {source}",
-@@ -14646,7 +14954,7 @@
+@@ -14646,7 +14964,7 @@
    "updateConfirmInstallNote": "在系统弹窗里确认安装",
    "updatePackageDownloaded": "安装包已下载",
    "updateReadyToInstall": "校验通过，可以安装了。",
@@ -107281,7 +107577,7 @@ index ec1a316d..1b903b57 100644
    "updateAllowInstallMessage": "在系统设置里打开「安装未知应用」，回来后自动继续。",
    "updateOpenReleasePage": "打开发布页",
    "updateUpdateNow": "立即更新",
-@@ -14689,10 +14997,10 @@
+@@ -14689,10 +15007,10 @@
      }
    },
    "usageStatsTitle": "发送匿名使用统计",
@@ -107294,7 +107590,7 @@ index ec1a316d..1b903b57 100644
    "usageUpgradeLearn": "了解",
    "usageUpgradeOff": "关闭",
    "viewArtifactSaved": "已存到 {value}",
-@@ -15401,7 +15709,7 @@
+@@ -15401,7 +15719,7 @@
    "viewTipImageZoom": "看图时双击放大、双指缩放，长按可以保存",
    "viewTipQueuedRecall": "排队中的消息可以撤回到输入框再改",
    "viewTipKeyboard": "接了键盘：Ctrl+Enter 发送，连按两次 Esc 停止",
@@ -107303,7 +107599,7 @@ index ec1a316d..1b903b57 100644
    "viewTipShareSelect": "分享对话时长按再滑动，可以一次选中多条消息",
    "viewTipChartDrag": "回复里的图表可以左右拖动，看每个点的数值",
    "viewTipCopyPath": "改动卡里长按某个文件，可以复制它的路径",
-@@ -15571,7 +15879,7 @@
+@@ -15571,7 +15889,7 @@
        }
      }
    },
@@ -107312,7 +107608,7 @@ index ec1a316d..1b903b57 100644
    "@viewContinueHeader": {
      "placeholders": {
        "value": {
-@@ -15608,7 +15916,7 @@
+@@ -15608,7 +15926,7 @@
    "viewShareNoPermission": "没有存储权限，没能保存",
    "viewShareOpenFailed": "没能打开分享",
    "viewShareLinkFailed": "没能生成链接，稍后再试",
@@ -107321,7 +107617,7 @@ index ec1a316d..1b903b57 100644
    "@viewShareLinkText": {
      "placeholders": {
        "first": {
-@@ -15636,7 +15944,7 @@
+@@ -15636,7 +15954,7 @@
        }
      }
    },
@@ -107330,7 +107626,7 @@ index ec1a316d..1b903b57 100644
    "viewShareWebHint": "任何浏览器都能打开，不用联网",
    "viewShareMarkdownHint": "纯文本，随处可读",
    "viewShareLinkHint": "端到端加密，服务器看不到内容",
-@@ -16257,6 +16565,7 @@
+@@ -16257,6 +16575,7 @@
    "wallpaperBlur": "模糊",
    "wallpaperLighten": "提亮",
    "wallpaperDim": "压暗",
@@ -107338,7 +107634,7 @@ index ec1a316d..1b903b57 100644
    "wallpaperReplace": "更换图片",
    "wallpaperPreview": "预览",
    "wallpaperFooter": "用于首页、对话和抽屉。提亮在浅色模式、压暗在深色模式下各自生效，文字始终清晰。PNG、JPEG、WebP，15 MB 以内",
-@@ -16364,7 +16673,7 @@
+@@ -16364,7 +16683,7 @@
    "workshopAbout": "简介",
    "workshopNoDescription": "作者没有写简介。",
    "workshopSource": "来源",
@@ -107348,7 +107644,7 @@ index ec1a316d..1b903b57 100644
      "placeholders": {
        "version": {
 diff --git a/app/lib/l10n/gen/app_localizations.dart b/app/lib/l10n/gen/app_localizations.dart
-index 05ad2de7..cd016f2e 100644
+index 05ad2de7..3b972020 100644
 --- a/app/lib/l10n/gen/app_localizations.dart
 +++ b/app/lib/l10n/gen/app_localizations.dart
 @@ -113,13 +113,13 @@ abstract class L10n {
@@ -108375,7 +108671,7 @@ index 05ad2de7..cd016f2e 100644
    String get phoneTaskBackgroundResource;
  
    /// No description provided for @phoneInterruptionTitle.
-@@ -23822,6 +24440,384 @@ abstract class L10n {
+@@ -23822,6 +24440,402 @@ abstract class L10n {
    /// **'运行器尚未就绪，请确认本机引擎和开发者环境已配置。'**
    String get phoneIosNeedsSetup;
  
@@ -108682,7 +108978,7 @@ index 05ad2de7..cd016f2e 100644
 +  /// No description provided for @proactiveNote.
 +  ///
 +  /// In zh, this message translates to:
-+  /// **'这是空空的规则库：你写的一条条指令（任务）。它定时检查，按你的指令主动行动——比如提醒、打电话、关心你。前提是它具备相应的能力。'**
++  /// **'这是空空的规则库：你用大白话写的一条条指令。它定时检查，读懂了就自己动手——提醒、打电话、关心你。'**
 +  String get proactiveNote;
 +
 +  /// No description provided for @proactiveAddTitle.
@@ -108742,7 +109038,7 @@ index 05ad2de7..cd016f2e 100644
 +  /// No description provided for @proactiveTextHint.
 +  ///
 +  /// In zh, this message translates to:
-+  /// **'比如：歇会儿眼睛吧'**
++  /// **'用大白话写整条规则，比如：如果一天没理我，就给我打个语音问问；刷抖音超过一小时就提醒我休息。'**
 +  String get proactiveTextHint;
 +
 +  /// No description provided for @proactiveUsageAccessTitle.
@@ -108757,10 +109053,28 @@ index 05ad2de7..cd016f2e 100644
 +  /// **'检测玩手机时长需要这个权限，去系统设置开启后回来刷新'**
 +  String get proactiveUsageAccessSub;
 +
++  /// No description provided for @proactiveIntervalTitle.
++  ///
++  /// In zh, this message translates to:
++  /// **'检查频率'**
++  String get proactiveIntervalTitle;
++
++  /// No description provided for @proactiveIntervalLabel.
++  ///
++  /// In zh, this message translates to:
++  /// **'每多少分钟检查一次规则（1-1440）'**
++  String get proactiveIntervalLabel;
++
++  /// No description provided for @proactiveIntervalSub.
++  ///
++  /// In zh, this message translates to:
++  /// **'每 {n} 分钟检查一次规则'**
++  String proactiveIntervalSub(int n);
++
    /// No description provided for @phoneTaskResultReady.
    ///
    /// In zh, this message translates to:
-@@ -23849,19 +24845,19 @@ abstract class L10n {
+@@ -23849,19 +24863,19 @@ abstract class L10n {
    /// No description provided for @phoneBackgroundGuideBody.
    ///
    /// In zh, this message translates to:
@@ -108783,7 +109097,7 @@ index 05ad2de7..cd016f2e 100644
    String get phoneBackgroundReturnHint;
  
    /// No description provided for @phoneBackgroundGotIt.
-@@ -23885,7 +24881,7 @@ abstract class L10n {
+@@ -23885,7 +24899,7 @@ abstract class L10n {
    /// No description provided for @phonePrivilegedUpgrade.
    ///
    /// In zh, this message translates to:
@@ -108792,7 +109106,7 @@ index 05ad2de7..cd016f2e 100644
    String get phonePrivilegedUpgrade;
  
    /// No description provided for @phonePrivilegedSui.
-@@ -23951,13 +24947,13 @@ abstract class L10n {
+@@ -23951,13 +24965,13 @@ abstract class L10n {
    /// No description provided for @phonePrivilegedRootRiskTitle.
    ///
    /// In zh, this message translates to:
@@ -108808,7 +109122,7 @@ index 05ad2de7..cd016f2e 100644
    String get phonePrivilegedRootRiskBody;
  
    /// No description provided for @phoneKeepTitle.
-@@ -23969,19 +24965,19 @@ abstract class L10n {
+@@ -23969,19 +24983,19 @@ abstract class L10n {
    /// No description provided for @phoneKeepRootDescription.
    ///
    /// In zh, this message translates to:
@@ -108831,7 +109145,7 @@ index 05ad2de7..cd016f2e 100644
    String get phoneKeepAdbDescription;
  
    /// No description provided for @phoneKeepRestoring.
-@@ -24206,6 +25202,96 @@ abstract class L10n {
+@@ -24206,6 +25220,96 @@ abstract class L10n {
    /// **'当前无法处理技能草稿。请检查本机引擎状态后重试。'**
    String get phoneSkillUnavailable;
  
@@ -108928,7 +109242,7 @@ index 05ad2de7..cd016f2e 100644
    /// No description provided for @phoneModeTitle.
    ///
    /// In zh, this message translates to:
-@@ -24251,7 +25337,7 @@ abstract class L10n {
+@@ -24251,7 +25355,7 @@ abstract class L10n {
    /// No description provided for @phoneModeAutoNote.
    ///
    /// In zh, this message translates to:
@@ -108937,7 +109251,7 @@ index 05ad2de7..cd016f2e 100644
    String get phoneModeAutoNote;
  
    /// No description provided for @phoneModeAutoUnlockNote.
-@@ -24287,7 +25373,7 @@ abstract class L10n {
+@@ -24287,7 +25391,7 @@ abstract class L10n {
    /// No description provided for @phoneYoursOwnApp.
    ///
    /// In zh, this message translates to:
@@ -108946,7 +109260,7 @@ index 05ad2de7..cd016f2e 100644
    String get phoneYoursOwnApp;
  
    /// No description provided for @phoneYoursDenyList.
-@@ -24335,13 +25421,13 @@ abstract class L10n {
+@@ -24335,13 +25439,13 @@ abstract class L10n {
    /// No description provided for @phoneUnlockOwnApp.
    ///
    /// In zh, this message translates to:
@@ -108962,7 +109276,7 @@ index 05ad2de7..cd016f2e 100644
    String get phoneUnlockOwnAppHint;
  
    /// No description provided for @phoneUnlockBusy.
-@@ -24401,7 +25487,7 @@ abstract class L10n {
+@@ -24401,7 +25505,7 @@ abstract class L10n {
    /// No description provided for @phoneUnlockConfirmOwnAppTitle.
    ///
    /// In zh, this message translates to:
@@ -108971,7 +109285,7 @@ index 05ad2de7..cd016f2e 100644
    String get phoneUnlockConfirmOwnAppTitle;
  
    /// No description provided for @phoneUnlockCanTitle.
-@@ -24485,13 +25571,13 @@ abstract class L10n {
+@@ -24485,13 +25589,13 @@ abstract class L10n {
    /// No description provided for @phoneUnlockOwnAppCan1.
    ///
    /// In zh, this message translates to:
@@ -108987,7 +109301,7 @@ index 05ad2de7..cd016f2e 100644
    String get phoneUnlockOwnAppCan2;
  
    /// No description provided for @phoneUnlockOwnAppRisk1.
-@@ -24521,7 +25607,7 @@ abstract class L10n {
+@@ -24521,7 +25625,7 @@ abstract class L10n {
    /// No description provided for @phoneUnlockDisclaimer3.
    ///
    /// In zh, this message translates to:
@@ -108996,7 +109310,7 @@ index 05ad2de7..cd016f2e 100644
    String get phoneUnlockDisclaimer3;
  
    /// No description provided for @phoneUnlockDisclaimer4.
-@@ -25463,7 +26549,7 @@ abstract class L10n {
+@@ -25463,7 +26567,7 @@ abstract class L10n {
    /// No description provided for @pluginsProfileTitle.
    ///
    /// In zh, this message translates to:
@@ -109005,7 +109319,7 @@ index 05ad2de7..cd016f2e 100644
    String get pluginsProfileTitle;
  
    /// No description provided for @pluginsGistTokenInvalid.
-@@ -26483,7 +27569,7 @@ abstract class L10n {
+@@ -26483,7 +27587,7 @@ abstract class L10n {
    /// No description provided for @pluginsNotificationSettingsFailed.
    ///
    /// In zh, this message translates to:
@@ -109014,7 +109328,7 @@ index 05ad2de7..cd016f2e 100644
    String get pluginsNotificationSettingsFailed;
  
    /// No description provided for @pluginsSystemNotificationsOff.
-@@ -26951,7 +28037,7 @@ abstract class L10n {
+@@ -26951,7 +28055,7 @@ abstract class L10n {
    /// No description provided for @pluginsPluginShareTitle.
    ///
    /// In zh, this message translates to:
@@ -109023,7 +109337,7 @@ index 05ad2de7..cd016f2e 100644
    String get pluginsPluginShareTitle;
  
    /// No description provided for @pluginsShareSheetOpenFailed.
-@@ -27371,7 +28457,7 @@ abstract class L10n {
+@@ -27371,7 +28475,7 @@ abstract class L10n {
    /// No description provided for @plugslotsIssueNeedsApp.
    ///
    /// In zh, this message translates to:
@@ -109032,7 +109346,7 @@ index 05ad2de7..cd016f2e 100644
    String plugslotsIssueNeedsApp(String version);
  
    /// No description provided for @plugslotsIssueNewerProtocol.
-@@ -28217,7 +29303,7 @@ abstract class L10n {
+@@ -28217,7 +29321,7 @@ abstract class L10n {
    /// No description provided for @remoteErrUpdateNeeded.
    ///
    /// In zh, this message translates to:
@@ -109041,7 +109355,7 @@ index 05ad2de7..cd016f2e 100644
    String get remoteErrUpdateNeeded;
  
    /// No description provided for @remoteErrVersionIncompatible.
-@@ -30773,7 +31859,7 @@ abstract class L10n {
+@@ -30773,7 +31877,7 @@ abstract class L10n {
    /// No description provided for @remotePairNeedsDeepSeekBody.
    ///
    /// In zh, this message translates to:
@@ -109050,7 +109364,7 @@ index 05ad2de7..cd016f2e 100644
    String get remotePairNeedsDeepSeekBody;
  
    /// No description provided for @remotePairScanHint.
-@@ -30947,7 +32033,7 @@ abstract class L10n {
+@@ -30947,7 +32051,7 @@ abstract class L10n {
    /// No description provided for @remotePairOtherServerBody.
    ///
    /// In zh, this message translates to:
@@ -109059,7 +109373,7 @@ index 05ad2de7..cd016f2e 100644
    String remotePairOtherServerBody(String server);
  
    /// No description provided for @remotePairSwitchServer.
-@@ -30965,7 +32051,7 @@ abstract class L10n {
+@@ -30965,7 +32069,7 @@ abstract class L10n {
    /// No description provided for @remotePairErrInvalidCode.
    ///
    /// In zh, this message translates to:
@@ -109068,7 +109382,7 @@ index 05ad2de7..cd016f2e 100644
    String get remotePairErrInvalidCode;
  
    /// No description provided for @remotePairErrOtherServer.
-@@ -31151,7 +32237,7 @@ abstract class L10n {
+@@ -31151,7 +32255,7 @@ abstract class L10n {
    /// No description provided for @riskPetOverlayBody.
    ///
    /// In zh, this message translates to:
@@ -109077,7 +109391,7 @@ index 05ad2de7..cd016f2e 100644
    String get riskPetOverlayBody;
  
    /// No description provided for @riskPetOverlayAction.
-@@ -31181,25 +32267,25 @@ abstract class L10n {
+@@ -31181,25 +32285,25 @@ abstract class L10n {
    /// No description provided for @askAiAboutApp.
    ///
    /// In zh, this message translates to:
@@ -109107,7 +109421,7 @@ index 05ad2de7..cd016f2e 100644
    String get askAiQuestionOverview;
  
    /// No description provided for @askAiQuestionPhoneControl.
-@@ -33785,7 +34871,7 @@ abstract class L10n {
+@@ -33785,7 +34889,7 @@ abstract class L10n {
    /// No description provided for @shellSkillInstallPrompt.
    ///
    /// In zh, this message translates to:
@@ -109116,7 +109430,7 @@ index 05ad2de7..cd016f2e 100644
    String shellSkillInstallPrompt(String skill);
  
    /// No description provided for @shellSkillInstallDirectory.
-@@ -34502,6 +35588,12 @@ abstract class L10n {
+@@ -34502,6 +35606,12 @@ abstract class L10n {
    /// **'通话设置'**
    String get speechCallSettings;
  
@@ -109129,7 +109443,7 @@ index 05ad2de7..cd016f2e 100644
    /// No description provided for @speechCallPause.
    ///
    /// In zh, this message translates to:
-@@ -34628,16 +35720,124 @@ abstract class L10n {
+@@ -34628,16 +35738,124 @@ abstract class L10n {
    /// **'光球'**
    String get speechCallVisualGlass;
  
@@ -109255,7 +109569,7 @@ index 05ad2de7..cd016f2e 100644
    String starPromptTitle(int hours);
  
    /// No description provided for @starPromptBody.
-@@ -34673,7 +35873,7 @@ abstract class L10n {
+@@ -34673,7 +35891,7 @@ abstract class L10n {
    /// No description provided for @starSettingsTitle.
    ///
    /// In zh, this message translates to:
@@ -109264,7 +109578,7 @@ index 05ad2de7..cd016f2e 100644
    String get starSettingsTitle;
  
    /// No description provided for @hubStartPage.
-@@ -34727,7 +35927,7 @@ abstract class L10n {
+@@ -34727,7 +35945,7 @@ abstract class L10n {
    /// No description provided for @stateDiagnosticsSubject.
    ///
    /// In zh, this message translates to:
@@ -109273,7 +109587,7 @@ index 05ad2de7..cd016f2e 100644
    String get stateDiagnosticsSubject;
  
    /// No description provided for @stateStoragePermission.
-@@ -37037,7 +38237,7 @@ abstract class L10n {
+@@ -37037,7 +38255,7 @@ abstract class L10n {
    /// No description provided for @systemActionsOffScreen.
    ///
    /// In zh, this message translates to:
@@ -109282,7 +109596,7 @@ index 05ad2de7..cd016f2e 100644
    String get systemActionsOffScreen;
  
    /// No description provided for @systemActionsConnecting.
-@@ -37079,13 +38279,13 @@ abstract class L10n {
+@@ -37079,13 +38297,13 @@ abstract class L10n {
    /// No description provided for @systemActionsOnScreenTitle.
    ///
    /// In zh, this message translates to:
@@ -109298,7 +109612,7 @@ index 05ad2de7..cd016f2e 100644
    String get systemActionsOnScreenBody;
  
    /// No description provided for @systemActionsCanTitle.
-@@ -37289,7 +38489,7 @@ abstract class L10n {
+@@ -37289,7 +38507,7 @@ abstract class L10n {
    /// No description provided for @systemActionsDisclosureWhenBody.
    ///
    /// In zh, this message translates to:
@@ -109307,7 +109621,7 @@ index 05ad2de7..cd016f2e 100644
    String get systemActionsDisclosureWhenBody;
  
    /// No description provided for @systemActionsDisclosureWhoTitle.
-@@ -37337,7 +38537,7 @@ abstract class L10n {
+@@ -37337,7 +38555,7 @@ abstract class L10n {
    /// No description provided for @systemActionsHandoffNote.
    ///
    /// In zh, this message translates to:
@@ -109316,7 +109630,7 @@ index 05ad2de7..cd016f2e 100644
    String get systemActionsHandoffNote;
  
    /// No description provided for @systemActionsHandoffFailed.
-@@ -37391,7 +38591,7 @@ abstract class L10n {
+@@ -37391,7 +38609,7 @@ abstract class L10n {
    /// No description provided for @systemActionsResultOffScreen.
    ///
    /// In zh, this message translates to:
@@ -109325,7 +109639,7 @@ index 05ad2de7..cd016f2e 100644
    String get systemActionsResultOffScreen;
  
    /// No description provided for @systemActionsResultUnavailable.
-@@ -39413,7 +40613,7 @@ abstract class L10n {
+@@ -39413,7 +40631,7 @@ abstract class L10n {
    /// No description provided for @tavernStorybookMadeWith.
    ///
    /// In zh, this message translates to:
@@ -109334,7 +109648,7 @@ index 05ad2de7..cd016f2e 100644
    String get tavernStorybookMadeWith;
  
    /// No description provided for @tavernStorybookContents.
-@@ -44387,7 +45587,7 @@ abstract class L10n {
+@@ -44387,7 +45605,7 @@ abstract class L10n {
    /// No description provided for @updateSettingsOpenFailedMessage.
    ///
    /// In zh, this message translates to:
@@ -109343,7 +109657,7 @@ index 05ad2de7..cd016f2e 100644
    String get updateSettingsOpenFailedMessage;
  
    /// No description provided for @updateInstallCancelled.
-@@ -44423,7 +45623,7 @@ abstract class L10n {
+@@ -44423,7 +45641,7 @@ abstract class L10n {
    /// No description provided for @updateSignatureMismatchMessage.
    ///
    /// In zh, this message translates to:
@@ -109352,7 +109666,7 @@ index 05ad2de7..cd016f2e 100644
    String get updateSignatureMismatchMessage;
  
    /// No description provided for @updateWrongPackage.
-@@ -44537,7 +45737,7 @@ abstract class L10n {
+@@ -44537,7 +45755,7 @@ abstract class L10n {
    /// No description provided for @updateInstallKeepsData.
    ///
    /// In zh, this message translates to:
@@ -109361,7 +109675,7 @@ index 05ad2de7..cd016f2e 100644
    String get updateInstallKeepsData;
  
    /// No description provided for @updateNoCompatiblePackage.
-@@ -44603,7 +45803,7 @@ abstract class L10n {
+@@ -44603,7 +45821,7 @@ abstract class L10n {
    /// No description provided for @updateAllowInstall.
    ///
    /// In zh, this message translates to:
@@ -109370,7 +109684,7 @@ index 05ad2de7..cd016f2e 100644
    String get updateAllowInstall;
  
    /// No description provided for @updateAllowInstallMessage.
-@@ -44735,7 +45935,7 @@ abstract class L10n {
+@@ -44735,7 +45953,7 @@ abstract class L10n {
    /// No description provided for @usageStatsSection.
    ///
    /// In zh, this message translates to:
@@ -109379,7 +109693,7 @@ index 05ad2de7..cd016f2e 100644
    String get usageStatsSection;
  
    /// No description provided for @usageStatsFooter.
-@@ -44753,7 +45953,7 @@ abstract class L10n {
+@@ -44753,7 +45971,7 @@ abstract class L10n {
    /// No description provided for @usageUpgradeNotice.
    ///
    /// In zh, this message translates to:
@@ -109388,7 +109702,7 @@ index 05ad2de7..cd016f2e 100644
    String get usageUpgradeNotice;
  
    /// No description provided for @usageUpgradeLearn.
-@@ -45845,7 +47045,7 @@ abstract class L10n {
+@@ -45845,7 +47063,7 @@ abstract class L10n {
    /// No description provided for @viewTipShareIn.
    ///
    /// In zh, this message translates to:
@@ -109397,7 +109711,7 @@ index 05ad2de7..cd016f2e 100644
    String get viewTipShareIn;
  
    /// No description provided for @viewTipShareSelect.
-@@ -46265,7 +47465,7 @@ abstract class L10n {
+@@ -46265,7 +47483,7 @@ abstract class L10n {
    /// No description provided for @viewContinueHeader.
    ///
    /// In zh, this message translates to:
@@ -109406,7 +109720,7 @@ index 05ad2de7..cd016f2e 100644
    String viewContinueHeader(String value);
  
    /// No description provided for @viewContinueUser.
-@@ -46361,7 +47561,7 @@ abstract class L10n {
+@@ -46361,7 +47579,7 @@ abstract class L10n {
    /// No description provided for @viewShareLinkText.
    ///
    /// In zh, this message translates to:
@@ -109415,7 +109729,7 @@ index 05ad2de7..cd016f2e 100644
    String viewShareLinkText(String first, String second);
  
    /// No description provided for @viewShareEmpty.
-@@ -46385,7 +47585,7 @@ abstract class L10n {
+@@ -46385,7 +47603,7 @@ abstract class L10n {
    /// No description provided for @viewShareFileHint.
    ///
    /// In zh, this message translates to:
@@ -109424,7 +109738,7 @@ index 05ad2de7..cd016f2e 100644
    String get viewShareFileHint;
  
    /// No description provided for @viewShareWebHint.
-@@ -47684,6 +48884,12 @@ abstract class L10n {
+@@ -47684,6 +48902,12 @@ abstract class L10n {
    /// **'压暗'**
    String get wallpaperDim;
  
@@ -109437,7 +109751,7 @@ index 05ad2de7..cd016f2e 100644
    /// No description provided for @wallpaperReplace.
    ///
    /// In zh, this message translates to:
-@@ -48203,7 +49409,7 @@ abstract class L10n {
+@@ -48203,7 +49427,7 @@ abstract class L10n {
    /// No description provided for @workshopMinApp.
    ///
    /// In zh, this message translates to:
@@ -109447,7 +109761,7 @@ index 05ad2de7..cd016f2e 100644
  
    /// No description provided for @workshopInstalledVersion.
 diff --git a/app/lib/l10n/gen/app_localizations_en.dart b/app/lib/l10n/gen/app_localizations_en.dart
-index 546fef86..4621297f 100644
+index 546fef86..6779275c 100644
 --- a/app/lib/l10n/gen/app_localizations_en.dart
 +++ b/app/lib/l10n/gen/app_localizations_en.dart
 @@ -1707,6 +1707,321 @@ class L10nEn extends L10n {
@@ -109798,7 +110112,7 @@ index 546fef86..4621297f 100644
    @override
    String get phoneControlRules => 'Rules';
  
-@@ -13575,6 +13902,220 @@ class L10nEn extends L10n {
+@@ -13575,6 +13902,232 @@ class L10nEn extends L10n {
    @override
    String get phoneIosNeedsSetup => 'The runner is not ready. Check the local engine and developer setup.';
  
@@ -109971,7 +110285,7 @@ index 546fef86..4621297f 100644
 +
 +  @override
 +  String get proactiveNote =>
-+      'Kongkong\'s rule book: instructions (tasks) you write yourself. It checks them on a timer and acts on its own — reminders, calls, checking in. It does what it has the ability to do.';
++      'Kongkong\'s rule book: instructions you write in plain words. It checks on a timer and acts on its own once it understands them.';
 +
 +  @override
 +  String get proactiveAddTitle => 'Add rule';
@@ -110007,7 +110321,8 @@ index 546fef86..4621297f 100644
 +  String get proactiveTextLabel => 'What to say';
 +
 +  @override
-+  String get proactiveTextHint => 'e.g. Give your eyes a rest';
++  String get proactiveTextHint =>
++      'Write the whole rule in plain words, e.g. \"If I haven\'t talked to you for a day, call me\"; \"If I use Douyin over an hour, remind me to rest\".';
 +
 +  @override
 +  String get proactiveUsageAccessTitle => 'Enable usage access';
@@ -110016,10 +110331,21 @@ index 546fef86..4621297f 100644
 +  String get proactiveUsageAccessSub =>
 +      'Screen-time detection needs this permission; enable it in system settings and come back';
 +
++  @override
++  String get proactiveIntervalTitle => 'Check interval';
++
++  @override
++  String get proactiveIntervalLabel => 'Check rules every N minutes (1-1440)';
++
++  @override
++  String proactiveIntervalSub(int n) {
++    return 'Checks rules every $n minutes';
++  }
++
    @override
    String get phoneTaskResultReady => 'Task complete · View result';
  
-@@ -13800,6 +14341,52 @@ class L10nEn extends L10n {
+@@ -13800,6 +14353,52 @@ class L10nEn extends L10n {
    @override
    String get phoneSkillUnavailable => 'Skill drafts are unavailable. Check the local engine state and try again.';
  
@@ -110072,7 +110398,7 @@ index 546fef86..4621297f 100644
    @override
    String get phoneModeTitle => 'How DSH confirms';
  
-@@ -19818,6 +20405,9 @@ class L10nEn extends L10n {
+@@ -19818,6 +20417,9 @@ class L10nEn extends L10n {
    @override
    String get speechCallSettings => 'Call settings';
  
@@ -110082,7 +110408,7 @@ index 546fef86..4621297f 100644
    @override
    String get speechCallPause => 'Pause before she answers';
  
-@@ -19883,9 +20473,65 @@ class L10nEn extends L10n {
+@@ -19883,9 +20485,65 @@ class L10nEn extends L10n {
    @override
    String get speechCallVisualGlass => 'Orb';
  
@@ -110148,7 +110474,7 @@ index 546fef86..4621297f 100644
    @override
    String starPromptTitle(int hours) {
      String _temp0 = intl.Intl.pluralLogic(
-@@ -27559,6 +28205,9 @@ class L10nEn extends L10n {
+@@ -27559,6 +28217,9 @@ class L10nEn extends L10n {
    @override
    String get wallpaperDim => 'Dim';
  
@@ -110159,7 +110485,7 @@ index 546fef86..4621297f 100644
    String get wallpaperReplace => 'Replace picture';
  
 diff --git a/app/lib/l10n/gen/app_localizations_zh.dart b/app/lib/l10n/gen/app_localizations_zh.dart
-index c66b20de..e0fe97bf 100644
+index c66b20de..74552ba5 100644
 --- a/app/lib/l10n/gen/app_localizations_zh.dart
 +++ b/app/lib/l10n/gen/app_localizations_zh.dart
 @@ -19,10 +19,10 @@ class L10nZh extends L10n {
@@ -110856,7 +111182,7 @@ index c66b20de..e0fe97bf 100644
  
    @override
    String get phoneInterruptionTitle => '上次手机任务未确认结束';
-@@ -12892,6 +13213,213 @@ class L10nZh extends L10n {
+@@ -12892,6 +13213,224 @@ class L10nZh extends L10n {
    @override
    String get phoneIosNeedsSetup => '运行器尚未就绪，请确认本机引擎和开发者环境已配置。';
  
@@ -111023,7 +111349,7 @@ index c66b20de..e0fe97bf 100644
 +  String get proactiveTitle => '主动规则';
 +
 +  @override
-+  String get proactiveNote => '这是空空的规则库：你写的一条条指令（任务）。它定时检查，按你的指令主动行动——比如提醒、打电话、关心你。前提是它具备相应的能力。';
++  String get proactiveNote => '这是空空的规则库：你用大白话写的一条条指令。它定时检查，读懂了就自己动手——提醒、打电话、关心你。';
 +
 +  @override
 +  String get proactiveAddTitle => '添加规则';
@@ -111059,7 +111385,7 @@ index c66b20de..e0fe97bf 100644
 +  String get proactiveTextLabel => '对你说的话';
 +
 +  @override
-+  String get proactiveTextHint => '比如：歇会儿眼睛吧';
++  String get proactiveTextHint => '用大白话写整条规则，比如：如果一天没理我，就给我打个语音问问；刷抖音超过一小时就提醒我休息。';
 +
 +  @override
 +  String get proactiveUsageAccessTitle => '打开「使用情况访问」';
@@ -111067,10 +111393,21 @@ index c66b20de..e0fe97bf 100644
 +  @override
 +  String get proactiveUsageAccessSub => '检测玩手机时长需要这个权限，去系统设置开启后回来刷新';
 +
++  @override
++  String get proactiveIntervalTitle => '检查频率';
++
++  @override
++  String get proactiveIntervalLabel => '每多少分钟检查一次规则（1-1440）';
++
++  @override
++  String proactiveIntervalSub(int n) {
++    return '每 $n 分钟检查一次规则';
++  }
++
    @override
    String get phoneTaskResultReady => '任务完成 · 查看结果';
  
-@@ -12905,13 +13433,13 @@ class L10nZh extends L10n {
+@@ -12905,13 +13444,13 @@ class L10nZh extends L10n {
    String get phoneBackgroundGuideSubtitle => '让确认卡和任务结果及时出现';
  
    @override
@@ -111087,7 +111424,7 @@ index c66b20de..e0fe97bf 100644
  
    @override
    String get phoneBackgroundGotIt => '知道了';
-@@ -12923,7 +13451,7 @@ class L10nZh extends L10n {
+@@ -12923,7 +13462,7 @@ class L10nZh extends L10n {
    String get phoneBackgroundNotificationBlocked => '请允许手机操控通知的弹出提醒';
  
    @override
@@ -111096,7 +111433,7 @@ index c66b20de..e0fe97bf 100644
  
    @override
    String get phonePrivilegedSui => 'Sui';
-@@ -12956,11 +13484,11 @@ class L10nZh extends L10n {
+@@ -12956,11 +13495,11 @@ class L10nZh extends L10n {
    String get phonePrivilegedSuggested => '建议';
  
    @override
@@ -111110,7 +111447,7 @@ index c66b20de..e0fe97bf 100644
  
    @override
    String phoneKeepTitle(String mode) {
-@@ -12975,13 +13503,13 @@ class L10nZh extends L10n {
+@@ -12975,13 +13514,13 @@ class L10nZh extends L10n {
    }
  
    @override
@@ -111127,7 +111464,7 @@ index c66b20de..e0fe97bf 100644
  
    @override
    String get phoneKeepRestoring => '正在重新连接';
-@@ -13098,6 +13626,51 @@ class L10nZh extends L10n {
+@@ -13098,6 +13637,51 @@ class L10nZh extends L10n {
    @override
    String get phoneSkillUnavailable => '当前无法处理技能草稿。请检查本机引擎状态后重试。';
  
@@ -111179,7 +111516,7 @@ index c66b20de..e0fe97bf 100644
    @override
    String get phoneModeTitle => '选择确认方式';
  
-@@ -13120,7 +13693,7 @@ class L10nZh extends L10n {
+@@ -13120,7 +13704,7 @@ class L10nZh extends L10n {
    String get phoneModeAutoNoteTitle => '这些仍由你来操作';
  
    @override
@@ -111188,7 +111525,7 @@ index c66b20de..e0fe97bf 100644
  
    @override
    String get phoneModeAutoUnlockNote => '如需让 AI 操作系统设置、密码等，可在 设置 › 手机操控 › 解除限制 中开启。';
-@@ -13138,7 +13711,7 @@ class L10nZh extends L10n {
+@@ -13138,7 +13722,7 @@ class L10nZh extends L10n {
    String get phoneYoursSecrets => '密码和验证码';
  
    @override
@@ -111197,7 +111534,7 @@ index c66b20de..e0fe97bf 100644
  
    @override
    String get phoneYoursDenyList => '应用名单里「不碰」的 App，默认含银行、支付类';
-@@ -13162,10 +13735,10 @@ class L10nZh extends L10n {
+@@ -13162,10 +13746,10 @@ class L10nZh extends L10n {
    String get phoneUnlockSecretsHint => '填写密码、验证码和支付密码';
  
    @override
@@ -111210,7 +111547,7 @@ index c66b20de..e0fe97bf 100644
  
    @override
    String get phoneUnlockBusy => '任务进行中，结束后才能开启';
-@@ -13198,7 +13771,7 @@ class L10nZh extends L10n {
+@@ -13198,7 +13782,7 @@ class L10nZh extends L10n {
    String get phoneUnlockConfirmSecretsTitle => '允许 AI 填写密码和验证码？';
  
    @override
@@ -111219,7 +111556,7 @@ index c66b20de..e0fe97bf 100644
  
    @override
    String get phoneUnlockCanTitle => '开启后，AI 可以';
-@@ -13240,10 +13813,10 @@ class L10nZh extends L10n {
+@@ -13240,10 +13824,10 @@ class L10nZh extends L10n {
    String get phoneUnlockSecretsRisk2 => '可能完成你并不想要的付款或转账';
  
    @override
@@ -111232,7 +111569,7 @@ index c66b20de..e0fe97bf 100644
  
    @override
    String get phoneUnlockOwnAppRisk1 => '恶意指令可能诱导 AI 批准它自己发起的操作，或关掉确认';
-@@ -13258,7 +13831,7 @@ class L10nZh extends L10n {
+@@ -13258,7 +13842,7 @@ class L10nZh extends L10n {
    String get phoneUnlockDisclaimer2 => 'AI 可能被网页、消息或文件中的内容误导。';
  
    @override
@@ -111241,7 +111578,7 @@ index c66b20de..e0fe97bf 100644
  
    @override
    String get phoneUnlockDisclaimer4 => '建议只在需要时临时开启，用完关闭。';
-@@ -13757,7 +14330,7 @@ class L10nZh extends L10n {
+@@ -13757,7 +14341,7 @@ class L10nZh extends L10n {
    String get pluginsFileWriteFailed => '没能写入文件';
  
    @override
@@ -111250,7 +111587,7 @@ index c66b20de..e0fe97bf 100644
  
    @override
    String get pluginsGistTokenInvalid => 'GitHub 令牌无效或没有 Gist 权限';
-@@ -14341,7 +14914,7 @@ class L10nZh extends L10n {
+@@ -14341,7 +14925,7 @@ class L10nZh extends L10n {
    String get pluginsNotifications => '通知';
  
    @override
@@ -111259,7 +111596,7 @@ index c66b20de..e0fe97bf 100644
  
    @override
    String get pluginsSystemNotificationsOff => '系统通知已关闭';
-@@ -14595,7 +15168,7 @@ class L10nZh extends L10n {
+@@ -14595,7 +15179,7 @@ class L10nZh extends L10n {
    String get pluginsShareOpenFailed => '没能打开这个分享码';
  
    @override
@@ -111268,7 +111605,7 @@ index c66b20de..e0fe97bf 100644
  
    @override
    String get pluginsShareSheetOpenFailed => '没能打开分享';
-@@ -14855,7 +15428,7 @@ class L10nZh extends L10n {
+@@ -14855,7 +15439,7 @@ class L10nZh extends L10n {
  
    @override
    String plugslotsIssueNeedsApp(String version) {
@@ -111277,7 +111614,7 @@ index c66b20de..e0fe97bf 100644
    }
  
    @override
-@@ -15338,7 +15911,7 @@ class L10nZh extends L10n {
+@@ -15338,7 +15922,7 @@ class L10nZh extends L10n {
    String get remoteErrHostNotOwned => '主机不在你的 DSH Remote 账号下';
  
    @override
@@ -111286,7 +111623,7 @@ index c66b20de..e0fe97bf 100644
  
    @override
    String get remoteErrVersionIncompatible => '主机上的 DSH 或远程插件需要更新';
-@@ -16772,7 +17345,7 @@ class L10nZh extends L10n {
+@@ -16772,7 +17356,7 @@ class L10nZh extends L10n {
    String get remotePairNeedsDeepSeek => '先登录 DeepSeek 账号';
  
    @override
@@ -111295,7 +111632,7 @@ index c66b20de..e0fe97bf 100644
  
    @override
    String get remotePairScanHint => '对准电脑上 Remote 插件显示的配对二维码';
-@@ -16866,7 +17439,7 @@ class L10nZh extends L10n {
+@@ -16866,7 +17450,7 @@ class L10nZh extends L10n {
  
    @override
    String remotePairOtherServerBody(String server) {
@@ -111304,7 +111641,7 @@ index c66b20de..e0fe97bf 100644
    }
  
    @override
-@@ -16876,7 +17449,7 @@ class L10nZh extends L10n {
+@@ -16876,7 +17460,7 @@ class L10nZh extends L10n {
    String get remotePairScanAgain => '重新扫码';
  
    @override
@@ -111313,7 +111650,7 @@ index c66b20de..e0fe97bf 100644
  
    @override
    String get remotePairErrOtherServer => '这个二维码来自另一个 Remote 服务器';
-@@ -16971,7 +17544,7 @@ class L10nZh extends L10n {
+@@ -16971,7 +17555,7 @@ class L10nZh extends L10n {
    String get riskPetOverlayTitle => '显示在其他应用上层？';
  
    @override
@@ -111322,7 +111659,7 @@ index c66b20de..e0fe97bf 100644
  
    @override
    String get riskPetOverlayAction => '去设置';
-@@ -16987,19 +17560,19 @@ class L10nZh extends L10n {
+@@ -16987,19 +17571,19 @@ class L10nZh extends L10n {
  
    @override
    String askAiAboutApp(String question) {
@@ -111346,7 +111683,7 @@ index c66b20de..e0fe97bf 100644
  
    @override
    String get askAiQuestionPhoneControl => '手机操控是怎么工作的？有什么风险？';
-@@ -18389,7 +18962,7 @@ class L10nZh extends L10n {
+@@ -18389,7 +18973,7 @@ class L10nZh extends L10n {
  
    @override
    String shellSkillInstallPrompt(String skill) {
@@ -111355,7 +111692,7 @@ index c66b20de..e0fe97bf 100644
    }
  
    @override
-@@ -18775,6 +19348,9 @@ class L10nZh extends L10n {
+@@ -18775,6 +19359,9 @@ class L10nZh extends L10n {
    @override
    String get speechCallSettings => '通话设置';
  
@@ -111365,7 +111702,7 @@ index c66b20de..e0fe97bf 100644
    @override
    String get speechCallPause => '停顿多久算说完';
  
-@@ -18838,17 +19414,71 @@ class L10nZh extends L10n {
+@@ -18838,17 +19425,71 @@ class L10nZh extends L10n {
    @override
    String get speechCallVisualGlass => '光球';
  
@@ -111440,7 +111777,7 @@ index c66b20de..e0fe97bf 100644
      );
      return '$_temp0';
    }
-@@ -18869,7 +19499,7 @@ class L10nZh extends L10n {
+@@ -18869,7 +19510,7 @@ class L10nZh extends L10n {
    String get starPromptLater => '下次再说';
  
    @override
@@ -111449,7 +111786,7 @@ index c66b20de..e0fe97bf 100644
  
    @override
    String get hubStartPage => '起始页';
-@@ -18898,7 +19528,7 @@ class L10nZh extends L10n {
+@@ -18898,7 +19539,7 @@ class L10nZh extends L10n {
    String get phoneStartupPortNotReady => '已收到启动标记，但本机服务端口尚未就绪，请查看日志';
  
    @override
@@ -111458,7 +111795,7 @@ index c66b20de..e0fe97bf 100644
  
    @override
    String get stateStoragePermission => '没有存储权限，存不进「下载」';
-@@ -20159,7 +20789,7 @@ class L10nZh extends L10n {
+@@ -20159,7 +20800,7 @@ class L10nZh extends L10n {
    String get systemActionsWaitingEngine => '已开启，等本机引擎启动';
  
    @override
@@ -111467,7 +111804,7 @@ index c66b20de..e0fe97bf 100644
  
    @override
    String get systemActionsConnecting => '正在连接';
-@@ -20180,10 +20810,10 @@ class L10nZh extends L10n {
+@@ -20180,10 +20821,10 @@ class L10nZh extends L10n {
    String get systemActionsRemoteHint => '系统操作只在本机引擎的对话里有效';
  
    @override
@@ -111480,7 +111817,7 @@ index c66b20de..e0fe97bf 100644
  
    @override
    String get systemActionsCanTitle => '能做的';
-@@ -20285,7 +20915,7 @@ class L10nZh extends L10n {
+@@ -20285,7 +20926,7 @@ class L10nZh extends L10n {
    String get systemActionsDisclosureWhenTitle => '什么时候做';
  
    @override
@@ -111489,7 +111826,7 @@ index c66b20de..e0fe97bf 100644
  
    @override
    String get systemActionsDisclosureWhoTitle => '发给谁';
-@@ -20309,7 +20939,7 @@ class L10nZh extends L10n {
+@@ -20309,7 +20950,7 @@ class L10nZh extends L10n {
    String get systemActionsHandoffTitle => '轮到你来操作';
  
    @override
@@ -111498,7 +111835,7 @@ index c66b20de..e0fe97bf 100644
  
    @override
    String get systemActionsHandoffFailed => '这次没算上，提示如果还在可以再点一次';
-@@ -20336,7 +20966,7 @@ class L10nZh extends L10n {
+@@ -20336,7 +20977,7 @@ class L10nZh extends L10n {
    String get systemActionsResultUnsupported => '鸿蒙版不支持这个动作，没有执行。';
  
    @override
@@ -111507,7 +111844,7 @@ index c66b20de..e0fe97bf 100644
  
    @override
    String get systemActionsResultUnavailable => '系统操作没开或暂时连不上，没有执行。到「设置 → 系统操作」看看。';
-@@ -21440,7 +22070,7 @@ class L10nZh extends L10n {
+@@ -21440,7 +22081,7 @@ class L10nZh extends L10n {
    }
  
    @override
@@ -111516,7 +111853,7 @@ index c66b20de..e0fe97bf 100644
  
    @override
    String get tavernStorybookContents => '目录';
-@@ -24200,7 +24830,7 @@ class L10nZh extends L10n {
+@@ -24200,7 +24841,7 @@ class L10nZh extends L10n {
    String get updateSettingsOpenFailed => '没能打开系统设置';
  
    @override
@@ -111525,7 +111862,7 @@ index c66b20de..e0fe97bf 100644
  
    @override
    String get updateInstallCancelled => '已取消安装';
-@@ -24218,7 +24848,7 @@ class L10nZh extends L10n {
+@@ -24218,7 +24859,7 @@ class L10nZh extends L10n {
    String get updateSignatureMismatch => '签名不一致，不能直接覆盖';
  
    @override
@@ -111534,7 +111871,7 @@ index c66b20de..e0fe97bf 100644
  
    @override
    String get updateWrongPackage => '不是 DSH 的安装包';
-@@ -24281,7 +24911,7 @@ class L10nZh extends L10n {
+@@ -24281,7 +24922,7 @@ class L10nZh extends L10n {
    String get updateNoReleaseNotes => '这个版本没有写更新说明。';
  
    @override
@@ -111543,7 +111880,7 @@ index c66b20de..e0fe97bf 100644
  
    @override
    String get updateNoCompatiblePackage => '没有适合本机的安装包';
-@@ -24316,7 +24946,7 @@ class L10nZh extends L10n {
+@@ -24316,7 +24957,7 @@ class L10nZh extends L10n {
    String get updateReadyToInstall => '校验通过，可以安装了。';
  
    @override
@@ -111552,7 +111889,7 @@ index c66b20de..e0fe97bf 100644
  
    @override
    String get updateAllowInstallMessage => '在系统设置里打开「安装未知应用」，回来后自动继续。';
-@@ -24389,7 +25019,7 @@ class L10nZh extends L10n {
+@@ -24389,7 +25030,7 @@ class L10nZh extends L10n {
    String get usageStatsTitle => '发送匿名使用统计';
  
    @override
@@ -111561,7 +111898,7 @@ index c66b20de..e0fe97bf 100644
  
    @override
    String get usageStatsFooter =>
-@@ -24399,7 +25029,7 @@ class L10nZh extends L10n {
+@@ -24399,7 +25040,7 @@ class L10nZh extends L10n {
    String get usageNoticeBody => '不含对话和个人信息，可随时关闭';
  
    @override
@@ -111570,7 +111907,7 @@ index c66b20de..e0fe97bf 100644
  
    @override
    String get usageUpgradeLearn => '了解';
-@@ -25081,7 +25711,7 @@ class L10nZh extends L10n {
+@@ -25081,7 +25722,7 @@ class L10nZh extends L10n {
    String get viewTipKeyboard => '接了键盘：Ctrl+Enter 发送，连按两次 Esc 停止';
  
    @override
@@ -111579,7 +111916,7 @@ index c66b20de..e0fe97bf 100644
  
    @override
    String get viewTipShareSelect => '分享对话时长按再滑动，可以一次选中多条消息';
-@@ -25318,7 +25948,7 @@ class L10nZh extends L10n {
+@@ -25318,7 +25959,7 @@ class L10nZh extends L10n {
  
    @override
    String viewContinueHeader(String value) {
@@ -111588,7 +111925,7 @@ index c66b20de..e0fe97bf 100644
    }
  
    @override
-@@ -25372,7 +26002,7 @@ class L10nZh extends L10n {
+@@ -25372,7 +26013,7 @@ class L10nZh extends L10n {
  
    @override
    String viewShareLinkText(String first, String second) {
@@ -111597,7 +111934,7 @@ index c66b20de..e0fe97bf 100644
    }
  
    @override
-@@ -25389,7 +26019,7 @@ class L10nZh extends L10n {
+@@ -25389,7 +26030,7 @@ class L10nZh extends L10n {
    }
  
    @override
@@ -111606,7 +111943,7 @@ index c66b20de..e0fe97bf 100644
  
    @override
    String get viewShareWebHint => '任何浏览器都能打开，不用联网';
-@@ -26148,6 +26778,9 @@ class L10nZh extends L10n {
+@@ -26148,6 +26789,9 @@ class L10nZh extends L10n {
    @override
    String get wallpaperDim => '压暗';
  
@@ -111616,7 +111953,7 @@ index c66b20de..e0fe97bf 100644
    @override
    String get wallpaperReplace => '更换图片';
  
-@@ -26414,7 +27047,7 @@ class L10nZh extends L10n {
+@@ -26414,7 +27058,7 @@ class L10nZh extends L10n {
  
    @override
    String workshopMinApp(String version) {
@@ -112176,7 +112513,7 @@ index b1175369..0c5f743b 100644
 +  "phonePrivilegedRootRiskBody": "root 管理器（Magisk、KernelSU 或 APatch）会弹窗问你。允许后，空空 以 root 运行自己的后台服务；只有打开「保持 root 通道」，断开或重启后才会自己再去申请。"
  }
 diff --git a/app/lib/l10n/parts/phone_en.arb b/app/lib/l10n/parts/phone_en.arb
-index 47d0cdf6..3978c329 100644
+index 47d0cdf6..c4112b91 100644
 --- a/app/lib/l10n/parts/phone_en.arb
 +++ b/app/lib/l10n/parts/phone_en.arb
 @@ -253,6 +253,9 @@
@@ -112189,7 +112526,7 @@ index 47d0cdf6..3978c329 100644
    "phoneControlRules": "Rules",
    "phoneControlRecentActions": "Recent actions",
    "phoneControlRecentActionsHint": "Every step is logged, without screen contents",
-@@ -690,5 +693,134 @@
+@@ -690,5 +693,144 @@
    "phoneIosServiceHint": "Starts on demand after approval and stops when the task ends, closing the system’s “Automation Running” indicator.",
    "phoneIosSetupHint": "Keep LocalDevVPN connected. On first use, allow control for 30 minutes.",
    "phoneIosReturnHint": "Return to this conversation when the task finishes, then stop the phone-control service.",
@@ -112291,7 +112628,7 @@ index 47d0cdf6..3978c329 100644
 +  "teachAiSendFailed": "Not sent; go back to the chat and retry",
 +  "teachNoSession": "No open chat; open one first",
 +  "proactiveTitle": "Proactive rules",
-+  "proactiveNote": "Kongkong's rule book: instructions (tasks) you write yourself. It checks them on a timer and acts on its own — reminders, calls, checking in. It does what it has the ability to do.",
++  "proactiveNote": "Kongkong's rule book: instructions you write in plain words. It checks on a timer and acts on its own once it understands them.",
 +  "proactiveAddTitle": "Add rule",
 +  "proactiveEmpty": "No rules yet; write one",
 +  "proactiveConditionScreen": "Phone used over {n} minutes",
@@ -112301,7 +112638,7 @@ index 47d0cdf6..3978c329 100644
 +  "proactiveActionNotify": "Send notification",
 +  "proactiveActionVoiceCall": "Start a voice call",
 +  "proactiveTextLabel": "What to say",
-+  "proactiveTextHint": "e.g. Give your eyes a rest",
++  "proactiveTextHint": "Write the whole rule in plain words, e.g. \"If I haven't talked to you for a day, call me\"; \"If I use Douyin over an hour, remind me to rest\".",
 +  "proactiveUsageAccessTitle": "Enable usage access",
 +  "proactiveUsageAccessSub": "Screen-time detection needs this permission; enable it in system settings and come back",
 +  "@proactiveConditionScreen": {
@@ -112319,6 +112656,16 @@ index 47d0cdf6..3978c329 100644
 +    }
 +  },
 +  "@proactiveConditionDaily": {
++    "placeholders": {
++      "n": {
++        "type": "int"
++      }
++    }
++  },
++  "proactiveIntervalTitle": "Check interval",
++  "proactiveIntervalLabel": "Check rules every N minutes (1-1440)",
++  "proactiveIntervalSub": "Checks rules every {n} minutes",
++  "@proactiveIntervalSub": {
 +    "placeholders": {
 +      "n": {
 +        "type": "int"
@@ -112397,7 +112744,7 @@ index 40aa7258..9d400d53 100644
 +  "phoneSkillSaveFailed": "保存失败，请重试"
  }
 diff --git a/app/lib/l10n/parts/phone_zh.arb b/app/lib/l10n/parts/phone_zh.arb
-index 4d61a2d3..fb29f970 100644
+index 4d61a2d3..6408a4fc 100644
 --- a/app/lib/l10n/parts/phone_zh.arb
 +++ b/app/lib/l10n/parts/phone_zh.arb
 @@ -131,7 +131,7 @@
@@ -112549,7 +112896,7 @@ index 4d61a2d3..fb29f970 100644
    "@phoneTaskWaiting": {
      "placeholders": {
        "taskId": {
-@@ -919,5 +922,134 @@
+@@ -919,5 +922,144 @@
    "phoneIosServiceHint": "授权后按需启动。任务结束会停止服务，系统的“Automation Running”提示也会结束。",
    "phoneIosSetupHint": "保持 LocalDevVPN 已连接，首次使用时允许 30 分钟操控。",
    "phoneIosReturnHint": "任务完成后回到当前对话，并停止手机操控服务。",
@@ -112651,7 +112998,7 @@ index 4d61a2d3..fb29f970 100644
 +  "teachAiSendFailed": "没发出去，请回到对话再试",
 +  "teachNoSession": "当前没有打开的对话，先开一个对话再试",
 +  "proactiveTitle": "主动规则",
-+  "proactiveNote": "这是空空的规则库：你写的一条条指令（任务）。它定时检查，按你的指令主动行动——比如提醒、打电话、关心你。前提是它具备相应的能力。",
++  "proactiveNote": "这是空空的规则库：你用大白话写的一条条指令。它定时检查，读懂了就自己动手——提醒、打电话、关心你。",
 +  "proactiveAddTitle": "添加规则",
 +  "proactiveEmpty": "还没有规则，加一条指令试试",
 +  "proactiveConditionScreen": "玩手机超过 {n} 分钟",
@@ -112661,7 +113008,7 @@ index 4d61a2d3..fb29f970 100644
 +  "proactiveActionNotify": "发通知",
 +  "proactiveActionVoiceCall": "打语音通话",
 +  "proactiveTextLabel": "对你说的话",
-+  "proactiveTextHint": "比如：歇会儿眼睛吧",
++  "proactiveTextHint": "用大白话写整条规则，比如：如果一天没理我，就给我打个语音问问；刷抖音超过一小时就提醒我休息。",
 +  "proactiveUsageAccessTitle": "打开「使用情况访问」",
 +  "proactiveUsageAccessSub": "检测玩手机时长需要这个权限，去系统设置开启后回来刷新",
 +  "@proactiveConditionScreen": {
@@ -112679,6 +113026,16 @@ index 4d61a2d3..fb29f970 100644
 +    }
 +  },
 +  "@proactiveConditionDaily": {
++    "placeholders": {
++      "n": {
++        "type": "int"
++      }
++    }
++  },
++  "proactiveIntervalTitle": "检查频率",
++  "proactiveIntervalLabel": "每多少分钟检查一次规则（1-1440）",
++  "proactiveIntervalSub": "每 {n} 分钟检查一次规则",
++  "@proactiveIntervalSub": {
 +    "placeholders": {
 +      "n": {
 +        "type": "int"
@@ -114439,10 +114796,10 @@ index f7b0da28..2181623c 100644
  
 diff --git a/app/lib/phone/proactive_channel.dart b/app/lib/phone/proactive_channel.dart
 new file mode 100644
-index 00000000..59b0a9be
+index 00000000..9bf81c16
 --- /dev/null
 +++ b/app/lib/phone/proactive_channel.dart
-@@ -0,0 +1,95 @@
+@@ -0,0 +1,129 @@
 +// 主动陪伴的通道封装：规则列表/添加/删除 + 使用情况访问状态。
 +
 +import 'package:flutter/services.dart';
@@ -114537,13 +114894,47 @@ index 00000000..59b0a9be
 +  Future<void> removeRule(String id) => _invoke('proactiveRemoveRule', <String, Object?>{'id': id});
 +
 +  Future<void> touchInteraction() => _invoke('touchInteraction');
++
++  static DateTime? _lastCheck;
++
++  /// 按频率判这分钟是否该检查（上次检查距现在超过频率即到期）。
++  Future<bool> nextCheckDue(int minutes) async {
++    final last = _lastCheck;
++    final now = DateTime.now();
++    if (last == null || now.difference(last) >= Duration(minutes: minutes)) {
++      _lastCheck = now;
++      return true;
++    }
++    return false;
++  }
++
++  Future<int> intervalMinutes() async {
++    final status = await this.status();
++    return (status['intervalMinutes'] as num?)?.toInt() ?? 10;
++  }
++
++  Future<Map<Object?, Object?>> setIntervalMinutes(int minutes) async {
++    final value = await _invoke('proactiveSetInterval', <String, Object?>{'minutes': minutes});
++    return value is Map ? value.cast<Object?, Object?>() : <Object?, Object?>{};
++  }
++
++  /// 大白话规则：整段文本就是规则。
++  Future<Map<Object?, Object?>> addFreeRule(String text) async {
++    final value = await _invoke('proactiveAddFreeRule', <String, Object?>{'text': text});
++    return value is Map ? value.cast<Object?, Object?>() : <Object?, Object?>{};
++  }
++
++  Future<Map<Object?, Object?>> updateFreeRule(String id, String text) async {
++    final value = await _invoke('proactiveUpdateFreeRule', <String, Object?>{'id': id, 'text': text});
++    return value is Map ? value.cast<Object?, Object?>() : <Object?, Object?>{};
++  }
 +}
 diff --git a/app/lib/phone/proactive_scheduler.dart b/app/lib/phone/proactive_scheduler.dart
 new file mode 100644
-index 00000000..213d9ea1
+index 00000000..994495bc
 --- /dev/null
 +++ b/app/lib/phone/proactive_scheduler.dart
-@@ -0,0 +1,53 @@
+@@ -0,0 +1,71 @@
 +// 主动规则的定时评估循环：每隔一段时间把「规则清单 + 当前状况」发给空空（模型），
 +// 由它自己逐条判断该不该行动、并调用工具执行。判断与动作完全交给模型，
 +// 原生只提供事实数据（时间、屏幕使用、最后互动）与工具。
@@ -114561,16 +114952,31 @@ index 00000000..213d9ea1
 +    NotifierProvider<ProactiveScheduler, bool>(ProactiveScheduler.new);
 +
 +class ProactiveScheduler extends Notifier<bool> {
-+  static const interval = Duration(minutes: 10);
 +  static final _channel = ProactiveChannel();
 +
 +  Timer? _timer;
 +
 +  @override
 +  bool build() {
-+    // 只要被观察就确保在跑；不随观察结束而停（进程常驻）。
-+    _timer ??= Timer.periodic(interval, (_) => unawaited(_evaluate()));
++    // 只要被观察就确保在跑；每次 tick 都按机主填的频率安排下一次（改数字立即生效）。
++    _scheduleNext();
 +    return true;
++  }
++
++  void _scheduleNext() {
++    _timer?.cancel();
++    _timer = Timer(Duration(minutes: 1), () async {
++      final minutes = await _channel.intervalMinutes();
++      final due = await _channel.nextCheckDue(minutes);
++      if (due) await _evaluate();
++      _scheduleNext();
++    });
++  }
++
++  /// 设置变更后立刻评估一次（立即生效，不等心跳）。
++  Future<void> evaluateNow() async {
++    await _evaluate();
++    _scheduleNext();
 +  }
 +
 +  Future<void> _evaluate() async {
@@ -114585,6 +114991,9 @@ index 00000000..213d9ea1
 +      '现在时间：${now.hour} 点 ${now.minute} 分（周${now.weekday}）。',
 +      '机主最近互动：${status['idleHours'] ?? '未知'} 小时前。',
 +      '屏幕近 3 小时使用：${status['screenMinutes'] ?? '未知'} 分钟。',
++      (status['unrepliedCalls'] as List?)?.isNotEmpty == true
++          ? '最近的语音来电机主没有回应，规则文案是：${(status['unrepliedCalls'] as List).join('；')}。是否重拨、多久后重拨，按规则文案自己判断（可用 schedule_action 安排）。'
++          : '最近没有未回应的来电。',
 +      '你的主动规则清单：',
 +      for (var i = 0; i < rules.length; i++)
 +        '${i + 1}. ${rules[i].text}',
@@ -115720,6 +116129,28 @@ index 4365d141..99e3efe1 100644
  String guideAttachmentName(String page) => '$guideSkillName-${page.replaceFirst(RegExp(r'^\d+-'), '')}.md';
  
  /// The guide page a question of the person's own (typed into settings
+diff --git a/app/lib/state/chat_state.dart b/app/lib/state/chat_state.dart
+index 2d84ef69..0c8dd4f0 100644
+--- a/app/lib/state/chat_state.dart
++++ b/app/lib/state/chat_state.dart
+@@ -16,6 +16,7 @@ import 'models_state.dart';
+ import 'notify_state.dart' show appForegroundProvider;
+ import 'run_pulse.dart';
+ import 'sessions_state.dart';
++import '../phone/proactive_channel.dart';
+ 
+ /// How a message sent while a turn is running reaches the agent.
+ enum SendMode {
+@@ -1326,6 +1327,9 @@ class ChatController extends Notifier<ChatState> {
+     final body = verbatim ? text : trimmed;
+     if (!_canControl && (mode == SendMode.interrupt || !await waitForSync())) return false;
+     if (!ref.mounted || !identical(client, _client) || !_canControl) return false;
++    if (!verbatim && mode == SendMode.now) {
++      unawaited(ProactiveChannel().touchInteraction());
++    }
+     final operation = _ChatOperation(ref, client, _syncScope);
+     final content = _contentKey(body, attachments);
+     final retrying = _unsettled?.content == content;
 diff --git a/app/lib/state/cloud_dial_settings.dart b/app/lib/state/cloud_dial_settings.dart
 new file mode 100644
 index 00000000..3565cb0c
@@ -116860,10 +117291,10 @@ index 35ac9f48..221c4374 100644
                    // A logo, not a line of reading: the same size at every text scale.
 diff --git a/app/lib/ui/phone/ai_call_settings_page.dart b/app/lib/ui/phone/ai_call_settings_page.dart
 new file mode 100644
-index 00000000..fcf39790
+index 00000000..112e840a
 --- /dev/null
 +++ b/app/lib/ui/phone/ai_call_settings_page.dart
-@@ -0,0 +1,504 @@
+@@ -0,0 +1,505 @@
 +// 设置 › 手机操控 › AI 电话:运营商通话的 AI 接管配置页。
 +// 字段对齐 mika 的 CallConfig;当前只做配置与存储,拨号/实时语音链路后续接入。
 +
@@ -116876,6 +117307,7 @@ index 00000000..fcf39790
 +import '../../phone/ai_call_channel.dart';
 +import '../../phone/ai_call_runtime.dart';
 +import '../../state/ai_call_settings.dart';
++
 +import '../common/list_page_row.dart';
 +import '../shell/page_frame.dart';
 +import '../theme/app_icons.dart';
@@ -119617,10 +120049,10 @@ index 00000000..d492a5bd
 +}
 diff --git a/app/lib/ui/phone/proactive_page.dart b/app/lib/ui/phone/proactive_page.dart
 new file mode 100644
-index 00000000..1a3096b3
+index 00000000..a7e2393a
 --- /dev/null
 +++ b/app/lib/ui/phone/proactive_page.dart
-@@ -0,0 +1,234 @@
+@@ -0,0 +1,223 @@
 +// 主动陪伴设置页：规则列表 + 手动添加规则（条件 + 动作 + 文案）+ 使用情况访问引导。
 +
 +import 'dart:async';
@@ -119630,6 +120062,7 @@ index 00000000..1a3096b3
 +
 +import '../../l10n/l10n.dart';
 +import '../../phone/proactive_channel.dart';
++import '../../phone/proactive_scheduler.dart';
 +import '../common/list_page_row.dart';
 +import '../shell/page_frame.dart';
 +import '../theme/app_icons.dart';
@@ -119645,11 +120078,17 @@ index 00000000..1a3096b3
 +  final channel = ProactiveChannel();
 +  List<ProactiveRule> _rules = const [];
 +  bool _usageAccess = false;
++  int? _intervalMinutes;
 +
 +  @override
 +  void initState() {
 +    super.initState();
 +    unawaited(_refresh());
++  }
++
++  /// 规则/频率变更后立即生效：马上触发一次评估。
++  void _applyNow() {
++    ref.read(proactiveSchedulerProvider.notifier).evaluateNow();
 +  }
 +
 +  Future<void> _refresh() async {
@@ -119659,124 +120098,109 @@ index 00000000..1a3096b3
 +    setState(() {
 +      _rules = rules;
 +      _usageAccess = status['usageAccess'] == true;
++      _intervalMinutes = (status['intervalMinutes'] as num?)?.toInt() ?? 10;
 +    });
 +  }
 +
-+  String _conditionLabel(L10n l10n, String condition, int param) => switch (condition) {
-+    'screenMinutes' => l10n.proactiveConditionScreen(param),
-+    'idleHours' => l10n.proactiveConditionIdle(param),
-+    'dailyAt' => l10n.proactiveConditionDaily(param),
-+    _ => condition,
-+  };
-+
-+  String _actionLabel(L10n l10n, String action) => switch (action) {
-+    'popup' => l10n.proactiveActionPopup,
-+    'voiceCall' => l10n.proactiveActionVoiceCall,
-+    _ => l10n.proactiveActionNotify,
-+  };
-+
-+  Future<({String condition, int param, String action, String text})?> _ruleDialog({
-+    ProactiveRule? existing,
-+  }) async {
++  Future<void> _editInterval() async {
 +    final l10n = context.l10n;
-+    var condition = existing?.condition ?? 'screenMinutes';
-+    var action = existing?.action ?? 'popup';
-+    final param = TextEditingController(text: '${existing?.param ?? 30}');
-+    final text = TextEditingController(text: existing?.text ?? '');
++    final controller = TextEditingController(text: '${_intervalMinutes ?? 10}');
 +    final ok = await showDialog<bool>(
 +      context: context,
-+      builder: (context) => StatefulBuilder(
-+        builder: (context, setState) => AlertDialog(
-+          title: Text(l10n.proactiveAddTitle),
-+          content: SingleChildScrollView(
-+            child: Column(
-+              mainAxisSize: MainAxisSize.min,
-+              crossAxisAlignment: CrossAxisAlignment.start,
-+              children: [
-+                DropdownButtonFormField<String>(
-+                  initialValue: condition,
-+                  decoration: const InputDecoration(labelText: '条件'),
-+                  items: [
-+                    DropdownMenuItem(value: 'screenMinutes', child: Text(l10n.proactiveConditionScreen(30))),
-+                    DropdownMenuItem(value: 'idleHours', child: Text(l10n.proactiveConditionIdle(24))),
-+                    DropdownMenuItem(value: 'dailyAt', child: Text(l10n.proactiveConditionDaily(2100))),
-+                  ],
-+                  onChanged: (v) => setState(() => condition = v ?? 'screenMinutes'),
-+                ),
-+                const SizedBox(height: 8),
-+                TextField(
-+                  controller: param,
-+                  keyboardType: TextInputType.number,
-+                  decoration: InputDecoration(
-+                    labelText: condition == 'dailyAt' ? '时间（如 2100 = 晚上9点）' : '数值（分钟/小时）',
-+                    border: const OutlineInputBorder(),
-+                  ),
-+                ),
-+                const SizedBox(height: 8),
-+                DropdownButtonFormField<String>(
-+                  initialValue: action,
-+                  decoration: const InputDecoration(labelText: '动作'),
-+                  items: [
-+                    DropdownMenuItem(value: 'popup', child: Text(l10n.proactiveActionPopup)),
-+                    DropdownMenuItem(value: 'notify', child: Text(l10n.proactiveActionNotify)),
-+                    DropdownMenuItem(value: 'voiceCall', child: Text(l10n.proactiveActionVoiceCall)),
-+                  ],
-+                  onChanged: (v) => setState(() => action = v ?? 'notify'),
-+                ),
-+                const SizedBox(height: 8),
-+                TextField(
-+                  controller: text,
-+                  maxLines: 3,
-+                  decoration: InputDecoration(
-+                    labelText: l10n.proactiveTextLabel,
-+                    hintText: l10n.proactiveTextHint,
-+                    border: const OutlineInputBorder(),
-+                  ),
-+                ),
-+              ],
-+            ),
++      builder: (context) => AlertDialog(
++        title: Text(l10n.proactiveIntervalTitle),
++        content: TextField(
++          controller: controller,
++          keyboardType: TextInputType.number,
++          decoration: InputDecoration(
++            labelText: l10n.proactiveIntervalLabel,
++            border: const OutlineInputBorder(),
 +          ),
-+          actions: [
-+            TextButton(
-+              onPressed: () => Navigator.pop(context, false),
-+              child: Text(l10n.aiCallCancel),
-+            ),
-+            TextButton(
-+              onPressed: () => Navigator.pop(context, true),
-+              child: Text(l10n.aiCallSave),
-+            ),
-+          ],
 +        ),
++        actions: [
++          TextButton(
++            onPressed: () => Navigator.pop(context, false),
++            child: Text(l10n.aiCallCancel),
++          ),
++          TextButton(
++            onPressed: () => Navigator.pop(context, true),
++            child: Text(l10n.aiCallSave),
++          ),
++        ],
 +      ),
 +    );
-+    if (ok != true || !mounted) return null;
-+    final p = int.tryParse(param.text.trim()) ?? 0;
-+    if (p <= 0 || text.text.trim().isEmpty) return null;
-+    return (condition: condition, param: p, action: action, text: text.text.trim());
++    if (ok != true || !mounted) return;
++    final minutes = int.tryParse(controller.text.trim());
++    if (minutes == null || minutes < 1 || minutes > 1440) return;
++    await channel.setIntervalMinutes(minutes);
++    _applyNow();
++    await _refresh();
 +  }
 +
 +  Future<void> _add() async {
-+    final result = await _ruleDialog();
-+    if (result == null) return;
-+    await channel.addRule(
-+      condition: result.condition,
-+      param: result.param,
-+      action: result.action,
-+      text: result.text,
++    final l10n = context.l10n;
++    final controller = TextEditingController();
++    final ok = await showDialog<bool>(
++      context: context,
++      builder: (context) => AlertDialog(
++        title: Text(l10n.proactiveAddTitle),
++        content: TextField(
++          controller: controller,
++          maxLines: 5,
++          decoration: InputDecoration(
++            hintText: l10n.proactiveTextHint,
++            border: const OutlineInputBorder(),
++          ),
++        ),
++        actions: [
++          TextButton(
++            onPressed: () => Navigator.pop(context, false),
++            child: Text(l10n.aiCallCancel),
++          ),
++          TextButton(
++            onPressed: () => Navigator.pop(context, true),
++            child: Text(l10n.aiCallSave),
++          ),
++        ],
++      ),
 +    );
++    if (ok != true || !mounted) return;
++    final text = controller.text.trim();
++    if (text.isEmpty) return;
++    await channel.addFreeRule(text);
++    _applyNow();
 +    await _refresh();
 +  }
 +
 +  Future<void> _edit(ProactiveRule rule) async {
-+    final result = await _ruleDialog(existing: rule);
-+    if (result == null) return;
-+    await channel.updateRule(
-+      id: rule.id,
-+      condition: result.condition,
-+      param: result.param,
-+      action: result.action,
-+      text: result.text,
++    final l10n = context.l10n;
++    final controller = TextEditingController(text: rule.text);
++    final ok = await showDialog<bool>(
++      context: context,
++      builder: (context) => AlertDialog(
++        title: Text(l10n.memoryEditTitle),
++        content: TextField(
++          controller: controller,
++          maxLines: 5,
++          decoration: const InputDecoration(border: OutlineInputBorder()),
++        ),
++        actions: [
++          TextButton(
++            onPressed: () => Navigator.pop(context, false),
++            child: Text(l10n.aiCallCancel),
++          ),
++          TextButton(
++            onPressed: () => Navigator.pop(context, true),
++            child: Text(l10n.aiCallSave),
++          ),
++        ],
++      ),
 +    );
++    if (ok != true || !mounted) return;
++    final text = controller.text.trim();
++    if (text.isEmpty) return;
++    await channel.updateFreeRule(rule.id, text);
++    _applyNow();
 +    await _refresh();
 +  }
 +
@@ -119805,6 +120229,12 @@ index 00000000..1a3096b3
 +        ListPageCard(
 +          children: [
 +            ListPageRow(
++              icon: AppIcons.time,
++              title: l10n.proactiveIntervalTitle,
++              subtitle: l10n.proactiveIntervalSub(_intervalMinutes ?? 10),
++              onTap: _editInterval,
++            ),
++            ListPageRow(
 +              icon: AppIcons.add,
 +              title: l10n.proactiveAddTitle,
 +              onTap: _add,
@@ -119825,17 +120255,7 @@ index 00000000..1a3096b3
 +                        onTap: () => _edit(rule),
 +                        child: Padding(
 +                          padding: const EdgeInsets.symmetric(vertical: 8),
-+                          child: Column(
-+                            crossAxisAlignment: CrossAxisAlignment.start,
-+                            children: [
-+                              Text(
-+                                _conditionLabel(l10n, rule.condition, rule.param),
-+                                style: Theme.of(context).textTheme.bodySmall,
-+                              ),
-+                              Text('${_actionLabel(l10n, rule.action)}：${rule.text}',
-+                                  maxLines: 2, overflow: TextOverflow.ellipsis),
-+                            ],
-+                          ),
++                          child: Text(rule.text, maxLines: 3, overflow: TextOverflow.ellipsis),
 +                        ),
 +                      ),
 +                    ),
@@ -119843,6 +120263,7 @@ index 00000000..1a3096b3
 +                      icon: const Icon(Icons.delete_outline),
 +                      onPressed: () async {
 +                        await channel.removeRule(rule.id);
++                        _applyNow();
 +                        await _refresh();
 +                      },
 +                    ),
