@@ -1,10 +1,10 @@
 From: dsh <dsh@local>
-Date: Fri, 27 Nov 2026 22:30:06 +0800
-Subject: [PATCH] 4qv/4qw/4qx 工具说明设置页可编辑+技能手动新建编辑(自动frontmatter)+open说明重开授权
+Date: Sat, 28 Nov 2026 10:13:13 +0800
+Subject: [PATCH] 改包名 io.github.ccch1mneyyy.kongkong(自己的包)+工具说明/技能开放编辑+open说明+四刀
 
  dsh-go-wake.patch                                  | 2065 +++++++++++++
  tooling/build-wake-apk.sh                          |   68 +
- 251 files changed, 20162 insertions(+), 1066 deletions(-)
+ 274 files changed, 20212 insertions(+), 1114 deletions(-)
 
 diff --git a/.gitattributes b/.gitattributes
 index 52e3e08a..3e877c7e 100644
@@ -215,7 +215,7 @@ index 00000000..018dd3f6
 +            echo 'first (its local data goes; back it up).'
 +          } >> "$GITHUB_STEP_SUMMARY"
 diff --git a/app/android/app/build.gradle.kts b/app/android/app/build.gradle.kts
-index f2d6b7e7..3d80c598 100644
+index f2d6b7e7..640fafa4 100644
 --- a/app/android/app/build.gradle.kts
 +++ b/app/android/app/build.gradle.kts
 @@ -35,6 +35,10 @@ fun buildMinuteVersionCode(): Int {
@@ -234,7 +234,7 @@ index f2d6b7e7..3d80c598 100644
  
      defaultConfig {
 -        applicationId = "io.github.ccch1mneyyy.dsh_app"
-+        applicationId = "io.github.ccch1mneyyy.dsh_app.private"
++        applicationId = "io.github.ccch1mneyyy.kongkong"
          // java.nio.file (symlinks while unpacking the rootfs) needs API 26.
          minSdk = 26
          // Target 28 like Termux, so the API 29+ exec restriction on app-private
@@ -249,7 +249,7 @@ index f2d6b7e7..3d80c598 100644
      }
  
 diff --git a/app/android/app/src/main/AndroidManifest.xml b/app/android/app/src/main/AndroidManifest.xml
-index 1473ba24..f5f8ba0f 100644
+index 1473ba24..6d61d1c3 100644
 --- a/app/android/app/src/main/AndroidManifest.xml
 +++ b/app/android/app/src/main/AndroidManifest.xml
 @@ -6,6 +6,8 @@
@@ -295,6 +295,15 @@ index 1473ba24..f5f8ba0f 100644
          <!-- Keeps the floating pet's process up when only remote hosts are used (pet/PetOverlayService.kt). -->
          <service
              android:name=".pet.PetOverlayService"
+@@ -294,7 +314,7 @@
+             android:name=".phone.background.AdbPairingNotification$Receiver"
+             android:exported="false">
+             <intent-filter>
+-                <action android:name="io.github.ccch1mneyyy.dsh_app.PHONE_ADB_PAIR_CODE" />
++                <action android:name="io.github.ccch1mneyyy.kongkong.PHONE_ADB_PAIR_CODE" />
+             </intent-filter>
+         </receiver>
+ 
 @@ -327,6 +347,14 @@
          </receiver>
          <service android:name=".phone.background.PrivilegedKeepJob" android:permission="android.permission.BIND_JOB_SERVICE" android:exported="false" />
@@ -324,14 +333,14 @@ index 1473ba24..f5f8ba0f 100644
 +            <!-- intent-filter 让 `am broadcast -a …` 的隐式广播也能命中（只有 -n 显式组件原本可用）。
 +                 运行时仍校验调用者 uid 与调试开关，所以导出不放松安全边界。 -->
 +            <intent-filter>
-+                <action android:name="io.github.ccch1mneyyy.dsh_app.DEBUG_VS" />
++                <action android:name="io.github.ccch1mneyyy.kongkong.DEBUG_VS" />
 +            </intent-filter>
 +        </receiver>
      </application>
      <!-- Required to query activities that can process text, see:
           https://developer.android.com/training/package-visibility and
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/MainActivity.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/MainActivity.kt
-index f7f94904..b80c39ef 100644
+index f7f94904..3d0d9df2 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/MainActivity.kt
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/MainActivity.kt
 @@ -8,6 +8,7 @@ import android.content.res.Configuration
@@ -474,7 +483,7 @@ index f7f94904..b80c39ef 100644
 +
      companion object {
 +        /** The AI key's shortcut action (res/xml/shortcuts.xml). */
-+        private const val ACTION_VOICE_CALL = "io.github.ccch1mneyyy.dsh_app.action.VOICE_CALL"
++        private const val ACTION_VOICE_CALL = "io.github.ccch1mneyyy.kongkong.action.VOICE_CALL"
 +
          private const val ENGINE_ID = "dsh-main"
  
@@ -1030,6 +1039,97 @@ index 00000000..0a7a277b
 +        internal var callActive = false
 +    }
 +}
+diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/diagnostics/SystemImeEvidence.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/diagnostics/SystemImeEvidence.kt
+index 4dc89b3d..e480c1d2 100644
+--- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/diagnostics/SystemImeEvidence.kt
++++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/diagnostics/SystemImeEvidence.kt
+@@ -15,7 +15,7 @@ data class SystemImeEvent(
+ }
+ 
+ object SystemImeEvidence {
+-    const val APP_PACKAGE = "io.github.ccch1mneyyy.dsh_app"
++    const val APP_PACKAGE = "io.github.ccch1mneyyy.kongkong"
+     const val WINDOW_MS = 120_000L
+     const val MAX_EVENTS = 64
+     const val MAX_BYTES = 128 * 1024
+diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/icons/LauncherIconProbe.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/icons/LauncherIconProbe.kt
+index 12327204..adae1c23 100644
+--- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/icons/LauncherIconProbe.kt
++++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/icons/LauncherIconProbe.kt
+@@ -123,7 +123,7 @@ internal class LauncherIconProbe private constructor(
+     }
+ 
+     companion object {
+-        private const val ACTION = "io.github.ccch1mneyyy.dsh_app.ICON_PROBE"
++        private const val ACTION = "io.github.ccch1mneyyy.kongkong.ICON_PROBE"
+ 
+         fun register(context: Context, plugin: LauncherIconPlugin): LauncherIconProbe? {
+             if (context.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE == 0) return null
+diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/icons/LauncherIcons.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/icons/LauncherIcons.kt
+index 71fb6ec7..96adc1a2 100644
+--- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/icons/LauncherIcons.kt
++++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/icons/LauncherIcons.kt
+@@ -35,7 +35,7 @@ internal object LauncherIcons {
+     /** The mipmap a variant's launcher entry uses (its alias's android:icon; LaunchThemesTest checks). */
+     fun mipmapOf(variant: String): String = if (variant == MIST) "ic_launcher" else "ic_launcher_$variant"
+ 
+-    private const val PKG = "io.github.ccch1mneyyy.dsh_app"
++    private const val PKG = "io.github.ccch1mneyyy.kongkong"
+ 
+     class Alias(val variant: String, val className: String, val enabledByManifest: Boolean) {
+         override fun toString() = className.substringAfterLast('.')
+diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/icons/PictureShortcutPlugin.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/icons/PictureShortcutPlugin.kt
+index 89de4c56..6c0726bb 100644
+--- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/icons/PictureShortcutPlugin.kt
++++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/icons/PictureShortcutPlugin.kt
+@@ -106,7 +106,7 @@ class PictureShortcutPlugin : FlutterPlugin, MethodChannel.MethodCallHandler {
+ 
+     companion object {
+         const val CHANNEL = "dsh/picture_shortcut"
+-        private const val ACTION_PINNED = "io.github.ccch1mneyyy.dsh_app.action.PICTURE_SHORTCUT_PINNED"
++        private const val ACTION_PINNED = "io.github.ccch1mneyyy.kongkong.action.PICTURE_SHORTCUT_PINNED"
+         private const val REQUEST = 0x5049
+     }
+ }
+diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/links/LinksPlugin.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/links/LinksPlugin.kt
+index e7243bc0..949ca706 100644
+--- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/links/LinksPlugin.kt
++++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/links/LinksPlugin.kt
+@@ -171,7 +171,7 @@ class LinksPlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
+     companion object {
+         const val CHANNEL = "dsh/links"
+         const val SCHEME = "dshgo"
+-        private const val EXTRA_TAKEN = "io.github.ccch1mneyyy.dsh_app.links.TAKEN"
++        private const val EXTRA_TAKEN = "io.github.ccch1mneyyy.kongkong.links.TAKEN"
+         private const val MAX_FILE_BYTES = 4L * 1024 * 1024
+ 
+         /** At most 120 UTF-16 units / 255 UTF-8 bytes, keeping a fitting suffix and whole code points. */
+diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/nativemedia/NativeMediaProbe.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/nativemedia/NativeMediaProbe.kt
+index 3518519b..d2084e1d 100644
+--- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/nativemedia/NativeMediaProbe.kt
++++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/nativemedia/NativeMediaProbe.kt
+@@ -18,7 +18,7 @@ import android.util.Log
+  * Every command logs `DshMedia: probe {…}`.
+  */
+ internal object NativeMediaProbe {
+-    const val ACTION = "io.github.ccch1mneyyy.dsh_app.MEDIA_PROBE"
++    const val ACTION = "io.github.ccch1mneyyy.kongkong.MEDIA_PROBE"
+ 
+     fun register(context: Context, onEdge: (SpeechGate.Edge) -> Unit, state: () -> String): BroadcastReceiver {
+         val receiver = object : BroadcastReceiver() {
+diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/notify/ChatNotifier.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/notify/ChatNotifier.kt
+index e6ccb72d..8821f7ee 100644
+--- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/notify/ChatNotifier.kt
++++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/notify/ChatNotifier.kt
+@@ -410,7 +410,7 @@ class ChatNotifier(private val app: Context) {
+         /** Approval notifications of this process, by (tag, id). Main thread only. */
+         private val actions = HashMap<Pair<String, Int>, ActionEntry>()
+ 
+-        const val ACTION_OPEN = "io.github.ccch1mneyyy.dsh_app.OPEN_SESSION"
++        const val ACTION_OPEN = "io.github.ccch1mneyyy.kongkong.OPEN_SESSION"
+         private const val EXTRA_TOKEN = "dsh.notify.token"
+         private const val EXTRA_SESSION = "dsh.notify.session"
+         private const val EXTRA_HOST = "dsh.notify.host"
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/notify/NotifyPlugin.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/notify/NotifyPlugin.kt
 index 12b600d4..63d16e02 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/notify/NotifyPlugin.kt
@@ -1046,6 +1146,32 @@ index 12b600d4..63d16e02 100644
      }
  
      override fun onDetachedFromActivityForConfigChanges() = onDetachedFromActivity()
+diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/pet/PetOverlayProbe.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/pet/PetOverlayProbe.kt
+index aa60c5cf..0e96346b 100644
+--- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/pet/PetOverlayProbe.kt
++++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/pet/PetOverlayProbe.kt
+@@ -27,7 +27,7 @@ import android.util.Log
+  * Every command logs `DshPet: probe {…}` with [PetOverlay.debugState] and the status.
+  */
+ internal object PetOverlayProbe {
+-    const val ACTION = "io.github.ccch1mneyyy.dsh_app.PET_PROBE"
++    const val ACTION = "io.github.ccch1mneyyy.kongkong.PET_PROBE"
+ 
+     fun register(context: Context) {
+         val receiver = object : BroadcastReceiver() {
+diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/pet/PetOverlayService.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/pet/PetOverlayService.kt
+index 27a2f854..140734ba 100644
+--- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/pet/PetOverlayService.kt
++++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/pet/PetOverlayService.kt
+@@ -52,7 +52,7 @@ class PetOverlayService : Service() {
+     }
+ 
+     companion object {
+-        private const val ACTION_SNOOZE = "io.github.ccch1mneyyy.dsh_app.PET_SNOOZE"
++        private const val ACTION_SNOOZE = "io.github.ccch1mneyyy.kongkong.PET_SNOOZE"
+         private const val CHANNEL_ID = "dsh-pet"
+         private const val NOTIFICATION_ID = 3090
+ 
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/McpServer.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/McpServer.kt
 index dd57c71b..9cbafcee 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/McpServer.kt
@@ -2876,7 +3002,7 @@ index 6c701851..2d47f9db 100644
          private val WRITES = setOf(FOCUS_TEXT, PhoneToolCatalog.TAP, PhoneToolCatalog.TYPE, PhoneToolCatalog.TAP_XY, PhoneToolCatalog.OPEN)
          /** An uncertain effect call tightens draft eligibility; it does not prove input was dispatched. */
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhonePlugin.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhonePlugin.kt
-index 4a76535f..528e6524 100644
+index 4a76535f..0407b997 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhonePlugin.kt
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhonePlugin.kt
 @@ -2,7 +2,13 @@ package io.github.ccch1mneyyy.dsh_app.phone
@@ -2932,7 +3058,7 @@ index 4a76535f..528e6524 100644
      private val privilegedActions = PrivilegedActionGate()
  
      override fun onAttachedToEngine(binding: FlutterPlugin.FlutterPluginBinding) {
-@@ -77,6 +94,361 @@ class PhonePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
+@@ -77,6 +94,363 @@ class PhonePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
          promptOwner = Any()
          attached = true
          control.background.restoreKeptChannel()
@@ -3060,6 +3186,8 @@ index 4a76535f..528e6524 100644
 +            }
 +        }
 +        // 记"用户当时真正在用的包名"：悬浮条/我们自己是 overlay，不是用户想搬的东西。
++        // 【包名迁移】官方版包名保持 io.github.ccch1mneyyy.dsh_app 不变（别动官方版），
++        // 我们自己是 appContext.packageName（新包名）。
 +        PhoneRegistry.rememberUserPackage = { pkg ->
 +            if (pkg != null && pkg != appContext.packageName && pkg != "io.github.ccch1mneyyy.dsh_app" &&
 +                !pkg.contains("launcher")) userPackage = pkg
@@ -3294,7 +3422,7 @@ index 4a76535f..528e6524 100644
          methods = MethodChannel(binding.binaryMessenger, "dsh/phone").also { it.setMethodCallHandler(this) }
          events = EventChannel(binding.binaryMessenger, "dsh/phone/events").also { it.setStreamHandler(this) }
          previewEvents = EventChannel(binding.binaryMessenger, "dsh/phone/preview").also { channel ->
-@@ -103,9 +475,99 @@ class PhonePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
+@@ -103,9 +477,99 @@ class PhonePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
          }
      }
  
@@ -3394,7 +3522,7 @@ index 4a76535f..528e6524 100644
          skillSelectionRequest = Any()
          skillInspection = null
          skillClient?.let { control.skillReplaySelections.retireClient(it); control.skillDrafts.retireClient(it) }
-@@ -240,6 +702,11 @@ class PhonePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
+@@ -240,6 +704,11 @@ class PhonePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
              "skillDraft", "saveSkillDraft", "discardSkillDraft" -> skillCall(call, result)
              "inspectSkillReplay" -> inspectSkillReplay(call, result)
              "prepareSkillReplay" -> prepareSkillReplay(call, result)
@@ -3406,7 +3534,7 @@ index 4a76535f..528e6524 100644
              "discardSkillReplay" -> {
                  val args = call.arguments as? Map<*, *>
                  val id = args?.get("invocation") as? String
-@@ -249,6 +716,103 @@ class PhonePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
+@@ -249,6 +718,103 @@ class PhonePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
                  result.success(if (removed) mapOf("kind" to "discarded") else replayRejected("stale"))
              }
              "setBackgroundPreview" -> result.success(control.preview.setEnabled(call.argument<Boolean>("enabled") == true))
@@ -3510,7 +3638,7 @@ index 4a76535f..528e6524 100644
              "setBackgroundKeep" -> {
                  val selected = call.argument<String>("mode").orEmpty()
                  val enabled = call.argument<Boolean>("enabled") == true
-@@ -388,6 +952,77 @@ class PhonePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
+@@ -388,6 +954,77 @@ class PhonePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
          control.skillDrafts.clientCurrent(value.client) && control.skillDrafts.currentEpoch() == value.epoch &&
          value.origin.runtime.phoneSkillOriginCurrent(value.origin)
  
@@ -3588,6 +3716,19 @@ index 4a76535f..528e6524 100644
      private fun inspectSkillReplay(call: MethodCall, result: MethodChannel.Result) {
          val args = call.arguments as? Map<*, *>
          val name = args?.get("skillId") as? String
+diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhonePrompts.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhonePrompts.kt
+index 48cf1684..7fcc3d74 100644
+--- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhonePrompts.kt
++++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhonePrompts.kt
+@@ -243,7 +243,7 @@ class PhonePrompts(
+     } == true
+ 
+     companion object {
+-        private const val ACTION_OPEN = "io.github.ccch1mneyyy.dsh_app.phone.OPEN_PROMPT"
++        private const val ACTION_OPEN = "io.github.ccch1mneyyy.kongkong.phone.OPEN_PROMPT"
+         private const val EXTRA_NONCE = "phone_prompt_nonce"
+         fun unavailable(reason: String) = PromptResult(PromptOutcome.UNAVAILABLE, PromptSurface.NONE, reason).toMap()
+         fun openIntent(app: Context, p: PromptPresentation): Intent = Intent(app, MainActivity::class.java)
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneTaskSessions.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneTaskSessions.kt
 index 3fd6e482..aa1bf338 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneTaskSessions.kt
@@ -4217,6 +4358,18 @@ index d98fd4d3..c1183b42 100644
              prepare(intent, AppStrings.get(this.app, R.string.phone_notice_open_app, app.label),
                  flags = 0, allowChoice = false)
          }
+diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/a11y/A11yProbe.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/a11y/A11yProbe.kt
+index 173d357a..d5251a25 100644
+--- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/a11y/A11yProbe.kt
++++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/a11y/A11yProbe.kt
+@@ -228,6 +228,6 @@ internal class A11yProbe(private val service: PhoneA11yService, private val driv
+ 
+     companion object {
+         private const val TAG = "DshA11yProbe"
+-        const val ACTION = "io.github.ccch1mneyyy.dsh_app.A11Y_PROBE"
++        const val ACTION = "io.github.ccch1mneyyy.kongkong.A11Y_PROBE"
+     }
+ }
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/a11y/Actuator.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/a11y/Actuator.kt
 index 444140b5..77c918b9 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/a11y/Actuator.kt
@@ -4358,6 +4511,19 @@ index bebe269d..181201c9 100644
      fun alive(): Boolean = !closed.get() && transportAlive()
  
      fun exchange(request: ByteArray): ByteArray? = synchronized(lock) {
+diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/AdbPairingNotification.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/AdbPairingNotification.kt
+index 36962ffa..c97f6727 100644
+--- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/AdbPairingNotification.kt
++++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/AdbPairingNotification.kt
+@@ -24,7 +24,7 @@ object AdbPairingNotification {
+     const val CHANNEL_ID = "dsh_phone_pairing"
+     const val NOTIFICATION_ID = 0x05D4
+     const val CODE_KEY = "dsh_pairing_code"
+-    private const val ACTION_SUBMIT = "io.github.ccch1mneyyy.dsh_app.PHONE_ADB_PAIR_CODE"
++    private const val ACTION_SUBMIT = "io.github.ccch1mneyyy.kongkong.PHONE_ADB_PAIR_CODE"
+ 
+     fun show(context: Context) {
+         val manager = context.getSystemService(NotificationManager::class.java)
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/BackgroundControl.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/BackgroundControl.kt
 index 79cae468..21a783af 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/BackgroundControl.kt
@@ -6368,6 +6534,19 @@ index 0d6cb743..c6016f1a 100644
 +
 +/** 【4i】通道被作废（⇄ seal）时踢醒挂起请求的专用异常：调用方据此不关闭整个会话。 */
 +class ChannelAbortedException : IOException("deviceUnavailable")
+diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/IPrivilegedDisplay.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/IPrivilegedDisplay.kt
+index 4ea0a680..c397256a 100644
+--- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/IPrivilegedDisplay.kt
++++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/IPrivilegedDisplay.kt
+@@ -62,7 +62,7 @@ interface IPrivilegedDisplay : IInterface {
+     }
+ 
+     companion object {
+-        const val DESCRIPTOR = "io.github.ccch1mneyyy.dsh_app.phone.background.IPrivilegedDisplay"
++        const val DESCRIPTOR = "io.github.ccch1mneyyy.kongkong.phone.background.IPrivilegedDisplay"
+         const val TXN_EXECUTE = IBinder.FIRST_CALL_TRANSACTION
+     }
+ }
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/KeptTasks.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/KeptTasks.kt
 new file mode 100644
 index 00000000..c1dcef97
@@ -8702,7 +8881,7 @@ index aa3faff3..a0ccefed 100644
      private fun failure(code: String) = Bundle().apply { putBoolean(Proto.OK, false); putString(Proto.ERROR, code) }
  }
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/PrivilegedProtocol.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/PrivilegedProtocol.kt
-index 4c327b1e..2c1bffa8 100644
+index 4c327b1e..28d28f63 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/PrivilegedProtocol.kt
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/PrivilegedProtocol.kt
 @@ -19,7 +19,7 @@ object Proto {
@@ -8782,6 +8961,15 @@ index 4c327b1e..2c1bffa8 100644
      const val OP_RELEASE = "release"
      const val OP_DESTROY = "destroy"
      const val OP_COLLECT_SYSTEM_IME = "collectSystemIme"
+@@ -134,7 +181,7 @@ object Proto {
+     /** 自动恢复无障碍: grants [APP_PACKAGE] WRITE_SECURE_SETTINGS in [USER]; nothing else is grantable. */
+     const val OP_GRANT_SECURE_SETTINGS = "grantSecureSettings"
+     const val USER = "user"
+-    const val APP_PACKAGE = "io.github.ccch1mneyyy.dsh_app"
++    const val APP_PACKAGE = "io.github.ccch1mneyyy.kongkong"
+ 
+     const val INJECT_OK = "injectOk"
+     /** Gate only, with INJECT_OK false: the failing injection's [ERROR] code. Older cores omit it. */
 @@ -222,30 +269,30 @@ object Reasons {
          // l10n:keep agent background protocol
          "viewportUnsupported" -> "当前特权端不支持横屏视口，请更新或重新连接后重试；未打开应用"
@@ -8953,6 +9141,32 @@ index 00000000..bdc41dd0
 +
 +    fun current(): String? = owner
 +}
+diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/selfcheck/TargetContract.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/selfcheck/TargetContract.kt
+index fd659fd4..60f1d157 100644
+--- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/selfcheck/TargetContract.kt
++++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/selfcheck/TargetContract.kt
+@@ -2,7 +2,7 @@ package io.github.ccch1mneyyy.dsh_app.phone.selfcheck
+ 
+ /** Fixed, inert local target shared by the Activity and the privileged tree verifier. */
+ internal object TargetContract {
+-    const val ACTIVITY_CLASS = "io.github.ccch1mneyyy.dsh_app.phone.selfcheck.PhoneSelfCheckTargetActivity"
++    const val ACTIVITY_CLASS = "io.github.ccch1mneyyy.kongkong.phone.selfcheck.PhoneSelfCheckTargetActivity"
+     const val MARKER_ID = "phone_selfcheck_target_marker"
+     const val COUNTER_ID = "phone_selfcheck_target_counter"
+     const val BUTTON_ID = "phone_selfcheck_target_button"
+diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/shell/AndroidShellService.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/shell/AndroidShellService.kt
+index d087c632..f2d46150 100644
+--- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/shell/AndroidShellService.kt
++++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/shell/AndroidShellService.kt
+@@ -50,7 +50,7 @@ interface IAndroidShell : IInterface {
+         }
+     }
+     companion object {
+-        const val DESCRIPTOR = "io.github.ccch1mneyyy.dsh_app.phone.shell.IAndroidShell"
++        const val DESCRIPTOR = "io.github.ccch1mneyyy.kongkong.phone.shell.IAndroidShell"
+         const val DESTROY = 16777115
+         fun remote(binder: IBinder): IAndroidShell = object : IAndroidShell {
+             override fun asBinder(): IBinder = binder
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/skills/PhoneSkillDraft.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/skills/PhoneSkillDraft.kt
 index 2857ceef..41380764 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/skills/PhoneSkillDraft.kt
@@ -8981,7 +9195,7 @@ index 6be40b5d..1091ff36 100644
          }
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/CloseActionReceiver.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/CloseActionReceiver.kt
 new file mode 100644
-index 00000000..0ce6ca3c
+index 00000000..bab973e8
 --- /dev/null
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/vscreen/CloseActionReceiver.kt
 @@ -0,0 +1,79 @@
@@ -9058,7 +9272,7 @@ index 00000000..0ce6ca3c
 +    }
 +
 +    private companion object {
-+        const val ACTION = "io.github.ccch1mneyyy.dsh_app.DEBUG_VS"
++        const val ACTION = "io.github.ccch1mneyyy.kongkong.DEBUG_VS"
 +        const val PREFS = "vscreen_debug"
 +        const val KEY_ENABLED = "enabled"
 +        const val SHELL_UID = 2000
@@ -13161,6 +13375,27 @@ index 00000000..058c9f4b
 +        }
 +    }
 +}
+diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/runtime/DshService.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/runtime/DshService.kt
+index 1f74de24..d4babd75 100644
+--- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/runtime/DshService.kt
++++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/runtime/DshService.kt
+@@ -180,11 +180,11 @@ class DshService : Service() {
+     }
+ 
+     companion object {
+-        const val ACTION_INSTALL = "io.github.ccch1mneyyy.dsh_app.INSTALL"
+-        const val ACTION_INSTALL_DONE = "io.github.ccch1mneyyy.dsh_app.INSTALL_DONE"
+-        const val ACTION_START = "io.github.ccch1mneyyy.dsh_app.START"
+-        const val ACTION_STOP = "io.github.ccch1mneyyy.dsh_app.STOP"
+-        const val ACTION_PHONE_STOP = "io.github.ccch1mneyyy.dsh_app.PHONE_STOP"
++        const val ACTION_INSTALL = "io.github.ccch1mneyyy.kongkong.INSTALL"
++        const val ACTION_INSTALL_DONE = "io.github.ccch1mneyyy.kongkong.INSTALL_DONE"
++        const val ACTION_START = "io.github.ccch1mneyyy.kongkong.START"
++        const val ACTION_STOP = "io.github.ccch1mneyyy.kongkong.STOP"
++        const val ACTION_PHONE_STOP = "io.github.ccch1mneyyy.kongkong.PHONE_STOP"
+         private const val PHONE_TASK_SCHEME = "dsh-phone-task"
+         private const val EXTRA_STOP_GENERATION = "stopGeneration"
+ 
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/runtime/GuestSetup.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/runtime/GuestSetup.kt
 index 3e902fed..b0e3eb66 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/runtime/GuestSetup.kt
@@ -13439,19 +13674,48 @@ index 57e1916e..cf749ad4 100644
      /** User-selected phone draft only. Lock order: Controller -> write; no IO under either. */
      internal fun savePhoneSkill(write: PhoneSkillWrite, onDone: (PhoneSkillInstallResult) -> Unit) {
          val origin = capturePhoneSkillOrigin()?.let(write::bindSaveOrigin)
+diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/share/SharePlugin.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/share/SharePlugin.kt
+index d57fadb3..231f29b3 100644
+--- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/share/SharePlugin.kt
++++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/share/SharePlugin.kt
+@@ -251,11 +251,11 @@ class SharePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
+ 
+     companion object {
+         const val CHANNEL = "dsh/share"
+-        const val ACTION_SHARE = "io.github.ccch1mneyyy.dsh_app.action.SHARE"
++        const val ACTION_SHARE = "io.github.ccch1mneyyy.kongkong.action.SHARE"
+ 
+         /** The action the sender used (ACTION_SEND / ACTION_SEND_MULTIPLE). */
+-        const val EXTRA_SENT_AS = "io.github.ccch1mneyyy.dsh_app.share.SENT_AS"
+-        private const val EXTRA_TAKEN = "io.github.ccch1mneyyy.dsh_app.share.TAKEN"
++        const val EXTRA_SENT_AS = "io.github.ccch1mneyyy.kongkong.share.SENT_AS"
++        private const val EXTRA_TAKEN = "io.github.ccch1mneyyy.kongkong.share.TAKEN"
+ 
+         /** The composer's limit (lib/state/attachments.dart `maxAttachments`). */
+         const val MAX_ITEMS = 9
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/shortcuts/EntryActivity.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/shortcuts/EntryActivity.kt
-index d2e531f3..31abe619 100644
+index d2e531f3..550773c2 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/shortcuts/EntryActivity.kt
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/shortcuts/EntryActivity.kt
-@@ -62,6 +62,8 @@ class EntryActivity : Activity() {
+@@ -60,11 +60,13 @@ class EntryActivity : Activity() {
+     }
+ 
      companion object {
-         const val ACTION_NEW_CHAT = "io.github.ccch1mneyyy.dsh_app.action.NEW_CHAT"
-         const val ACTION_VOICE = "io.github.ccch1mneyyy.dsh_app.action.VOICE_INPUT"
+-        const val ACTION_NEW_CHAT = "io.github.ccch1mneyyy.dsh_app.action.NEW_CHAT"
+-        const val ACTION_VOICE = "io.github.ccch1mneyyy.dsh_app.action.VOICE_INPUT"
+-        const val ACTION_OPEN_CHAT = "io.github.ccch1mneyyy.dsh_app.action.OPEN_CHAT"
+-        const val ACTION_SCREENSHOT = "io.github.ccch1mneyyy.dsh_app.action.SCREENSHOT"
+-        private const val ACTION_OPEN_APP = "io.github.ccch1mneyyy.dsh_app.action.OPEN_APP"
++        const val ACTION_NEW_CHAT = "io.github.ccch1mneyyy.kongkong.action.NEW_CHAT"
++        const val ACTION_VOICE = "io.github.ccch1mneyyy.kongkong.action.VOICE_INPUT"
 +        // 语音通话: the AI key's key, straight into the call.
-+        const val ACTION_VOICE_CALL = "io.github.ccch1mneyyy.dsh_app.action.VOICE_CALL"
-         const val ACTION_OPEN_CHAT = "io.github.ccch1mneyyy.dsh_app.action.OPEN_CHAT"
-         const val ACTION_SCREENSHOT = "io.github.ccch1mneyyy.dsh_app.action.SCREENSHOT"
-         private const val ACTION_OPEN_APP = "io.github.ccch1mneyyy.dsh_app.action.OPEN_APP"
++        const val ACTION_VOICE_CALL = "io.github.ccch1mneyyy.kongkong.action.VOICE_CALL"
++        const val ACTION_OPEN_CHAT = "io.github.ccch1mneyyy.kongkong.action.OPEN_CHAT"
++        const val ACTION_SCREENSHOT = "io.github.ccch1mneyyy.kongkong.action.SCREENSHOT"
++        private const val ACTION_OPEN_APP = "io.github.ccch1mneyyy.kongkong.action.OPEN_APP"
+         const val EXTRA_PET_GENERATION = "pet_generation"
+         const val EXTRA_SESSION = "session_id"
+         const val EXTRA_HOST = "host"
 @@ -75,6 +77,7 @@ class EntryActivity : Activity() {
          fun kindOf(action: String?): String? = when (action) {
              ACTION_NEW_CHAT -> ShortcutsPlugin.KIND_NEW
@@ -13461,7 +13725,7 @@ index d2e531f3..31abe619 100644
              ACTION_SCREENSHOT -> ShortcutsPlugin.KIND_SCREENSHOT
              else -> null
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/shortcuts/ShortcutsPlugin.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/shortcuts/ShortcutsPlugin.kt
-index cbcc8f18..0a50cddf 100644
+index cbcc8f18..e87f3d84 100644
 --- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/shortcuts/ShortcutsPlugin.kt
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/shortcuts/ShortcutsPlugin.kt
 @@ -139,6 +139,11 @@ class ShortcutsPlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHa
@@ -13490,7 +13754,26 @@ index cbcc8f18..0a50cddf 100644
          val sessionId = intent.getStringExtra(EXTRA_SESSION)
          if (kind == KIND_CHAT && sessionId.isNullOrEmpty()) return true
          val event = mapOf(
-@@ -171,6 +179,7 @@ class ShortcutsPlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHa
+@@ -160,17 +168,18 @@ class ShortcutsPlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHa
+ 
+     companion object {
+         const val CHANNEL = "dsh/shortcuts"
+-        const val ACTION_ENTRY = "io.github.ccch1mneyyy.dsh_app.action.ENTRY"
+-        const val EXTRA_KIND = "io.github.ccch1mneyyy.dsh_app.entry.KIND"
+-        const val EXTRA_SESSION = "io.github.ccch1mneyyy.dsh_app.entry.SESSION"
+-        const val EXTRA_HOST = "io.github.ccch1mneyyy.dsh_app.entry.HOST"
+-        const val EXTRA_TEXT = "io.github.ccch1mneyyy.dsh_app.entry.TEXT"
+-        const val EXTRA_PATH = "io.github.ccch1mneyyy.dsh_app.entry.PATH"
+-        const val EXTRA_TOKEN = "io.github.ccch1mneyyy.dsh_app.entry.TOKEN"
+-        private const val EXTRA_TAKEN = "io.github.ccch1mneyyy.dsh_app.entry.TAKEN"
++        const val ACTION_ENTRY = "io.github.ccch1mneyyy.kongkong.action.ENTRY"
++        const val EXTRA_KIND = "io.github.ccch1mneyyy.kongkong.entry.KIND"
++        const val EXTRA_SESSION = "io.github.ccch1mneyyy.kongkong.entry.SESSION"
++        const val EXTRA_HOST = "io.github.ccch1mneyyy.kongkong.entry.HOST"
++        const val EXTRA_TEXT = "io.github.ccch1mneyyy.kongkong.entry.TEXT"
++        const val EXTRA_PATH = "io.github.ccch1mneyyy.kongkong.entry.PATH"
++        const val EXTRA_TOKEN = "io.github.ccch1mneyyy.kongkong.entry.TOKEN"
++        private const val EXTRA_TAKEN = "io.github.ccch1mneyyy.kongkong.entry.TAKEN"
  
          const val KIND_NEW = "new"
          const val KIND_VOICE = "voice"
@@ -13515,6 +13798,32 @@ index ed18339a..a705bf44 100644
  
          fun wav(pcm: ByteArray): ByteArray {
              val header = ByteBuffer.allocate(44).order(ByteOrder.LITTLE_ENDIAN)
+diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/update/privileged/SelfUpdateInstallerService.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/update/privileged/SelfUpdateInstallerService.kt
+index 7a1feec1..6b7c2c02 100644
+--- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/update/privileged/SelfUpdateInstallerService.kt
++++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/update/privileged/SelfUpdateInstallerService.kt
+@@ -50,7 +50,7 @@ interface ISelfUpdateInstaller : IInterface {
+     }
+ 
+     companion object {
+-        const val DESCRIPTOR = "io.github.ccch1mneyyy.dsh_app.update.privileged.ISelfUpdateInstaller"
++        const val DESCRIPTOR = "io.github.ccch1mneyyy.kongkong.update.privileged.ISelfUpdateInstaller"
+         const val DESTROY = 16777115
+         fun remote(binder: IBinder): ISelfUpdateInstaller = object : ISelfUpdateInstaller {
+             override fun asBinder(): IBinder = binder
+diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/update/privileged/SelfUpdatePolicy.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/update/privileged/SelfUpdatePolicy.kt
+index 3629e4ae..3b3b88cc 100644
+--- a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/update/privileged/SelfUpdatePolicy.kt
++++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/update/privileged/SelfUpdatePolicy.kt
+@@ -27,7 +27,7 @@ internal data class SelfUpdateReceipt(
+ 
+ /** This is an installer capability, not a shell command API. */
+ internal object SelfUpdatePolicy {
+-    const val PACKAGE = "io.github.ccch1mneyyy.dsh_app"
++    const val PACKAGE = "io.github.ccch1mneyyy.kongkong"
+     const val REVISION = "dsh-self-update-1"
+     const val TAG = "dsh_self_update_v1"
+     const val MAX_APK_BYTES = 2L * 1024 * 1024 * 1024
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/wake/WakeBootReceiver.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/wake/WakeBootReceiver.kt
 new file mode 100644
 index 00000000..be0fa269
@@ -13972,7 +14281,7 @@ index 00000000..830376ca
 +}
 diff --git a/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/wake/WakeWordService.kt b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/wake/WakeWordService.kt
 new file mode 100644
-index 00000000..fa77de97
+index 00000000..b0f72339
 --- /dev/null
 +++ b/app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/wake/WakeWordService.kt
 @@ -0,0 +1,216 @@
@@ -14118,7 +14427,7 @@ index 00000000..fa77de97
 +        private const val TAG = "DshWake"
 +        private const val CHANNEL_ID = "dsh-wake"
 +        private const val NOTIFICATION_ID = 3091
-+        const val ACTION_STOP = "io.github.ccch1mneyyy.dsh_app.WAKE_STOP"
++        const val ACTION_STOP = "io.github.ccch1mneyyy.kongkong.WAKE_STOP"
 +
 +        /** A listening service is up in this process. */
 +        @Volatile var running = false
@@ -27134,7 +27443,7 @@ index 1617f97d..72f31ad1 100644
      android:notificationTimeout="100"
      android:description="@string/phone_a11y_description"
 diff --git a/app/android/app/src/main/res/xml/shortcuts.xml b/app/android/app/src/main/res/xml/shortcuts.xml
-index 3540cb26..8a4282ec 100644
+index 3540cb26..9d99e3af 100644
 --- a/app/android/app/src/main/res/xml/shortcuts.xml
 +++ b/app/android/app/src/main/res/xml/shortcuts.xml
 @@ -2,7 +2,8 @@
@@ -27147,21 +27456,29 @@ index 3540cb26..8a4282ec 100644
  <shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
      <shortcut
          android:shortcutId="new_chat"
-@@ -13,7 +14,7 @@
+@@ -11,9 +12,9 @@
+         android:shortcutShortLabel="@string/shortcut_new_chat"
+         android:shortcutLongLabel="@string/shortcut_new_chat">
          <intent
-             android:action="io.github.ccch1mneyyy.dsh_app.action.NEW_CHAT"
-             android:targetClass="io.github.ccch1mneyyy.dsh_app.shortcuts.EntryActivity"
+-            android:action="io.github.ccch1mneyyy.dsh_app.action.NEW_CHAT"
+-            android:targetClass="io.github.ccch1mneyyy.dsh_app.shortcuts.EntryActivity"
 -            android:targetPackage="io.github.ccch1mneyyy.dsh_app" />
-+            android:targetPackage="io.github.ccch1mneyyy.dsh_app.private" />
++            android:action="io.github.ccch1mneyyy.kongkong.action.NEW_CHAT"
++            android:targetClass="io.github.ccch1mneyyy.kongkong.shortcuts.EntryActivity"
++            android:targetPackage="io.github.ccch1mneyyy.kongkong" />
      </shortcut>
      <shortcut
          android:shortcutId="voice_input"
-@@ -24,6 +25,17 @@
+@@ -22,8 +23,19 @@
+         android:shortcutShortLabel="@string/shortcut_voice_input"
+         android:shortcutLongLabel="@string/shortcut_voice_input">
          <intent
-             android:action="io.github.ccch1mneyyy.dsh_app.action.VOICE_INPUT"
-             android:targetClass="io.github.ccch1mneyyy.dsh_app.shortcuts.EntryActivity"
+-            android:action="io.github.ccch1mneyyy.dsh_app.action.VOICE_INPUT"
+-            android:targetClass="io.github.ccch1mneyyy.dsh_app.shortcuts.EntryActivity"
 -            android:targetPackage="io.github.ccch1mneyyy.dsh_app" />
-+            android:targetPackage="io.github.ccch1mneyyy.dsh_app.private" />
++            android:action="io.github.ccch1mneyyy.kongkong.action.VOICE_INPUT"
++            android:targetClass="io.github.ccch1mneyyy.kongkong.shortcuts.EntryActivity"
++            android:targetPackage="io.github.ccch1mneyyy.kongkong" />
 +    </shortcut>
 +    <shortcut
 +        android:shortcutId="voice_call"
@@ -27170,11 +27487,50 @@ index 3540cb26..8a4282ec 100644
 +        android:shortcutShortLabel="@string/shortcut_voice_call"
 +        android:shortcutLongLabel="@string/shortcut_voice_call">
 +        <intent
-+            android:action="io.github.ccch1mneyyy.dsh_app.action.VOICE_CALL"
-+            android:targetClass="io.github.ccch1mneyyy.dsh_app.MainActivity"
-+            android:targetPackage="io.github.ccch1mneyyy.dsh_app.private" />
++            android:action="io.github.ccch1mneyyy.kongkong.action.VOICE_CALL"
++            android:targetClass="io.github.ccch1mneyyy.kongkong.MainActivity"
++            android:targetPackage="io.github.ccch1mneyyy.kongkong" />
      </shortcut>
  </shortcuts>
+diff --git a/app/android/app/src/test/kotlin/io/github/ccch1mneyyy/dsh_app/icons/LauncherIconsTest.kt b/app/android/app/src/test/kotlin/io/github/ccch1mneyyy/dsh_app/icons/LauncherIconsTest.kt
+index c9fee3aa..6c129ed5 100644
+--- a/app/android/app/src/test/kotlin/io/github/ccch1mneyyy/dsh_app/icons/LauncherIconsTest.kt
++++ b/app/android/app/src/test/kotlin/io/github/ccch1mneyyy/dsh_app/icons/LauncherIconsTest.kt
+@@ -35,7 +35,7 @@ class LauncherIconsTest {
+     private fun alias(variant: String) = LauncherIcons.aliases.first { it.variant == variant && it !== ORIGINAL }
+ 
+     private companion object {
+-        const val PKG = "io.github.ccch1mneyyy.dsh_app"
++        const val PKG = "io.github.ccch1mneyyy.kongkong"
+     }
+ 
+     @Test fun aFreshInstallShowsMist() {
+diff --git a/app/android/app/src/test/kotlin/io/github/ccch1mneyyy/dsh_app/icons/LauncherManifestTest.kt b/app/android/app/src/test/kotlin/io/github/ccch1mneyyy/dsh_app/icons/LauncherManifestTest.kt
+index ee25d4d7..5fc74c03 100644
+--- a/app/android/app/src/test/kotlin/io/github/ccch1mneyyy/dsh_app/icons/LauncherManifestTest.kt
++++ b/app/android/app/src/test/kotlin/io/github/ccch1mneyyy/dsh_app/icons/LauncherManifestTest.kt
+@@ -10,7 +10,7 @@ import javax.xml.parsers.DocumentBuilderFactory
+ /** AndroidManifest.xml and res/ against [LauncherIcons] (Gradle runs unit tests in app/android/app). */
+ class LauncherManifestTest {
+     private val main = File("src/main")
+-    private val ns = "io.github.ccch1mneyyy.dsh_app"
++    private val ns = "io.github.ccch1mneyyy.kongkong"
+ 
+     private fun manifest(): Element {
+         val factory = DocumentBuilderFactory.newInstance()
+diff --git a/app/android/app/src/test/kotlin/io/github/ccch1mneyyy/dsh_app/launch/LaunchThemesTest.kt b/app/android/app/src/test/kotlin/io/github/ccch1mneyyy/dsh_app/launch/LaunchThemesTest.kt
+index 6f7839f5..8f54b0c6 100644
+--- a/app/android/app/src/test/kotlin/io/github/ccch1mneyyy/dsh_app/launch/LaunchThemesTest.kt
++++ b/app/android/app/src/test/kotlin/io/github/ccch1mneyyy/dsh_app/launch/LaunchThemesTest.kt
+@@ -16,7 +16,7 @@ import javax.xml.parsers.DocumentBuilderFactory
+  */
+ class LaunchThemesTest {
+     private val main = File("src/main")
+-    private val ns = "io.github.ccch1mneyyy.dsh_app"
++    private val ns = "io.github.ccch1mneyyy.kongkong"
+ 
+     private fun xml(file: File): Element = DocumentBuilderFactory.newInstance().newDocumentBuilder().parse(file).documentElement
+ 
 diff --git a/app/android/app/src/test/kotlin/io/github/ccch1mneyyy/dsh_app/phone/DiagnosticsToolTest.kt b/app/android/app/src/test/kotlin/io/github/ccch1mneyyy/dsh_app/phone/DiagnosticsToolTest.kt
 index 7a9b11c1..c177050c 100644
 --- a/app/android/app/src/test/kotlin/io/github/ccch1mneyyy/dsh_app/phone/DiagnosticsToolTest.kt
@@ -27507,6 +27863,19 @@ index 00000000..f0d88316
 +        assertTrue(FrameMath.pageChanged(a, b))
 +    }
 +}
+diff --git a/app/android/app/src/test/kotlin/io/github/ccch1mneyyy/dsh_app/web/WebFilePolicyTest.kt b/app/android/app/src/test/kotlin/io/github/ccch1mneyyy/dsh_app/web/WebFilePolicyTest.kt
+index d2f6c3d9..2746d520 100644
+--- a/app/android/app/src/test/kotlin/io/github/ccch1mneyyy/dsh_app/web/WebFilePolicyTest.kt
++++ b/app/android/app/src/test/kotlin/io/github/ccch1mneyyy/dsh_app/web/WebFilePolicyTest.kt
+@@ -20,7 +20,7 @@ class WebFilePolicyTest {
+     }
+ 
+     @Test fun rejectsPrivateFilePathsOwnProvidersAndMalformedContentUris() {
+-        val app = "io.github.ccch1mneyyy.dsh_app"
++        val app = "io.github.ccch1mneyyy.kongkong"
+         assertTrue(WebFilePolicy.isExternalContent("content://com.android.providers.downloads.documents/document/12", app))
+         assertFalse(WebFilePolicy.isExternalContent("file:///data/user/0/" + app + "/private", app))
+         assertFalse(WebFilePolicy.isExternalContent("content://" + app + ".files/private", app))
 diff --git a/app/assets/kws/LICENSE.txt b/app/assets/kws/LICENSE.txt
 new file mode 100644
 index 00000000..956c74de
